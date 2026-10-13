@@ -130,12 +130,12 @@ fork remains pinned in the example module.
 
 ## Development and terrain demo
 
-The ntcanvas/ntpicture vanity versions did not resolve through the module proxy
-when this extraction was prepared. The module pins identify committed snapshots;
-CI bootstraps those same commits as sibling checkouts. For local development:
+ntcanvas and ntgpuimage are pinned to published upstream versions and downloaded
+through Go modules. ntpicture still uses a pinned sibling checkout in CI while
+its vanity version is prepared. For local development:
 
 ```sh
-# Sibling layout: nt3d/, ntcanvas/, ntpicture/, ntgpuimage/
+# Sibling layout: nt3d/, ntpicture/
 task workspace
 task ci
 task test-gpu             # Requires a real WebGPU adapter; fails if unavailable.
