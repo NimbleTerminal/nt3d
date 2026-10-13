@@ -76,7 +76,7 @@ Frames are read-only once submitted. Mutate the scene and create a new frame to
 update it; old frames remain valid. Use one goroutine for scene edits/frame
 creation. Rendering may run asynchronously; GPU render/close calls are serialized.
 
-- WebGPU uses go-gpuimage, indexed/textured triangles, point/box/arrow instances,
+- WebGPU uses ntgpuimage, indexed/textured triangles, point/box/arrow instances,
   thick lines, and directional lighting. The storage record layout is explicitly
   packed; Go struct memory is never assumed to match WGSL padding.
 - Software shares the primitive and texture semantics. Interactive frames sample
@@ -130,7 +130,7 @@ when this extraction was prepared. The module pins identify committed snapshots;
 CI bootstraps those same commits as sibling checkouts. For local development:
 
 ```sh
-# Sibling layout: nt3d/, ntcanvas/, ntpicture/
+# Sibling layout: nt3d/, ntcanvas/, ntpicture/, ntgpuimage/
 task workspace
 task ci
 task test-gpu             # Requires a real WebGPU adapter; fails if unavailable.

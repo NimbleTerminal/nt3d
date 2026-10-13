@@ -4,13 +4,13 @@ go 1.26.8
 
 require (
 	charm.land/bubbletea/v2 v2.1.0
-	github.com/NimbleMarkets/go-gpuimage v0.1.0
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/gogpu/gputypes v0.8.0
 	github.com/gogpu/wgpu v0.34.5
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	nimbleterminal.dev/ntcanvas v0.0.0-20261013170958-9a1ee31c6cec
+	nimbleterminal.dev/ntgpuimage v0.1.1-0.20261013210903-3e79e33915de
 	nimbleterminal.dev/ntpicture v0.0.0-20261013002434-da82d92e53c3
 )
 

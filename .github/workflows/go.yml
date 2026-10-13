@@ -31,6 +31,11 @@ jobs:
           repository: NimbleTerminal/ntpicture
           ref: da82d92e53c3577752498da5dd0dae83be0d2075
           path: ntpicture
+      - uses: actions/checkout@v7
+        with:
+          repository: NimbleTerminal/ntgpuimage
+          ref: 3e79e33915de76923c25da9fd0f9195d2fca1376
+          path: ntgpuimage
       - uses: actions/setup-go@v7
         with:
           go-version-file: nt3d/go.mod

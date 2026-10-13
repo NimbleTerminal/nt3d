@@ -7,13 +7,13 @@ import (
 	_ "embed"
 	"encoding/binary"
 	"errors"
-	gpuimage "github.com/NimbleMarkets/go-gpuimage"
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
 	"image"
 	"image/color"
 	"math"
 	"nimbleterminal.dev/nt3d/math"
+	gpuimage "nimbleterminal.dev/ntgpuimage"
 	"sync"
 )
 

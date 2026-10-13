@@ -7,3 +7,5 @@ use (
 
 replace nimbleterminal.dev/ntcanvas => ../ntcanvas
 replace nimbleterminal.dev/ntpicture => ../ntpicture
+
+replace nimbleterminal.dev/ntgpuimage => ../ntgpuimage
