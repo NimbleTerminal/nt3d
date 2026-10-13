@@ -1,0 +1,113 @@
+//go:build webgpu
+
+package nt3d
+
+import (
+	"image"
+	"image/color"
+	"nimbleterminal.dev/nt3d/math"
+	"testing"
+)
+
+func coloredPixels(img image.Image, want color.RGBA) int {
+	n := 0
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			c := color.RGBAModel.Convert(img.At(x, y)).(color.RGBA)
+			if c == want {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// Hardware tests are explicit: failure to initialize a GPU fails this test,
+// rather than silently validating only the software fallback.
+func TestGPUSceneRevisions(t *testing.T) {
+	s := NewScene()
+	red := testTexture(t, color.RGBA{255, 0, 0, 255})
+	green := testTexture(t, color.RGBA{0, 255, 0, 255})
+	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Texture: red, Unlit: true}})
+	check(t, err)
+	id, err := s.SetGeometry("terrain", mesh)
+	check(t, err)
+	group, err := s.Add(Root, "group")
+	check(t, err)
+	check(t, s.Reparent(id, group))
+	r := &gpuRenderer{}
+	defer r.Close()
+	f := frame(t, s)
+	img, err := r.Render(f)
+	check(t, err)
+	if coloredPixels(img, color.RGBA{255, 0, 0, 255}) < 100 {
+		t.Fatal("missing textured terrain")
+	}
+	uploads, textures := r.uploads, r.textureUploads
+	check(t, s.SetTransform(group, nt3dmath.Translation(nt3dmath.Vec3{X: .25}).Mul(nt3dmath.RotationZ(.5))))
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.uploads != uploads {
+		t.Fatal("parent motion uploaded mesh")
+	}
+	check(t, s.SetTexture("terrain", green))
+	img, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.uploads != uploads || r.textureUploads != textures+1 || coloredPixels(img, color.RGBA{0, 255, 0, 255}) < 100 {
+		t.Fatal("texture update")
+	}
+	check(t, s.SetVisible(group, false))
+	img, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.uploads != uploads || coloredPixels(img, f.Background) != f.Width*f.Height {
+		t.Fatal("visibility")
+	}
+	// Replay an old frame: its texture and transform remain valid.
+	img, err = r.Render(f)
+	check(t, err)
+	if coloredPixels(img, color.RGBA{255, 0, 0, 255}) < 100 {
+		t.Fatal("old frame corrupted")
+	}
+	// Same renderer, unrelated scene: no revision collision.
+	other := NewScene()
+	_, err = other.SetGeometry("point", pointGeometry())
+	check(t, err)
+	_, err = r.Render(frame(t, other))
+	check(t, err)
+	if r.uploads == uploads {
+		t.Fatal("scene switch reused mesh")
+	}
+}
+func TestGPUAllPrimitivesAndOverlays(t *testing.T) {
+	s := NewScene()
+	white := color.RGBA{255, 255, 255, 255}
+	g := pointGeometry()
+	g.Points[0].Position = nt3dmath.Vec3{X: -.6, Y: -.6, Z: .2}
+	g.Boxes = []Box{{Min: nt3dmath.Vec3{X: .2, Y: .2}, Size: nt3dmath.Vec3{X: .3, Y: .3, Z: .4}, Color: white}}
+	g.Vertices = []Vertex{{Position: nt3dmath.Vec3{X: -.5, Y: -.5}, Normal: nt3dmath.Vec3{Z: 1}, Color: white}, {Position: nt3dmath.Vec3{X: .5, Y: -.5}, Normal: nt3dmath.Vec3{Z: 1}, Color: white}, {Position: nt3dmath.Vec3{Y: .5}, Normal: nt3dmath.Vec3{Z: 1}, Color: white}}
+	g.Indices = []uint32{0, 1, 2}
+	g.Lines = []Vertex{{Position: nt3dmath.Vec3{X: -.7, Z: .5}, Color: white}, {Position: nt3dmath.Vec3{X: .7, Z: .5}, Color: white}}
+	g.LineWidth = 3
+	g.Arrows = []Arrow{{Start: nt3dmath.Vec3{Y: -.7, Z: .6}, End: nt3dmath.Vec3{Y: .7, Z: .6}, Color: white, Width: 3, HeadSize: 10}}
+	id, err := s.SetGeometry("all", g)
+	check(t, err)
+	check(t, s.SetTransform(id, nt3dmath.RotationZ(.3).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 1.2, Y: .8, Z: .9}))))
+	r := &gpuRenderer{}
+	defer r.Close()
+	f := frame(t, s)
+	f.Overlays = []OverlayRect{{X: 2, Y: 2, Width: 8, Height: 8, Color: color.RGBA{1, 2, 3, 255}}}
+	f.DynamicLines = g.Lines
+	img, err := r.Render(f)
+	check(t, err)
+	if coloredPixels(img, f.Background) > f.Width*f.Height-100 {
+		t.Fatal("empty frame")
+	}
+	if color.RGBAModel.Convert(img.At(3, 3)) != (color.RGBA{1, 2, 3, 255}) {
+		t.Fatal("overlay")
+	}
+	for _, batch := range []int{0, 1, 2, 3, 4, 5, 6} {
+		if r.batches[batch].count == 0 {
+			t.Fatalf("missing GPU batch %d", batch)
+		}
+	}
+}

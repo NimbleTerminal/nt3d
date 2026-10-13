@@ -1,0 +1,70 @@
+# Copyright (c) 2026 Neomantra Corp.
+version: '3'
+
+env:
+  GOTOOLCHAIN: go1.26.8
+
+tasks:
+  default:
+    cmds: [{task: build}]
+  workspace:
+    desc: Use sibling ntcanvas/ntpicture checkouts while their releases are prepared
+    preconditions:
+      - test -d ../ntcanvas
+      - test -d ../ntpicture
+    cmds:
+      - cp go.work.example go.work
+  fmt:
+    cmds:
+      - gofmt -w *.go math/*.go widget/*.go examples/terrain/*.go
+  fmt-check:
+    cmds:
+      - test -z "$(gofmt -l *.go math/*.go widget/*.go examples/terrain/*.go)"
+  test:
+    cmds:
+      - go test -mod=readonly ./...
+      - go -C examples/terrain test -mod=readonly ./...
+  test-race:
+    cmds:
+      - go test -mod=readonly -race ./...
+      - go -C examples/terrain test -mod=readonly -race ./...
+  test-gpu:
+    desc: Explicit hardware GPU tests (fail if no GPU is available)
+    cmds:
+      - go test -mod=readonly -tags webgpu -run TestGPU -count=1 -v .
+  vet:
+    cmds:
+      - go vet -mod=readonly ./...
+      - go -C examples/terrain vet -mod=readonly ./...
+  build:
+    cmds:
+      - go build -mod=readonly ./...
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-terrain .
+  build-wasm:
+    env:
+      GOOS: js
+      GOARCH: wasm
+      CGO_ENABLED: '0'
+    cmds:
+      - mkdir -p examples/terrain/web
+      - go -C examples/terrain build -mod=readonly -o web/app.wasm .
+  web-assets:
+    cmds:
+      - go -C examples/terrain tool booba-assets web/
+  build-web:
+    cmds: [{task: build-wasm}, {task: web-assets}]
+  terrain:
+    deps: [build]
+    cmds:
+      - bin/nt3d-terrain {{.CLI_ARGS}}
+  serve:
+    desc: Serve the browser demo after task build-web
+    cmds:
+      - python3 -m http.server 8768 --bind 127.0.0.1 -d examples/terrain/web
+  ci:
+    cmds:
+      - task: fmt-check
+      - task: test-race
+      - task: vet
+      - task: build
+      - task: build-wasm

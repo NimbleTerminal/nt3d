@@ -1,0 +1,9 @@
+go 1.26.8
+
+use (
+ .
+ ./examples/terrain
+)
+
+replace nimbleterminal.dev/ntcanvas => ../ntcanvas
+replace nimbleterminal.dev/ntpicture => ../ntpicture

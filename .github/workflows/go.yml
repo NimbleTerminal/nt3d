@@ -1,0 +1,44 @@
+name: Build Go
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: nt3d
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: nt3d
+      # Bootstrap pins match go.mod. Remove these sibling checkouts once the
+      # dependencies are downloadable through their vanity module paths.
+      - uses: actions/checkout@v7
+        with:
+          repository: NimbleTerminal/ntcanvas
+          ref: 9a1ee31c6cec07067f5177a53c888c37c294bcad
+          path: ntcanvas
+      - uses: actions/checkout@v7
+        with:
+          repository: NimbleTerminal/ntpicture
+          ref: da82d92e53c3577752498da5dd0dae83be0d2075
+          path: ntpicture
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: nt3d/go.mod
+          cache-dependency-path: |
+            nt3d/go.sum
+            nt3d/examples/terrain/go.sum
+      - uses: go-task/setup-task@v2
+        with:
+          version: '3.x'
+      - run: task workspace
+      - run: task ci
