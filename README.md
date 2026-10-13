@@ -87,6 +87,8 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   are retained; triangle diagonals are omitted. `Geometry.WireGrid` supplies this
   optional topology hint (`BuildHeightfield` sets it automatically). General
   meshes retain triangle edges; wireframe does not remove hidden lines.
+  Lines use ntcanvas `RasterLine`: clipping to cell centers precedes
+  nearest-cell endpoint rounding and connected rasterization.
 - `DynamicLines`, `Overlays` (pixel rectangles), and `CellText` (wireframe labels)
   let higher layers supply decorations without importing their concepts.
 - `Scene.Pick` returns node identity, primitive kind/index, application datum ID,

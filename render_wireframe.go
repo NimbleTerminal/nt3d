@@ -18,22 +18,22 @@ func wireRender(f Frame, cols, rows int) string {
 		rgb := color.RGBAModel.Convert(ink).(color.RGBA)
 		return ntcanvas.CellStyle{Foreground: ntcanvas.RGBColor(rgb.R, rgb.G, rgb.B)}
 	}
-	drawPixels := func(x, y, xx, yy float32, ink color.Color) {
+	drawCells := func(x, y, xx, yy float32, ink color.Color) {
 		style := styleFor(ink)
-		n := min(4*max(cols, rows), max(1, int(max(abs(xx-x), abs(yy-y)))))
-		for i := 0; i <= n; i++ {
-			t := float32(i) / float32(n)
-			c.SetGrapheme(ntcanvas.Point{X: int(x + (xx-x)*t), Y: int(y + (yy-y)*t)}, "·", style)
-		}
+		ntcanvas.RasterLine(c.Bounds(),
+			ntcanvas.Float64Point{X: float64(x), Y: float64(y)},
+			ntcanvas.Float64Point{X: float64(xx), Y: float64(yy)},
+			func(p ntcanvas.Point) { c.SetGrapheme(p, "·", style) },
+		)
 	}
+	cellFrame := f
+	cellFrame.Width, cellFrame.Height = cols, rows
 	drawLine := func(a, b nt3dmath.Vec3, ink color.Color) {
-		frame := f
-		frame.Width, frame.Height = cols, rows
-		s, ok := projectStroke(frame, a, b)
+		s, ok := projectStroke(cellFrame, a, b)
 		if !ok {
 			return
 		}
-		drawPixels(s.a.x, s.a.y, s.b.x, s.b.y, ink)
+		drawCells(s.a.x, s.a.y, s.b.x, s.b.y, ink)
 	}
 	line := func(a, b nt3dmath.Vec3) { drawLine(a, b, nil) }
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
@@ -59,16 +59,6 @@ func wireRender(f Frame, cols, rows int) string {
 				line(cc, a)
 			}
 		}
-		for i, b := range g.Boxes {
-			if i >= 500 {
-				break
-			}
-			v := boxVertices(b)
-			for j := 0; j < len(v); j += 3 {
-				line(v[j].Position, v[j+1].Position)
-				line(v[j+1].Position, v[j+2].Position)
-			}
-		}
 		for i := 0; i+1 < len(g.Lines); i += 2 {
 			drawLine(g.Lines[i].Position, g.Lines[i+1].Position, g.Lines[i].Color)
 		}
@@ -80,7 +70,7 @@ func wireRender(f Frame, cols, rows int) string {
 				continue
 			}
 			sx, sy := float32(cols)/float32(f.Width), float32(rows)/float32(f.Height)
-			draw := func(x, y, xx, yy float32) { drawPixels(x*sx, y*sy, xx*sx, yy*sy, a.Color) }
+			draw := func(x, y, xx, yy float32) { drawCells(x*sx, y*sy, xx*sx, yy*sy, a.Color) }
 			draw(s.a.x, s.a.y, s.b.x, s.b.y)
 			hl, hw := s.head(a.HeadSize, lineWidth(a.Width))
 			if hl > 0 {

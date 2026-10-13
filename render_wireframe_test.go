@@ -121,3 +121,43 @@ func TestWireGridPreservesCurvesAndBorders(t *testing.T) {
 		t.Fatal("invalid lattice accepted")
 	}
 }
+
+func TestWireframeClipsLongProjectedLines(t *testing.T) {
+	f := frame(t, NewScene())
+	f.Matrix = nt3dmath.Identity()
+	ink := color.RGBA{R: 12, G: 34, B: 56, A: 255}
+	// Both endpoints are far outside the viewport; the whole middle row should
+	// still be connected. The old capped sampler missed almost all of it.
+	f.DynamicLines = []Vertex{
+		{Position: nt3dmath.Vec3{X: -1e6, Z: .5}, Color: ink},
+		{Position: nt3dmath.Vec3{X: 1e6, Z: .5}, Color: ink},
+	}
+	wire, err := RenderWireframe(f, 80, 20)
+	check(t, err)
+	rows := strings.Split(ansi.Strip(wire), "\n")
+	for y, row := range rows {
+		want := strings.Repeat(" ", 80)
+		if y == 10 {
+			want = strings.Repeat("·", 80)
+		}
+		if row != want {
+			t.Fatalf("row %d: %q", y, row)
+		}
+	}
+}
+
+func TestWireframeDoesNotTruncateOffscreenLineIntoGrid(t *testing.T) {
+	f := frame(t, NewScene())
+	f.Matrix = nt3dmath.Identity()
+	// x=-1.01 projects just left of the first cell center. Truncation toward
+	// zero used to leak this entirely offscreen segment into column zero.
+	f.DynamicLines = []Vertex{
+		{Position: nt3dmath.Vec3{X: -1.01, Y: -.5, Z: .5}},
+		{Position: nt3dmath.Vec3{X: -1.01, Y: .5, Z: .5}},
+	}
+	wire, err := RenderWireframe(f, 80, 20)
+	check(t, err)
+	if strings.Contains(ansi.Strip(wire), "·") {
+		t.Fatal("offscreen segment leaked into grid")
+	}
+}
