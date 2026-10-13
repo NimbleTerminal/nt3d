@@ -123,6 +123,7 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 		return g
 	}
 	out := g
+	out.WireGrid = [2]int{}
 	out.UV = nil
 	out.Arrows = nil
 	out.Points, out.Vertices, out.Indices, out.Boxes, out.Lines = nil, nil, nil, nil, nil

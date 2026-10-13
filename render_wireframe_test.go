@@ -56,3 +56,68 @@ func TestWireframeCoalescesColors(t *testing.T) {
 		t.Fatalf("text or stroke split by style escapes: %q", wire)
 	}
 }
+
+func TestWireGridPreservesCurvesAndBorders(t *testing.T) {
+	g, err := BuildHeightfield(Heightfield{NX: 72, NY: 56, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Sampler: func(x, y float32) float32 { return .2 * x * y }})
+	check(t, err)
+	f := frame(t, NewScene())
+	f.Matrix = nt3dmath.Identity()
+	counts := []int{}
+	for _, size := range [][2]int{{40, 16}, {120, 48}} {
+		edges := make(map[[2]nt3dmath.Vec3]bool)
+		wireGrid(f, g, size[0], size[1], func(a, b nt3dmath.Vec3) { edges[[2]nt3dmath.Vec3{a, b}] = true })
+		nx, ny := g.WireGrid[0], g.WireGrid[1]
+		// Every chosen row/column contains all original segments, including the
+		// outer border. No diagonal chords or disconnected triangle samples.
+		count := 0
+		for y := 0; y < ny; y++ {
+			n := 0
+			for x := 0; x < nx-1; x++ {
+				if edges[[2]nt3dmath.Vec3{g.Vertices[y*nx+x].Position, g.Vertices[y*nx+x+1].Position}] {
+					n++
+				}
+			}
+			if n != 0 && n != nx-1 {
+				t.Fatal("disconnected row")
+			}
+			if (y == 0 || y == ny-1) && n != nx-1 {
+				t.Fatal("missing border row")
+			}
+			count += n
+		}
+		for x := 0; x < nx; x++ {
+			n := 0
+			for y := 0; y < ny-1; y++ {
+				if edges[[2]nt3dmath.Vec3{g.Vertices[y*nx+x].Position, g.Vertices[(y+1)*nx+x].Position}] {
+					n++
+				}
+			}
+			if n != 0 && n != ny-1 {
+				t.Fatal("disconnected column")
+			}
+			if (x == 0 || x == nx-1) && n != ny-1 {
+				t.Fatal("missing border column")
+			}
+			count += n
+		}
+		if count != len(edges) {
+			t.Fatal("unexpected lattice edges")
+		}
+		counts = append(counts, count)
+	}
+	if counts[1] <= counts[0] {
+		t.Fatal("larger viewport did not increase detail")
+	}
+	var bounds nt3dmath.AABB
+	bounds.Include(nt3dmath.Vec3{X: -.3, Y: -.3, Z: -1})
+	bounds.Include(nt3dmath.Vec3{X: .3, Y: .3, Z: 1})
+	clipped, err := Clip(g, bounds)
+	check(t, err)
+	if clipped.WireGrid != ([2]int{}) {
+		t.Fatal("clipped topology retained lattice metadata")
+	}
+	g.WireGrid = [2]int{72, 55}
+	if g.Validate() == nil {
+		t.Fatal("invalid lattice accepted")
+	}
+}

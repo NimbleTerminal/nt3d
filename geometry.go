@@ -30,6 +30,11 @@ type Box struct {
 // Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
 // Scene setters copy geometry; frame consumers must treat snapshots as read-only.
 type Geometry struct {
+	// WireGrid optionally describes a row-major rectangular vertex lattice (NX, NY).
+	// Wireframe draws viewport-adaptive rows/columns instead of triangle edges.
+	// BuildHeightfield sets this automatically; clear it if changing mesh topology.
+	WireGrid [2]int
+
 	UV        []UV      // One per vertex when textured.
 	Material  *Material // Applies to indexed triangles only.
 	Points    []Point
@@ -53,6 +58,13 @@ const (
 )
 
 func validateGeometry(g Geometry) error {
+	if g.WireGrid != ([2]int{}) {
+		nx, ny := g.WireGrid[0], g.WireGrid[1]
+		if nx < 2 || ny < 2 || nx > len(g.Vertices) || ny > len(g.Vertices)/nx || nx*ny != len(g.Vertices) {
+			return fmt.Errorf("nt3d: invalid wire grid dimensions")
+		}
+	}
+
 	if !validWidth(g.LineWidth) {
 		return fmt.Errorf("nt3d: invalid line width")
 	}

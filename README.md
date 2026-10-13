@@ -82,6 +82,11 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
 - Software shares the primitive and texture semantics. Interactive frames sample
   large geometry sets; `Snapshot` draws all primitives.
 - `RenderWireframe` returns terminal text using ntcanvas. It has no image snapshot.
+  Heightfields use a coarse, continuous row/column lattice whose density adapts
+  to projected size in terminal cells. Borders and the original curve samples
+  are retained; triangle diagonals are omitted. `Geometry.WireGrid` supplies this
+  optional topology hint (`BuildHeightfield` sets it automatically). General
+  meshes retain triangle edges; wireframe does not remove hidden lines.
 - `DynamicLines`, `Overlays` (pixel rectangles), and `CellText` (wireframe labels)
   let higher layers supply decorations without importing their concepts.
 - `Scene.Pick` returns node identity, primitive kind/index, application datum ID,

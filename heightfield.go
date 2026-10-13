@@ -38,7 +38,7 @@ func BuildHeightfield(d Heightfield) (Geometry, error) {
 	if d.Color == (color.RGBA{}) {
 		d.Color = color.RGBA{255, 255, 255, 255}
 	}
-	g := Geometry{Vertices: make([]Vertex, n), UV: slices.Clone(d.UV), Material: cloneMaterial(d.Material)}
+	g := Geometry{WireGrid: [2]int{d.NX, d.NY}, Vertices: make([]Vertex, n), UV: slices.Clone(d.UV), Material: cloneMaterial(d.Material)}
 	if len(g.UV) == 0 {
 		g.UV = make([]UV, n)
 		for y := range d.NY {

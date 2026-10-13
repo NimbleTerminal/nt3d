@@ -48,12 +48,16 @@ func wireRender(f Frame, cols, rows int) string {
 				c.SetGrapheme(ntcanvas.Point{X: int(x), Y: int(y)}, "•", ntcanvas.CellStyle{})
 			}
 		}
-		step = 3 * max(1, (len(g.Indices)/3+1999)/2000)
-		for i := 0; i+2 < len(g.Indices); i += step {
-			a, b, cc := g.Vertices[g.Indices[i]].Position, g.Vertices[g.Indices[i+1]].Position, g.Vertices[g.Indices[i+2]].Position
-			line(a, b)
-			line(b, cc)
-			line(cc, a)
+		if g.WireGrid != ([2]int{}) {
+			wireGrid(f, g, cols, rows, line)
+		} else {
+			step = 3 * max(1, (len(g.Indices)/3+1999)/2000)
+			for i := 0; i+2 < len(g.Indices); i += step {
+				a, b, cc := g.Vertices[g.Indices[i]].Position, g.Vertices[g.Indices[i+1]].Position, g.Vertices[g.Indices[i+2]].Position
+				line(a, b)
+				line(b, cc)
+				line(cc, a)
+			}
 		}
 		for i, b := range g.Boxes {
 			if i >= 500 {
@@ -90,4 +94,44 @@ func wireRender(f Frame, cols, rows int) string {
 		c.SetTextWithStyle(ntcanvas.Point{X: label.X, Y: label.Y}, label.Text, styleFor(label.Color))
 	}
 	return c.Render(c.Bounds())
+}
+
+// Retain every vertex along each chosen row/column, preserving hills rather
+// than connecting widely separated samples by flat chords. Always draw borders.
+func wireGrid(f Frame, g Geometry, cols, rows int, draw func(nt3dmath.Vec3, nt3dmath.Vec3)) {
+	nx, ny := g.WireGrid[0], g.WireGrid[1]
+	f.Width, f.Height = cols, rows
+	point := func(x, y int) nt3dmath.Vec3 { return g.Vertices[y*nx+x].Position }
+	// Estimate each axis' on-screen extent using three cross-sections. Cell
+	// spacing accounts for terminal cells being taller than they are wide.
+	extent := func(a, b nt3dmath.Vec3) float32 {
+		s, ok := projectStroke(f, a, b)
+		if !ok {
+			return 0
+		}
+		return max(min(abs(s.b.x-s.a.x), float32(cols))/7, min(abs(s.b.y-s.a.y), float32(rows))/3.5)
+	}
+	var ex, ey float32
+	for _, y := range []int{0, ny / 2, ny - 1} {
+		ex = max(ex, extent(point(0, y), point(nx-1, y)))
+	}
+	for _, x := range []int{0, nx / 2, nx - 1} {
+		ey = max(ey, extent(point(x, 0), point(x, ny-1)))
+	}
+	selectLines := func(n int, e float32, visit func(int)) {
+		intervals := min(n-1, max(1, int(e)))
+		for i := 0; i <= intervals; i++ {
+			visit((i*(n-1) + intervals/2) / intervals)
+		}
+	}
+	selectLines(ny, ey, func(y int) {
+		for x := 0; x < nx-1; x++ {
+			draw(point(x, y), point(x+1, y))
+		}
+	})
+	selectLines(nx, ex, func(x int) {
+		for y := 0; y < ny-1; y++ {
+			draw(point(x, y), point(x, y+1))
+		}
+	})
 }
