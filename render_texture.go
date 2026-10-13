@@ -104,6 +104,9 @@ func (g *gpuRenderer) syncTextures(dev *wgpu.Device, f Frame) error {
 		b := &g.texturedBatches[i]
 		src := f.Geometry[b.geometry].Material.Texture
 		b.texture = src
+		if src.shader != "" {
+			continue
+		}
 		used[src] = true
 		if g.textures[src] != nil {
 			continue

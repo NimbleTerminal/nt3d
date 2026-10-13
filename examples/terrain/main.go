@@ -27,6 +27,7 @@ type demo struct {
 	zones             *zone.Manager
 	textures          [2]*nt3d.Texture
 	style             int
+	procedural        bool
 	flat, lit, hidden bool
 	angle             float64
 	status            string
@@ -74,6 +75,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch v.String() {
 		case "q", "ctrl+c":
 			return d, tea.Sequence(d.view.Dispose(), tea.Quit)
+		case "p":
+			d.procedural = !d.procedural
+			err = d.loadTextures()
+			if err == nil {
+				err = d.scene.SetTexture("terrain", d.textures[d.style])
+			}
 		case "t":
 			d.style = 1 - d.style
 			err = d.scene.SetTexture("terrain", d.textures[d.style])
@@ -113,7 +120,7 @@ func (d *demo) View() tea.View {
 	if d.view.Err() != nil {
 		status = d.view.Err().Error()
 	}
-	v.Content = d.zones.Scan("nt3d terrain · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.view.RenderMode().String() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
+	v.Content = d.zones.Scan("nt3d terrain · p procedural · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.view.RenderMode().String() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
 	v.AltScreen = true
 	return v
 }
@@ -138,6 +145,7 @@ func mapImage(topo bool) *image.RGBA {
 	return img
 }
 func run() error {
+	procedural := flag.Bool("procedural", false, "generate plasma textures with a GPU shader (CPU image fallback)")
 	mode := flag.String("render-mode", "gpu", "gpu, software, or wireframe")
 	snapshot := flag.String("snapshot", "", "write a PNG without opening a terminal")
 	duration := flag.Duration("duration", 0, "exit after a duration")
@@ -172,12 +180,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	for i := range d.textures {
-		d.textures[i], err = nt3d.NewTexture(mapImage(i == 1))
-		if err != nil {
-			return err
-		}
+	d.procedural = *procedural
+	if err = d.loadTextures(); err != nil {
+		return err
 	}
+
 	if err = d.terrain(); err != nil {
 		return err
 	}
@@ -221,4 +228,24 @@ func main() {
 		os.Exit(1)
 	}
 	holdRuntime()
+}
+
+func (d *demo) loadTextures() error {
+	for i := range d.textures {
+		var err error
+		if d.procedural {
+			d.textures[i], err = plasmaTexture(float64(i) * 2)
+		} else {
+			d.textures[i], err = nt3d.NewTexture(mapImage(i == 1))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if d.procedural {
+		d.status = "procedural plasma · t switches shader phase"
+	} else {
+		d.status = "image texture"
+	}
+	return nil
 }

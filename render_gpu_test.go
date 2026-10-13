@@ -111,3 +111,46 @@ func TestGPUAllPrimitivesAndOverlays(t *testing.T) {
 		}
 	}
 }
+
+// Deliberately different fallback pixels prove the GPU samples the shader
+// output rather than quietly displaying an uploaded CPU image.
+func TestGPUProceduralTexture(t *testing.T) {
+	red := color.RGBA{255, 0, 0, 255}
+	green := color.RGBA{0, 255, 0, 255}
+	fallback := testTexture(t, red)
+	tex, err := NewShaderTexture(`fn nt3dTexture(uv: vec2<f32>) -> vec4<f32> { return vec4<f32>(0,1,0,1); }`, fallback)
+	check(t, err)
+	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Texture: tex, Unlit: true}})
+	check(t, err)
+	s := NewScene()
+	_, err = s.SetGeometry("terrain", mesh)
+	check(t, err)
+	f := frame(t, s)
+	r := &gpuRenderer{}
+	defer r.Close()
+	for range 2 {
+		img, err := r.Render(f)
+		check(t, err)
+		if coloredPixels(img, green) < 100 || r.textureUploads != 0 {
+			t.Fatal("shader output missing or fallback uploaded")
+		}
+	}
+	sw := NewSoftwareRenderer()
+	defer sw.Close()
+	img, err := sw.Render(f)
+	check(t, err)
+	if coloredPixels(img, red) < 100 {
+		t.Fatal("software fallback missing")
+	}
+	check(t, s.SetTexture("terrain", fallback))
+	img, err = r.Render(frame(t, s))
+	check(t, err)
+	if len(r.procedural) != 0 || coloredPixels(img, red) < 100 {
+		t.Fatal("switch to image texture failed")
+	}
+	img, err = r.Render(f)
+	check(t, err)
+	if coloredPixels(img, green) < 100 {
+		t.Fatal("shader snapshot replay failed")
+	}
+}

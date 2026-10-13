@@ -32,6 +32,7 @@ type gpuRenderer struct {
 	texturePipeline                 *wgpu.RenderPipeline
 	textureSampler                  *wgpu.Sampler
 	textures                        map[*Texture]*gpuTexture
+	procedural                      map[*Texture]*proceduralTexture
 	texturedBatches                 []texturedBatch
 	textureRevision, textureUploads uint64
 	mu                              sync.Mutex
@@ -256,8 +257,14 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 			return nil, err
 		}
 	}
+	if err := g.prepareProcedural(f); err != nil {
+		return nil, err
+	}
 	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), 0, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, f.Light.Ambient, 0, 0, 0, 0)...)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
+		if err := g.drawProcedural(frame); err != nil {
+			return err
+		}
 		dev := frame.Device
 		if err := g.uploadTransforms(dev, f); err != nil {
 			return err
@@ -290,7 +297,11 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 				for _, b := range g.texturedBatches {
 					pass.SetPipeline(g.texturePipeline)
 					pass.SetBindGroup(0, b.bind, nil)
-					pass.SetBindGroup(1, g.textures[b.texture].bind, nil)
+					if t := g.procedural[b.texture]; t != nil {
+						pass.SetBindGroup(1, t.target.BindGroup(), nil)
+					} else {
+						pass.SetBindGroup(1, g.textures[b.texture].bind, nil)
+					}
 					pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: 1})
 				}
 			}
@@ -326,6 +337,10 @@ func (g *gpuRenderer) Close() error {
 	g.closed = true
 	if g.r == nil {
 		return nil
+	}
+	for src, t := range g.procedural {
+		g.releaseProcedural(t)
+		delete(g.procedural, src)
 	}
 	_ = g.r.Do(func(*wgpu.Device) error {
 		for _, b := range g.texturedBatches {

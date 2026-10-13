@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"math"
 	"reflect"
+	"strings"
 )
 
 // UV is a normalized image coordinate; (0,0) is the top-left corner.
@@ -25,6 +26,7 @@ type Material struct {
 type Texture struct {
 	width, height int
 	pixels        []byte
+	shader        string
 }
 
 // NewTexture snapshots src, including images with nonzero bounds. Images must be
@@ -100,4 +102,23 @@ func (t *Texture) At(x, y int) color.Color {
 	}
 	i := (y*t.width + x) * 4
 	return color.RGBA{t.pixels[i], t.pixels[i+1], t.pixels[i+2], 255}
+}
+
+// NewShaderTexture creates an immutable procedural texture. source must define
+// fn nt3dTexture(uv: vec2<f32>) -> vec4<f32>, returning opaque RGBA in [0,1].
+// UV (0,0) is the top-left. No bindings are provided. WGSL is compiled lazily
+// by the GPU renderer; compilation errors are returned by Render.
+// fallback is required: it sets the target dimensions and supplies pixels for
+// software rendering and image.Image access. GPU rendering never uploads these
+// pixels: it generates and samples the texture on the same device.
+func NewShaderTexture(source string, fallback image.Image) (*Texture, error) {
+	if strings.TrimSpace(source) == "" {
+		return nil, fmt.Errorf("nt3d: empty texture shader")
+	}
+	t, err := NewTexture(fallback)
+	if err != nil {
+		return nil, err
+	}
+	t.shader = source
+	return t, nil
 }

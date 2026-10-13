@@ -134,6 +134,7 @@ CI bootstraps those same commits as sibling checkouts. For local development:
 task workspace
 task ci
 task test-gpu             # Requires a real WebGPU adapter; fails if unavailable.
+task terrain -- -procedural  # GPU plasma texture on terrain; t changes phase.
 task terrain -- -render-mode software
 task terrain -- -render-mode gpu -snapshot /tmp/terrain.png
 task build-web
@@ -145,6 +146,37 @@ format checks, race tests, vet, native builds, and a standard Go js/wasm build.
 The terrain demo supports texture replacement, flat/heightfield switching,
 lighting, parent rotation, inherited visibility, picking, and all three backends.
 Use `-medium direct` or `-medium shm` to select transport explicitly.
+
+### Procedural texture demo
+
+Run `task terrain -- -procedural`, or press `p` in the native/browser terrain
+example to toggle procedural textures. `t` switches between two fixed shader
+phases; `r` rotates the camera, `l` toggles lighting, and `1`/`2`/`3` select GPU,
+software, and wireframe. This demo does not animate shader time.
+
+`NewShaderTexture(source, fallback)` accepts WGSL defining
+`fn nt3dTexture(uv: vec2<f32>) -> vec4<f32>`. UVs start at the top-left;
+return opaque RGBA. The immutable fallback image determines the texture size
+and supplies software-renderer pixels. See
+[procedural.go](examples/terrain/procedural.go) for the plasma shader and its
+matching CPU fallback.
+
+Each GPU frame first generates the texture with ntgpuimage's `Frame.RenderTo`,
+then samples it on the terrain mesh, using the same device and command encoder.
+Only the final scene image is read back for presentation. Pipelines and targets
+are cached per texture and renderer, and released when no longer referenced by
+the rendered frame. Shader compilation is lazy; `Renderer.Render` reports errors,
+while the widget can fall back to software. No time uniforms or custom bindings
+are exposed yet.
+
+```sh
+task terrain -- -procedural -snapshot /tmp/plasma-gpu.png
+task terrain -- -procedural -render-mode software -snapshot /tmp/plasma-software.png
+```
+
+The integrated path has been tested locally on Metal. Vulkan validation of
+ntgpuimage was reported by Evan; this demo has not independently been run on
+Vulkan. Browser/WASM compilation is checked by CI.
 
 Before release, make the pinned dependencies downloadable, tidy both modules
 with `GOWORK=off`, register the `nimbleterminal.dev/nt3d` vanity mapping, and publish
