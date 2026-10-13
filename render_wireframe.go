@@ -5,22 +5,25 @@ package nt3d
 import (
 	"image/color"
 
-	"charm.land/lipgloss/v2"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/ntcanvas"
 )
 
 func wireRender(f Frame, cols, rows int) string {
-	c := ntcanvas.NewStyledRuneGrid(cols, rows)
-	drawPixels := func(x, y, xx, yy float32, ink color.Color) {
-		style := lipgloss.NewStyle()
-		if ink != nil {
-			style = style.Foreground(ink)
+	c := ntcanvas.NewGraphemeGrid(cols, rows)
+	styleFor := func(ink color.Color) ntcanvas.CellStyle {
+		if ink == nil {
+			return ntcanvas.CellStyle{}
 		}
+		rgb := color.RGBAModel.Convert(ink).(color.RGBA)
+		return ntcanvas.CellStyle{Foreground: ntcanvas.RGBColor(rgb.R, rgb.G, rgb.B)}
+	}
+	drawPixels := func(x, y, xx, yy float32, ink color.Color) {
+		style := styleFor(ink)
 		n := min(4*max(cols, rows), max(1, int(max(abs(xx-x), abs(yy-y)))))
 		for i := 0; i <= n; i++ {
 			t := float32(i) / float32(n)
-			c.SetRuneWithStyle(ntcanvas.Point{X: int(x + (xx-x)*t), Y: int(y + (yy-y)*t)}, '·', style)
+			c.SetGrapheme(ntcanvas.Point{X: int(x + (xx-x)*t), Y: int(y + (yy-y)*t)}, "·", style)
 		}
 	}
 	drawLine := func(a, b nt3dmath.Vec3, ink color.Color) {
@@ -42,7 +45,7 @@ func wireRender(f Frame, cols, rows int) string {
 			p := g.Points[i]
 			x, y, _, ok := f.Matrix.Project(p.Position, cols, rows)
 			if ok {
-				c.SetRune(ntcanvas.Point{X: int(x), Y: int(y)}, '•')
+				c.SetGrapheme(ntcanvas.Point{X: int(x), Y: int(y)}, "•", ntcanvas.CellStyle{})
 			}
 		}
 		step = 3 * max(1, (len(g.Indices)/3+1999)/2000)
@@ -84,7 +87,7 @@ func wireRender(f Frame, cols, rows int) string {
 		}
 	}
 	for _, label := range f.CellText {
-		c.SetTextWithStyle(ntcanvas.Point{X: label.X, Y: label.Y}, label.Text, lipgloss.NewStyle().Foreground(label.Color))
+		c.SetTextWithStyle(ntcanvas.Point{X: label.X, Y: label.Y}, label.Text, styleFor(label.Color))
 	}
 	return c.Render(c.Bounds())
 }
