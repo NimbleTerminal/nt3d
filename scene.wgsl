@@ -143,7 +143,10 @@ let p=items[ii];var o=output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color)
 fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
- var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.repeat=f32(flags&1u);o.cut=p.color.x;
+ var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;
+ // Image textures repeat through their samplers; procedural ones (flagged in
+ // the instance record) are drawn each frame, clamped, and wrapped by hand.
+ o.repeat=select(0.0,1.0,(flags&1u)!=0u && instances[ii].normal[3].z>0.5);
  // Edge-on cutouts fade out as the surface turns to face the viewer.
  if (flags&2u)!=0u && dot(p.b.xyz,p.b.xyz)>0.0 {
   let inst=instances[ii];
@@ -157,13 +160,15 @@ fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
 }
 @vertex fn vs_texture(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return mapOutput(vi,ii,1.0);}
 @vertex fn vs_texture_back(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return mapOutput(vi,ii,-1.0);}
-// sampleMap filters the texture bilinearly. The sampler clamps to the edge,
-// so a repeating material filters by hand, wrapping the four texels it
-// blends; wrapping the coordinate alone would blend tiles' edges with clamped
-// texels and show a seam between them. Textures have no mipmaps, so sampling
-// at level zero is exact, and allowed where materials differ by primitive.
-fn sampleMap(uv:vec2<f32>,repeat:f32)->vec4<f32> {
- if repeat<0.5 {return textureSampleLevel(mapTexture,mapSampler,uv,0.0);}
+// sampleMap samples a texture, in linear light (textures are sRGB): through
+// its sampler, filtering across mip levels by the coordinates' change from
+// pixel to pixel (gx, gy; zero takes full size, as cutouts do). A procedural
+// texture that repeats is wrapped by hand, at full size: its sampler clamps,
+// and wrapping the coordinate alone would blend tiles' edges with clamped
+// texels, showing a seam. Explicit derivatives are allowed where materials
+// differ by primitive, outside uniform control flow.
+fn sampleMap(uv:vec2<f32>,gx:vec2<f32>,gy:vec2<f32>,manual:f32)->vec4<f32> {
+ if manual<0.5 {return textureSampleGrad(mapTexture,mapSampler,uv,gx,gy);}
  let size=vec2<i32>(textureDimensions(mapTexture,0));
  let p=uv*vec2<f32>(size)-0.5;let f=floor(p);let t=p-f;let i=vec2<i32>(f);
  let i0=((i%size)+size)%size;let i1=(((i+1)%size)+size)%size;
@@ -171,17 +176,26 @@ fn sampleMap(uv:vec2<f32>,repeat:f32)->vec4<f32> {
  let c=textureLoad(mapTexture,vec2<i32>(i0.x,i1.y),0);let d=textureLoad(mapTexture,i1,0);
  return mix(mix(a,b,t.x),mix(c,d,t.x),t.y);
 }
+// mapColor is a linear texture sample in the frame's color space.
+fn mapColor(c:vec3<f32>)->vec3<f32> {
+ if u.viewport.z>0.5 {return c;}
+ let v=clamp(c,vec3<f32>(0.0),vec3<f32>(1.0));
+ return select(1.055*pow(v,vec3<f32>(1.0/2.4))-0.055,v*12.92,v<=vec3<f32>(0.0031308));
+}
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
- return vec4<f32>(finish(o,decode(sampleMap(o.uv,o.repeat).rgb)*o.color.rgb),1.0);
+ let gx=dpdx(o.uv);let gy=dpdy(o.uv);
+ return vec4<f32>(finish(o,mapColor(sampleMap(o.uv,gx,gy,o.repeat).rgb)*o.color.rgb),1.0);
 }
 // Transparent materials blend by the texture's alpha times the vertex's.
 @fragment fn fs_blend_texture(o:Out)->@location(0) vec4<f32> {
- let t=sampleMap(o.uv,o.repeat);
- return vec4<f32>(finish(o,decode(t.rgb)*o.color.rgb),t.a*o.cut);
+ let gx=dpdx(o.uv);let gy=dpdy(o.uv);
+ let t=sampleMap(o.uv,gx,gy,o.repeat);
+ return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),t.a*o.cut);
 }
-// Cutout materials skip texels under their threshold; what remains is opaque.
+// Cutout materials skip texels under their threshold, sampled full size so
+// distance does not average the cut away; what remains is opaque.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
- let t=sampleMap(o.uv,o.repeat);
+ let t=sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat);
  if t.a<o.cut {discard;}
- return vec4<f32>(finish(o,decode(t.rgb)*o.color.rgb),1.0);
+ return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),1.0);
 }

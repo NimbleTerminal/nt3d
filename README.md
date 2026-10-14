@@ -337,9 +337,20 @@ than falling off early, and blends and supersampled edges keep their
 brightness instead of darkening. `Light.Ambient` is decoded too, so surfaces
 in full light or turned away look as they did. On the GPU, the scene draws
 into a 16-bit float target, which blends in linear light, and a resolve pass
-encodes it into the frame. Textures are filtered as encoded, then decoded,
-on both renderers. Hand-built frames keep encoded arithmetic unless they set
-`Linear`. `Material.Transparent` blends a mesh's triangles
+encodes it into the frame. Textures are sRGB, so both renderers filter them
+in linear light. Hand-built frames keep encoded arithmetic unless they set
+`Linear`.
+
+Textures are mipmapped: each carries copies of itself halved down to one
+texel, averaged in linear light (`ntgpuimage.MipChain`), and a surface
+samples the copies that match how many texels fall in a pixel, blending
+between them, so a tiled floor running to the horizon settles into an even
+tone instead of shimmering. The level comes from how far texture coordinates
+move from one pixel to the next: the GPU's derivatives, and the same
+measure in software, which samples the same chain the GPU uploads.
+Procedural textures, drawn each frame, have no mipmaps yet. Cutouts sample
+full size, as averaged alpha would thin fur and leaves away in the distance.
+The mipmaps demo (`task mipmaps`) compares them. `Material.Transparent` blends a mesh's triangles
 over what lies behind, by the vertex colors' alpha times the texture's: after
 everything opaque, transparent geometries are drawn farthest first (by their
 bounds' centers), each with its back faces, lit as seen from behind, before
@@ -368,9 +379,9 @@ edge-on to the viewer, its threshold rising as the surface comes to face the
 camera; it uses the frame's camera (`Frame.Eye`, `Forward`, `Perspective`,
 which `Scene.Frame` sets), and wireframe and picking leave it out.
 `Material.Repeat` tiles a texture: UVs outside
-[0, 1] wrap, and filtering blends across tile edges (the GPU filters such
-textures itself, wrapping the texels it blends), so textures made to tile show
-no seams; otherwise UVs clamp to the edge. The OBJ, 3MF (unless both tile
+[0, 1] wrap, and filtering blends across tile edges (through a repeating
+sampler on the GPU; procedural textures, whose sampler clamps, are wrapped by
+hand), so textures made to tile show no seams; otherwise UVs clamp to the edge. The OBJ, 3MF (unless both tile
 styles clamp), and PLY decoders set it, as those formats tile by default.
 Software and
 wireframe rendering cut triangles at the near plane, as the GPU does, so

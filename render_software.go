@@ -176,14 +176,30 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 					q0 /= sum
 					q1 /= sum
 					q2 /= sum
-					tex := material.Texture.sampleWrap(UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}, material.Repeat)
-					if cutout && float32(tex.A) < (q0*a.cut+q1*b.cut+q2*c.cut)*255 {
+					uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
+					// Cutouts sample full size; other textures the mip level
+					// for how far their texels spread across a pixel, found
+					// from the coordinates a pixel right and a pixel down, as
+					// the GPU's derivatives find it.
+					lod := float32(0)
+					if !cutout {
+						lod = textureLOD(material.Texture, uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1))
+					}
+					tex := material.Texture.sampleLinear(uv, material.Repeat, lod)
+					if cutout && tex[3] < q0*a.cut+q1*b.cut+q2*c.cut {
 						continue // Cut out: neither color nor depth.
 					}
-					// Lit white, or the tint, times the texture.
+					// Lit white, or the tint, times the texture, in the
+					// working space: linear light, or encoded.
 					lit := func(k int) float32 { return (q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]) / 255 }
-					rgb = [3]float32{fromPixel(tex.R) * lit(0), fromPixel(tex.G) * lit(1), fromPixel(tex.B) * lit(2)}
-					opacity *= float32(tex.A) / 255
+					work := func(v float32) float32 {
+						if linear {
+							return v * 255
+						}
+						return float32(encodeSRGB(float64(v))) * 255
+					}
+					rgb = [3]float32{work(tex[0]) * lit(0), work(tex[1]) * lit(1), work(tex[2]) * lit(2)}
+					opacity *= tex[3]
 				}
 				if specular || fogged {
 					q0, q1, q2 := u/a.w, v/b.w, t/c.w
@@ -350,6 +366,30 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	}
 	drawOverlays(img, f)
 	return img, depth
+}
+
+// uvAt is a triangle's perspective-correct texture coordinate at a screen
+// point, inside it or not.
+func uvAt(a, b, c *clipCorner, x0, y0, x1, y1, x2, y2, area, px, py float32) UV {
+	u := ((x1-px)*(y2-py) - (y1-py)*(x2-px)) / area
+	v := ((x2-px)*(y0-py) - (y2-py)*(x0-px)) / area
+	q0, q1, q2 := u/a.w, v/b.w, (1-u-v)/c.w
+	sum := q0 + q1 + q2
+	return UV{(q0*a.uv.U + q1*b.uv.U + q2*c.uv.U) / sum, (q0*a.uv.V + q1*b.uv.V + q2*c.uv.V) / sum}
+}
+
+// textureLOD is the mip level for texture coordinates that move to dx and
+// dy a pixel right and down: log2 of the larger step, in texels, as the GPU
+// chooses.
+func textureLOD(t *Texture, uv, dx, dy UV) float32 {
+	w, h := float64(t.width), float64(t.height)
+	sx := math.Hypot(float64(dx.U-uv.U)*w, float64(dx.V-uv.V)*h)
+	sy := math.Hypot(float64(dy.U-uv.U)*w, float64(dy.V-uv.V)*h)
+	rho := max(sx, sy)
+	if !(rho > 1) {
+		return 0
+	}
+	return float32(math.Log2(rho))
 }
 
 func abs(v float32) float32 {

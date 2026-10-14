@@ -8,6 +8,8 @@ move to Done with their commit; git history has the details.
 - [ ] **gloss migration onto `nt3dmesh`** — in progress in gloss. nt3d
   supports it as needed (`Model.Keep` was the first request).
 - [ ] **Release**:
+  - push and release `ntgpuimage` (nt3d uses its unpushed sRGB, mipmap, and
+    sampler commits through `go.work`; CI checks it out at `933755e`)
   - publish `ntpicture`
   - update nt3d's pinned version of it (`go get` fails until then, because
     the pin is an unpublished revision; dependencies are added to `go.mod`
@@ -18,15 +20,13 @@ move to Done with their commit; git history has the details.
 
 ## Rendering
 
-- [ ] **Texture filtering in linear light**: blocked on `ntgpuimage` sRGB
-  textures (prompt drafted). Then nt3d creates sRGB textures, drops the
-  shader's texture decode, renders procedural textures into sRGB targets,
-  and filters in linear light in software to match.
 - [ ] **More lights**: point lights and a fill light; today there is one
   directional light plus ambient.
 - [ ] **Instancing follow-ups**: a demo of shared geometry (a forest, a
   marker field); shared points, lines, and boxes, if charts need them.
-- [ ] **Mipmaps**: distant textures shimmer. Needs `ntgpuimage` support too.
+- [ ] **Mipmap follow-ups**: procedural textures (needs `ntgpuimage`
+  render-target mips); coverage-preserving alpha mips for cutouts (fur and
+  leaves sample full size today); anisotropic filtering for grazing floors.
 - [ ] **World-anchored labels and billboards** on every renderer; `CellText`
   is wireframe-only.
 - [ ] **Outline or toon edges** on the GPU and software renderers, for
@@ -72,7 +72,8 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
-- `RenderSoftware`: software pictures with their depth buffer (for gloss's outlines)
+- mipmaps and linear-light texture filtering, both renderers; mipmaps demo
+- `4fe7974` `RenderSoftware`: software pictures with their depth buffer (for gloss's outlines)
 - `3a1ccc4` shared geometry and GPU instancing (`NewSharedGeometry`, `SetShared`)
 - `b79bfc1` widget `Keep()`: leave the last frame on screen at exit (for gloss)
 - `4cd35b4`, `2c577bc` mesh format registry; glTF in `mesh/gltf`, `mesh/formats` bundle

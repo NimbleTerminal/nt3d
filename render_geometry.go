@@ -63,6 +63,7 @@ func (s *instanceSet) release() {
 type transformState struct {
 	world               nt3dmath.Mat4
 	specular, shininess float32
+	procedural          bool // Its texture is drawn each frame: wrapped by hand.
 }
 
 // gpuDraw draws a run of a geometry's instances.
@@ -211,13 +212,16 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 		if m := f.Geometry[i].Material; m != nil && m.Specular > 0 && !m.Unlit {
 			states[k].specular, states[k].shininess = m.Specular, m.shininess()
 		}
+		if textured(f.Geometry[i]) {
+			states[k].procedural = f.Geometry[i].Material.Texture.shader != ""
+		}
 	}
 	if slices.Equal(states, s.last) {
 		return nil
 	}
 	data := make([]byte, 0, 128*len(states))
 	for _, st := range states {
-		data = append(data, transformRecord(st.world, st.specular, st.shininess, true)...)
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.procedural, true)...)
 	}
 	s.last = states
 	return dev.Queue().WriteBuffer(s.transform, 0, data)
@@ -225,11 +229,15 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 
 // transformRecord is an instance's world and normal matrices. The normal
 // matrix only turns directions, so its last column is free: it carries the
-// material's specular strength and exponent, and whether the node shows.
-func transformRecord(world nt3dmath.Mat4, specular, shininess float32, visible bool) []byte {
+// material's specular strength and exponent, whether its texture is
+// procedural, and whether the node shows.
+func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedural, visible bool) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
+	if procedural {
+		normal[14] = 1
+	}
 	if visible {
 		normal[15] = 1
 	}
@@ -241,7 +249,7 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Materi
 	if m != nil && m.Specular > 0 && !m.Unlit {
 		specular, shininess = m.Specular, m.shininess()
 	}
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, v.Visible))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, false, v.Visible))
 }
 
 // uploadData uploads a geometry batch's records, to be bound per instance set.

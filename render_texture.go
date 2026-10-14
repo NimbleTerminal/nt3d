@@ -49,13 +49,20 @@ func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGr
 	return nil
 }
 
+// textureKey is an uploaded texture: an image texture, by its sampler's
+// addressing, repeating or clamped.
+type textureKey struct {
+	src    *Texture
+	repeat bool
+}
+
 // prepareTextures runs outside GPU callbacks: ntgpuimage owns allocation,
 // upload, sampling resources and cleanup on its executor thread.
 func (g *gpuRenderer) prepareTextures(f Frame) error {
 	if g.textures == nil {
-		g.textures = make(map[*Texture]*ntgpuimage.Texture)
+		g.textures = make(map[textureKey]*ntgpuimage.Texture)
 	}
-	used := make(map[*Texture]bool)
+	used := make(map[textureKey]bool)
 	var sampledLayout *wgpu.BindGroupLayout
 	for _, geom := range f.Geometry {
 		if !textured(geom) || len(geom.Indices) == 0 {
@@ -66,28 +73,35 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 			sampledLayout = g.procedural[src].target.BindGroupLayout()
 			continue
 		}
-		used[src] = true
-		t := g.textures[src]
+		key := textureKey{src, geom.Material.Repeat}
+		used[key] = true
+		t := g.textures[key]
 		if t == nil {
-			// The immutable snapshot is already packed opaque RGBA. Expose a view
-			// to ntgpuimage so its packer can use the standard image fast path.
-			pixels := &image.NRGBA{Pix: src.pixels, Stride: src.width * 4, Rect: src.Bounds()}
+			// sRGB, so sampling filters in linear light, with the mip chain
+			// the software renderer samples too, and hardware repeat.
+			var levels []image.Image
+			for _, level := range src.levels() {
+				levels = append(levels, level)
+			}
+			options := ntgpuimage.TextureOptions{SRGB: true}
+			if key.repeat {
+				options.AddressModeU, options.AddressModeV = gputypes.AddressModeRepeat, gputypes.AddressModeRepeat
+			}
 			var err error
-			t, err = g.r.UploadTexture(pixels, ntgpuimage.TextureOptions{})
-			if err != nil {
+			if t, err = g.r.UploadTextureLevels(levels, options); err != nil {
 				return err
 			}
-			g.textures[src] = t
+			g.textures[key] = t
 			g.textureUploads++
 		}
 		sampledLayout = t.BindGroupLayout()
 	}
-	for src, t := range g.textures {
-		if !used[src] {
+	for key, t := range g.textures {
+		if !used[key] {
 			if err := t.Close(); err != nil {
 				return err
 			}
-			delete(g.textures, src)
+			delete(g.textures, key)
 		}
 	}
 	if sampledLayout != nil && g.texturePipeline == nil {

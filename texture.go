@@ -9,8 +9,10 @@ import (
 	"math"
 	"reflect"
 	"strings"
+	"sync"
 
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/ntgpuimage"
 )
 
 // UV is a normalized image coordinate; (0,0) is the top-left corner.
@@ -103,12 +105,86 @@ type Texture struct {
 	pixels        []byte
 	shader        string
 	parameters    [4]float32
+	mipOnce       sync.Once
+	mips          []*image.NRGBA // Level 0 and its mipmaps, built when first sampled.
+}
+
+// levels is the texture's mip chain: level 0, then each half the size down
+// to 1×1, averaged in linear light by ntgpuimage.MipChain, the chain the GPU
+// uploads too, so both renderers sample the same levels. Procedural
+// textures have level 0 only, as the GPU renders them each frame.
+func (t *Texture) levels() []*image.NRGBA {
+	t.mipOnce.Do(func() {
+		base := &image.NRGBA{Pix: t.pixels, Stride: t.width * 4, Rect: image.Rect(0, 0, t.width, t.height)}
+		t.mips = []*image.NRGBA{base}
+		if t.shader != "" {
+			return
+		}
+		chain, err := ntgpuimage.MipChain(base, ntgpuimage.MipOptions{SRGB: true, AlphaWeighted: true})
+		if err != nil {
+			return
+		}
+		t.mips = make([]*image.NRGBA, len(chain))
+		for i, level := range chain {
+			t.mips[i] = level.(*image.NRGBA)
+		}
+	})
+	return t.mips
+}
+
+// sampleLinear samples linear-light color and alpha, 0 to 1, at uv: filtered
+// bilinearly within a level, as sampleWrap is, but in linear light, and
+// blended between the two levels nearest lod (zero is full size), as the
+// GPU's trilinear filtering does.
+func (t *Texture) sampleLinear(uv UV, repeat bool, lod float32) [4]float32 {
+	levels := t.levels()
+	lod = max(0, min(lod, float32(len(levels)-1)))
+	l0 := int(lod)
+	c := sampleLevel(levels[l0], uv, repeat)
+	if f := lod - float32(l0); f > 0 && l0+1 < len(levels) {
+		d := sampleLevel(levels[l0+1], uv, repeat)
+		for i := range c {
+			c[i] += (d[i] - c[i]) * f
+		}
+	}
+	return c
+}
+
+// sampleLevel filters one level bilinearly in linear light.
+func sampleLevel(img *image.NRGBA, uv UV, repeat bool) [4]float32 {
+	w, h := img.Rect.Dx(), img.Rect.Dy()
+	u, v := float64(uv.U), float64(uv.V)
+	if !repeat {
+		u, v = max(0, min(1, u)), max(0, min(1, v))
+	}
+	x := u*float64(w) - .5
+	y := v*float64(h) - .5
+	x0, y0 := int(math.Floor(x)), int(math.Floor(y))
+	fx, fy := float32(x-float64(x0)), float32(y-float64(y0))
+	at := func(i, n int) int {
+		if repeat {
+			return ((i % n) + n) % n
+		}
+		return max(0, min(n-1, i))
+	}
+	var c [4]float32
+	for k, p := range [4][2]int{{x0, y0}, {x0 + 1, y0}, {x0, y0 + 1}, {x0 + 1, y0 + 1}} {
+		weight := [4]float32{(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy}[k]
+		px := img.Pix[at(p[1], h)*img.Stride+at(p[0], w)*4:]
+		c[0] += weight * srgbDecode[px[0]]
+		c[1] += weight * srgbDecode[px[1]]
+		c[2] += weight * srgbDecode[px[2]]
+		c[3] += weight * float32(px[3]) / 255
+	}
+	return c
 }
 
 // NewTexture snapshots src, including images with nonzero bounds, of at most
-// 8192 pixels per side. Channels are treated as sRGB-encoded values, with
-// filtering and lighting performed directly in that encoded space. Alpha is
-// kept for Cutout materials; others draw every texel opaque.
+// 8192 pixels per side. Channels are sRGB-encoded, as images are; textures
+// are filtered in linear light, and mipmapped, so surfaces seen far off or
+// at a slant average their texels rather than shimmer. Alpha is kept for
+// Cutout and Transparent materials; others draw every texel opaque. Cutouts
+// sample full size, as averaged alpha would thin them in the distance.
 func NewTexture(src image.Image) (*Texture, error) {
 	if src == nil || (reflect.ValueOf(src).Kind() == reflect.Ptr && reflect.ValueOf(src).IsNil()) {
 		return nil, fmt.Errorf("nt3d: nil texture image")

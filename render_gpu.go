@@ -38,7 +38,7 @@ type gpuRenderer struct {
 	// Transparent meshes' back faces, then front faces: untextured and textured.
 	blendPipelines [2]*wgpu.RenderPipeline
 	textureBlends  [2]*wgpu.RenderPipeline
-	textures       map[*Texture]*gpuimage.Texture
+	textures       map[textureKey]*gpuimage.Texture // Image textures, by addressing.
 	procedural     map[*Texture]*proceduralTexture
 	geometries     map[geometryKey]*gpuGeometry
 	nodes          []*gpuGeometry // By frame geometry index.
@@ -426,7 +426,7 @@ func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuD
 	if t := g.procedural[src]; t != nil {
 		pass.SetBindGroup(1, t.target.BindGroup(), nil)
 	} else {
-		pass.SetBindGroup(1, g.textures[src].BindGroup(), nil)
+		pass.SetBindGroup(1, g.textures[textureKey{src, f.Geometry[d.index].Material.Repeat}].BindGroup(), nil)
 	}
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count})
 }

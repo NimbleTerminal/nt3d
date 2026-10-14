@@ -663,3 +663,29 @@ func TestGPUSharedGeometrySplits(t *testing.T) {
 		t.Fatal("transparent shared spheres blend unlike copies")
 	}
 }
+
+// The GPU mipmaps as software does: the far checker evens out to the same
+// gray, and the whole floor matches closely.
+func TestGPUMipmaps(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	f := checkerFloor(t, false)
+	img, err := r.Render(f)
+	check(t, err)
+	sw := softwareRender(f)
+	gm, gd := spread(band(img, .29, .33))
+	sm, sd := spread(band(sw, .29, .33))
+	if gd > 25 || math.Abs(gm-sm) > 8 {
+		t.Fatalf("far gray: GPU mean %.0f deviation %.1f, software mean %.0f deviation %.1f", gm, gd, sm, sd)
+	}
+	var diff float64
+	for y := range f.Height {
+		for x := range f.Width {
+			a, b := at(img, x, y), at(sw, x, y)
+			diff += math.Abs(float64(a.R) - float64(b.R))
+		}
+	}
+	if mean := diff / float64(f.Width*f.Height); mean > 6 {
+		t.Fatalf("GPU and software differ by %.1f levels on average", mean)
+	}
+}

@@ -22,8 +22,14 @@ struct NT3DTextureOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2
  out.uv = uv[i];
  return out;
 }
+// The target is sRGB, so it stores the encoded color the shader returns:
+// decoded here, encoded again as it is written.
+fn nt3d_decode(c: vec3<f32>) -> vec3<f32> {
+ return select(pow((c + 0.055) / 1.055, vec3<f32>(2.4)), c / 12.92, c <= vec3<f32>(0.04045));
+}
 @fragment fn nt3d_texture_fragment(in: NT3DTextureOut) -> @location(0) vec4<f32> {
- return nt3dTexture(in.uv);
+ let c = nt3dTexture(in.uv);
+ return vec4<f32>(nt3d_decode(clamp(c.rgb, vec3<f32>(0.0), vec3<f32>(1.0))), c.a);
 }
 `
 
@@ -78,7 +84,7 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 		}
 		t := &proceduralTexture{}
 		var err error
-		t.target, err = g.r.NewTexture(src.width, src.height, ntgpuimage.TextureOptions{RenderTarget: true})
+		t.target, err = g.r.NewTexture(src.width, src.height, ntgpuimage.TextureOptions{RenderTarget: true, SRGB: true})
 		if err != nil {
 			return err
 		}
@@ -106,7 +112,7 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 			t.pipeline, err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 				Layout:      t.layout,
 				Vertex:      wgpu.VertexState{Module: t.shader, EntryPoint: "nt3d_texture_vertex"},
-				Fragment:    &wgpu.FragmentState{Module: t.shader, EntryPoint: "nt3d_texture_fragment", Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, WriteMask: gputypes.ColorWriteMaskAll}}},
+				Fragment:    &wgpu.FragmentState{Module: t.shader, EntryPoint: "nt3d_texture_fragment", Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8UnormSrgb, WriteMask: gputypes.ColorWriteMaskAll}}},
 				Primitive:   gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
 				Multisample: gputypes.DefaultMultisampleState(),
 			})
