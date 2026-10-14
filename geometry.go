@@ -47,7 +47,7 @@ type Geometry struct {
 	Bounds    nt3dmath.AABB
 }
 
-// MaxMeshIndices is the most indices a series' mesh may have, three to a
+// MaxMeshIndices is the most indices one geometry's mesh may have, three to a
 // triangle. The GPU renderer keeps a 48-byte record for each index, vertices
 // shared or not, in a storage buffer; 128 MiB is the largest binding that
 // WebGPU promises, and so the largest mesh that can be drawn wherever WebGPU

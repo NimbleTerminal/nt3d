@@ -67,3 +67,21 @@ func TestNormalsAndRotatedBoxes(t *testing.T) {
 		t.Fatal("overlay")
 	}
 }
+
+// Geometry is bound per node, so only each geometry is limited, not the frame.
+func TestFrameHoldsSeveralMaximalMeshes(t *testing.T) {
+	big := Geometry{Vertices: []Vertex{{}}, Indices: make([]uint32, MaxMeshIndices)}
+	check(t, big.Validate())
+	s := NewScene()
+	for _, name := range []string{"a", "b"} {
+		_, err := s.SetGeometry(name, big)
+		check(t, err)
+	}
+	f, err := s.Frame(DefaultCamera(), 64, 48)
+	check(t, err)
+	check(t, validateFrame(f))
+	big.Indices = append(big.Indices, 0, 0, 0)
+	if big.Validate() == nil {
+		t.Fatal("geometry over the binding limit accepted")
+	}
+}

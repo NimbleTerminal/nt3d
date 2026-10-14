@@ -183,23 +183,11 @@ func validateFrame(f Frame) error {
 			return fmt.Errorf("nt3d: invalid dynamic line")
 		}
 	}
-	// Keep the existing aggregate scene budget of 128 MiB per primitive kind
-	// (48-byte records), even though geometry is now bound separately per node.
-	var counts [5]int
-	for _, g := range f.Geometry {
-		counts[0] += len(g.Points)
-		if !textured(g) {
-			counts[1] += len(g.Indices)
-		}
-		counts[2] += len(g.Boxes)
-		counts[3] += len(g.Lines)
-		counts[4] += len(g.Arrows)
-	}
-	for _, n := range counts {
-		if n > (128<<20)/48 {
-			return fmt.Errorf("nt3d: combined geometry exceeds GPU binding limit")
-		}
-	}
+	// Each geometry has buffers and bindings of its own, so the 128 MiB binding
+	// WebGPU guarantees limits each geometry (see Validate), not the frame. The
+	// frame's total is bounded by device memory; a GPU that runs out fails the
+	// render, and the widget falls back to software. Decorations and overlays
+	// share frame-wide buffers and keep frame limits.
 	if len(f.Geometry)+1 > (128<<20)/128 || len(f.DynamicLines) > (128<<20)/48 || len(f.Overlays) > (128<<20)/48/6 {
 		return fmt.Errorf("nt3d: frame exceeds GPU binding limit")
 	}
