@@ -286,7 +286,10 @@ task ci
 task test-gpu             # Requires a real WebGPU adapter; fails if unavailable.
 task procedural           # Starts plasma textures and camera rotation.
 task dynamic              # Moving nodes, deforming mesh, and add/remove controls.
-task meshes               # Shape builders; or: task meshes -- model.stl part.obj
+task shapes               # Shape builders and normal styles.
+task models               # Sample STL, OBJ, and 3MF files; [ and ] change model.
+task large                # A 735,000-triangle asteroid: picking and outlines.
+task meshes -- model.stl  # Your own mesh files (--up y for Y-up OBJ).
 task terrain -- --render-mode software
 task terrain -- --render-mode gpu --snapshot /tmp/terrain.png
 task build-web
@@ -302,13 +305,31 @@ Use `--medium direct` or `--medium shm` to select transport explicitly.
 ### Browser gallery
 
 Run `task build-web` and `task serve`, then open http://localhost:8768/.
-The gallery links to the terrain explorer at `/terrain/` and procedural plasma
-at `/procedural/`, plus a dynamic scene at `/dynamic/`, with rendered previews,
-controls, and source links. Each demo
+The gallery links to the terrain explorer at `/terrain/`, procedural plasma
+at `/procedural/`, a dynamic scene at `/dynamic/`, shape builders at
+`/shapes/`, mesh files at `/models/`, and a dense mesh at `/large/`, with
+rendered previews, controls, and source links. Each demo
 runs inside go-booba and supports GPU, software, and wireframe rendering.
 
 The static site sources live in `web/`; the complete generated site is
 `dist/web/`. It can be served under a subdirectory without changing asset paths.
+
+### Mesh demos
+
+`task models` (or `/models/`) shows three sample files, embedded in the
+program: a 3MF robot (components with a mirrored arm, a per-corner color
+gradient, slicer-painted stripes with filament colors, a textured screen, and
+a thumbnail nt3d rendered), a Y-up OBJ star (concave caps, a wood texture, an
+MTL color), and a binary STL trefoil knot with face colors. They are made from
+nt3d's shape builders by `task models-generate`
+([generate](examples/terrain/internal/terraindemo/models/generate/main.go)),
+so no third-party models are included. `[` and `]` change model, `s` cycles
+normals, and `c` fits the view.
+
+`task large` (or `/large/`) builds a 735,000-triangle asteroid. Software
+draws every triangle, wireframe draws its silhouette and contours, and clicks
+pick triangles through an index built in the background; `i` turns indexing
+off. See [models.go](examples/terrain/internal/terraindemo/models.go).
 
 ### Dynamic scene demo
 

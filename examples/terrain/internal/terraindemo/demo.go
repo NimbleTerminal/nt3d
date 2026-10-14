@@ -39,6 +39,8 @@ type demo struct {
 	closed            bool
 	dynamic           *dynamicScene
 	meshes            *meshScene
+	models            *modelScene
+	large             *largeScene
 }
 
 type sceneMode int
@@ -47,10 +49,12 @@ const (
 	sceneTerrain sceneMode = iota
 	sceneDynamic
 	sceneMeshes
+	sceneModels
+	sceneLarge
 )
 
 // terrainScene reports whether the terrain controls apply.
-func (d *demo) terrainScene() bool { return d.dynamic == nil && d.meshes == nil }
+func (d *demo) terrainScene() bool { return d.dynamic == nil && d.meshes == nil && d.large == nil }
 
 type quitMsg struct{}
 type phaseMsg time.Time
@@ -197,6 +201,20 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, nil
 			}
 			err = d.cycleNormals()
+		case "[", "]":
+			if d.models == nil {
+				return d, nil
+			}
+			step := 1
+			if v.String() == "[" {
+				step = -1
+			}
+			return d, d.stepSample(step)
+		case "i":
+			if d.large == nil {
+				return d, nil
+			}
+			d.toggleIndexing()
 		case "n":
 			d.angle += math.Pi / 12
 			err = d.scene.SetTransform(d.group, nt3dmath.RotationZ(d.angle))
@@ -235,6 +253,16 @@ func (d *demo) View() tea.View {
 		} else {
 			status += " · paused"
 		}
+	}
+	if d.large != nil {
+		v.Content = d.zones.Scan(d.largeView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.models != nil {
+		v.Content = d.zones.Scan(d.modelsView(v.Content))
+		v.AltScreen = true
+		return v
 	}
 	if d.meshes != nil {
 		v.Content = d.zones.Scan(d.meshesView(v.Content))
@@ -333,6 +361,14 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupMeshes(flag.Args(), upAxis); err != nil {
 			return err
 		}
+	case sceneModels:
+		if err = d.setupModels(); err != nil {
+			return err
+		}
+	case sceneLarge:
+		if err = d.setupLarge(); err != nil {
+			return err
+		}
 	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
@@ -360,8 +396,11 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones))
 	defer d.view.Close()
-	if kind == sceneMeshes {
+	switch kind {
+	case sceneMeshes, sceneLarge:
 		d.view.Fit()
+	case sceneModels:
+		d.frameSample()
 	}
 	if *snapshot != "" {
 		img, used, err := d.view.Snapshot(960, 640)

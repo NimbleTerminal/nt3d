@@ -42,21 +42,30 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-procedural ./cmd/procedural
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-dynamic ./cmd/dynamic
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-meshes ./cmd/meshes
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-shapes ./cmd/shapes
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-models ./cmd/models
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-large ./cmd/large
   build-wasm:
     env:
       GOOS: js
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/terrain/app.wasm .
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/shapes/app.wasm ./cmd/shapes
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/models/app.wasm ./cmd/models
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/large/app.wasm ./cmd/large
   web-assets:
     cmds:
       - go -C examples/terrain tool booba-assets ../../dist/web/terrain/
       - go -C examples/terrain tool booba-assets ../../dist/web/procedural/
       - go -C examples/terrain tool booba-assets ../../dist/web/dynamic/
+      - go -C examples/terrain tool booba-assets ../../dist/web/shapes/
+      - go -C examples/terrain tool booba-assets ../../dist/web/models/
+      - go -C examples/terrain tool booba-assets ../../dist/web/large/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -77,6 +86,25 @@ tasks:
     deps: [build]
     cmds:
       - bin/nt3d-dynamic {{.CLI_ARGS}}
+  shapes:
+    desc: Show the shape builders and normal styles
+    deps: [build]
+    cmds:
+      - bin/nt3d-shapes {{.CLI_ARGS}}
+  models:
+    desc: Show sample STL, OBJ, and 3MF files
+    deps: [build]
+    cmds:
+      - bin/nt3d-models {{.CLI_ARGS}}
+  large:
+    desc: Show a dense 735,000-triangle mesh with picking
+    deps: [build]
+    cmds:
+      - bin/nt3d-large {{.CLI_ARGS}}
+  models-generate:
+    desc: Regenerate the sample models the models demo embeds
+    cmds:
+      - go -C examples/terrain generate ./internal/terraindemo/models
   meshes:
     desc: Show the shape builders, or mesh files given after --
     deps: [build]
