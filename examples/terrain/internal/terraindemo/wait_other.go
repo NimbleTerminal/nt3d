@@ -1,5 +1,5 @@
 //go:build !js || !wasm
 
-package main
+package terraindemo
 
 func holdRuntime() {}

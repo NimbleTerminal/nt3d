@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
-package main
+package terraindemo
 
 import (
 	"fmt"

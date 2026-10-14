@@ -6,6 +6,7 @@ require (
 	charm.land/bubbletea/v2 v2.1.0
 	github.com/NimbleMarkets/go-booba v0.9.2
 	github.com/lrstanley/bubblezone/v2 v2.0.0
+	github.com/spf13/pflag v1.0.10
 	nimbleterminal.dev/nt3d v0.0.0
 	nimbleterminal.dev/ntpicture v0.0.0-20261014022756-acfa6954d2d0
 )
@@ -31,7 +32,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
