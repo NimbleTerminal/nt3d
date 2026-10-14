@@ -391,3 +391,101 @@ func Test3MFRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestCornerColors3MF(t *testing.T) {
+	// One triangle with a color at each corner, placed as it is and mirrored in x.
+	m, err := Decode3MF(archive3MF(t, map[string]string{"3D/3dmodel.model": model3MF(`xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`,
+		`<resources><m:colorgroup id="5"><m:color color="#FF0000"/><m:color color="#00FF00"/><m:color color="#0000FF"/></m:colorgroup>
+		 <object id="1"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>
+		 <triangles><triangle v1="0" v2="1" v3="2" pid="5" p1="0" p2="1" p3="2"/></triangles></mesh></object></resources>
+		 <build><item objectid="1"/><item objectid="1" transform="-1 0 0 0 1 0 0 0 1 0 0 0"/></build>`)}), nil)
+	check(t, err)
+	want := map[nt3dmath.Vec3]color.RGBA{{}: {R: 255, A: 255}, {X: 1}: {G: 255, A: 255}, {X: -1}: {G: 255, A: 255}, {Y: 1}: {B: 255, A: 255}}
+	for _, o := range m.Objects {
+		for _, v := range o.Geometry.Vertices {
+			if v.Color != want[v.Position] {
+				t.Fatalf("corner %v is %v", v.Position, v.Color)
+			}
+		}
+	}
+	// The mirrored copy still faces up.
+	if n := m.Objects[1].Geometry.Vertices[0].Normal; n.Z != 1 {
+		t.Fatalf("mirrored normal %v", n)
+	}
+}
+
+func TestPaintState(t *testing.T) {
+	for code, want := range map[string]int{
+		"":      0,
+		"4":     1,
+		"8":     2,
+		"0C":    3, // 3 plus the next digit.
+		"5C":    8, // 3 plus 5.
+		"04883": 2, // Split in four: two parts filament 2, one 1, one unpainted.
+		"841":   1, // Split in two, a tie: the lower filament.
+		"3":     0, // Truncated.
+		"4x":    1, // Not hex: skipped.
+	} {
+		if got := paintState(code); got != want {
+			t.Errorf("paintState(%q) = %d, want %d", code, got, want)
+		}
+	}
+}
+
+func TestPainted3MF(t *testing.T) {
+	// The slicer project's two parts, each with one face painted: the first
+	// red (filament 1) as Bambu Studio writes it, the second purple
+	// (filament 2) as PrusaSlicer does.
+	painted := func(attribute string) string {
+		return strings.Replace(tetrahedron, `<triangle v1="1" v2="2" v3="3"/>`, `<triangle v1="1" v2="2" v3="3" `+attribute+`/>`, 1)
+	}
+	m, err := Decode3MF(slicerProject(t, map[string]string{
+		"3D/Objects/object_1.model": model3MF(production3MF+` xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06"`, `<resources>
+			<object id="1">`+painted(`paint_color="4"`)+`</object><object id="3">`+painted(`slic3rpe:mmu_segmentation="8"`)+`</object></resources>`),
+	}), nil)
+	check(t, err)
+	g := m.Objects[0].Geometry
+	purple, red := color.RGBA{R: 0x5e, G: 0x43, B: 0xb7, A: 255}, color.RGBA{R: 255, A: 255}
+	// Unpainted faces keep their part's filament; painted ones take theirs.
+	for vertex, want := range map[int]color.RGBA{0: purple, 9: red, 12: red, 21: purple} {
+		if got := g.Vertices[vertex].Color; got != want {
+			t.Errorf("vertex %d is %v, want %v", vertex, got, want)
+		}
+	}
+}
+
+func TestTextured3MF(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	img.SetNRGBA(0, 0, color.NRGBA{255, 0, 0, 255})
+	var texture bytes.Buffer
+	check(t, png.Encode(&texture, img))
+	textured := strings.Replace(tetrahedron, `<triangle v1="1" v2="2" v3="3"/>`, `<triangle v1="1" v2="2" v3="3" pid="7" p1="0" p2="1" p3="2"/>`, 1)
+	model := model3MF(`xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`, `<resources>
+		<m:texture2d id="6" path="/3D/Textures/wood.png" contenttype="image/png"/>
+		<m:texture2dgroup id="7" texid="6"><m:tex2coord u="0" v="0"/><m:tex2coord u="1" v="0"/><m:tex2coord u="0" v="1"/></m:texture2dgroup>
+		<object id="1">`+textured+`</object></resources><build><item objectid="1"/></build>`)
+	m, err := Decode3MF(archive3MF(t, map[string]string{"3D/3dmodel.model": model, "3D/Textures/wood.png": texture.String()}), nil)
+	check(t, err)
+	if len(m.Objects) != 2 || len(m.Warnings) != 0 {
+		t.Fatalf("%d objects, warnings %v", len(m.Objects), m.Warnings)
+	}
+	plain, wood := m.Objects[0].Geometry, m.Objects[1].Geometry
+	if plain.Material != nil || len(plain.Indices) != 9 || wood.Material == nil || wood.Material.Texture == nil || m.Objects[1].Material != "/3D/Textures/wood.png" {
+		t.Fatal("faces not gathered by texture")
+	}
+	// v counts up in 3MF and down in nt3d.
+	if len(wood.UV) != 3 || wood.UV[0] != (nt3d.UV{U: 0, V: 1}) || wood.UV[2] != (nt3d.UV{U: 0, V: 0}) || m.Objects[1].Plain[0] {
+		t.Fatalf("UV %v", wood.UV)
+	}
+	closedOutward(t, func() nt3d.Geometry {
+		g, err := nt3d.MergeGeometry(plain, nt3d.Geometry{Vertices: wood.Vertices, Indices: wood.Indices})
+		check(t, err)
+		return g
+	}())
+	// A texture the package lacks is a warning; its faces keep their colors.
+	m, err = Decode3MF(archive3MF(t, map[string]string{"3D/3dmodel.model": model}), nil)
+	check(t, err)
+	if len(m.Objects) != 1 || len(m.Warnings) != 1 || !strings.Contains(m.Warnings[0], "wood.png") || m.Triangles() != 4 {
+		t.Fatalf("%d objects, warnings %v", len(m.Objects), m.Warnings)
+	}
+}

@@ -409,23 +409,15 @@ func (d *objDecoder) texture(m *objMaterial) *nt3d.Material {
 		d.warn("texture %q: %v", m.texture, err)
 		return nil
 	}
-	config, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || config.Width > maxTextureSide || config.Height > maxTextureSide {
-		d.warn("texture %q is not a PNG or JPEG of at most %d pixels a side", m.texture, maxTextureSide)
-		return nil
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		d.warn("texture %q: %v", m.texture, err)
-		return nil
-	}
 	background := color.RGBA{255, 255, 255, 255}
 	if m.color != nil {
 		background = *m.color
 	}
-	opaque := image.NewRGBA(img.Bounds())
-	draw.Draw(opaque, opaque.Bounds(), image.NewUniform(background), image.Point{}, draw.Src)
-	draw.Draw(opaque, opaque.Bounds(), img, img.Bounds().Min, draw.Over)
+	opaque, err := decodeTexture(data, background)
+	if err != nil {
+		d.warn("texture %q: %v", m.texture, err)
+		return nil
+	}
 	texture, err := nt3d.NewTexture(opaque)
 	if err != nil {
 		d.warn("texture %q: %v", m.texture, err)
@@ -478,4 +470,25 @@ func EncodeOBJ(w io.Writer, g nt3d.Geometry) error {
 		fmt.Fprintln(b, "l", base, base+1)
 	}
 	return b.Flush()
+}
+
+// decodeTexture decodes a PNG or JPEG texture of at most maxTextureSide
+// pixels a side, checked before decoding, with transparency flattened over
+// background.
+func decodeTexture(data []byte, background color.RGBA) (*image.RGBA, error) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, errors.New("not a PNG or JPEG")
+	}
+	if config.Width > maxTextureSide || config.Height > maxTextureSide {
+		return nil, fmt.Errorf("larger than %d pixels a side", maxTextureSide)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	opaque := image.NewRGBA(img.Bounds())
+	draw.Draw(opaque, opaque.Bounds(), image.NewUniform(background), image.Point{}, draw.Src)
+	draw.Draw(opaque, opaque.Bounds(), img, img.Bounds().Min, draw.Over)
+	return opaque, nil
 }

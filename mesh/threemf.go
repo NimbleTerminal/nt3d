@@ -141,7 +141,14 @@ type placed3MF struct {
 type triangle3MF struct {
 	v     [3]uint32
 	group string // Overrides the object's colors when set.
-	index int
+	index [3]int // p1, p2, p3: a property for each corner; -1 when unset.
+	paint int    // The filament a slicer painted it, from 1; 0 unpainted.
+}
+
+// texture3MF is a texture coordinate group: coordinates into one texture.
+type texture3MF struct {
+	texture string // The texture2d resource's id.
+	coords  []nt3d.UV
 }
 
 type object3MF struct {
@@ -158,6 +165,8 @@ type part3MF struct {
 	metadata map[string]string
 	objects  map[string]*object3MF
 	colors   map[string][]color.RGBA
+	textures map[string]string      // Texture paths in the package, by texture2d id.
+	coords   map[string]*texture3MF // By texture2dgroup id.
 	build    []placed3MF
 }
 
@@ -193,10 +202,15 @@ func (s slicer3MF) color(object, part string) *color.RGBA {
 	if !ok {
 		extruder = s.extruders[object]
 	}
-	if extruder < 1 || extruder > len(s.filaments) {
+	return s.filament(extruder)
+}
+
+// filament is the color of a filament, counted from 1, where it is known.
+func (s slicer3MF) filament(n int) *color.RGBA {
+	if n < 1 || n > len(s.filaments) {
 		return nil
 	}
-	return s.filaments[extruder-1]
+	return s.filaments[n-1]
 }
 
 func (p *package3MF) slicer() slicer3MF {
@@ -312,6 +326,36 @@ type decoder3MF struct {
 	pkg      *package3MF
 	build    []placed3MF
 	settings slicer3MF
+	model    *Model
+	textures map[string]*nt3d.Material // By path; nil where one did not load.
+}
+
+// texture loads a texture of the package once, flattening transparency over
+// white. A texture that cannot be used is a warning, and its faces are drawn
+// in their colors instead.
+func (d *decoder3MF) texture(path string) *nt3d.Material {
+	if m, ok := d.textures[path]; ok {
+		return m
+	}
+	d.textures[path] = nil
+	warn := func(err error) { d.model.Warnings = append(d.model.Warnings, fmt.Sprintf("texture %s: %v", path, err)) }
+	data, err := d.pkg.read(path)
+	if err != nil {
+		warn(err)
+		return nil
+	}
+	img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255})
+	if err != nil {
+		warn(err)
+		return nil
+	}
+	texture, err := nt3d.NewTexture(img)
+	if err != nil {
+		warn(err)
+		return nil
+	}
+	d.textures[path] = &nt3d.Material{Texture: texture}
+	return d.textures[path]
 }
 
 // walk gives emit each object placed by at, where it is placed, and the
@@ -378,7 +422,7 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 		return nil, err
 	}
 	m.Unit, m.Metadata = model.unit, model.metadata
-	d := &decoder3MF{pkg: pkg, build: model.build, settings: pkg.slicer()}
+	d := &decoder3MF{pkg: pkg, build: model.build, settings: pkg.slicer(), model: m, textures: map[string]*nt3d.Material{}}
 	if len(d.build) == 0 {
 		// Without a build, show what there is.
 		for id := range model.objects {
@@ -427,7 +471,18 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 		if !o.chosen(i) || m.Parts[i].Triangles == 0 {
 			continue
 		}
-		s := &faceObject{Object: Object{Name: m.Parts[i].Name, Part: i}, budget: budget, format: "3MF"}
+		// A part's faces gather by material: each texture is an object of its own.
+		faces := map[*nt3d.Material]*faceObject{}
+		var order []*faceObject
+		gather := func(material *nt3d.Material, name string) *faceObject {
+			f := faces[material]
+			if f == nil {
+				f = &faceObject{Object: Object{Name: m.Parts[i].Name, Material: name, Part: i, Geometry: nt3d.Geometry{Material: material}}, budget: budget, format: "3MF"}
+				faces[material] = f
+				order = append(order, f)
+			}
+			return f
+		}
 		err := d.walk(item, root, item.object, identity3MF, 0, &visits, func(part *part3MF, obj *object3MF, transform matrix3MF, slicer *color.RGBA) error {
 			mirrored := transform.mirrors()
 			for _, t := range obj.triangles {
@@ -435,24 +490,51 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 				for k, index := range t.v {
 					v[k] = transform.apply(obj.vertices[index])
 				}
-				if mirrored {
-					v[1], v[2] = v[2], v[1]
-				}
+				// Colors the file declares win; then the filament the face was
+				// painted, the part's filament, and the default.
 				shade, plain := o.color(), true
 				if slicer != nil {
 					shade, plain = *slicer, false
 				}
-				group, index := obj.group, obj.index
+				if painted := d.settings.filament(t.paint); painted != nil {
+					shade, plain = *painted, false
+				}
+				shades := [3]color.RGBA{shade, shade, shade}
+				group, index := obj.group, [3]int{obj.index, obj.index, obj.index}
 				if t.group != "" {
 					group = t.group
-					if t.index >= 0 {
-						index = t.index
+				}
+				if t.index[0] >= 0 {
+					index = t.index
+				}
+				if colors := part.colors[group]; colors != nil {
+					for k, n := range index {
+						if n >= 0 && n < len(colors) {
+							shades[k], plain = colors[n], false
+						}
 					}
 				}
-				if colors := part.colors[group]; index >= 0 && index < len(colors) {
-					shade, plain = colors[index], false
+				f, uv := gather(nil, ""), (*[3]nt3d.UV)(nil)
+				if coords := part.coords[group]; coords != nil {
+					path := part.textures[coords.texture]
+					if material := d.texture(path); material != nil {
+						var corners [3]nt3d.UV
+						for k, n := range index {
+							if n >= 0 && n < len(coords.coords) {
+								corners[k] = coords.coords[n]
+							}
+						}
+						f, uv, plain = gather(material, path), &corners, false
+					}
 				}
-				if err := s.add(v, shade, plain); err != nil {
+				if mirrored {
+					v[1], v[2] = v[2], v[1]
+					shades[1], shades[2] = shades[2], shades[1]
+					if uv != nil {
+						uv[1], uv[2] = uv[2], uv[1]
+					}
+				}
+				if err := f.add(v, shades, plain, uv); err != nil {
 					return err
 				}
 			}
@@ -461,7 +543,11 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, piece := range s.objects() {
+		var pieces []Object
+		for _, f := range order {
+			pieces = append(pieces, f.objects()...)
+		}
+		for _, piece := range pieces {
 			if err := piece.Geometry.Validate(); err != nil {
 				return nil, err
 			}
@@ -520,7 +606,7 @@ func place3MF(e xml.StartElement) (placed3MF, error) {
 
 // parsePart3MF reads a model part as a stream: a mesh is millions of small elements.
 func parsePart3MF(data []byte) (*part3MF, error) {
-	part := &part3MF{unit: "millimeter", metadata: map[string]string{}, objects: map[string]*object3MF{}, colors: map[string][]color.RGBA{}}
+	part := &part3MF{unit: "millimeter", metadata: map[string]string{}, objects: map[string]*object3MF{}, colors: map[string][]color.RGBA{}, textures: map[string]string{}, coords: map[string]*texture3MF{}}
 	d := xml.NewDecoder(bytes.NewReader(data))
 	var object *object3MF
 	var group, name string
@@ -544,6 +630,18 @@ func parsePart3MF(data []byte) (*part3MF, error) {
 				name, text = attribute(e, "name"), &strings.Builder{}
 			case "basematerials", "colorgroup":
 				group = attribute(e, "id")
+			case "texture2d":
+				part.textures[attribute(e, "id")] = attribute(e, "path")
+			case "texture2dgroup":
+				group = attribute(e, "id")
+				part.coords[group] = &texture3MF{texture: attribute(e, "texid")}
+			case "tex2coord":
+				u, err1 := strconv.ParseFloat(attribute(e, "u"), 32)
+				v, err2 := strconv.ParseFloat(attribute(e, "v"), 32)
+				if coords := part.coords[group]; coords != nil && err1 == nil && err2 == nil && validCoordinate(float32(u), float32(v)) {
+					// 3MF counts v up from the bottom; nt3d counts down from the top.
+					coords.coords = append(coords.coords, nt3d.UV{U: float32(u), V: 1 - float32(v)})
+				}
 			case "base", "color":
 				shade, ok := color3MF(attribute(e, "displaycolor") + attribute(e, "color"))
 				if !ok {
@@ -572,7 +670,7 @@ func parsePart3MF(data []byte) (*part3MF, error) {
 				if object == nil {
 					continue
 				}
-				t := triangle3MF{group: attribute(e, "pid"), index: -1}
+				t := triangle3MF{group: attribute(e, "pid"), index: [3]int{-1, -1, -1}}
 				for i, corner := range []string{"v1", "v2", "v3"} {
 					index, err := strconv.ParseUint(attribute(e, corner), 10, 32)
 					if err != nil || index >= uint64(len(object.vertices)) {
@@ -580,9 +678,18 @@ func parsePart3MF(data []byte) (*part3MF, error) {
 					}
 					t.v[i] = uint32(index)
 				}
-				if index, err := strconv.Atoi(attribute(e, "p1")); err == nil {
-					t.index = index
+				for k, name := range []string{"p1", "p2", "p3"} {
+					if index, err := strconv.Atoi(attribute(e, name)); err == nil {
+						t.index[k] = index
+					}
 				}
+				// Corners without properties of their own take the first's.
+				for k := 1; k < 3; k++ {
+					if t.index[k] < 0 {
+						t.index[k] = t.index[0]
+					}
+				}
+				t.paint = paintState(cmp.Or(attribute(e, "paint_color"), attribute(e, "mmu_segmentation")))
 				object.triangles = append(object.triangles, t)
 			case "component":
 				if object == nil {
@@ -685,4 +792,57 @@ func Encode3MF(w io.Writer, g nt3d.Geometry) error {
 		return err
 	}
 	return z.Close()
+}
+
+// paintState returns the filament, from 1, that covers most of a face a slicer
+// painted, or 0 for none. Bambu Studio's paint_color and PrusaSlicer's
+// mmu_segmentation share an encoding: hex digits, read from the last, each a
+// node of a tree that splits the face. A node's low two bits count the sides
+// it splits, 0 to 3; a split into n+1 parts is followed by its children, and
+// a leaf's high two bits are its filament, 3 meaning the next digit plus 3.
+// Children's areas are taken as equal shares of their parent's.
+func paintState(code string) int {
+	at := len(code)
+	next := func() (int, bool) {
+		for at > 0 {
+			at--
+			if v, err := strconv.ParseUint(code[at:at+1], 16, 8); err == nil {
+				return int(v), true
+			}
+		}
+		return 0, false
+	}
+	share := map[int]float64{}
+	type pending struct{ weight float64 }
+	stack := []pending{{1}}
+	for len(stack) > 0 && len(stack) <= len(code)+1 {
+		node := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		digit, ok := next()
+		if !ok {
+			break
+		}
+		if sides := digit & 3; sides > 0 {
+			for range sides + 1 {
+				stack = append(stack, pending{node.weight / float64(sides+1)})
+			}
+			continue
+		}
+		state := digit >> 2
+		if state == 3 {
+			extra, ok := next()
+			if !ok {
+				break
+			}
+			state = extra + 3
+		}
+		share[state] += node.weight
+	}
+	best, most := 0, 0.0
+	for state, weight := range share {
+		if weight > most || weight == most && state < best {
+			best, most = state, weight
+		}
+	}
+	return best
 }

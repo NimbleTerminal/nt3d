@@ -46,13 +46,15 @@ func (s *faceObject) objects() []Object {
 	return s.pieces
 }
 
-func (s *faceObject) add(v [3]nt3dmath.Vec3, shade color.RGBA, plain bool) error {
+// add appends a face with a color for each corner and, for a textured
+// object, texture coordinates.
+func (s *faceObject) add(v [3]nt3dmath.Vec3, shades [3]color.RGBA, plain bool, uv *[3]nt3d.UV) error {
 	if err := s.budget.take(1); err != nil {
 		return err
 	}
 	if len(s.Geometry.Indices) >= 3*pieceTriangles {
 		s.pieces = append(s.pieces, s.Object)
-		s.Object = Object{Name: s.Name, Material: s.Material, Part: s.Part}
+		s.Object = Object{Name: s.Name, Material: s.Material, Part: s.Part, Geometry: nt3d.Geometry{Material: s.Geometry.Material}}
 	}
 	for _, p := range v {
 		if !validCoordinate(p.X, p.Y, p.Z) {
@@ -61,11 +63,14 @@ func (s *faceObject) add(v [3]nt3dmath.Vec3, shade color.RGBA, plain bool) error
 	}
 	n := v[1].Sub(v[0]).Cross(v[2].Sub(v[0])).Normalize()
 	g := &s.Geometry
-	for _, p := range v {
+	for k, p := range v {
 		g.Indices = append(g.Indices, uint32(len(g.Vertices)))
-		g.Vertices = append(g.Vertices, nt3d.Vertex{Position: p, Normal: n, Color: shade})
+		g.Vertices = append(g.Vertices, nt3d.Vertex{Position: p, Normal: n, Color: shades[k]})
 		g.Bounds.Include(p)
 		s.Plain = append(s.Plain, plain)
+		if uv != nil {
+			g.UV = append(g.UV, uv[k])
+		}
 	}
 	return nil
 }
@@ -132,7 +137,7 @@ func decodeBinarySTL(data []byte, o *Options, budget *triangleBudget) (*Model, e
 		case attribute&0x8000 != 0:
 			shade, plain = color.RGBA{expand5(attribute >> 10), expand5(attribute >> 5), expand5(attribute), 255}, false
 		}
-		if err := s.add(v, shade, plain); err != nil {
+		if err := s.add(v, [3]color.RGBA{shade, shade, shade}, plain, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -259,7 +264,7 @@ func decodeASCIISTL(data []byte, o *Options, budget *triangleBudget) (*Model, er
 			if err := w.expect("endfacet"); err != nil {
 				return nil, err
 			}
-			if err := s.add(v, o.color(), true); err != nil {
+			if err := s.add(v, [3]color.RGBA{o.color(), o.color(), o.color()}, true, nil); err != nil {
 				return nil, err
 			}
 		}

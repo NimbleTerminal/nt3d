@@ -106,11 +106,15 @@ transparent texels flattened over `Kd`. Each object or group becomes one
 `Object` per material. Faces without normals get flat ones.
 
 `Decode3MF` reads the core specification, the production extension's objects
-in other model parts, base materials and color groups (one color a face), and
+in other model parts, base materials and color groups (a color at each corner),
+textures (texture2d groups; each textured part becomes an object with UVs),
+faces painted in Bambu Studio or PrusaSlicer (each face takes the filament
+covering most of it), and
 the filament colors and names that Bambu Studio, OrcaSlicer, and relatives keep
 in `Metadata/`. Each build item is a `Model.Parts` entry with its triangle
 count; `Options.Parts` chooses which to assemble, and each chosen part becomes
-an `Object` with its placement baked in (mirrored placements are rewound).
+an `Object`, one per texture it uses, with its placement baked in (mirrored
+placements are rewound).
 `Model.Unit`, `Metadata`, and `Thumbnail` (the slicer's plate picture first)
 are filled too. Packages are limited to 4096 entries and `Options.MaxBytes`
 unpacked (256 MiB by default). Over the triangle or byte limit, `Decode3MF`
