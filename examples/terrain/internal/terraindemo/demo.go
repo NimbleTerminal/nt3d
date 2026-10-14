@@ -346,12 +346,13 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	switch kind {
 	case sceneDynamic:
 		camera.Distance = 5.5
-	case sceneMeshes:
-		camera.Distance = 4.3 + 2.2*float64(max(len(flag.Args())-1, 0))
 	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones))
 	defer d.view.Close()
+	if kind == sceneMeshes {
+		d.view.Fit()
+	}
 	if *snapshot != "" {
 		img, used, err := d.view.Snapshot(960, 640)
 		if err != nil {

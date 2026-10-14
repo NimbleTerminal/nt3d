@@ -119,6 +119,8 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			m.camera.Distance *= .9
 		case "-", "_":
 			m.camera.Distance /= .9
+		case "c":
+			return m, m.Fit()
 		case "r":
 			m.camera.AutoRotate = !m.camera.AutoRotate
 			m.wake++

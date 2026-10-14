@@ -61,3 +61,61 @@ func TestSoftwareTriangle(t *testing.T) {
 		t.Fatalf("triangle invisible: %d", n)
 	}
 }
+
+func TestCameraFit(t *testing.T) {
+	for _, proj := range []Projection{Orthographic, Perspective} {
+		for _, scale := range []float32{.01, 1, 500, 1e4} {
+			for _, aspect := range []float64{.5, 2} {
+				var b nt3dmath.AABB
+				offset := nt3dmath.Vec3{X: 3 * scale, Y: -2 * scale, Z: scale}
+				b.Include(offset.Add(nt3dmath.Vec3{X: -scale, Y: -.5 * scale, Z: -.2 * scale}))
+				b.Include(offset.Add(nt3dmath.Vec3{X: scale, Y: .5 * scale, Z: .2 * scale}))
+				c := DefaultCamera()
+				c.Projection = proj
+				c = c.Fit(b, aspect)
+				if c.Target != b.Min.Add(b.Max).Scale(.5) {
+					t.Fatal("not centered")
+				}
+				m := c.Matrix(float32(aspect))
+				width, height := int(400*aspect), 400
+				reach := float32(0)
+				for i := range 8 {
+					p := b.Min
+					if i&1 != 0 {
+						p.X = b.Max.X
+					}
+					if i&2 != 0 {
+						p.Y = b.Max.Y
+					}
+					if i&4 != 0 {
+						p.Z = b.Max.Z
+					}
+					x, y, _, ok := m.Project(p, width, height)
+					if !ok {
+						t.Fatalf("%v scale %v aspect %v: corner %v outside the view or depth range", proj, scale, aspect, p)
+					}
+					reach = max(reach, abs(x/float32(width)*2-1), abs(y/float32(height)*2-1))
+				}
+				// The bounding sphere fits the narrower side; the box reaches well out.
+				if reach < .45 {
+					t.Fatalf("%v scale %v aspect %v: loose fit, corners reach %v", proj, scale, aspect, reach)
+				}
+			}
+		}
+	}
+	c := DefaultCamera()
+	if c.Fit(nt3dmath.AABB{}, 1) != c.Valid() || c.Fit(nt3dmath.AABB{}, math.NaN()) != c.Valid() {
+		t.Fatal("invalid fit changed the camera")
+	}
+}
+
+func TestCameraLookAt(t *testing.T) {
+	eye, target := nt3dmath.Vec3{X: 10, Y: -4, Z: 6}, nt3dmath.Vec3{X: 1, Y: 2, Z: 0}
+	c := DefaultCamera().LookAt(eye, target)
+	if got := c.Eye(); got.Sub(eye).Dot(got.Sub(eye)) > 1e-8 || c.Target != target {
+		t.Fatalf("eye %v, target %v", got, c.Target)
+	}
+	if c.LookAt(target, target) != c {
+		t.Fatal("degenerate LookAt changed the camera")
+	}
+}

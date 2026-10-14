@@ -183,8 +183,11 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   Points, boxes, and strokes are tested one by one.
 - Camera offers projection, rays, orbit/pan/zoom, and explicit `Step(elapsed, idle)`
   for automatic rotation. Units are world units; no automatic normalization occurs.
-  The default camera suits an origin-centered scene roughly two units across.
-  `AABB.Normalization` can provide an explicit fitting transform.
+  The default camera suits an origin-centered scene roughly two units across;
+  `Camera.Fit(bounds, aspect)` frames any other, keeping the view direction,
+  and `LookAt(eye, target)` places the camera. Near and far planes scale with
+  `Distance` (1e-4 to 1e7), so millimeter and kilometer scenes draw alike.
+  `AABB.Normalization` instead moves the scene to suit the camera.
 
 Each geometry may hold at most `MaxMeshTriangles` (932,067) triangles: its
 48-byte records must fit the 128 MiB storage binding that WebGPU guarantees on
@@ -241,7 +244,8 @@ Forward terminal size/cell-size events. When embedded, share a zone manager and
 have the parent scan the complete view.
 
 Controls: drag to orbit, shift-drag to pan, wheel or +/- to zoom, arrows/hjkl to
-orbit, `r` for automatic rotation, `o` for projection, `g` for glyph/Kitty output.
+orbit, `c` to fit the scene (`Fit()`), `r` for automatic rotation, `o` for
+projection, `g` for glyph/Kitty output.
 `PictureStatus()` exposes presentation generation, busy/error state, and selected
 format/medium. Completion means ordered output/grid completion, not terminal
 display acknowledgement.

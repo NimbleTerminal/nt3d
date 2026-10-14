@@ -186,3 +186,31 @@ func TestGPUFailureCanFallBack(t *testing.T) {
 		t.Fatal("fallback state")
 	}
 }
+
+func TestFitShowsTheScene(t *testing.T) {
+	s := nt3d.NewScene()
+	g, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 300, Y: 120, Z: 80}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err = nt3d.TransformGeometry(g, nt3dmath.Translation(nt3dmath.Vec3{X: 1000, Y: -500, Z: 40}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SetGeometry("part", g); err != nil {
+		t.Fatal(err)
+	}
+	m := New(s, 40, 12, WithRenderer(&failRenderer{ok: true}))
+	defer m.Close()
+	m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	if m.Camera().Target != (nt3dmath.Vec3{X: 1000, Y: -500, Z: 40}) {
+		t.Fatalf("target %v", m.Camera().Target)
+	}
+	f := m.frame()
+	b := s.Bounds()
+	for _, p := range []nt3dmath.Vec3{b.Min, b.Max} {
+		if _, _, _, ok := f.Matrix.Project(p, f.Width, f.Height); !ok {
+			t.Fatalf("corner %v not in view", p)
+		}
+	}
+}

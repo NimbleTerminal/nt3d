@@ -162,6 +162,16 @@ func (m *Model) Busy() bool { return m.busy || m.pic.Status().Busy }
 
 // Refresh schedules scene edits made by a parent. Execute the returned command.
 func (m *Model) Refresh() tea.Cmd { return m.changed(true) }
+
+// Fit aims the camera at the visible scene and backs it off until all of it
+// shows, keeping the viewing direction and projection.
+func (m *Model) Fit() tea.Cmd {
+	aspect := m.pic.RasterGeometry().DisplayAspect
+	if !(aspect > 0) {
+		aspect = float64(m.width) / float64(2*m.height)
+	}
+	return m.SetCamera(m.camera.Fit(m.scene.Bounds(), aspect))
+}
 func (m *Model) SetCamera(c nt3d.Camera) tea.Cmd {
 	m.camera = c.Valid()
 	m.wake++

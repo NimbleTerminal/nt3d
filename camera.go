@@ -24,7 +24,9 @@ func (p Projection) String() string {
 
 // Camera uses degrees for Alpha (elevation) and Beta (azimuth). Distance and
 // Target use scene world units. The default camera suits a scene centered
-// at the origin with a longest extent of roughly two units.
+// at the origin with a longest extent of roughly two units; Fit frames any
+// other. Near and far planes scale with Distance, so a scene in millimeters
+// or meters draws as well as one in units.
 type Camera struct {
 	Alpha, Beta, Distance float64
 	Target                nt3dmath.Vec3
@@ -32,6 +34,15 @@ type Camera struct {
 	AutoRotate            bool
 	ResumeAfter           float64 // idle seconds before rotation resumes after input
 }
+
+// Distance is kept within this range. Near and far planes are this fraction
+// and multiple of it: at the default distance, 0.01 and 200 units.
+const (
+	minDistance, maxDistance = 1e-4, 1e7
+	nearPlane, farPlane      = .01 / 3.4, 200 / 3.4
+	// halfFOV is half the perspective camera's vertical field of view.
+	halfFOV = math.Pi / 8
+)
 
 // DefaultCamera returns a Camera initialized with some typical default values.
 func DefaultCamera() Camera {
@@ -50,7 +61,7 @@ func (c Camera) valid() Camera {
 	if !nt3dmath.IsFinite(c.Distance) || c.Distance <= 0 {
 		c.Distance = 3.4
 	}
-	c.Distance = math.Max(.15, math.Min(100, c.Distance))
+	c.Distance = math.Max(minDistance, math.Min(maxDistance, c.Distance))
 	if !nt3dmath.IsFinite(float64(c.Target.X)) || !nt3dmath.IsFinite(float64(c.Target.Y)) || !nt3dmath.IsFinite(float64(c.Target.Z)) {
 		c.Target = nt3dmath.Vec3{}
 	}
@@ -80,10 +91,10 @@ func (c Camera) Matrix(aspect float32) nt3dmath.Mat4 {
 	}
 	e, r, u, f := c.basis()
 	view := nt3dmath.Mat4{r.X, u.X, -f.X, 0, r.Y, u.Y, -f.Y, 0, r.Z, u.Z, -f.Z, 0, -r.Dot(e), -u.Dot(e), f.Dot(e), 1}
-	near, far := float32(.01), float32(200)
+	near, far := float32(c.Distance*nearPlane), float32(c.Distance*farPlane)
 	var p nt3dmath.Mat4
 	if c.Projection == Perspective {
-		q := float32(1 / math.Tan(math.Pi/8))
+		q := float32(1 / math.Tan(halfFOV))
 		p[0] = q / aspect
 		p[5] = q
 		p[10] = far / (near - far)
@@ -114,7 +125,7 @@ func (c Camera) ray(x, y float32, cols, rows, cw, ch int) nt3dmath.Ray {
 	nx, ny := 2*x/float32(cols)-1, 1-2*y/float32(rows)
 	aspect := float32(cols*cw) / float32(rows*ch)
 	if c.Projection == Perspective {
-		h := float32(math.Tan(math.Pi / 8))
+		h := float32(math.Tan(halfFOV))
 		return nt3dmath.Ray{Origin: e, Direction: f.Add(r.Scale(nx * aspect * h).Add(u.Scale(ny * h))).Normalize()}
 	}
 	h := float32(c.Distance * .5)
@@ -148,7 +159,7 @@ func (c Camera) Pan(dx, dy float32, width, height int) Camera {
 	_, r, u, _ := c.basis()
 	h := float32(c.Distance)
 	if c.Projection == Perspective {
-		h *= float32(2 * math.Tan(math.Pi/8))
+		h *= float32(2 * math.Tan(halfFOV))
 	}
 	c.Target = c.Target.Add(r.Scale(-dx * h / float32(height))).Add(u.Scale(dy * h / float32(height)))
 	return c.valid()
@@ -166,4 +177,53 @@ func (c Camera) Step(elapsed, idle float64) Camera {
 		c.Beta += 30 * elapsed
 	}
 	return c.valid()
+}
+
+// Fit returns the camera aimed at the center of b from the same direction
+// and projection, at the distance that shows all of b in a view of the given
+// aspect (width over height): its bounding sphere just fits the narrower
+// side. An invalid box or aspect leaves the camera unchanged.
+func (c Camera) Fit(b nt3dmath.AABB, aspect float64) Camera {
+	c = c.valid()
+	if !b.IsValid() || !(aspect > 0) || math.IsInf(aspect, 0) {
+		return c
+	}
+	center := b.Min.Add(b.Max).Scale(.5)
+	diagonal := b.Max.Sub(b.Min)
+	radius := .5 * math.Sqrt(float64(diagonal.Dot(diagonal)))
+	if !nt3dmath.IsFinite(radius) || !validFloat(center.X, center.Y, center.Z) {
+		return c
+	}
+	radius = math.Max(radius, minDistance)
+	narrow := math.Min(1, aspect)
+	if c.Projection == Perspective {
+		c.Distance = radius / math.Sin(math.Atan(math.Tan(halfFOV)*narrow))
+	} else {
+		// The orthographic view is Distance tall.
+		c.Distance = 2 * radius / narrow
+	}
+	c.Target = center
+	return c.valid()
+}
+
+// LookAt returns the camera placed at eye and aimed at target, keeping its
+// projection. Elevation is limited to 89° either way, so a camera straight
+// above or below its target is tilted slightly. Equal points leave the
+// camera unchanged.
+func (c Camera) LookAt(eye, target nt3dmath.Vec3) Camera {
+	d := eye.Sub(target)
+	distance := math.Sqrt(float64(d.Dot(d)))
+	if !(distance > 0) || !nt3dmath.IsFinite(distance) || !validFloat(target.X, target.Y, target.Z) {
+		return c.valid()
+	}
+	c.Target, c.Distance = target, distance
+	c.Alpha = math.Asin(float64(d.Z)/distance) * 180 / math.Pi
+	c.Beta = math.Atan2(float64(d.Y), float64(d.X)) * 180 / math.Pi
+	return c.valid()
+}
+
+// Eye returns the camera's position in world space.
+func (c Camera) Eye() nt3dmath.Vec3 {
+	eye, _, _, _ := c.valid().basis()
+	return eye
 }
