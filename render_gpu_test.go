@@ -3,6 +3,7 @@
 package nt3d
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"nimbleterminal.dev/nt3d/math"
@@ -423,5 +424,32 @@ func TestGPUTintAndEdgeOn(t *testing.T) {
 		if (g > 0) != c.shown || g-s > g/20+5 || s-g > g/20+5 {
 			t.Fatalf("normal %v: GPU %d, software %d pixels", c.normal, g, s)
 		}
+	}
+}
+
+// Culling leaves the GPU's picture unchanged too, including a point disc
+// that overhangs the frame's edge from a center outside it.
+func TestGPUCullMatchesUnculled(t *testing.T) {
+	f := cullScene(t)
+	off := f
+	off.Cull = false
+	r := &gpuRenderer{}
+	defer r.Close()
+	a, err := r.Render(f)
+	check(t, err)
+	culledPix := append([]byte(nil), a.(*image.NRGBA).Pix...)
+	b, err := r.Render(off)
+	check(t, err)
+	if !bytes.Equal(culledPix, b.(*image.NRGBA).Pix) {
+		t.Fatal("GPU pictures differ")
+	}
+	blue := 0
+	for y := range f.Height {
+		if c := color.RGBAModel.Convert(b.At(f.Width-1, y)).(color.RGBA); c.B > 150 && c.R < 60 {
+			blue++
+		}
+	}
+	if blue == 0 {
+		t.Fatal("the overhanging point does not show")
 	}
 }

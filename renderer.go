@@ -89,6 +89,11 @@ type Frame struct {
 	// serve view-dependent materials (Material.EdgeOn); Scene.Frame sets them.
 	Eye, Forward nt3dmath.Vec3
 	Perspective  bool
+	// Cull skips geometry wholly outside the view, which costs nothing to
+	// leave out. It trusts each Geometry's Bounds to contain it, as
+	// Scene.Frame's do, and Scene.Frame sets it; geometry without valid
+	// Bounds is always drawn. Changing Matrix afterward is fine.
+	Cull bool
 }
 
 // viewAt is the direction from a world point toward the viewer.
@@ -104,7 +109,7 @@ const MaxFramePixels = 4096 * 2160
 // Frame creates a scene snapshot. The caller owns its header and decoration
 // slices; its geometry and materials must not be mutated. Scene edits preserve it.
 func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
-	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Background: color.RGBA{235, 238, 242, 255}, Light: DefaultLight()}
+	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Background: color.RGBA{235, 238, 242, 255}, Light: DefaultLight(), Cull: true}
 	if width < 1 || height < 1 || width > MaxFramePixels || height > MaxFramePixels/width {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)
 	}

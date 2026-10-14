@@ -246,6 +246,13 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   `Scene.SetNodePickIndexing(id, false)` opts one node out, such as terrain
   that is never picked, keeping its choice across new geometry.
   Points, boxes, and strokes are tested one by one.
+- Frames from `Scene.Frame` cull: every renderer, and picking, skips a node
+  whose bounds lie wholly outside the view, widened by its pixel sizes (point
+  radii, line widths, arrow heads); the GPU keeps its buffers for when it
+  returns. The picture is unchanged, and in a field of spheres seen from
+  inside, mostly off screen, software frames drew about 2.8× faster and
+  wireframe 3.5×. `Frame.Cull` turns it on for hand-built frames, whose
+  geometry `Bounds` must then contain it.
 - Camera offers projection, rays, orbit/pan/zoom, and explicit `Step(elapsed, idle)`
   for automatic rotation. Units are world units; no automatic normalization occurs.
   The default camera suits an origin-centered scene roughly two units across;

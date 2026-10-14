@@ -37,6 +37,7 @@ type wireDepth struct {
 	owner            []int32
 	far              []float32 // Per cell: the farthest sample's depth; +Inf where any is empty.
 	area             []float32 // Per geometry: front faces' total area, in cells.
+	drawn            []bool    // Per geometry: visible and in view (Frame.drawn).
 	faces            []int     // Per geometry: front faces drawn.
 }
 
@@ -44,16 +45,16 @@ func newWireDepth(f Frame, cols, rows int) *wireDepth {
 	w, h := cols*wireSubX, rows*wireSubY
 	d := &wireDepth{cols: cols, rows: rows, w: w, h: h, projective: f.Matrix[3] != 0 || f.Matrix[7] != 0 || f.Matrix[11] != 0,
 		depth: make([]float32, w*h), normal: make([]nt3dmath.Vec3, w*h), owner: make([]int32, w*h), far: make([]float32, cols*rows),
-		area: make([]float32, len(f.Geometry)), faces: make([]int, len(f.Geometry))}
+		area: make([]float32, len(f.Geometry)), faces: make([]int, len(f.Geometry)), drawn: f.drawn(1)}
 	inf := float32(math.Inf(1))
 	for i := range d.depth {
 		d.depth[i], d.owner[i] = inf, -1
 	}
 	for gi, g := range f.Geometry {
-		inst := instance(f, gi)
-		if !inst.Visible || edgeOn(g) {
+		if !d.drawn[gi] || edgeOn(g) {
 			continue // Edge-on geometry depends on a view wireframe does not draw.
 		}
+		inst := instance(f, gi)
 		m := f.Matrix.Mul(inst.World)
 		inverse, _ := inst.World.InverseAffine()
 		normals := inverse.Transpose()

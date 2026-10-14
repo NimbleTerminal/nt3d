@@ -219,11 +219,13 @@ func (g *gpuRenderer) drawScene(f Frame, encoder *wgpu.CommandEncoder, color, de
 		if err != nil {
 			return err
 		}
+		// Hidden and culled nodes keep their buffers but are not drawn.
+		drawn := f.drawn(1)
 		for _, i := range []int{5, 0, 1, 2, 3, 6, 4} {
 			if i == 2 {
 				for index, node := range g.nodes {
 					b := node.batches[7]
-					if b.count == 0 {
+					if b.count == 0 || !drawn[index] {
 						continue
 					}
 					if f.Geometry[index].Material.Cutout {
@@ -245,8 +247,10 @@ func (g *gpuRenderer) drawScene(f Frame, encoder *wgpu.CommandEncoder, color, de
 				g.drawBatch(pass, i, g.batches[i])
 				continue
 			}
-			for _, node := range g.nodes {
-				g.drawBatch(pass, i, node.batches[i])
+			for index, node := range g.nodes {
+				if drawn[index] {
+					g.drawBatch(pass, i, node.batches[i])
+				}
 			}
 		}
 		return pass.End()

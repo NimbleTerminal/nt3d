@@ -65,10 +65,10 @@ func wireRender(f Frame, cols, rows int) string {
 		drawLine(cellFrame, f.DynamicLines[i].Position, f.DynamicLines[i+1].Position, f.DynamicLines[i].Color, false)
 	}
 	for gi, g := range f.Geometry {
-		inst := instance(f, gi)
-		if !inst.Visible || edgeOn(g) {
+		if !depth.drawn[gi] || edgeOn(g) {
 			continue
 		}
+		inst := instance(f, gi)
 		// Project local coordinates through the node's transform.
 		local, cells := f, cellFrame
 		local.Matrix = f.Matrix.Mul(inst.World)

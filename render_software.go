@@ -155,11 +155,12 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		}
 		return max(1, (n+limit-1)/limit)
 	}
+	drawn := f.drawn(px)
 	for gi, g := range f.Geometry {
-		inst := instance(f, gi)
-		if !inst.Visible {
+		if !drawn[gi] {
 			continue
 		}
+		inst := instance(f, gi)
 		// Transform as primitives are drawn rather than copying the scene.
 		local := f
 		local.Matrix = f.Matrix.Mul(inst.World)
