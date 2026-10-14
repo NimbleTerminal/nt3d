@@ -34,6 +34,7 @@ type Model struct {
 	sceneRevision                   uint64
 	camera                          nt3d.Camera
 	light                           nt3d.Light
+	fog                             nt3d.Fog
 	background                      color.RGBA
 	renderer                        nt3d.Renderer
 	decorate                        func(*nt3d.Frame)
@@ -296,7 +297,7 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	if err != nil {
 		return nil, m.requestedRenderMode, err
 	}
-	f.Background, f.Light = m.background, m.light
+	f.Background, f.Light, f.Fog = m.background, m.light, m.fog
 	if m.decorate != nil {
 		m.decorate(&f)
 	}
@@ -358,6 +359,12 @@ func (m *Model) SetBackground(c color.Color) tea.Cmd {
 	return m.changed(false)
 }
 func (m *Model) SetLight(l nt3d.Light) tea.Cmd { m.light = l; return m.changed(false) }
+
+// SetFog fades the scene toward a color with distance from the camera; the
+// zero Fog is none. Distances are in world units, so a fog that should keep
+// its look as the camera zooms is better set by WithFrameDecorator, from the
+// camera's distance.
+func (m *Model) SetFog(f nt3d.Fog) tea.Cmd { m.fog = f; return m.changed(false) }
 
 // failedView fills the viewport with the reason nothing is drawn.
 func failedView(err error, width, height int) string {

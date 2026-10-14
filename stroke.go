@@ -85,7 +85,9 @@ func (s screenStroke) worldT(t float32) float32 {
 	return s.t0*(1-q) + s.t1*q
 }
 
-func rasterStroke(f Frame, a, b Vertex, width, headSize, bias float32, put func(int, int, float32, color.RGBA)) {
+// fog, when given, fogs a color at a world-space fraction of the way from a
+// to b.
+func rasterStroke(f Frame, a, b Vertex, width, headSize, bias float32, put func(int, int, float32, color.RGBA), fog func(color.RGBA, float32) color.RGBA) {
 	s, ok := projectStroke(f, a.Position, b.Position)
 	if !ok {
 		return
@@ -119,7 +121,11 @@ func rasterStroke(f Frame, a, b Vertex, width, headSize, bias float32, put func(
 				}
 				t = along / s.length
 			}
-			c := lerpRGBA(a.Color, b.Color, float64(s.worldT(t)))
+			wt := s.worldT(t)
+			c := lerpRGBA(a.Color, b.Color, float64(wt))
+			if fog != nil {
+				c = fog(c, wt)
+			}
 			put(x, y, s.a.z*(1-t)+s.b.z*t+bias, c)
 		}
 	}

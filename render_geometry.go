@@ -70,7 +70,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame) error {
 		g.nodes[i] = node
 		v := instance(f, i)
 		if !node.transformed || node.last.World != v.World || node.last.Visible != v.Visible {
-			if err := writeTransform(dev, node.transform, v); err != nil {
+			if err := writeTransform(dev, node.transform, v, geom.Material); err != nil {
 				return err
 			}
 			node.last, node.transformed = v, true
@@ -79,10 +79,16 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame) error {
 	return nil
 }
 
-func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance) error {
+// writeTransform writes an instance's world and normal matrices. The normal
+// matrix only turns directions, so its last column is free: it carries the
+// material's specular strength and exponent, and whether the node shows.
+func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {
 	inv, _ := v.World.InverseAffine()
 	normal := inv.Transpose()
-	normal[15] = 0
+	normal[12], normal[13], normal[14], normal[15] = 0, 0, 0, 0
+	if m != nil && m.Specular > 0 && !m.Unlit {
+		normal[12], normal[13] = m.Specular, m.shininess()
+	}
 	if v.Visible {
 		normal[15] = 1
 	}

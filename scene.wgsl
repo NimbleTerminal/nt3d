@@ -1,4 +1,4 @@
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, light: vec4<f32>, eye: vec4<f32>, forward: vec4<f32> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, light: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
@@ -15,11 +15,40 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
  if instance.normal[3][3]==0.0 {return vec4<f32>(0.0,0.0,2.0,1.0);}
  return u.matrix*instance.world*vec4<f32>(pos,1.0);
 }
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32 };
+// Fragments carry, besides color, what highlights and fog need: the world
+// position (whose distance from the camera, not affine, is found per
+// fragment) and normal, and the instance's specular strength and exponent
+// (its normal matrix's spare column).
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32> };
+// eyeDistance is a world point's distance from the camera, as fog measures
+// it: straight, or along the view for orthographic cameras.
+fn eyeDistance(world:vec3<f32>)->f32 {
+ if u.eye.w>0.5 {return length(world-u.eye.xyz);}
+ return dot(world-u.eye.xyz,u.forward.xyz);
+}
+fn worldPosition(pos:vec3<f32>,index:f32)->vec3<f32> {return (instances[u32(index)].world*vec4<f32>(pos,1.0)).xyz;}
 fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
  var o: Out; o.clip=clipPosition(pos,color.w); var light=1.0;
- if dot(normal,normal)>0.0 { light=u.light.w+(1.0-u.light.w)*max(0.0,dot(normalize((instances[u32(color.w)].normal*vec4<f32>(normal,0.0)).xyz),normalize(u.light.xyz))); }
+ let inst=instances[u32(color.w)];
+ o.world=worldPosition(pos,color.w);
+ if dot(normal,normal)>0.0 {
+  o.normal=normalize((inst.normal*vec4<f32>(normal,0.0)).xyz);o.spec=inst.normal[3].xy;
+  light=u.light.w+(1.0-u.light.w)*max(0.0,dot(o.normal,normalize(u.light.xyz)));
+ }
  o.color=vec4<f32>(decode(color.rgb)*light,1.0);o.uv=vec2<f32>(0.0);o.point=0.0;return o;
+}
+// finish adds the specular highlight and fades into the fog.
+fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {
+ var c=rgb;
+ if o.spec.x>0.0 && dot(o.normal,o.normal)>0.0 {
+  let n=normalize(o.normal);let l=normalize(u.light.xyz);
+  var view=-u.forward.xyz;
+  if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
+  let h=l+view;
+  if dot(n,l)>0.0 && dot(h,h)>0.0 {c+=vec3<f32>(o.spec.x*pow(max(0.0,dot(n,normalize(h))),o.spec.y));}
+ }
+ if u.fog.y>u.fog.x {c=mix(c,u.fogColor.rgb,clamp((eyeDistance(o.world)-u.fog.x)/(u.fog.y-u.fog.x),0.0,1.0));}
+ return c;
 }
 @vertex fn vs_point(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
  var corners=array<vec2<f32>,6>(vec2<f32>(-1.,-1.),vec2<f32>(1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,1.));
@@ -47,7 +76,8 @@ fn clipStroke(a:vec4<f32>,b:vec4<f32>)->StrokeClip {
  }
  return s;
 }
-fn strokeOutput(vi:u32,a:vec4<f32>,b:vec4<f32>,ca:vec4<f32>,cb:vec4<f32>,width:f32,head:f32,bias:f32)->Out {
+// Strokes carry their world points, wa to wb, for fog.
+fn strokeOutput(vi:u32,a:vec4<f32>,b:vec4<f32>,ca:vec4<f32>,cb:vec4<f32>,width:f32,head:f32,bias:f32,wa:vec3<f32>,wb:vec3<f32>)->Out {
  let s=clipStroke(a,b);
  var o:Out;o.uv=vec2<f32>(0.0);o.point=0.0;o.color=ca;
  o.clip=vec4<f32>(0.0,0.0,2.0,1.0);
@@ -80,24 +110,27 @@ fn strokeOutput(vi:u32,a:vec4<f32>,b:vec4<f32>,ca:vec4<f32>,cb:vec4<f32>,width:f
  let position=mix(pa,pb,fraction)+offset;
  let depth=mix(s.a.z/s.a.w,s.b.z/s.b.w,fraction)+bias;
  o.clip=vec4<f32>(position*2.0/u.viewport.xy*w,depth*w,w);
- o.color=vec4<f32>(decode(mix(ca.rgb,cb.rgb,param)),1.0);
+ o.color=vec4<f32>(decode(mix(ca.rgb,cb.rgb,param)),1.0);o.world=mix(wa,wb,param);
  return o;
 }
 fn lineOutput(vi:u32,ii:u32,bias:f32)->Out {
  let a=items[ii*2u];let b=items[ii*2u+1u];
- return strokeOutput(vi,clipPosition(a.a.xyz,a.color.w),clipPosition(b.a.xyz,b.color.w),a.color,b.color,a.a.w,0.0,bias);
+ return strokeOutput(vi,clipPosition(a.a.xyz,a.color.w),clipPosition(b.a.xyz,b.color.w),a.color,b.color,a.a.w,0.0,bias,worldPosition(a.a.xyz,a.color.w),worldPosition(b.a.xyz,b.color.w));
 }
 @vertex fn vs_line(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out { return lineOutput(vi,ii,-0.00001); }
 @vertex fn vs_dynamic(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out { return lineOutput(vi,ii,0.00002); }
 @vertex fn vs_arrow(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
- let a=items[ii];return strokeOutput(vi,clipPosition(a.a.xyz,a.color.w),clipPosition(a.b.xyz,a.color.w),a.color,a.color,a.a.w,a.b.w,0.0);
+ let a=items[ii];return strokeOutput(vi,clipPosition(a.a.xyz,a.color.w),clipPosition(a.b.xyz,a.color.w),a.color,a.color,a.a.w,a.b.w,0.0,worldPosition(a.a.xyz,a.color.w),worldPosition(a.b.xyz,a.color.w));
 }
 @vertex fn vs_ui(@builtin(vertex_index) vi:u32)->Out {let p=items[vi];var o:Out;let x=p.a.x/u.viewport.x*2.0-1.0;let y=1.0-p.a.y/u.viewport.y*2.0;o.clip=vec4<f32>(x,y,0.0,1.0);o.color=vec4<f32>(decode(p.color.rgb),p.color.a);o.uv=vec2<f32>(0.0);o.point=0.0;return o;}
 @vertex fn vs_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
 var corners=array<vec3<f32>,36>(vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,0.0,1.0));
 var normals=array<vec3<f32>,6>(vec3<f32>(0.0,0.0,-1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,-1.0,0.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(-1.0,0.0,0.0),vec3<f32>(1.0,0.0,0.0));
-let p=items[ii];return output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color);}
-@fragment fn fs_main(o:Out)->@location(0) vec4<f32> {if o.point>0.0 && dot(o.uv,o.uv)>1.0 {discard;} return o.color;}
+// Materials, and so highlights, apply to meshes only.
+let p=items[ii];var o=output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color);o.spec=vec2<f32>(0.0);return o;}
+// Overlays are flat screen rectangles: no highlight, no fog.
+@fragment fn fs_overlay(o:Out)->@location(0) vec4<f32> {return o.color;}
+@fragment fn fs_main(o:Out)->@location(0) vec4<f32> {if o.point>0.0 && dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(finish(o,o.color.rgb),o.color.a);}
 
 @group(1) @binding(0) var mapTexture: texture_2d<f32>;
 @group(1) @binding(1) var mapSampler: sampler;
@@ -138,16 +171,16 @@ fn sampleMap(uv:vec2<f32>,repeat:f32)->vec4<f32> {
  return mix(mix(a,b,t.x),mix(c,d,t.x),t.y);
 }
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
- return vec4<f32>(decode(sampleMap(o.uv,o.repeat).rgb)*o.color.rgb,1.0);
+ return vec4<f32>(finish(o,decode(sampleMap(o.uv,o.repeat).rgb)*o.color.rgb),1.0);
 }
 // Transparent materials blend by the texture's alpha times the vertex's.
 @fragment fn fs_blend_texture(o:Out)->@location(0) vec4<f32> {
  let t=sampleMap(o.uv,o.repeat);
- return vec4<f32>(decode(t.rgb)*o.color.rgb,t.a*o.cut);
+ return vec4<f32>(finish(o,decode(t.rgb)*o.color.rgb),t.a*o.cut);
 }
 // Cutout materials skip texels under their threshold; what remains is opaque.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
  let t=sampleMap(o.uv,o.repeat);
  if t.a<o.cut {discard;}
- return vec4<f32>(decode(t.rgb)*o.color.rgb,1.0);
+ return vec4<f32>(finish(o,decode(t.rgb)*o.color.rgb),1.0);
 }

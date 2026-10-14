@@ -20,8 +20,9 @@ import (
 //go:embed scene.wgsl
 var sceneShader string
 
-// uniformSize is the scene uniform's bytes: matrix, viewport, light, eye, forward.
-const uniformSize = 128
+// uniformSize is the scene uniform's bytes: matrix, viewport, light, eye,
+// forward, fog, fog color.
+const uniformSize = 160
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -90,7 +91,11 @@ func (g *gpuRenderer) setup() (err error) {
 			if i >= 4 {
 				primitive.CullMode = gputypes.CullModeNone
 			}
-			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: g.layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_main", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
+			fragment := "fs_main"
+			if i == 4 {
+				fragment = "fs_overlay" // Overlays: no highlight or fog.
+			}
+			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: g.layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
 			if err != nil {
 				return err
 			}
@@ -194,6 +199,19 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	// and the ambient level is in that space.
 	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), linear, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, ambientLight(&f),
 		f.Eye.X, f.Eye.Y, f.Eye.Z, perspective, f.Forward.X, f.Forward.Y, f.Forward.Z, 0)...)
+	// Fog's near and far distances (equal when there is none) and color, in
+	// the frame's color space.
+	var fog [8]float32
+	if f.Fog.on() {
+		c := f.Fog.color(&f)
+		fog = [8]float32{f.Fog.Near, f.Fog.Far, 0, 0, float32(c.R) / 255, float32(c.G) / 255, float32(c.B) / 255, 1}
+		if f.Linear {
+			for i := 4; i < 7; i++ {
+				fog[i] = float32(decodeSRGB(float64(fog[i])))
+			}
+		}
+	}
+	ub = append(ub, floats(fog[:]...)...)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
 			return err
@@ -383,7 +401,7 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 	if err != nil {
 		return err
 	}
-	if err = writeTransform(dev, g.transforms, Instance{World: nt3dmath.Identity(), Visible: true}); err != nil {
+	if err = writeTransform(dev, g.transforms, Instance{World: nt3dmath.Identity(), Visible: true}, nil); err != nil {
 		g.transforms.Release()
 		g.transforms = nil
 	}

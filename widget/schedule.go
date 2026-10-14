@@ -125,7 +125,7 @@ func (m *Model) frame() Frame {
 	f, _ := m.scene.Frame(m.camera, max(1, g.Pixels.X), max(1, g.Pixels.Y))
 	f.Matrix = m.camera.Matrix(float32(g.DisplayAspect))
 	f.Background = m.background
-	f.Light = m.light
+	f.Light, f.Fog = m.light, m.fog
 	if m.decorate != nil {
 		m.decorate(&f)
 	}

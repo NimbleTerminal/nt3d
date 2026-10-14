@@ -86,6 +86,9 @@ func validateGeometry(g Geometry) error {
 	if g.Material != nil && (!validFloat(g.Material.Threshold) || g.Material.Threshold < 0 || g.Material.Threshold > 1) {
 		return fmt.Errorf("nt3d: cutout threshold must be 0..1")
 	}
+	if m := g.Material; m != nil && (!validFloat(m.Specular, m.Shininess) || m.Specular < 0 || m.Specular > 1 || m.Shininess != 0 && (m.Shininess < 1 || m.Shininess > 1024)) {
+		return fmt.Errorf("nt3d: specular must be 0..1 and shininess 1..1024")
+	}
 	if m := g.Material; m != nil && m.Transparent && (m.Cutout || m.EdgeOn) {
 		return fmt.Errorf("nt3d: a transparent material cannot be a cutout")
 	}

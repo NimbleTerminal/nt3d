@@ -44,6 +44,14 @@ type UV struct{ U, V float32 }
 // transparent geometries, and the overlapping layers of one non-convex mesh,
 // can blend out of order. Wireframe and picking treat them as opaque. It
 // cannot be combined with Cutout or EdgeOn.
+//
+// Specular adds a white highlight where the surface mirrors the light toward
+// the camera (Blinn-Phong): Specular is its strength, 0 (none) to 1, and
+// Shininess its tightness, the exponent, 1 to 1024 (zero means 32: larger
+// is smaller and sharper, as on polished plastic or glass). It is found at
+// each pixel, from normals interpolated across the triangle, so highlights
+// stay round on coarse meshes. It needs the frame's camera (Frame.Eye),
+// which Scene.Frame supplies; unlit materials and wireframe have none.
 type Material struct {
 	Texture     *Texture
 	Unlit       bool
@@ -53,6 +61,8 @@ type Material struct {
 	Tint        bool
 	EdgeOn      bool
 	Transparent bool
+	Specular    float32
+	Shininess   float32
 }
 
 // transparent reports whether a geometry's triangles are blended.

@@ -96,6 +96,8 @@ type Frame struct {
 	// is decoded too, so surfaces facing away keep their brightness.
 	// Scene.Frame sets it; without it, colors are mixed as encoded.
 	Linear bool
+	// Fog fades what is drawn toward a color with distance from the camera.
+	Fog Fog
 	// Cull skips geometry wholly outside the view, which costs nothing to
 	// leave out. It trusts each Geometry's Bounds to contain it, as
 	// Scene.Frame's do, and Scene.Frame sets it; geometry without valid
@@ -203,6 +205,9 @@ func validateFrame(f Frame) error {
 	}
 	if len(f.Instances) != 0 && len(f.Instances) != len(f.Geometry) {
 		return fmt.Errorf("nt3d: instance count mismatch")
+	}
+	if !validFog(f.Fog) {
+		return fmt.Errorf("nt3d: non-finite fog")
 	}
 	if len(f.GeometryRevisions) != 0 {
 		if len(f.GeometryRevisions) != len(f.Geometry) || len(f.Instances) != len(f.Geometry) {

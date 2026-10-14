@@ -1,20 +1,25 @@
 // Copyright (c) 2026 Neomantra Corp.
 package nt3d
 
+import "nimbleterminal.dev/nt3d/math"
+
 // clipCorner is a triangle corner in clip space with what is interpolated
-// across it: its lit color and texture coordinate.
+// across it: its lit color, texture coordinate, and the world position and
+// normal that highlights and fog need.
 type clipCorner struct {
-	x, y, z, w float32
-	shade      [3]float32
-	uv         UV
-	cut        float32 // A cutout's threshold here.
+	x, y, z, w    float32
+	shade         [3]float32
+	uv            UV
+	cut           float32 // A cutout's threshold here.
+	world, normal nt3dmath.Vec3
 }
 
 func lerpCorner(a, b clipCorner, t float32) clipCorner {
 	mix := func(x, y float32) float32 { return x + (y-x)*t }
+	vec := func(x, y nt3dmath.Vec3) nt3dmath.Vec3 { return x.Add(y.Sub(x).Scale(t)) }
 	return clipCorner{mix(a.x, b.x), mix(a.y, b.y), mix(a.z, b.z), mix(a.w, b.w),
 		[3]float32{mix(a.shade[0], b.shade[0]), mix(a.shade[1], b.shade[1]), mix(a.shade[2], b.shade[2])},
-		UV{mix(a.uv.U, b.uv.U), mix(a.uv.V, b.uv.V)}, mix(a.cut, b.cut)}
+		UV{mix(a.uv.U, b.uv.U), mix(a.uv.V, b.uv.V)}, mix(a.cut, b.cut), vec(a.world, b.world), vec(a.normal, b.normal)}
 }
 
 // clipNear cuts a triangle at the near plane, z = 0 in WebGPU's depth range,

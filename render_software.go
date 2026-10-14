@@ -70,6 +70,32 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		}
 		return float32(p)
 	}
+	// Fog mixes toward its color, in the working space.
+	fogged := f.Fog.on()
+	fc := f.Fog.color(&f)
+	fogWork := [3]float32{fromPixel(fc.R), fromPixel(fc.G), fromPixel(fc.B)}
+	fogRGB := func(rgb *[3]float32, d float32) {
+		if k := f.Fog.amount(d); k > 0 {
+			for i := range rgb {
+				rgb[i] += (fogWork[i] - rgb[i]) * k
+			}
+		}
+	}
+	fogColor := func(c color.RGBA, d float32) color.RGBA {
+		if !fogged {
+			return c
+		}
+		rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
+		fogRGB(&rgb, d)
+		return color.RGBA{toPixel(rgb[0]), toPixel(rgb[1]), toPixel(rgb[2]), c.A}
+	}
+	// strokeFog fogs a stroke from world points a to b, or is nil.
+	strokeFog := func(a, b nt3dmath.Vec3) func(color.RGBA, float32) color.RGBA {
+		if !fogged {
+			return nil
+		}
+		return func(c color.RGBA, t float32) color.RGBA { return fogColor(c, f.eyeDistance(a.Add(b.Sub(a).Scale(t)))) }
+	}
 	// blend mixes a transparent fragment over the pixel, if no surface
 	// hides it, leaving the depth for what lies behind.
 	blend := func(x, y int, z float32, rgb [3]float32, alpha float32) {
@@ -93,6 +119,7 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		textured := material != nil && material.Texture != nil
 		cutout := textured && material.Cutout
 		blended := side != opaqueFaces
+		specular := material != nil && material.Specular > 0 && !material.Unlit
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
@@ -132,6 +159,23 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 					lit := func(k int) float32 { return (q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]) / 255 }
 					rgb = [3]float32{fromPixel(tex.R) * lit(0), fromPixel(tex.G) * lit(1), fromPixel(tex.B) * lit(2)}
 					opacity *= float32(tex.A) / 255
+				}
+				if specular || fogged {
+					q0, q1, q2 := u/a.w, v/b.w, t/c.w
+					sum := q0 + q1 + q2
+					q0, q1, q2 = q0/sum, q1/sum, q2/sum
+					// The world point, exact under perspective: distance from
+					// the camera is not affine, so it is found here.
+					p := a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
+					if specular {
+						n := a.normal.Scale(q0).Add(b.normal.Scale(q1)).Add(c.normal.Scale(q2))
+						if s := f.highlight(material, n, p) * 255; s > 0 {
+							rgb[0], rgb[1], rgb[2] = rgb[0]+s, rgb[1]+s, rgb[2]+s
+						}
+					}
+					if fogged {
+						fogRGB(&rgb, f.eyeDistance(p))
+					}
 				}
 				if blended {
 					blend(x, y, u*z0+v*z1+t*z2, rgb, opacity)
@@ -176,6 +220,10 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 			if unlit {
 				n = nt3dmath.Vec3{}
 			}
+			corners[k].world = world.Point(vertices[i].Position)
+			if dir := normals.Direction(n); dir.Dot(dir) != 0 {
+				corners[k].normal = dir.Normalize()
+			}
 			if textured && !material.Tint {
 				c = color.RGBA{255, 255, 255, 255}
 			}
@@ -203,7 +251,7 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		}
 	}
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
-		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], px, 0, .00002, put)
+		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], px, 0, .00002, put, strokeFog(f.DynamicLines[i].Position, f.DynamicLines[i+1].Position))
 	}
 	// Interactive frames sample screen-space marks (points, lines, arrows),
 	// which stay legible thinned. Every triangle is drawn: sampling surfaces
@@ -233,10 +281,11 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 				continue
 			}
 			radius := max(1, min(8, int(p.Radius))) * scale
+			c := fogColor(p.Color, f.eyeDistance(inst.World.Point(p.Position)))
 			for dy := -radius; dy <= radius; dy++ {
 				for dx := -radius; dx <= radius; dx++ {
 					if dx*dx+dy*dy <= radius*radius {
-						put(int(x)+dx, int(y)+dy, z, p.Color)
+						put(int(x)+dx, int(y)+dy, z, c)
 					}
 				}
 			}
@@ -254,12 +303,12 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
 		for i := 0; i+1 < len(g.Lines); i += lineStep {
-			rasterStroke(local, g.Lines[i], g.Lines[i+1], lineWidth(g.LineWidth)*px, 0, -.00001, put)
+			rasterStroke(local, g.Lines[i], g.Lines[i+1], lineWidth(g.LineWidth)*px, 0, -.00001, put, strokeFog(inst.World.Point(g.Lines[i].Position), inst.World.Point(g.Lines[i+1].Position)))
 		}
 		arrowStep := sampled(len(g.Arrows), 10000)
 		for i := 0; i < len(g.Arrows); i += arrowStep {
 			a := g.Arrows[i]
-			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put)
+			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put, strokeFog(inst.World.Point(a.Start), inst.World.Point(a.End)))
 		}
 	}
 	// Transparent triangles blend over everything opaque, farthest first.

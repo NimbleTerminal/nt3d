@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 	"nimbleterminal.dev/nt3d/math"
 	"testing"
@@ -500,6 +501,65 @@ func TestGPULinearLighting(t *testing.T) {
 			if gpu, software := at(img, 40, 40), at(softwareRender(f), 40, 40); !closeRGB(gpu, software, 2) {
 				t.Errorf("linear %v, cos %.1f: GPU %v, software %v", linear, cos, gpu, software)
 			}
+		}
+	}
+}
+
+// Highlights and fog match software across whole pictures: a shiny sphere,
+// a flat quad's per-pixel highlight, fogged surfaces, points, and lines,
+// a shiny fogged glass sphere, and fog in an orthographic view.
+func TestGPUSpecularAndFogMatchSoftware(t *testing.T) {
+	ball, err := BuildSphere(Sphere{Radius: .6, Color: gray, Material: shiny})
+	check(t, err)
+	glassBall, err := BuildSphere(Sphere{Radius: .6, Color: color.RGBA{240, 240, 240, 128}, Material: &Material{Transparent: true, Specular: .8, Shininess: 64}})
+	check(t, err)
+	marks := Geometry{
+		Points:    []Point{{Position: nt3dmath.Vec3{X: -.5, Z: .3}, Radius: 4, Color: color.RGBA{200, 0, 0, 255}}},
+		Lines:     []Vertex{{Position: nt3dmath.Vec3{X: .2, Y: -.8, Z: -.5}, Color: color.RGBA{200, 0, 0, 255}}, {Position: nt3dmath.Vec3{X: .2, Y: .8, Z: .8}, Color: color.RGBA{0, 200, 0, 255}}},
+		LineWidth: 3,
+	}
+	fogged := func(f Frame) Frame {
+		f.Fog = Fog{Near: 3, Far: 5}
+		return f
+	}
+	ortho := fogged(blendScene(t, overhead, ball))
+	ortho.Perspective = false
+	scenes := map[string]Frame{
+		"shiny sphere":   blendScene(t, overhead, ball),
+		"per-pixel quad": blendScene(t, overhead, quad(1.2, .3, gray, &Material{Specular: 1, Shininess: 1024}, false)),
+		"fogged sphere":  fogged(blendScene(t, overhead, ball)),
+		"fogged marks":   fogged(blendScene(t, nil, marks)),
+		"fogged glass":   fogged(blendScene(t, overhead, glassBall)),
+		"orthographic":   ortho,
+	}
+	r := &gpuRenderer{}
+	defer r.Close()
+	for name, f := range scenes {
+		// Points' and strokes' edge pixels already differ between the
+		// renderers; compare only where they agree without fog.
+		clear := f
+		clear.Fog = Fog{}
+		img, err := r.Render(clear)
+		check(t, err)
+		gpuClear := image.NewRGBA(img.Bounds())
+		draw.Draw(gpuClear, img.Bounds(), img, image.Point{}, draw.Src)
+		swClear := softwareRender(clear)
+		img, err = r.Render(f)
+		check(t, err)
+		sw := softwareRender(f)
+		off := 0
+		for y := range f.Height {
+			for x := range f.Width {
+				if name == "fogged marks" && !closeRGB(at(gpuClear, x, y), at(swClear, x, y), 6) {
+					continue
+				}
+				if !closeRGB(at(img, x, y), at(sw, x, y), 6) {
+					off++
+				}
+			}
+		}
+		if off > f.Width*f.Height/50 {
+			t.Errorf("%s: %d of %d pixels differ; center GPU %v, software %v", name, off, f.Width*f.Height, at(img, 40, 40), at(sw, 40, 40))
 		}
 	}
 }

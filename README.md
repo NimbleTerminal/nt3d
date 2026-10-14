@@ -308,7 +308,16 @@ demo shows it (`t`). `Material.Cutout` instead skips
 texels under its `Threshold` alpha (one half by default; on the GPU and in
 software alike), cutting shapes out of opaque, depth-tested triangles; it
 cannot be combined with Transparent. Other materials ignore alpha.
-`Material.Tint` multiplies a texture by the vertex
+`Material.Specular` (0..1) adds a white Blinn-Phong highlight where a
+surface mirrors the light toward the camera, `Shininess` (1..1024, 32 by
+default) setting how tight it is; it is found at each pixel from
+interpolated normals, so highlights stay round on coarse meshes, and boxes,
+unlit materials, and wireframe have none. `Frame.Fog` fades everything drawn
+in the scene (surfaces, points, lines, arrows; not overlays or wireframe)
+toward a color, the background by default, linearly from `Near` to `Far`
+world units from the camera, measured at each pixel; the widget's `SetFog`
+sets it, or a frame decorator can scale it with the camera's distance, as the
+demos' `d` key does. `Material.Tint` multiplies a texture by the vertex
 colors. `Material.EdgeOn` shows a cutout only where the surface turns
 edge-on to the viewer, its threshold rising as the surface comes to face the
 camera; it uses the frame's camera (`Frame.Eye`, `Forward`, `Perspective`,
@@ -368,6 +377,8 @@ and `SetPostProcess(fn)` run `fn(*image.RGBA)` on each rendered frame and
 snapshot, GPU or software, before it is shown: blur, vignette, color grading,
 or dithering are ordinary Go. It runs on the render goroutine, one frame at a
 time, and may change pixels in place. The fur demo shows both (`x`, `e`).
+
+`SetFog(fog)` fogs the widget's frames, as `SetLight` lights them.
 
 `FrameRate()` is how many frames a second the widget has shown, over the last
 second (zero after a second without one), and `RenderTime()` the last frame's
