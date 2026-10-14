@@ -11,7 +11,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"nimbleterminal.dev/nt3d"
-	"nimbleterminal.dev/nt3d/examples/terrain/internal/terraindemo/models"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
 )
@@ -38,7 +37,7 @@ type furScene struct {
 // smooths its normals: shells pushed out along flat normals would crack
 // apart at every edge.
 func spot() (nt3d.Geometry, error) {
-	data, err := fs.ReadFile(models.Files, "spot_triangulated.obj")
+	data, err := fs.ReadFile(SampleFiles, "spot_triangulated.obj")
 	if err != nil {
 		return nt3d.Geometry{}, err
 	}
@@ -46,7 +45,7 @@ func spot() (nt3d.Geometry, error) {
 	if err != nil {
 		return nt3d.Geometry{}, err
 	}
-	pixels, err := fs.ReadFile(models.Files, "spot_texture.png")
+	pixels, err := fs.ReadFile(SampleFiles, "spot_texture.png")
 	if err != nil {
 		return nt3d.Geometry{}, err
 	}

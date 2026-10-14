@@ -4,11 +4,14 @@ package terraindemo
 import (
 	"testing"
 
+	"nimbleterminal.dev/nt3d/examples/terrain/internal/terraindemo/models"
+
 	"nimbleterminal.dev/nt3d"
 )
 
 // Every embedded sample decodes cleanly into the scene, with what it shows.
 func TestSamplesLoad(t *testing.T) {
+	SampleFiles = models.Files
 	d := &demo{scene: nt3d.NewScene()}
 	var err error
 	if d.group, err = d.scene.Add(nt3d.Root, "island"); err != nil {
@@ -41,6 +44,7 @@ func TestSamplesLoad(t *testing.T) {
 
 // Spot loads with its texture and smooth normals, ready for fur.
 func TestSpotLoads(t *testing.T) {
+	SampleFiles = models.Spot
 	g, err := spot()
 	if err != nil {
 		t.Fatal(err)

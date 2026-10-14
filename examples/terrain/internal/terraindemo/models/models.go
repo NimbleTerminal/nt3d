@@ -10,8 +10,15 @@ import "embed"
 
 //go:generate go run ./generate
 
-// Files holds knot.stl, star.obj with star.mtl and wood.png, robot.3mf, and
-// spot_triangulated.obj with spot_texture.png.
+// Files holds the models demo's samples: knot.stl, star.obj with star.mtl
+// and wood.png, and robot.3mf.
 //
-//go:embed knot.stl star.obj star.mtl wood.png robot.3mf spot_triangulated.obj spot_texture.png spot_README.txt
+//go:embed knot.stl star.obj star.mtl wood.png robot.3mf
 var Files embed.FS
+
+// Spot holds the fur demo's cow: spot_triangulated.obj, spot_texture.png,
+// and its README. Kept apart from Files so each demo's program carries only
+// what it shows.
+//
+//go:embed spot_triangulated.obj spot_texture.png spot_README.txt
+var Spot embed.FS

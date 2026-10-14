@@ -10,12 +10,16 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"nimbleterminal.dev/nt3d"
-	"nimbleterminal.dev/nt3d/examples/terrain/internal/terraindemo/models"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
 )
 
-// ModelsMain shows sample STL, OBJ, and 3MF files, embedded in the program.
+// SampleFiles holds the sample models the models and fur demos show. Their
+// commands set it from the models package, which embeds them, so that the
+// other demos' programs do not carry the files.
+var SampleFiles fs.FS
+
+// ModelsMain shows sample STL, OBJ, and 3MF files from SampleFiles.
 func ModelsMain() { mainDemo(false, sceneModels) }
 
 // sample is a model file and what it shows of its format.
@@ -46,12 +50,12 @@ func (d *demo) setupModels() error {
 // files as nt3dmesh would read them from disk.
 func (d *demo) loadSample(i int) error {
 	s := samples[i]
-	data, err := fs.ReadFile(models.Files, s.file)
+	data, err := fs.ReadFile(SampleFiles, s.file)
 	if err != nil {
 		return err
 	}
 	format, _ := nt3dmesh.FormatOf(s.file, data)
-	open := func(name string) ([]byte, error) { return fs.ReadFile(models.Files, path.Clean(name)) }
+	open := func(name string) ([]byte, error) { return fs.ReadFile(SampleFiles, path.Clean(name)) }
 	m, err := nt3dmesh.Decode(data, format, &nt3dmesh.Options{Color: color.RGBA{100, 180, 230, 255}, Open: open, Up: s.up})
 	if err != nil {
 		return fmt.Errorf("%s: %w", s.file, err)
