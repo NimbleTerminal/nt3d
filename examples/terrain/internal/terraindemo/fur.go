@@ -25,6 +25,8 @@ var (
 )
 
 type furScene struct {
+	fins           nt3d.NodeID // Zero when fins are off.
+	noFins         bool
 	effect         int // Index into effects.
 	base           nt3d.Geometry
 	coat           *nt3d.FurCoat
@@ -82,6 +84,12 @@ func (d *demo) growFur() error {
 		}
 	}
 	d.fur.nodes = nil
+	if d.fur.fins != 0 {
+		if err := d.scene.Remove(d.fur.fins); err != nil {
+			return err
+		}
+		d.fur.fins = 0
+	}
 	// Spot's texture colors the fur: black and white, darker at the roots.
 	coat, err := nt3d.NewFur(nt3d.Fur{Length: furLengths[d.fur.length], Shells: furShells[d.fur.shells], Spacing: .011, Seed: 7})
 	if err != nil {
@@ -102,6 +110,19 @@ func (d *demo) growFur() error {
 		d.fur.nodes = append(d.fur.nodes, id)
 	}
 	d.fur.coat = coat
+	// Fins fill the silhouette, where the shells' layers would show as dashes.
+	if !d.fur.noFins {
+		fins, err := coat.Fins(d.fur.base)
+		if err != nil {
+			return err
+		}
+		if d.fur.fins, err = d.scene.SetGeometry("fur fins", fins); err != nil {
+			return err
+		}
+		if err = d.scene.Reparent(d.fur.fins, d.group); err != nil {
+			return err
+		}
+	}
 	return d.stepFur()
 }
 
@@ -129,6 +150,10 @@ func (d *demo) cycleEffect() tea.Cmd {
 }
 
 func (d *demo) furView(content string) string {
-	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · supersample %d× · %s · %s",
-		content, d.view.RenderMode(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, d.view.Supersample(), effects[d.fur.effect].name, d.status)
+	fins := "fins"
+	if d.fur.noFins {
+		fins = "no fins"
+	}
+	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · f fins · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s · supersample %d× · %s · %s",
+		content, d.view.RenderMode(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, d.view.Supersample(), effects[d.fur.effect].name, d.status)
 }

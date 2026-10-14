@@ -200,6 +200,11 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "f":
+			if d.fur != nil {
+				d.fur.noFins = !d.fur.noFins
+				err = d.growFur()
+				break
+			}
 			if !d.terrainScene() {
 				return d, nil
 			}
