@@ -45,19 +45,21 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-shapes ./cmd/shapes
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-models ./cmd/models
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-large ./cmd/large
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-fur ./cmd/fur
   build-wasm:
     env:
       GOOS: js
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/terrain/app.wasm .
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/shapes/app.wasm ./cmd/shapes
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/models/app.wasm ./cmd/models
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/large/app.wasm ./cmd/large
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/fur/app.wasm ./cmd/fur
   web-assets:
     cmds:
       - go -C examples/terrain tool booba-assets ../../dist/web/terrain/
@@ -66,6 +68,7 @@ tasks:
       - go -C examples/terrain tool booba-assets ../../dist/web/shapes/
       - go -C examples/terrain tool booba-assets ../../dist/web/models/
       - go -C examples/terrain tool booba-assets ../../dist/web/large/
+      - go -C examples/terrain tool booba-assets ../../dist/web/fur/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -101,6 +104,11 @@ tasks:
     deps: [build]
     cmds:
       - bin/nt3d-large {{.CLI_ARGS}}
+  fur:
+    desc: Show shell fur on a torus, swaying in the wind
+    deps: [build]
+    cmds:
+      - bin/nt3d-fur {{.CLI_ARGS}}
   models-generate:
     desc: Regenerate the sample models the models demo embeds
     cmds:

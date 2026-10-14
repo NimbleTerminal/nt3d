@@ -41,6 +41,7 @@ type demo struct {
 	meshes            *meshScene
 	models            *modelScene
 	large             *largeScene
+	fur               *furScene
 }
 
 type sceneMode int
@@ -51,10 +52,13 @@ const (
 	sceneMeshes
 	sceneModels
 	sceneLarge
+	sceneFur
 )
 
 // terrainScene reports whether the terrain controls apply.
-func (d *demo) terrainScene() bool { return d.dynamic == nil && d.meshes == nil && d.large == nil }
+func (d *demo) terrainScene() bool {
+	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil
+}
 
 type quitMsg struct{}
 type phaseMsg time.Time
@@ -105,7 +109,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(v)
 		elapsed := now.Sub(d.lastPhase).Seconds()
 		d.lastPhase = now
-		if !d.animate || (!d.procedural && d.dynamic == nil) {
+		if !d.animate || (!d.procedural && d.dynamic == nil && d.fur == nil) {
 			return d, phaseTick()
 		}
 		d.phase = math.Mod(d.phase+elapsed, 2*math.Pi)
@@ -114,9 +118,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return d, phaseTick()
 		}
 		var err error
-		if d.dynamic != nil {
+		switch {
+		case d.dynamic != nil:
 			err = d.stepDynamic()
-		} else {
+		case d.fur != nil:
+			err = d.stepFur()
+		default:
 			err = d.updatePlasma()
 		}
 		if err != nil {
@@ -191,16 +198,26 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.flat = !d.flat
 			err = d.terrain()
 		case "l":
+			if d.fur != nil {
+				d.fur.length = (d.fur.length + 1) % len(furLengths)
+				err = d.growFur()
+				break
+			}
 			if !d.terrainScene() {
 				return d, nil
 			}
 			d.lit = !d.lit
 			err = d.terrain()
 		case "s":
-			if d.meshes == nil {
+			switch {
+			case d.fur != nil:
+				d.fur.shells = (d.fur.shells + 1) % len(furShells)
+				err = d.growFur()
+			case d.meshes != nil:
+				err = d.cycleNormals()
+			default:
 				return d, nil
 			}
-			err = d.cycleNormals()
 		case "[", "]":
 			if d.models == nil {
 				return d, nil
@@ -253,6 +270,11 @@ func (d *demo) View() tea.View {
 		} else {
 			status += " · paused"
 		}
+	}
+	if d.fur != nil {
+		v.Content = d.zones.Scan(d.furView(v.Content))
+		v.AltScreen = true
+		return v
 	}
 	if d.large != nil {
 		v.Content = d.zones.Scan(d.largeView(v.Content))
@@ -369,6 +391,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupLarge(); err != nil {
 			return err
 		}
+	case sceneFur:
+		if err = d.setupFur(); err != nil {
+			return err
+		}
 	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
@@ -397,7 +423,7 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones))
 	defer d.view.Close()
 	switch kind {
-	case sceneMeshes, sceneLarge:
+	case sceneMeshes, sceneLarge, sceneFur:
 		d.view.Fit()
 	case sceneModels:
 		d.frameSample()
