@@ -36,7 +36,7 @@ require (
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	nimbleterminal.dev/ntcanvas v0.0.0-20261013224559-5064de7ec634 // indirect
+	nimbleterminal.dev/ntcanvas v0.1.0 // indirect
 	nimbleterminal.dev/ntgpuimage v0.2.0 // indirect
 )
 
