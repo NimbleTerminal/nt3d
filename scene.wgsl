@@ -4,6 +4,12 @@ struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(1) var<storage, read> items: array<Item>;
 struct Instance { world:mat4x4<f32>, normal:mat4x4<f32> };
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
+// decode turns sRGB-encoded color into linear light, when the frame works in
+// linear light (viewport.z); the resolve pass encodes the result.
+fn decode(c:vec3<f32>)->vec3<f32> {
+ if u.viewport.z<0.5 {return c;}
+ return select(pow((c+0.055)/1.055,vec3<f32>(2.4)),c/12.92,c<=vec3<f32>(0.04045));
+}
 fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
  let instance=instances[u32(index)];
  if instance.normal[3][3]==0.0 {return vec4<f32>(0.0,0.0,2.0,1.0);}
@@ -13,7 +19,7 @@ struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, 
 fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
  var o: Out; o.clip=clipPosition(pos,color.w); var light=1.0;
  if dot(normal,normal)>0.0 { light=u.light.w+(1.0-u.light.w)*max(0.0,dot(normalize((instances[u32(color.w)].normal*vec4<f32>(normal,0.0)).xyz),normalize(u.light.xyz))); }
- o.color=vec4<f32>(color.rgb*light,1.0);o.uv=vec2<f32>(0.0);o.point=0.0;return o;
+ o.color=vec4<f32>(decode(color.rgb)*light,1.0);o.uv=vec2<f32>(0.0);o.point=0.0;return o;
 }
 @vertex fn vs_point(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
  var corners=array<vec2<f32>,6>(vec2<f32>(-1.,-1.),vec2<f32>(1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,1.));
@@ -74,7 +80,7 @@ fn strokeOutput(vi:u32,a:vec4<f32>,b:vec4<f32>,ca:vec4<f32>,cb:vec4<f32>,width:f
  let position=mix(pa,pb,fraction)+offset;
  let depth=mix(s.a.z/s.a.w,s.b.z/s.b.w,fraction)+bias;
  o.clip=vec4<f32>(position*2.0/u.viewport.xy*w,depth*w,w);
- o.color=vec4<f32>(mix(ca.rgb,cb.rgb,param),1.0);
+ o.color=vec4<f32>(decode(mix(ca.rgb,cb.rgb,param)),1.0);
  return o;
 }
 fn lineOutput(vi:u32,ii:u32,bias:f32)->Out {
@@ -86,7 +92,7 @@ fn lineOutput(vi:u32,ii:u32,bias:f32)->Out {
 @vertex fn vs_arrow(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
  let a=items[ii];return strokeOutput(vi,clipPosition(a.a.xyz,a.color.w),clipPosition(a.b.xyz,a.color.w),a.color,a.color,a.a.w,a.b.w,0.0);
 }
-@vertex fn vs_ui(@builtin(vertex_index) vi:u32)->Out {let p=items[vi];var o:Out;let x=p.a.x/u.viewport.x*2.0-1.0;let y=1.0-p.a.y/u.viewport.y*2.0;o.clip=vec4<f32>(x,y,0.0,1.0);o.color=p.color;o.uv=vec2<f32>(0.0);o.point=0.0;return o;}
+@vertex fn vs_ui(@builtin(vertex_index) vi:u32)->Out {let p=items[vi];var o:Out;let x=p.a.x/u.viewport.x*2.0-1.0;let y=1.0-p.a.y/u.viewport.y*2.0;o.clip=vec4<f32>(x,y,0.0,1.0);o.color=vec4<f32>(decode(p.color.rgb),p.color.a);o.uv=vec2<f32>(0.0);o.point=0.0;return o;}
 @vertex fn vs_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
 var corners=array<vec3<f32>,36>(vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,0.0,1.0));
 var normals=array<vec3<f32>,6>(vec3<f32>(0.0,0.0,-1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,-1.0,0.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(-1.0,0.0,0.0),vec3<f32>(1.0,0.0,0.0));
@@ -132,16 +138,16 @@ fn sampleMap(uv:vec2<f32>,repeat:f32)->vec4<f32> {
  return mix(mix(a,b,t.x),mix(c,d,t.x),t.y);
 }
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
- return vec4<f32>(sampleMap(o.uv,o.repeat).rgb*o.color.rgb,1.0);
+ return vec4<f32>(decode(sampleMap(o.uv,o.repeat).rgb)*o.color.rgb,1.0);
 }
 // Transparent materials blend by the texture's alpha times the vertex's.
 @fragment fn fs_blend_texture(o:Out)->@location(0) vec4<f32> {
  let t=sampleMap(o.uv,o.repeat);
- return vec4<f32>(t.rgb*o.color.rgb,t.a*o.cut);
+ return vec4<f32>(decode(t.rgb)*o.color.rgb,t.a*o.cut);
 }
 // Cutout materials skip texels under their threshold; what remains is opaque.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
  let t=sampleMap(o.uv,o.repeat);
  if t.a<o.cut {discard;}
- return vec4<f32>(t.rgb*o.color.rgb,1.0);
+ return vec4<f32>(decode(t.rgb)*o.color.rgb,1.0);
 }

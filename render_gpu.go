@@ -53,7 +53,7 @@ type gpuRenderer struct {
 	pipelines      [7]*wgpu.RenderPipeline
 	batches        [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
 	uploads        uint64
-	super          supersampler
+	target         sceneTarget
 }
 
 func (g *gpuRenderer) setup() (err error) {
@@ -71,7 +71,7 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		g.bindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, {Binding: 1, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}, {Binding: 2, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}}})
+		g.bindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, {Binding: 1, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}, {Binding: 2, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}}})
 		if err != nil {
 			return err
 		}
@@ -90,7 +90,7 @@ func (g *gpuRenderer) setup() (err error) {
 			if i >= 4 {
 				primitive.CullMode = gputypes.CullModeNone
 			}
-			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: g.layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_main", Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, WriteMask: gputypes.ColorWriteMaskAll}}}})
+			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: g.layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_main", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
 			if err != nil {
 				return err
 			}
@@ -180,14 +180,19 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	if err := g.prepareTextures(f); err != nil {
 		return nil, err
 	}
-	if err := g.prepareSupersample(f); err != nil {
+	if err := g.prepareTarget(f); err != nil {
 		return nil, err
 	}
-	perspective := float32(0)
+	perspective, linear := float32(0), float32(0)
 	if f.Perspective {
 		perspective = 1
 	}
-	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), 0, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, f.Light.Ambient,
+	if f.Linear {
+		linear = 1
+	}
+	// The viewport's third component says whether to work in linear light,
+	// and the ambient level is in that space.
+	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), linear, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, ambientLight(&f),
 		f.Eye.X, f.Eye.Y, f.Eye.Z, perspective, f.Forward.X, f.Forward.Y, f.Forward.Z, 0)...)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
@@ -209,21 +214,30 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		if err := dev.Queue().WriteBuffer(g.uniform, 0, ub); err != nil {
 			return err
 		}
-		// The scene draws into the frame, or into the enlarged target that a
-		// resolve pass averages down. Pixel sizes stay the frame's, through
-		// the uniform viewport, so points and lines keep their size.
-		if s := supersampleFactor(f); s > 1 {
-			return g.renderSupersampled(frame, s, func(color, depth *wgpu.TextureView) error { return g.drawScene(f, frame.Encoder, color, depth) })
-		}
-		return g.drawScene(f, frame.Encoder, frame.Color, frame.Depth)
+		// The scene draws into the scene target, which a resolve pass
+		// averages down and encodes. Pixel sizes stay the frame's, through
+		// the uniform viewport, so points and lines keep their size when
+		// supersampled.
+		return g.renderScene(frame, f, func(color, depth *wgpu.TextureView) error { return g.drawScene(f, frame.Encoder, color, depth) })
 	})
 	return img, err
+}
+
+// background is the frame's background in the scene target's color space.
+func background(f Frame) gputypes.Color {
+	c := [3]float64{float64(f.Background.R) / 255, float64(f.Background.G) / 255, float64(f.Background.B) / 255}
+	if f.Linear {
+		for i := range c {
+			c[i] = decodeSRGB(c[i])
+		}
+	}
+	return gputypes.Color{R: c[0], G: c[1], B: c[2], A: 1}
 }
 
 // drawScene records the scene's pass into a color and depth target.
 func (g *gpuRenderer) drawScene(f Frame, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
-		pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: gputypes.Color{R: float64(f.Background.R) / 255, G: float64(f.Background.G) / 255, B: float64(f.Background.B) / 255, A: 1}}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpClear, DepthStoreOp: gputypes.StoreOpStore, DepthClearValue: 1, StencilReadOnly: true}})
+		pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: background(f)}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpClear, DepthStoreOp: gputypes.StoreOpStore, DepthClearValue: 1, StencilReadOnly: true}})
 		if err != nil {
 			return err
 		}
@@ -285,7 +299,7 @@ func blendPipeline(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.S
 		cull = gputypes.CullModeBack
 	}
 	blend := gputypes.BlendStateAlpha()
-	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "transparent " + vertex, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: cull}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
+	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "transparent " + vertex, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: cull}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
 }
 
 func (g *gpuRenderer) Close() error {
@@ -353,7 +367,7 @@ func (g *gpuRenderer) Close() error {
 		}
 		return nil
 	})
-	g.releaseSupersample()
+	g.releaseTarget()
 	err := g.r.Close()
 	g.r = nil
 	return err

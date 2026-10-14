@@ -272,17 +272,29 @@ concern the device (no adapter, failed setup); others concern the frame, such
 as running out of memory, and a smaller scene may still render.
 
 `Frame.Supersample` (1..4) renders at that multiple of the frame's size and
-averages each block back to one pixel, smoothing edges, thin strands, and
-cutouts. On the GPU, the scene draws into an enlarged target that a resolve
-pass averages before readback, so the readback stays the frame's size;
-software draws large and averages likewise, at far greater cost. Pixel sizes
+averages each block back to one pixel (in linear light, for linear frames),
+smoothing edges, thin strands, and cutouts. On the GPU, the scene draws into
+an enlarged target that a resolve pass averages before readback, so the
+readback stays the frame's size; software draws large and averages likewise,
+at far greater cost. Pixel sizes
 (points, line widths, overlays) keep their size. The factor is lowered until
 the enlarged frame fits 8192 pixels a side, the size every WebGPU device
 supports.
 
 Frame area is limited to 4096 × 2160 pixels. Textures may be no larger
-than 8192 pixels per side. Color filtering/lighting retain the original renderer's
-sRGB-encoded arithmetic. `Material.Transparent` blends a mesh's triangles
+than 8192 pixels per side.
+
+Frames from `Scene.Frame` work in linear light (`Frame.Linear`): colors and
+textures, which are sRGB-encoded, are decoded before they are lit,
+interpolated, blended, and averaged, and the result encoded, so light adds as
+it does physically. A surface turning from the light dims gradually rather
+than falling off early, and blends and supersampled edges keep their
+brightness instead of darkening. `Light.Ambient` is decoded too, so surfaces
+in full light or turned away look as they did. On the GPU, the scene draws
+into a 16-bit float target, which blends in linear light, and a resolve pass
+encodes it into the frame. Textures are filtered as encoded, then decoded,
+on both renderers. Hand-built frames keep encoded arithmetic unless they set
+`Linear`. `Material.Transparent` blends a mesh's triangles
 over what lies behind, by the vertex colors' alpha times the texture's: after
 everything opaque, transparent geometries are drawn farthest first (by their
 bounds' centers), each with its back faces, lit as seen from behind, before

@@ -50,8 +50,9 @@ var (
 	glass = &Material{Transparent: true}
 )
 
+// mixRGB blends top over under by a, in linear light, as scene frames do.
 func mixRGB(top color.RGBA, a float32, under color.RGBA) color.RGBA {
-	m := func(x, y uint8) uint8 { return uint8(float32(x)*a + float32(y)*(1-a) + .5) }
+	m := func(x, y uint8) uint8 { return encode8(srgbDecode[x]*a + srgbDecode[y]*(1-a)) }
 	return color.RGBA{m(top.R, under.R), m(top.G, under.G), m(top.B, under.B), 255}
 }
 
@@ -137,5 +138,16 @@ func TestTransparentCutoutRejected(t *testing.T) {
 		if _, err := NewScene().SetGeometry("x", g); err == nil {
 			t.Fatal("a transparent cutout was accepted")
 		}
+	}
+}
+
+// Frames without Linear blend colors as encoded, as before linear light.
+func TestTransparentEncoded(t *testing.T) {
+	red := color.RGBA{220, 0, 0, 128}
+	f := blendScene(t, nil, quad(1, .3, red, glass, false))
+	f.Linear = false
+	m := func(x, y uint8) uint8 { return uint8(float32(x)*128/255 + float32(y)*127/255 + .5) }
+	if got, want := at(softwareRender(f), 40, 40), (color.RGBA{m(220, 0), 0, m(0, 200), 255}); !closeRGB(got, want, 1) {
+		t.Fatalf("encoded blend: %v, want %v", got, want)
 	}
 }

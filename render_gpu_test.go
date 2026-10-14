@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"math"
 	"nimbleterminal.dev/nt3d/math"
 	"testing"
 )
@@ -381,11 +382,11 @@ func TestGPUSupersample(t *testing.T) {
 	if edge[1] < sw*2/3 || edge[1] > sw*3/2 {
 		t.Fatalf("GPU gray edge %d, software %d", edge[1], sw)
 	}
-	// Back to one: the enlarged target is released.
+	// Back to one: the scene target shrinks to the frame.
 	_, err := r.Render(edgeScene(t, 1))
 	check(t, err)
-	if r.super.target != nil {
-		t.Fatal("kept the enlarged target")
+	if r.target.w != 120 || r.target.h != 120 {
+		t.Fatalf("scene target %d×%d, want the frame's 120×120", r.target.w, r.target.h)
 	}
 }
 
@@ -481,6 +482,24 @@ func TestGPUTransparentMatchesSoftware(t *testing.T) {
 		check(t, err)
 		if gpu, software := at(img, 40, 40), at(softwareRender(f), 40, 40); !closeRGB(gpu, software, 3) {
 			t.Errorf("%s: GPU %v, software %v", name, gpu, software)
+		}
+	}
+}
+
+// The GPU lights in linear light as software does, and as encoded without it.
+func TestGPULinearLighting(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	gray := color.RGBA{200, 200, 200, 255}
+	for _, linear := range []bool{true, false} {
+		for _, cos := range []float64{1, .5, .2, 0} {
+			f := blendScene(t, &Light{Direction: nt3dmath.Vec3{X: float32(math.Sqrt(1 - cos*cos)), Z: float32(cos)}, Ambient: .3}, quad(1, .3, gray, nil, false))
+			f.Linear = linear
+			img, err := r.Render(f)
+			check(t, err)
+			if gpu, software := at(img, 40, 40), at(softwareRender(f), 40, 40); !closeRGB(gpu, software, 2) {
+				t.Errorf("linear %v, cos %.1f: GPU %v, software %v", linear, cos, gpu, software)
+			}
 		}
 	}
 }

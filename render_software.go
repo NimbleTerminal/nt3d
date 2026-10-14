@@ -28,7 +28,7 @@ func softwareRender(f Frame) image.Image {
 	}
 	big := f
 	big.Width, big.Height, big.Overlays = f.Width*s, f.Height*s, nil
-	img := shrink(softwareDraw(big, s), s)
+	img := shrink(softwareDraw(big, s), s, f.Linear)
 	drawOverlays(img, f)
 	return img
 }
@@ -55,9 +55,24 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = c.R, c.G, c.B
 		}
 	}
+	// Surfaces are shaded in 0..255, in linear light or as encoded, as the
+	// frame works; pixels are 8-bit sRGB.
+	linear, ambient := f.Linear, ambientLight(&f)
+	toPixel := func(v float32) uint8 {
+		if linear {
+			return encode8(v / 255)
+		}
+		return uint8(max(0, min(255, v+.5)))
+	}
+	fromPixel := func(p uint8) float32 {
+		if linear {
+			return srgbDecode[p] * 255
+		}
+		return float32(p)
+	}
 	// blend mixes a transparent fragment over the pixel, if no surface
 	// hides it, leaving the depth for what lies behind.
-	blend := func(x, y int, z float32, c color.RGBA, alpha float32) {
+	blend := func(x, y int, z float32, rgb [3]float32, alpha float32) {
 		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
 			return
 		}
@@ -65,8 +80,8 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		if z <= depth[i]+.00001 {
 			alpha = max(0, min(1, alpha))
 			off := i * 4
-			for k, v := range [3]uint8{c.R, c.G, c.B} {
-				img.Pix[off+k] = uint8(float32(v)*alpha + float32(img.Pix[off+k])*(1-alpha) + .5)
+			for k, v := range rgb {
+				img.Pix[off+k] = toPixel(v*alpha + fromPixel(img.Pix[off+k])*(1-alpha))
 			}
 		}
 	}
@@ -96,8 +111,8 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 				if min(u, v, t) < 0 {
 					continue
 				}
-				mix := func(k int) uint8 { return uint8(max(0, min(255, u*a.shade[k]+v*b.shade[k]+t*c.shade[k]+.5))) }
-				pixel := color.RGBA{mix(0), mix(1), mix(2), 255}
+				mix := func(k int) float32 { return u*a.shade[k] + v*b.shade[k] + t*c.shade[k] }
+				rgb := [3]float32{mix(0), mix(1), mix(2)}
 				var opacity float32
 				if blended {
 					q0, q1, q2 := u/a.w, v/b.w, t/c.w
@@ -115,14 +130,14 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 					}
 					// Lit white, or the tint, times the texture.
 					lit := func(k int) float32 { return (q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]) / 255 }
-					pixel = color.RGBA{uint8(min(255, float32(tex.R)*lit(0)+.5)), uint8(min(255, float32(tex.G)*lit(1)+.5)), uint8(min(255, float32(tex.B)*lit(2)+.5)), 255}
+					rgb = [3]float32{fromPixel(tex.R) * lit(0), fromPixel(tex.G) * lit(1), fromPixel(tex.B) * lit(2)}
 					opacity *= float32(tex.A) / 255
 				}
 				if blended {
-					blend(x, y, u*z0+v*z1+t*z2, pixel, opacity)
+					blend(x, y, u*z0+v*z1+t*z2, rgb, opacity)
 					continue
 				}
-				put(x, y, u*z0+v*z1+t*z2, pixel)
+				put(x, y, u*z0+v*z1+t*z2, color.RGBA{toPixel(rgb[0]), toPixel(rgb[1]), toPixel(rgb[2]), 255})
 			}
 		}
 	}
@@ -163,6 +178,14 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 			}
 			if textured && !material.Tint {
 				c = color.RGBA{255, 255, 255, 255}
+			}
+			if linear {
+				level, dir := float32(1), normals.Direction(n)
+				if dir.Dot(dir) != 0 {
+					level = ambient + (1-ambient)*max(0, dir.Normalize().Dot(f.Light.Direction.Normalize()))
+				}
+				corners[k].shade = [3]float32{srgbDecode[c.R] * 255 * level, srgbDecode[c.G] * 255 * level, srgbDecode[c.B] * 255 * level}
+				continue
 			}
 			lit := shade(c, normals.Direction(n), f.Light)
 			corners[k].shade = [3]float32{float32(lit.R), float32(lit.G), float32(lit.B)}
