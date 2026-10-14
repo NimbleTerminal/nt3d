@@ -27,28 +27,26 @@ type gpuBatch struct {
 }
 
 type gpuRenderer struct {
-	textureBindLayout               *wgpu.BindGroupLayout
-	textureLayout                   *wgpu.PipelineLayout
-	texturePipeline                 *wgpu.RenderPipeline
-	textureSampler                  *wgpu.Sampler
-	textures                        map[*Texture]*gpuTexture
-	procedural                      map[*Texture]*proceduralTexture
-	texturedBatches                 []texturedBatch
-	textureRevision, textureUploads uint64
-	mu                              sync.Mutex
-	closed                          bool
-	initErr                         error
-	r                               *gpuimage.Renderer
-	shader                          *wgpu.ShaderModule
-	bindLayout                      *wgpu.BindGroupLayout
-	layout                          *wgpu.PipelineLayout
-	uniform                         *wgpu.Buffer
-	transforms                      *wgpu.Buffer
-	transformBytes                  uint64
-	pipelines                       [7]*wgpu.RenderPipeline
-	batches                         [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
-	revision                        uint64
-	uploads                         uint64
+	textureLayout   *wgpu.PipelineLayout
+	texturePipeline *wgpu.RenderPipeline
+	textures        map[*Texture]*gpuimage.Texture
+	procedural      map[*Texture]*proceduralTexture
+	texturedBatches []texturedBatch
+	textureUploads  uint64
+	mu              sync.Mutex
+	closed          bool
+	initErr         error
+	r               *gpuimage.Renderer
+	shader          *wgpu.ShaderModule
+	bindLayout      *wgpu.BindGroupLayout
+	layout          *wgpu.PipelineLayout
+	uniform         *wgpu.Buffer
+	transforms      *wgpu.Buffer
+	transformBytes  uint64
+	pipelines       [7]*wgpu.RenderPipeline
+	batches         [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
+	revision        uint64
+	uploads         uint64
 }
 
 func (g *gpuRenderer) setup() (err error) {
@@ -94,7 +92,7 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		return g.setupTextures(dev)
+		return nil
 	})
 }
 
@@ -168,9 +166,6 @@ func (g *gpuRenderer) upload(dev *wgpu.Device, f Frame) error {
 		old.count = uint32(len(d) / 48)
 	}
 	if err := g.uploadTexturedMeshes(dev, f); err != nil {
-		return err
-	}
-	if err := g.syncTextures(dev, f); err != nil {
 		return err
 	}
 	g.revision = f.Revision
@@ -260,6 +255,9 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	if err := g.prepareProcedural(f); err != nil {
 		return nil, err
 	}
+	if err := g.prepareTextures(f); err != nil {
+		return nil, err
+	}
 	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), 0, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, f.Light.Ambient, 0, 0, 0, 0)...)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
@@ -271,11 +269,6 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		}
 		if g.uploads == 0 || g.revision != f.Revision {
 			if err := g.upload(dev, f); err != nil {
-				return err
-			}
-		}
-		if g.textureRevision != f.TextureRevision {
-			if err := g.syncTextures(dev, f); err != nil {
 				return err
 			}
 		}
@@ -297,10 +290,11 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 				for _, b := range g.texturedBatches {
 					pass.SetPipeline(g.texturePipeline)
 					pass.SetBindGroup(0, b.bind, nil)
-					if t := g.procedural[b.texture]; t != nil {
+					src := f.Geometry[b.geometry].Material.Texture
+					if t := g.procedural[src]; t != nil {
 						pass.SetBindGroup(1, t.target.BindGroup(), nil)
 					} else {
-						pass.SetBindGroup(1, g.textures[b.texture].bind, nil)
+						pass.SetBindGroup(1, g.textures[src].BindGroup(), nil)
 					}
 					pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: 1})
 				}
@@ -342,24 +336,19 @@ func (g *gpuRenderer) Close() error {
 		g.releaseProcedural(t)
 		delete(g.procedural, src)
 	}
+	for src, t := range g.textures {
+		_ = t.Close()
+		delete(g.textures, src)
+	}
 	_ = g.r.Do(func(*wgpu.Device) error {
 		for _, b := range g.texturedBatches {
 			releaseBatch(b.gpuBatch)
 		}
-		for _, t := range g.textures {
-			t.release()
-		}
 		if g.texturePipeline != nil {
 			g.texturePipeline.Release()
 		}
-		if g.textureSampler != nil {
-			g.textureSampler.Release()
-		}
 		if g.textureLayout != nil {
 			g.textureLayout.Release()
-		}
-		if g.textureBindLayout != nil {
-			g.textureBindLayout.Release()
 		}
 		for _, b := range g.batches {
 			if b.bind != nil {

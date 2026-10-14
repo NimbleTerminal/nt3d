@@ -78,7 +78,9 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
 
 - WebGPU uses ntgpuimage, indexed/textured triangles, point/box/arrow instances,
   thick lines, and directional lighting. The storage record layout is explicitly
-  packed; Go struct memory is never assumed to match WGSL padding.
+  packed; Go struct memory is never assumed to match WGSL padding. Image uploads,
+  texture views/samplers, sample bindings, and GPU texture lifetimes are owned by
+  ntgpuimage; nt3d retains immutable CPU snapshots for software fallback.
 - Software shares the primitive and texture semantics. Interactive frames sample
   large geometry sets; `Snapshot` draws all primitives.
 - `RenderWireframe` returns terminal text using ntcanvas. It has no image snapshot.

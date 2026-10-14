@@ -5,30 +5,13 @@ package nt3d
 import (
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
+	"image"
+	"nimbleterminal.dev/ntgpuimage"
 )
-
-type gpuTexture struct {
-	texture *wgpu.Texture
-	view    *wgpu.TextureView
-	bind    *wgpu.BindGroup
-}
-
-func (t *gpuTexture) release() {
-	if t.bind != nil {
-		t.bind.Release()
-	}
-	if t.view != nil {
-		t.view.Release()
-	}
-	if t.texture != nil {
-		t.texture.Release()
-	}
-}
 
 type texturedBatch struct {
 	gpuBatch
 	geometry int
-	texture  *Texture
 }
 
 func releaseBatch(b gpuBatch) {
@@ -40,25 +23,18 @@ func releaseBatch(b gpuBatch) {
 	}
 }
 
-func (g *gpuRenderer) setupTextures(dev *wgpu.Device) (err error) {
-	g.textureBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{
-		{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}},
-		{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}},
-	}})
-	if err != nil {
-		return err
-	}
-	g.textureLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.textureBindLayout}})
+func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGroupLayout) (err error) {
+	g.textureLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, sampledLayout}})
 	if err != nil {
 		return err
 	}
 	g.texturePipeline, err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "textured mesh", Layout: g.textureLayout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_texture"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_texture", Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, WriteMask: gputypes.ColorWriteMaskAll}}}})
 	if err != nil {
+		g.textureLayout.Release()
+		g.textureLayout = nil
 		return err
 	}
-	g.textureSampler, err = dev.CreateSampler(&wgpu.SamplerDescriptor{AddressModeU: gputypes.AddressModeClampToEdge, AddressModeV: gputypes.AddressModeClampToEdge, AddressModeW: gputypes.AddressModeClampToEdge, MagFilter: gputypes.FilterModeLinear, MinFilter: gputypes.FilterModeLinear, MipmapFilter: gputypes.FilterModeNearest, LodMaxClamp: 0, Anisotropy: 1})
-	g.textures = make(map[*Texture]*gpuTexture)
-	return err
+	return nil
 }
 func (g *gpuRenderer) uploadTexturedMeshes(dev *wgpu.Device, f Frame) error {
 	for _, b := range g.texturedBatches {
@@ -98,49 +74,50 @@ func (g *gpuRenderer) uploadTexturedMeshes(dev *wgpu.Device, f Frame) error {
 	}
 	return nil
 }
-func (g *gpuRenderer) syncTextures(dev *wgpu.Device, f Frame) error {
+
+// prepareTextures runs outside GPU callbacks: ntgpuimage owns allocation,
+// upload, sampling resources and cleanup on its executor thread.
+func (g *gpuRenderer) prepareTextures(f Frame) error {
+	if g.textures == nil {
+		g.textures = make(map[*Texture]*ntgpuimage.Texture)
+	}
 	used := make(map[*Texture]bool)
-	for i := range g.texturedBatches {
-		b := &g.texturedBatches[i]
-		src := f.Geometry[b.geometry].Material.Texture
-		b.texture = src
+	var sampledLayout *wgpu.BindGroupLayout
+	for _, geom := range f.Geometry {
+		if !textured(geom) || len(geom.Indices) == 0 {
+			continue
+		}
+		src := geom.Material.Texture
 		if src.shader != "" {
+			sampledLayout = g.procedural[src].target.BindGroupLayout()
 			continue
 		}
 		used[src] = true
-		if g.textures[src] != nil {
-			continue
+		t := g.textures[src]
+		if t == nil {
+			// The immutable snapshot is already packed opaque RGBA. Expose a view
+			// to ntgpuimage so its packer can use the standard image fast path.
+			pixels := &image.NRGBA{Pix: src.pixels, Stride: src.width * 4, Rect: src.Bounds()}
+			var err error
+			t, err = g.r.UploadTexture(pixels, ntgpuimage.TextureOptions{})
+			if err != nil {
+				return err
+			}
+			g.textures[src] = t
+			g.textureUploads++
 		}
-		t := &gpuTexture{}
-		var err error
-		size := wgpu.Extent3D{Width: uint32(src.width), Height: uint32(src.height), DepthOrArrayLayers: 1}
-		t.texture, err = dev.CreateTexture(&wgpu.TextureDescriptor{Size: size, MipLevelCount: 1, SampleCount: 1, Dimension: gputypes.TextureDimension2D, Format: gputypes.TextureFormatRGBA8Unorm, Usage: gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst})
-		if err != nil {
-			return err
-		}
-		if err = dev.Queue().WriteTexture(&wgpu.ImageCopyTexture{Texture: t.texture}, src.pixels, &wgpu.ImageDataLayout{BytesPerRow: uint32(src.width * 4), RowsPerImage: uint32(src.height)}, &size); err != nil {
-			t.release()
-			return err
-		}
-		t.view, err = dev.CreateTextureView(t.texture, nil)
-		if err != nil {
-			t.release()
-			return err
-		}
-		t.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.textureBindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: t.view}, {Binding: 1, Sampler: g.textureSampler}}})
-		if err != nil {
-			t.release()
-			return err
-		}
-		g.textures[src] = t
-		g.textureUploads++
+		sampledLayout = t.BindGroupLayout()
 	}
 	for src, t := range g.textures {
 		if !used[src] {
-			t.release()
+			if err := t.Close(); err != nil {
+				return err
+			}
 			delete(g.textures, src)
 		}
 	}
-	g.textureRevision = f.TextureRevision
+	if sampledLayout != nil && g.texturePipeline == nil {
+		return g.r.Do(func(dev *wgpu.Device) error { return g.setupTextures(dev, sampledLayout) })
+	}
 	return nil
 }
