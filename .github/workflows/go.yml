@@ -19,13 +19,19 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: nt3d
-      # Bootstrap ntpicture at its go.mod pin until its vanity version resolves.
-      # ntcanvas and ntgpuimage are downloaded normally.
+      # Bootstrap ntpicture at its go.mod pin until its vanity version resolves,
+      # and ntgpuimage at the unreleased mipmap, sRGB, and sampler work nt3d
+      # uses until its next release. ntcanvas is downloaded normally.
       - uses: actions/checkout@v7
         with:
           repository: NimbleTerminal/ntpicture
           ref: acfa6954d2d0bcef277f65317528b9a7cdc85017
           path: ntpicture
+      - uses: actions/checkout@v7
+        with:
+          repository: NimbleTerminal/ntgpuimage
+          ref: 933755ea3a2ba33f27e537346c90ce79b1cc4868
+          path: ntgpuimage
       - uses: actions/setup-go@v7
         with:
           go-version-file: nt3d/go.mod
