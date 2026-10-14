@@ -28,28 +28,36 @@ func wireRender(f Frame, cols, rows int) string {
 	}
 	cellFrame := f
 	cellFrame.Width, cellFrame.Height = cols, rows
-	drawLine := func(a, b nt3dmath.Vec3, ink color.Color) {
-		s, ok := projectStroke(cellFrame, a, b)
+	drawLine := func(cells Frame, a, b nt3dmath.Vec3, ink color.Color) {
+		s, ok := projectStroke(cells, a, b)
 		if !ok {
 			return
 		}
 		drawCells(s.a.x, s.a.y, s.b.x, s.b.y, ink)
 	}
-	line := func(a, b nt3dmath.Vec3) { drawLine(a, b, nil) }
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
-		drawLine(f.DynamicLines[i].Position, f.DynamicLines[i+1].Position, f.DynamicLines[i].Color)
+		drawLine(cellFrame, f.DynamicLines[i].Position, f.DynamicLines[i+1].Position, f.DynamicLines[i].Color)
 	}
-	for _, g := range worldGeometry(f) {
+	for gi, g := range f.Geometry {
+		inst := instance(f, gi)
+		if !inst.Visible {
+			continue
+		}
+		// Project local coordinates through the node's transform.
+		local, cells := f, cellFrame
+		local.Matrix = f.Matrix.Mul(inst.World)
+		cells.Matrix = local.Matrix
+		line := func(a, b nt3dmath.Vec3) { drawLine(cells, a, b, nil) }
 		step := max(1, (len(g.Points)+1999)/2000)
 		for i := 0; i < len(g.Points); i += step {
 			p := g.Points[i]
-			x, y, _, ok := f.Matrix.Project(p.Position, cols, rows)
+			x, y, _, ok := local.Matrix.Project(p.Position, cols, rows)
 			if ok {
 				c.SetGrapheme(ntcanvas.Point{X: int(x), Y: int(y)}, "•", ntcanvas.CellStyle{})
 			}
 		}
 		if g.WireGrid != ([2]int{}) {
-			wireGrid(f, g, cols, rows, line)
+			wireGrid(local, g, cols, rows, line)
 		} else {
 			step = 3 * max(1, (len(g.Indices)/3+1999)/2000)
 			for i := 0; i+2 < len(g.Indices); i += step {
@@ -59,13 +67,36 @@ func wireRender(f Frame, cols, rows int) string {
 				line(cc, a)
 			}
 		}
+		for _, b := range g.Boxes {
+			lo, hi := b.Min, b.Min.Add(b.Size)
+			corner := func(i int) nt3dmath.Vec3 {
+				p := lo
+				if i&1 != 0 {
+					p.X = hi.X
+				}
+				if i&2 != 0 {
+					p.Y = hi.Y
+				}
+				if i&4 != 0 {
+					p.Z = hi.Z
+				}
+				return p
+			}
+			for i := range 8 {
+				for _, bit := range []int{1, 2, 4} {
+					if i&bit == 0 {
+						line(corner(i), corner(i|bit))
+					}
+				}
+			}
+		}
 		for i := 0; i+1 < len(g.Lines); i += 2 {
-			drawLine(g.Lines[i].Position, g.Lines[i+1].Position, g.Lines[i].Color)
+			drawLine(cells, g.Lines[i].Position, g.Lines[i+1].Position, g.Lines[i].Color)
 		}
 		arrowStep := max(1, (len(g.Arrows)+1999)/2000)
 		for i := 0; i < len(g.Arrows); i += arrowStep {
 			a := g.Arrows[i]
-			s, ok := projectStroke(f, a.Start, a.End)
+			s, ok := projectStroke(local, a.Start, a.End)
 			if !ok {
 				continue
 			}
