@@ -23,7 +23,10 @@ async function main() {
       canEncode: gesture => terminal.encodeKey(gesture) !== null,
       encode: gesture => terminal.encodeKey(gesture),
     });
-    installActionBar(terminal.actions, { parent: bar, openKeyboard: () => terminal.focus(), onLayout: () => terminal.fitAddon?.fit() });
+    // The fit addon skips a fit while it is still settling a resize, as at
+    // startup when the bar first appears, so fit again once that has passed.
+    const fit = () => terminal.fitAddon?.fit();
+    installActionBar(terminal.actions, { parent: bar, openKeyboard: () => terminal.focus(), onLayout: () => { fit(); setTimeout(fit, 150); } });
   }
   terminal.connectWasm();
   terminal.focus();

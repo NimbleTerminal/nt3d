@@ -19,9 +19,11 @@ func bind(keys, help, desc string) key.Binding {
 var (
 	backendKeys = []key.Binding{bind("1", "1", "GPU"), bind("2", "2", "software"), bind("3", "3", "wireframe")}
 	fitKey      = bind("c", "c", "fit")
-	viewKeys    = []key.Binding{
-		key.NewBinding(key.WithKeys("left", "right", "up", "down"), key.WithHelp("←→↑↓", "orbit")),
-		key.NewBinding(key.WithKeys("+", "-"), key.WithHelp("+/-", "zoom")),
+	// Dragging orbits, so the arrows are left out: they would push the
+	// terrain scene past booba's 2048-byte limit on an action message.
+	viewKeys = []key.Binding{
+		bind("+", "+", "zoom in"),
+		bind("-", "-", "zoom out"),
 		bind("r", "r", "rotate"),
 		bind("o", "o", "projection"),
 	}
