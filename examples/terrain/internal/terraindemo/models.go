@@ -107,7 +107,7 @@ func (d *demo) frameSample() tea.Cmd {
 func (d *demo) modelsView(content string) string {
 	m := d.models.model
 	return fmt.Sprintf("nt3d models · %s (%d of %d) · [ ] model · s normals · c fit · 1/2/3 backend · q quit\n%s\n%s · %s · %d triangles in %d objects · normals %s · %s",
-		samples[d.models.index].file, d.models.index+1, len(samples), content, d.view.RenderMode(), m.Format, m.Triangles(), len(m.Objects), meshNormals[d.meshes.normals], d.status)
+		samples[d.models.index].file, d.models.index+1, len(samples), content, d.rendering(), m.Format, m.Triangles(), len(m.Objects), meshNormals[d.meshes.normals], d.status)
 }
 
 // largeScene is a dense procedural mesh, for full software drawing,
@@ -149,7 +149,7 @@ func (d *demo) toggleIndexing() {
 
 func (d *demo) largeView(content string) string {
 	return fmt.Sprintf("nt3d dense mesh · click picks · i pick index · c fit · n rotate · 1/2/3 backend · q quit\n%s\n%s · %d triangles · %s",
-		content, d.view.RenderMode(), d.large.triangles, d.status)
+		content, d.rendering(), d.large.triangles, d.status)
 }
 
 // asteroid is a lumpy, cratered sphere of 1024 × 360 cells.

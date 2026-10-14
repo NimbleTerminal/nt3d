@@ -260,3 +260,24 @@ func TestSupersampleAndPostProcess(t *testing.T) {
 		t.Fatal("snapshot not post-processed", err)
 	}
 }
+
+// The frame rate counts frames shown over the last second, and falls to
+// zero once a second passes without one.
+func TestFrameRate(t *testing.T) {
+	m := &Model{}
+	if m.FrameRate() != 0 {
+		t.Fatal("rate before any frame")
+	}
+	now := time.Now()
+	m.shown = []time.Time{now.Add(-1500 * time.Millisecond), now.Add(-900 * time.Millisecond), now.Add(-600 * time.Millisecond), now.Add(-300 * time.Millisecond), now}
+	if r := m.FrameRate(); r < 3.2 || r > 3.4 {
+		t.Fatalf("rate %.2f, want 3 frames in 0.9 s", r)
+	}
+	if len(m.shown) != 4 {
+		t.Fatalf("%d frames kept, want the last second's 4", len(m.shown))
+	}
+	m.shown = []time.Time{now.Add(-2 * time.Second)}
+	if m.FrameRate() != 0 {
+		t.Fatal("rate after a second without frames")
+	}
+}

@@ -154,5 +154,5 @@ func (d *demo) furView(content string) string {
 		fins = "no fins"
 	}
 	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · f fins · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s · supersample %d× · %s · %s",
-		content, d.view.RenderMode(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, d.view.Supersample(), effects[d.fur.effect].name, d.status)
+		content, d.rendering(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, d.view.Supersample(), effects[d.fur.effect].name, d.status)
 }

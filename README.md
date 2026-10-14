@@ -345,6 +345,11 @@ snapshot, GPU or software, before it is shown: blur, vignette, color grading,
 or dithering are ordinary Go. It runs on the render goroutine, one frame at a
 time, and may change pixels in place. The fur demo shows both (`x`, `e`).
 
+`FrameRate()` is how many frames a second the widget has shown, over the last
+second (zero after a second without one), and `RenderTime()` the last frame's
+render, before the terminal shows it; the demos show both in their status
+lines.
+
 Controls: drag to orbit, shift-drag to pan, wheel or +/- to zoom, arrows/hjkl to
 orbit, `c` to fit the scene (`Fit()`), `r` for automatic rotation, `o` for
 projection, `g` for glyph/Kitty output.

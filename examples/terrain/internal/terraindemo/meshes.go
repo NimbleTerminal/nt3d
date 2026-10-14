@@ -136,5 +136,5 @@ func (d *demo) cycleNormals() error {
 
 func (d *demo) meshesView(content string) string {
 	return fmt.Sprintf("nt3d meshes · %s · s normals · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · drag orbit · wheel zoom · c fit · r rotate · %s",
-		d.meshes.title, content, d.view.RenderMode(), d.meshes.triangles, meshNormals[d.meshes.normals], d.status)
+		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], d.status)
 }

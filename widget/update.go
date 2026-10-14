@@ -60,6 +60,9 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 
 		m.renderMode = v.renderMode
 		m.wire = v.wire
+		if v.err == nil {
+			m.renderTime = v.elapsed
+		}
 		if v.renderMode == Software && m.paced(v.elapsed) {
 			m.slow++
 		} else {
@@ -71,6 +74,7 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			m.dirty = true
 		}
 		if v.renderMode == Wireframe {
+			m.frameShown()
 			return m, m.finish()
 		}
 		if v.frame == nil {
@@ -85,6 +89,7 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		if v.Owner != m.pic || v.Generation != m.pic.Status().Generation {
 			return m, nil
 		}
+		m.frameShown()
 		return m, m.finish()
 	case picture.ErrorMsg:
 		if v.Owner != m.pic || v.Generation != m.pic.Status().Generation {

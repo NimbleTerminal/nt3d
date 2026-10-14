@@ -269,6 +269,15 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	_, cmd := d.view.Update(msg)
 	return d, cmd
 }
+
+// rendering is the backend and how fast it draws: frames a second, and the
+// last frame's render time. The numbers keep their width, so what follows
+// them on the status line stays put as they change.
+func (d *demo) rendering() string {
+	ms := min(999.9, float64(d.view.RenderTime().Microseconds())/1000)
+	return fmt.Sprintf("%s · %3.0f fps · %5.1f ms", d.view.RenderMode(), min(999, d.view.FrameRate()), ms)
+}
+
 func (d *demo) View() tea.View {
 	v := d.view.View()
 	status := d.status
@@ -313,11 +322,11 @@ func (d *demo) View() tea.View {
 		if d.dynamic.deform {
 			mesh = "deforming"
 		}
-		v.Content = d.zones.Scan("nt3d dynamic scene · a pause · m deform · b add · x remove · v visibility · 1/2/3 backend · q quit\n" + v.Content + fmt.Sprintf("\n%s · %s · mesh %s · %d orbiters · drag orbit · wheel zoom · r camera · %s", d.view.RenderMode(), state, mesh, len(d.dynamic.bodies), status))
+		v.Content = d.zones.Scan("nt3d dynamic scene · a pause · m deform · b add · x remove · v visibility · 1/2/3 backend · q quit\n" + v.Content + fmt.Sprintf("\n%s · %s · mesh %s · %d orbiters · drag orbit · wheel zoom · r camera · %s", d.rendering(), state, mesh, len(d.dynamic.bodies), status))
 		v.AltScreen = true
 		return v
 	}
-	v.Content = d.zones.Scan(title + " · a animate · p procedural · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.view.RenderMode().String() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
+	v.Content = d.zones.Scan(title + " · a animate · p procedural · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.rendering() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
 	v.AltScreen = true
 	return v
 }

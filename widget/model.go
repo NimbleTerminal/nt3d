@@ -62,6 +62,8 @@ type Model struct {
 	failed                          error // A reported GPU failure; rendering waits for a change.
 	supersample                     int
 	postProcess                     func(*image.RGBA)
+	shown                           []time.Time   // When frames were shown, over the last second.
+	renderTime                      time.Duration // The last frame's render.
 }
 type Option func(*Model)
 
@@ -203,8 +205,39 @@ func postProcessed(img image.Image, fn func(*image.RGBA)) image.Image {
 }
 
 // Failed returns the GPU failure that has stopped rendering, or nil.
-func (m *Model) Failed() error                    { return m.failed }
-func (m *Model) RenderMode() RenderMode           { return m.renderMode }
+func (m *Model) Failed() error          { return m.failed }
+func (m *Model) RenderMode() RenderMode { return m.renderMode }
+
+// FrameRate is how many frames a second the widget has shown, over the last
+// second; zero once a second has passed without one. Frames are drawn as the
+// scene or camera changes, and at most 30 a second while it turns itself.
+func (m *Model) FrameRate() float64 {
+	m.prune(time.Now())
+	if len(m.shown) < 2 {
+		return float64(len(m.shown))
+	}
+	return float64(len(m.shown)-1) / m.shown[len(m.shown)-1].Sub(m.shown[0]).Seconds()
+}
+
+// RenderTime is how long the last frame took to render, from the scene to
+// its pixels or wireframe, before the terminal shows it.
+func (m *Model) RenderTime() time.Duration { return m.renderTime }
+
+// prune drops shown times more than a second before now.
+func (m *Model) prune(now time.Time) {
+	i := 0
+	for i < len(m.shown) && now.Sub(m.shown[i]) > time.Second {
+		i++
+	}
+	m.shown = m.shown[i:]
+}
+
+// frameShown records a frame reaching the terminal.
+func (m *Model) frameShown() {
+	now := time.Now()
+	m.prune(now)
+	m.shown = append(m.shown, now)
+}
 func (m *Model) RequestedRenderMode() RenderMode  { return m.requestedRenderMode }
 func (m *Model) PictureStatus() picture.Status    { return m.pic.Status() }
 func (m *Model) PictureMode() picture.PictureMode { return m.pic.Mode() }
