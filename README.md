@@ -185,9 +185,9 @@ as running out of memory, and a smaller scene may still render.
 
 Frame area is limited to 4096 × 2160 pixels. Textures must be opaque and no larger
 than 8192 pixels per side. Color filtering/lighting retain the original renderer's
-sRGB-encoded arithmetic. Transparency blending is not implemented. Software
-triangles crossing the eye plane retain the original renderer's conservative
-rejection behavior; this is not a full general-purpose clipping pipeline.
+sRGB-encoded arithmetic. Transparency blending is not implemented. Software and
+wireframe rendering cut triangles at the near plane, as the GPU does, so
+geometry reaching behind the camera stays drawn up close.
 
 If constructing Frames manually, keep geometry immutable, supply one `Instance`
 per geometry (or omit instances for identity transforms), and change `Revision`

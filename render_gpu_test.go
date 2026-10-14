@@ -307,3 +307,18 @@ func TestGPUManualFrameGeometryCache(t *testing.T) {
 		t.Fatal("manual revision ignored")
 	}
 }
+
+// Software cuts triangles at the near plane as the GPU does: the two agree
+// on a floor reaching behind the camera.
+func TestGPUNearPlaneMatchesSoftware(t *testing.T) {
+	f, floor := nearScene(t)
+	r := &gpuRenderer{}
+	defer r.Close()
+	gpu, err := r.Render(f)
+	check(t, err)
+	software := softwareRender(f)
+	g, s := coloredPixels(gpu, floor), coloredPixels(software, floor)
+	if g < f.Width*f.Height/3 || g-s > g/100 || s-g > g/100 {
+		t.Fatalf("floor pixels: GPU %d, software %d", g, s)
+	}
+}

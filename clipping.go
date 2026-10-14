@@ -69,14 +69,6 @@ type meshVertex struct {
 	UV
 }
 
-func clipTriangle(a, b, c Vertex, bounds nt3dmath.AABB) []Vertex {
-	p := clipTriangleUV(meshVertex{Vertex: a}, meshVertex{Vertex: b}, meshVertex{Vertex: c}, bounds)
-	out := make([]Vertex, len(p))
-	for i, v := range p {
-		out[i] = v.Vertex
-	}
-	return out
-}
 func clipTriangleUV(a, b, c meshVertex, bounds nt3dmath.AABB) []meshVertex {
 	polygon := []meshVertex{a, b, c}
 	lo, hi := components(bounds.Min), components(bounds.Max)
