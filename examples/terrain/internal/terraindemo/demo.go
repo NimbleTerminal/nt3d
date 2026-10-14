@@ -43,6 +43,7 @@ type demo struct {
 	models            *modelScene
 	large             *largeScene
 	fur               *furScene
+	mipmaps           *mipScene
 }
 
 type sceneMode int
@@ -54,11 +55,12 @@ const (
 	sceneModels
 	sceneLarge
 	sceneFur
+	sceneMipmaps
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil
+	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil
 }
 
 type quitMsg struct{}
@@ -157,6 +159,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.animate = !d.animate
 			d.lastPhase = time.Now()
 		case "m":
+			if d.mipmaps != nil {
+				err = d.toggleMipmaps()
+				break
+			}
 			if d.dynamic == nil {
 				return d, nil
 			}
@@ -174,7 +180,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.fog = !d.fog
 			return d, d.view.Refresh()
 		case "b", "x":
-			if v.String() == "x" && d.fur != nil {
+			if v.String() == "x" && (d.fur != nil || d.mipmaps != nil) {
 				return d, d.cycleSupersample()
 			}
 			if d.dynamic == nil {
@@ -198,6 +204,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "t":
+			if d.mipmaps != nil {
+				err = d.cyclePattern()
+				break
+			}
 			if d.meshes != nil && d.models == nil {
 				err = d.toggleGlass()
 				break
@@ -323,6 +333,11 @@ func (d *demo) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
+	if d.mipmaps != nil {
+		v.Content = d.zones.Scan(d.mipmapsView(v.Content))
+		v.AltScreen = true
+		return v
+	}
 	if d.large != nil {
 		v.Content = d.zones.Scan(d.largeView(v.Content))
 		v.AltScreen = true
@@ -444,6 +459,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupFur(); err != nil {
 			return err
 		}
+	case sceneMipmaps:
+		if err = d.setupMipmaps(); err != nil {
+			return err
+		}
 	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
@@ -467,6 +486,9 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	switch kind {
 	case sceneDynamic:
 		camera.Distance = 5.5
+	case sceneMipmaps:
+		// Low over the floor, so it runs to the horizon.
+		camera.Alpha, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
 	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))

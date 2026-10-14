@@ -12,7 +12,7 @@ import (
 func TestSceneActions(t *testing.T) {
 	for _, d := range []*demo{
 		{}, {dynamic: &dynamicScene{}}, {meshes: &meshScene{}}, {models: &modelScene{}, meshes: &meshScene{}},
-		{large: &largeScene{}}, {fur: &furScene{}},
+		{large: &largeScene{}}, {fur: &furScene{}}, {mipmaps: &mipScene{}},
 	} {
 		context, k := d.sceneKeys()
 		snapshot, diagnostics, err := bubblehelp.Snapshot(k, "nt3d-"+context, context, 1, bubblehelp.Options{})

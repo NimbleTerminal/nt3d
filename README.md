@@ -492,6 +492,7 @@ task shapes               # Shape builders and normal styles.
 task models               # Sample STL, OBJ, and 3MF files; [ and ] change model.
 task large                # A 735,000-triangle asteroid: picking and outlines.
 task fur                  # Shell fur on Spot; x supersamples, e post effects.
+task mipmaps              # A tiled floor to the horizon; m toggles mipmaps.
 task meshes -- model.stl  # Your own mesh files (--up y for Y-up OBJ).
 task terrain -- --render-mode software
 task terrain -- --render-mode gpu --snapshot /tmp/terrain.png
@@ -510,8 +511,8 @@ Use `--medium direct` or `--medium shm` to select transport explicitly.
 Run `task build-web` and `task serve`, then open http://localhost:8768/.
 The gallery links to the terrain explorer at `/terrain/`, procedural plasma
 at `/procedural/`, a dynamic scene at `/dynamic/`, shape builders at
-`/shapes/`, mesh files at `/models/`, a dense mesh at `/large/`, and fur at
-`/fur/`, with
+`/shapes/`, mesh files at `/models/`, a dense mesh at `/large/`, fur at
+`/fur/`, and mipmaps at `/mipmaps/`, with
 rendered previews, controls, and source links. Each demo
 runs inside go-booba and supports GPU, software, and wireframe rendering.
 

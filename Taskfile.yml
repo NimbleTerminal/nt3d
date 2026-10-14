@@ -47,13 +47,14 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-models ./cmd/models
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-large ./cmd/large
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-fur ./cmd/fur
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-mipmaps ./cmd/mipmaps
   build-wasm:
     env:
       GOOS: js
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/terrain/app.wasm .
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -61,6 +62,7 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/models/app.wasm ./cmd/models
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/large/app.wasm ./cmd/large
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/fur/app.wasm ./cmd/fur
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/mipmaps/app.wasm ./cmd/mipmaps
   web-assets:
     cmds:
       - go -C examples/terrain tool booba-assets ../../dist/web/terrain/
@@ -70,6 +72,7 @@ tasks:
       - go -C examples/terrain tool booba-assets ../../dist/web/models/
       - go -C examples/terrain tool booba-assets ../../dist/web/large/
       - go -C examples/terrain tool booba-assets ../../dist/web/fur/
+      - go -C examples/terrain tool booba-assets ../../dist/web/mipmaps/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -110,6 +113,11 @@ tasks:
     deps: [build]
     cmds:
       - bin/nt3d-fur {{.CLI_ARGS}}
+  mipmaps:
+    desc: Show textures tiled to the horizon, with mipmaps or without
+    deps: [build]
+    cmds:
+      - bin/nt3d-mipmaps {{.CLI_ARGS}}
   models-generate:
     desc: Regenerate the sample models the models demo embeds
     cmds:
