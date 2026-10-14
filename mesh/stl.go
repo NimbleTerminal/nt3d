@@ -4,6 +4,7 @@ package nt3dmesh
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -32,6 +33,7 @@ func binarySTL(data []byte) bool {
 type stlObject struct {
 	Object
 	budget *triangleBudget
+	format string // For errors; empty is STL.
 }
 
 func (s *stlObject) add(v [3]nt3dmath.Vec3, shade color.RGBA, plain bool) error {
@@ -40,7 +42,7 @@ func (s *stlObject) add(v [3]nt3dmath.Vec3, shade color.RGBA, plain bool) error 
 	}
 	for _, p := range v {
 		if !validCoordinate(p.X, p.Y, p.Z) {
-			return errors.New("nt3dmesh: STL vertex is non-finite or exceeds coordinate limits")
+			return fmt.Errorf("nt3dmesh: %s vertex is non-finite or exceeds coordinate limits", cmp.Or(s.format, "STL"))
 		}
 	}
 	n := v[1].Sub(v[0]).Cross(v[2].Sub(v[0])).Normalize()
@@ -85,7 +87,7 @@ func expand5(v uint16) uint8 { v &= 31; return uint8(v<<3 | v>>2) }
 func decodeBinarySTL(data []byte, o *Options, budget *triangleBudget) (*Model, error) {
 	n := int(binary.LittleEndian.Uint32(data[80:84]))
 	if n > budget.limit {
-		return nil, fmt.Errorf("nt3dmesh: STL has %d triangles; the limit is %d", n, budget.limit)
+		return nil, fmt.Errorf("%w: STL has %d; the limit is %d", ErrTooManyTriangles, n, budget.limit)
 	}
 	header := data[:80]
 	// Magics stores a default color after COLOR= and inverts the validity bit.

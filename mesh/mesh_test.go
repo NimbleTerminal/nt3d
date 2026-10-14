@@ -139,7 +139,10 @@ func TestSTLASCII(t *testing.T) {
 		fails(t, err, c.want)
 	}
 	_, err = DecodeSTL([]byte(asciiSTL), &Options{MaxTriangles: 1})
-	fails(t, err, "exceeds 1 triangles")
+	fails(t, err, "exceeds 1")
+	if !errors.Is(err, ErrTooManyTriangles) {
+		t.Fatal("not ErrTooManyTriangles")
+	}
 }
 
 const cubeOBJ = `# A unit cube: quads, shared normals, negative indices.
@@ -265,7 +268,10 @@ func TestOBJErrors(t *testing.T) {
 		fails(t, err, c.want)
 	}
 	_, err := DecodeOBJ([]byte("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n"), &Options{MaxTriangles: 1})
-	fails(t, err, "exceeds 1 triangles")
+	fails(t, err, "exceeds 1")
+	if !errors.Is(err, ErrTooManyTriangles) {
+		t.Fatal("not ErrTooManyTriangles")
+	}
 }
 
 func TestOBJRoundTrip(t *testing.T) {

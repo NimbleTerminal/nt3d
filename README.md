@@ -12,7 +12,7 @@ The existing ntcharts3d repository is unchanged by this extraction.
 | `nimbleterminal.dev/nt3d` | `nt3d` | Scene graph, camera, geometry, textures, picking, rendering |
 | `nimbleterminal.dev/nt3d/math` | `nt3dmath` | Float32 vectors, matrices, rays and bounds |
 | `nimbleterminal.dev/nt3d/widget` | `nt3dwidget` | Bubble Tea widget and Kitty/glyph presentation |
-| `nimbleterminal.dev/nt3d/mesh` | `nt3dmesh` | STL and OBJ reading and writing |
+| `nimbleterminal.dev/nt3d/mesh` | `nt3dmesh` | STL, OBJ, and 3MF reading and writing |
 
 The library packages share one module. The terrain example has a separate module
 so its go-booba runner and Bubble Tea browser fork do not become library requirements.
@@ -104,14 +104,26 @@ material libraries: `Kd` colors and `map_Kd` PNG/JPEG textures, with
 transparent texels flattened over `Kd`. Each object or group becomes one
 `Object` per material. Faces without normals get flat ones.
 
+`Decode3MF` reads the core specification, the production extension's objects
+in other model parts, base materials and color groups (one color a face), and
+the filament colors and names that Bambu Studio, OrcaSlicer, and relatives keep
+in `Metadata/`. Each build item is a `Model.Parts` entry with its triangle
+count; `Options.Parts` chooses which to assemble, and each chosen part becomes
+an `Object` with its placement baked in (mirrored placements are rewound).
+`Model.Unit`, `Metadata`, and `Thumbnail` (the slicer's plate picture first)
+are filled too. Packages are limited to 4096 entries and `Options.MaxBytes`
+unpacked (256 MiB by default). Over the triangle or byte limit, `Decode3MF`
+returns what it learned with an error wrapping `ErrTooManyTriangles` or
+`ErrTooLarge`, so a caller can choose fewer parts or show the thumbnail.
+
 Decoding is bounded: `Options.MaxTriangles` (default and ceiling
 `nt3d.MaxMeshTriangles`), coordinates within ±1e15, and textures at most 8192
 pixels a side, checked before decoding. Side files are read only through
 `Options.Open`; `ReadFile` confines them to the model's directory, and
 `Decode` without `Open` skips them. Missing side files become `Model.Warnings`.
 `Object.Plain` marks vertices the file left uncolored, so a viewer can repaint
-them. `EncodeSTL` (binary, with colors) and `EncodeOBJ` write triangles and
-lines. Units are the file's own; nothing is normalized or reoriented.
+them. `EncodeSTL` (binary, with colors), `EncodeOBJ`, and `Encode3MF` (one object,
+face colors as base materials) write triangles; OBJ writes lines too. Units are the file's own; nothing is normalized or reoriented.
 
 ## Frames and rendering
 

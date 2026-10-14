@@ -3,9 +3,9 @@
 // Package nt3dmesh reads and writes mesh files as nt3d geometry.
 //
 // Decoders bound their work: the triangle count is limited (by default to
-// nt3d.MaxMeshTriangles), coordinates must be finite and within ±1e15, and
-// side files such as OBJ materials and textures are read only through
-// Options.Open. Faces keep their file's winding; normals the file omits are
+// nt3d.MaxMeshTriangles), coordinates must be finite and within ±1e15, 3MF
+// packages are limited in entries and unpacked bytes, and side files such
+// as OBJ materials and textures are read only through Options.Open. Faces keep their file's winding; normals the file omits are
 // computed flat. Units are whatever the file uses; nothing is normalized.
 package nt3dmesh
 
@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
 	"io/fs"
 	"os"
@@ -28,8 +29,9 @@ import (
 type Format string
 
 const (
-	STL Format = "stl"
-	OBJ Format = "obj"
+	STL     Format = "stl"
+	OBJ     Format = "obj"
+	ThreeMF Format = "3mf"
 )
 
 // DefaultColor is given to faces whose file names no color, unless Options.Color is set.
@@ -37,6 +39,15 @@ var DefaultColor = color.RGBA{255, 255, 255, 255}
 
 // maxCoordinate keeps bounds and transforms of decoded meshes finite.
 const maxCoordinate = 1e15
+
+// ErrTooManyTriangles is wrapped by errors for models over Options.MaxTriangles.
+var ErrTooManyTriangles = errors.New("nt3dmesh: too many triangles")
+
+// ErrTooLarge is wrapped by errors for packages that unpack past Options.MaxBytes.
+var ErrTooLarge = errors.New("nt3dmesh: package unpacks to too many bytes")
+
+// DefaultMaxBytes is how much a 3MF package may unpack to when Options.MaxBytes is zero.
+const DefaultMaxBytes = 256 << 20
 
 // Options control decoding. The zero value, or nil, uses the defaults.
 type Options struct {
@@ -49,6 +60,21 @@ type Options struct {
 	// library or texture, by a slash-separated name relative to the model.
 	// Nil skips side files. ReadFile supplies one confined to the model's directory.
 	Open func(name string) ([]byte, error)
+	// Parts chooses which 3MF build items to assemble, by index into
+	// Model.Parts; nil assembles all. The triangle limit applies to those chosen.
+	Parts []bool
+	// MaxBytes limits what a 3MF package may unpack to. Zero uses DefaultMaxBytes.
+	MaxBytes int64
+}
+
+func (o *Options) maxBytes() int64 {
+	if o == nil || o.MaxBytes <= 0 {
+		return DefaultMaxBytes
+	}
+	return o.MaxBytes
+}
+func (o *Options) chosen(part int) bool {
+	return o == nil || o.Parts == nil || part < len(o.Parts) && o.Parts[part]
 }
 
 func (o *Options) limit() int {
@@ -66,8 +92,9 @@ func (o *Options) color() color.RGBA {
 
 // Object is one named part of a model.
 type Object struct {
-	Name     string // The STL solid or OBJ object/group name; may be empty.
+	Name     string // The STL solid, OBJ object/group, or 3MF part name; may be empty.
 	Material string // The OBJ material name, when the part has one.
+	Part     int    // For 3MF, the index in Model.Parts; zero otherwise.
 	Geometry nt3d.Geometry
 	// Plain marks, per vertex, those the file gave no color. A viewer may
 	// repaint them without disturbing the file's own colors.
@@ -79,6 +106,20 @@ type Model struct {
 	Format   Format
 	Objects  []Object
 	Warnings []string // Problems passed over, such as a missing texture.
+
+	// What 3MF packages also say. Parts and the rest are filled even when
+	// decoding fails with ErrTooManyTriangles, so a caller may choose fewer
+	// parts or show the thumbnail instead; with ErrTooLarge, as far as known.
+	Parts     []Part
+	Unit      string            // Such as "millimeter"; empty when unstated.
+	Metadata  map[string]string // The root model's metadata, by name.
+	Thumbnail image.Image       // The slicer's plate picture, else the declared thumbnail.
+}
+
+// Part is one item a 3MF build places, with whatever it holds.
+type Part struct {
+	Name      string // The slicer's name, else the object's, else "Object <id>".
+	Triangles int
 }
 
 // Triangles counts the model's faces.
@@ -137,6 +178,11 @@ func FormatOf(name string, data []byte) (Format, bool) {
 		return STL, true
 	case ".obj":
 		return OBJ, true
+	case ".3mf":
+		return ThreeMF, true
+	}
+	if bytes.HasPrefix(data, []byte("PK\x03\x04")) {
+		return ThreeMF, true
 	}
 	if binarySTL(data) || bytes.HasPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte("solid")) {
 		return STL, true
@@ -151,6 +197,8 @@ func Decode(data []byte, f Format, o *Options) (*Model, error) {
 		return DecodeSTL(data, o)
 	case OBJ:
 		return DecodeOBJ(data, o)
+	case ThreeMF:
+		return Decode3MF(data, o)
 	}
 	return nil, fmt.Errorf("nt3dmesh: unsupported format %q", f)
 }
@@ -204,7 +252,7 @@ type triangleBudget struct{ used, limit int }
 
 func (b *triangleBudget) take(n int) error {
 	if b.used+n > b.limit {
-		return fmt.Errorf("nt3dmesh: model exceeds %d triangles", b.limit)
+		return fmt.Errorf("%w: model exceeds %d", ErrTooManyTriangles, b.limit)
 	}
 	b.used += n
 	return nil
