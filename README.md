@@ -155,7 +155,7 @@ Kitty encoding/direct/shared-memory transport comes from ntpicture. The example
 runs natively and in browsers through go-booba; the browser-specific Bubble Tea
 fork remains pinned in the example module.
 
-## Development and terrain demo
+## Development and demos
 
 ntcanvas and ntgpuimage are pinned to published upstream versions and downloaded
 through Go modules. ntpicture still uses a pinned sibling checkout in CI while
@@ -167,22 +167,37 @@ CI can fetch that checkout. For local development:
 task workspace
 task ci
 task test-gpu             # Requires a real WebGPU adapter; fails if unavailable.
-task terrain -- -procedural  # GPU plasma texture on terrain; t changes phase.
-task terrain -- -render-mode software
-task terrain -- -render-mode gpu -snapshot /tmp/terrain.png
+task procedural           # Starts plasma textures and camera rotation.
+task terrain -- --render-mode software
+task terrain -- --render-mode gpu --snapshot /tmp/terrain.png
 task build-web
 task serve               # http://localhost:8768
 ```
 
 `go.work` is local and ignored. See `go.work.example`. `task ci` runs Go 1.26.8
-format checks, race tests, vet, native builds, and a standard Go js/wasm build.
+format checks, race tests, vet, native builds, and the complete js/wasm gallery build.
 The terrain demo supports texture replacement, flat/heightfield switching,
 lighting, parent rotation, inherited visibility, picking, and all three backends.
-Use `-medium direct` or `-medium shm` to select transport explicitly.
+Use `--medium direct` or `--medium shm` to select transport explicitly.
+
+### Browser gallery
+
+Run `task build-web` and `task serve`, then open http://localhost:8768/.
+The gallery links to the terrain explorer at `/terrain/` and procedural plasma
+at `/procedural/`, with rendered previews, controls, and source links. Each demo
+runs inside go-booba and supports GPU, software, and wireframe rendering.
+
+The static site sources live in `web/`; the complete generated site is
+`dist/web/`. It can be served under a subdirectory without changing asset paths.
 
 ### Procedural texture demo
 
-Run `task terrain -- -procedural`, or press `p` in the native/browser terrain
+The standalone entry point is `examples/terrain/cmd/procedural`; it shares scene
+and transport code with terrain. Both use pflag (`--render-mode`, `--snapshot`,
+`--duration`, `--medium`, `--procedural`, and `--help`). After `task build-web`
+and `task serve`, open http://localhost:8768/procedural/ for the browser demo.
+
+Run `task procedural`, or press `p` in the native/browser terrain
 example to toggle procedural textures. `t` switches between two fixed shader
 phases; `r` rotates the camera, `l` toggles lighting, and `1`/`2`/`3` select GPU,
 software, and wireframe. This demo does not animate shader time.
@@ -191,7 +206,7 @@ software, and wireframe. This demo does not animate shader time.
 `fn nt3dTexture(uv: vec2<f32>) -> vec4<f32>`. UVs start at the top-left;
 return opaque RGBA. The immutable fallback image determines the texture size
 and supplies software-renderer pixels. See
-[procedural.go](examples/terrain/procedural.go) for the plasma shader and its
+[procedural.go](examples/terrain/internal/terraindemo/procedural.go) for the plasma shader and its
 matching CPU fallback.
 
 Each GPU frame first generates the texture with ntgpuimage's `Frame.RenderTo`,
@@ -203,8 +218,8 @@ while the widget can fall back to software. No time uniforms or custom bindings
 are exposed yet.
 
 ```sh
-task terrain -- -procedural -snapshot /tmp/plasma-gpu.png
-task terrain -- -procedural -render-mode software -snapshot /tmp/plasma-software.png
+task terrain -- --procedural --snapshot /tmp/plasma-gpu.png
+task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-software.png
 ```
 
 The integrated path has been tested locally on Metal. Vulkan validation of

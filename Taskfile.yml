@@ -15,10 +15,10 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go math/*.go widget/*.go examples/terrain/*.go
+      - gofmt -w *.go math/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/procedural/*.go examples/terrain/internal/terraindemo/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go math/*.go widget/*.go examples/terrain/*.go)"
+      - test -z "$(gofmt -l *.go math/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/procedural/*.go examples/terrain/internal/terraindemo/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...
@@ -39,31 +39,43 @@ tasks:
     cmds:
       - go build -mod=readonly ./...
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-terrain .
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-procedural ./cmd/procedural
   build-wasm:
     env:
       GOOS: js
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p examples/terrain/web
-      - go -C examples/terrain build -mod=readonly -o web/app.wasm .
+      - mkdir -p dist/web/terrain dist/web/procedural
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/terrain/app.wasm .
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
   web-assets:
     cmds:
-      - go -C examples/terrain tool booba-assets web/
+      - go -C examples/terrain tool booba-assets ../../dist/web/terrain/
+      - go -C examples/terrain tool booba-assets ../../dist/web/procedural/
   build-web:
-    cmds: [{task: build-wasm}, {task: web-assets}]
+    desc: Build the consolidated browser gallery
+    cmds:
+      - task: build-wasm
+      - task: web-assets
+      - cp -R web/. dist/web/
   terrain:
     deps: [build]
     cmds:
       - bin/nt3d-terrain {{.CLI_ARGS}}
-  serve:
-    desc: Serve the browser demo after task build-web
+  procedural:
+    desc: Run the procedural plasma scene (GPU shader with software fallback)
+    deps: [build]
     cmds:
-      - python3 -m http.server 8768 --bind 127.0.0.1 -d examples/terrain/web
+      - bin/nt3d-procedural {{.CLI_ARGS}}
+  serve:
+    desc: Serve the browser gallery after task build-web
+    cmds:
+      - python3 -m http.server 8768 --bind 127.0.0.1 -d dist/web
   ci:
     cmds:
       - task: fmt-check
       - task: test-race
       - task: vet
       - task: build
-      - task: build-wasm
+      - task: build-web
