@@ -23,8 +23,18 @@ func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGr
 	if err != nil {
 		return err
 	}
-	g.texturePipeline, err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "textured mesh", Layout: g.textureLayout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_texture"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_texture", Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, WriteMask: gputypes.ColorWriteMaskAll}}}})
+	pipeline := func(label, fragment string) (*wgpu.RenderPipeline, error) {
+		return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: label, Layout: g.textureLayout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_texture"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, WriteMask: gputypes.ColorWriteMaskAll}}}})
+	}
+	g.texturePipeline, err = pipeline("textured mesh", "fs_texture")
+	if err == nil {
+		g.cutoutPipeline, err = pipeline("cutout mesh", "fs_cutout")
+	}
 	if err != nil {
+		if g.texturePipeline != nil {
+			g.texturePipeline.Release()
+			g.texturePipeline = nil
+		}
 		g.textureLayout.Release()
 		g.textureLayout = nil
 		return err

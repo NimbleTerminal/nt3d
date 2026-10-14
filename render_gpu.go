@@ -29,6 +29,7 @@ type gpuBatch struct {
 type gpuRenderer struct {
 	textureLayout   *wgpu.PipelineLayout
 	texturePipeline *wgpu.RenderPipeline
+	cutoutPipeline  *wgpu.RenderPipeline
 	textures        map[*Texture]*gpuimage.Texture
 	procedural      map[*Texture]*proceduralTexture
 	geometries      map[geometryKey]*gpuGeometry
@@ -199,7 +200,11 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 					if b.count == 0 {
 						continue
 					}
-					pass.SetPipeline(g.texturePipeline)
+					if f.Geometry[index].Material.Cutout {
+						pass.SetPipeline(g.cutoutPipeline)
+					} else {
+						pass.SetPipeline(g.texturePipeline)
+					}
 					pass.SetBindGroup(0, b.bind, nil)
 					src := f.Geometry[index].Material.Texture
 					if t := g.procedural[src]; t != nil {
@@ -244,6 +249,9 @@ func (g *gpuRenderer) Close() error {
 			delete(g.geometries, key)
 		}
 		g.nodes = nil
+		if g.cutoutPipeline != nil {
+			g.cutoutPipeline.Release()
+		}
 		if g.texturePipeline != nil {
 			g.texturePipeline.Release()
 		}

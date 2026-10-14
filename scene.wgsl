@@ -97,3 +97,9 @@ let p=items[ii];return output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
  return vec4<f32>(textureSample(mapTexture,mapSampler,o.uv).rgb*o.color.rgb,1.0);
 }
+// Cutout materials skip texels under half alpha; what remains is opaque.
+@fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
+ let t=textureSample(mapTexture,mapSampler,o.uv);
+ if t.a<0.5 {discard;}
+ return vec4<f32>(t.rgb*o.color.rgb,1.0);
+}

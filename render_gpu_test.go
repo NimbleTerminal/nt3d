@@ -322,3 +322,25 @@ func TestGPUNearPlaneMatchesSoftware(t *testing.T) {
 		t.Fatalf("floor pixels: GPU %d, software %d", g, s)
 	}
 }
+
+// Cutout texels are discarded on the GPU as in software.
+func TestGPUCutoutMatchesSoftware(t *testing.T) {
+	f, front, back := cutoutScene(t, true)
+	r := &gpuRenderer{}
+	defer r.Close()
+	gpu, err := r.Render(f)
+	check(t, err)
+	software := softwareRender(f)
+	for name, c := range map[string]color.RGBA{"front": front, "back": back} {
+		g, s := count(gpu, c), count(software, c)
+		if g < 2000 || g-s > g/20 || s-g > g/20 {
+			t.Fatalf("%s pixels: GPU %d, software %d", name, g, s)
+		}
+	}
+	f, _, _ = cutoutScene(t, false)
+	opaque, err := r.Render(f)
+	check(t, err)
+	if n := count(opaque, back); n != 0 {
+		t.Fatalf("%d back pixels through an opaque material", n)
+	}
+}

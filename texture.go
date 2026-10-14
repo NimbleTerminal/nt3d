@@ -15,13 +15,18 @@ import (
 type UV struct{ U, V float32 }
 
 // Material controls triangle appearance. Texture replaces vertex colors.
-// Unlit preserves colors without applying the scene light.
+// Unlit preserves colors without applying the scene light. Cutout skips
+// texels whose alpha is below one half, so a texture can cut shapes out of a
+// triangle, as leaves, lace, and fur do; what remains is opaque and depth
+// tested as usual, with no blending. Without Cutout, alpha is ignored.
 type Material struct {
 	Texture *Texture
 	Unlit   bool
+	Cutout  bool
 }
 
-// Texture owns an immutable snapshot of opaque image pixels. The zero value is invalid.
+// Texture owns an immutable snapshot of image pixels, with straight
+// (non-premultiplied) alpha that only Cutout materials use. The zero value is invalid.
 // GPU resources are owned by each renderer, not by Texture.
 type Texture struct {
 	width, height int
@@ -30,9 +35,10 @@ type Texture struct {
 	parameters    [4]float32
 }
 
-// NewTexture snapshots src, including images with nonzero bounds. Images must be
-// opaque and at most 8192 pixels per side. Channels are treated as sRGB-encoded
-// values, with filtering and lighting performed directly in that encoded space.
+// NewTexture snapshots src, including images with nonzero bounds, of at most
+// 8192 pixels per side. Channels are treated as sRGB-encoded values, with
+// filtering and lighting performed directly in that encoded space. Alpha is
+// kept for Cutout materials; others draw every texel opaque.
 func NewTexture(src image.Image) (*Texture, error) {
 	if src == nil || (reflect.ValueOf(src).Kind() == reflect.Ptr && reflect.ValueOf(src).IsNil()) {
 		return nil, fmt.Errorf("nt3d: nil texture image")
@@ -45,14 +51,9 @@ func NewTexture(src image.Image) (*Texture, error) {
 	t := &Texture{width: w, height: h, pixels: make([]byte, w*h*4)}
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			pixel := src.At(b.Min.X+x, b.Min.Y+y)
-			_, _, _, alpha := pixel.RGBA()
-			if alpha != 65535 {
-				return nil, fmt.Errorf("nt3d: texture must be opaque")
-			}
-			c := color.NRGBAModel.Convert(pixel).(color.NRGBA)
+			c := color.NRGBAModel.Convert(src.At(b.Min.X+x, b.Min.Y+y)).(color.NRGBA)
 			i := (y*w + x) * 4
-			copy(t.pixels[i:i+4], []byte{c.R, c.G, c.B, 255})
+			copy(t.pixels[i:i+4], []byte{c.R, c.G, c.B, c.A})
 		}
 	}
 	return t, nil
@@ -69,8 +70,9 @@ func cloneMaterial(m *Material) *Material {
 }
 func textured(g Geometry) bool { return g.Material != nil && g.Material.Texture != nil }
 
-// sample uses the same texel-center convention as a bilinear clamp-to-edge sampler.
-func (t *Texture) sample(uv UV) color.RGBA {
+// sample uses the same texel-center convention as a bilinear clamp-to-edge
+// sampler, filtering straight alpha as the GPU does.
+func (t *Texture) sample(uv UV) color.NRGBA {
 	x := float64(max(0, min(1, uv.U)))*float64(t.width) - .5
 	y := float64(max(0, min(1, uv.V)))*float64(t.height) - .5
 	x0, y0 := int(math.Floor(x)), int(math.Floor(y))
@@ -78,11 +80,11 @@ func (t *Texture) sample(uv UV) color.RGBA {
 	pixel := func(x, y, c int) float64 {
 		return float64(t.pixels[(max(0, min(t.height-1, y))*t.width+max(0, min(t.width-1, x)))*4+c])
 	}
-	var c [3]uint8
+	var c [4]uint8
 	for i := range c {
 		c[i] = uint8((pixel(x0, y0, i)*(1-fx)+pixel(x0+1, y0, i)*fx)*(1-fy) + (pixel(x0, y0+1, i)*(1-fx)+pixel(x0+1, y0+1, i)*fx)*fy + .5)
 	}
-	return color.RGBA{c[0], c[1], c[2], 255}
+	return color.NRGBA{c[0], c[1], c[2], c[3]}
 }
 
 // Bounds returns the snapshot dimensions with a zero origin.
@@ -102,11 +104,12 @@ func (t *Texture) At(x, y int) color.Color {
 		return color.RGBA{}
 	}
 	i := (y*t.width + x) * 4
-	return color.RGBA{t.pixels[i], t.pixels[i+1], t.pixels[i+2], 255}
+	return color.RGBAModel.Convert(color.NRGBA{t.pixels[i], t.pixels[i+1], t.pixels[i+2], t.pixels[i+3]})
 }
 
 // NewShaderTexture creates an immutable procedural texture. source must define
-// fn nt3dTexture(uv: vec2<f32>) -> vec4<f32>, returning opaque RGBA in [0,1].
+// fn nt3dTexture(uv: vec2<f32>) -> vec4<f32>, returning straight RGBA in [0,1];
+// alpha matters only to Cutout materials.
 // UV (0,0) is the top-left. nt3dTextureParams is a zero-valued vec4<f32> uniform. WGSL is compiled lazily
 // by the GPU renderer; compilation errors are returned by Render.
 // fallback is required: it sets the target dimensions and supplies pixels for
