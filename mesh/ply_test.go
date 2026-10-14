@@ -229,3 +229,98 @@ func TestPLYPoints(t *testing.T) {
 	}
 	check(t, g.Validate())
 }
+
+// gridPLY is a 3 × 3 range scan on z = 0, x along columns and y along rows,
+// with sample (row 2, col 2) at the given height, and (0, 0) missing if asked.
+func gridPLY(corner float32, missing bool) []byte {
+	var b strings.Builder
+	type sample struct{ r, c int }
+	var samples []sample
+	for r := range 3 {
+		for c := range 3 {
+			if missing && r == 0 && c == 0 {
+				continue
+			}
+			samples = append(samples, sample{r, c})
+		}
+	}
+	fmt.Fprintf(&b, "ply\nformat ascii 1.0\nobj_info num_cols 3\nobj_info num_rows 3\nelement vertex %d\nproperty float x\nproperty float y\nproperty float z\nelement range_grid 9\nproperty list uchar int vertex_indices\nend_header\n", len(samples))
+	index := map[sample]int{}
+	for i, s := range samples {
+		z := float32(0)
+		if s.r == 2 && s.c == 2 {
+			z = corner
+		}
+		fmt.Fprintf(&b, "%d %d %g\n", s.c, s.r, z)
+		index[s] = i
+	}
+	for r := range 3 {
+		for c := range 3 {
+			if i, ok := index[sample{r, c}]; ok {
+				fmt.Fprintf(&b, "1 %d\n", i)
+			} else {
+				b.WriteString("0\n")
+			}
+		}
+	}
+	return []byte(b.String())
+}
+
+func TestPLYRangeGrid(t *testing.T) {
+	m, err := DecodePLY(gridPLY(0, false), nil)
+	check(t, err)
+	g := m.Objects[0].Geometry
+	// Four cells, two triangles each, facing up, toward the scanner.
+	if m.Triangles() != 8 || len(g.Points) != 0 {
+		t.Fatalf("%d triangles", m.Triangles())
+	}
+	for _, v := range g.Vertices {
+		if v.Normal != (nt3dmath.Vec3{Z: 1}) {
+			t.Fatalf("normal %v", v.Normal)
+		}
+	}
+	// A jump in depth at one corner leaves out the triangles that would bridge it.
+	if m, err = DecodePLY(gridPLY(50, false), nil); err != nil || m.Triangles() != 6 {
+		t.Fatalf("%d triangles across a depth jump, %v", m.Triangles(), err)
+	}
+	// A missing sample leaves its cell one triangle.
+	if m, err = DecodePLY(gridPLY(0, true), nil); err != nil || m.Triangles() != 7 {
+		t.Fatalf("%d triangles with a sample missing, %v", m.Triangles(), err)
+	}
+}
+
+func TestConf(t *testing.T) {
+	scan := gridPLY(0, false)
+	// The second scan is moved 10 along x and turned a quarter about z. Its
+	// quaternion is listed as Stanford's files list them, conjugated.
+	s := math.Sqrt(.5)
+	conf := fmt.Sprintf("camera 0 0 0 0 0 0 1\nbmesh a.ply 0 0 0 0 0 0 1\nbmesh b.ply 10 0 0 0 0 %g %g\nbmesh gone.ply 0 0 0 0 0 0 1\n", -s, s)
+	files := map[string][]byte{"a.ply": scan, "b.ply": scan}
+	m, err := DecodeConf([]byte(conf), &Options{Open: opener(files)})
+	check(t, err)
+	if len(m.Objects) != 2 || m.Objects[1].Name != "b.ply" || len(m.Warnings) != 1 || !strings.Contains(m.Warnings[0], "gone.ply") {
+		t.Fatalf("%d objects, warnings %v", len(m.Objects), m.Warnings)
+	}
+	// Turned a quarter counter-clockwise, (x, y) goes to (-y, x), then moves.
+	b := m.Objects[1].Geometry.Bounds
+	if math.Abs(float64(b.Min.X-8)) > 1e-5 || math.Abs(float64(b.Max.X-10)) > 1e-5 || math.Abs(float64(b.Max.Y-2)) > 1e-5 {
+		t.Fatalf("placed at %+v", b)
+	}
+	// The model turns up after its scans are placed.
+	up, err := DecodeConf([]byte(conf), &Options{Open: opener(files), Up: YUp})
+	check(t, err)
+	if b := up.Objects[1].Geometry.Bounds; math.Abs(float64(b.Max.Z-2)) > 1e-5 {
+		t.Fatalf("turned up to %+v", b)
+	}
+	if f, _ := FormatOf("bun.conf", nil); f != Conf {
+		t.Fatal("not detected")
+	}
+	for _, bad := range []string{"bmesh a.ply 0 0 0", "bmesh a.ply 0 0 x 0 0 0 1", "camera 0 0 0 0 0 0 1\n"} {
+		if _, err := DecodeConf([]byte(bad), &Options{Open: opener(files)}); err == nil {
+			t.Fatalf("accepted %q", bad)
+		}
+	}
+	if _, err := DecodeConf([]byte(conf), nil); err == nil {
+		t.Fatal("read scans without side-file access")
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -127,9 +128,11 @@ type plyVertex struct {
 // of any size, concave ones ear-clipped, with face colors and per-corner
 // texcoord lists; and the texture a "comment TextureFile" names, through
 // Options.Open, as MeshLab writes it. Other elements, such as a scanner's
-// range grid, are skipped. Faces without vertex normals are flat. A file
-// with vertices and no faces, as raw scans are, is a cloud of points, up to
-// nt3d.MaxPoints.
+// range grid, are skipped. Faces without vertex normals are flat. A raw
+// scan with a range grid (obj_info num_cols and num_rows, as the Stanford
+// scans have) becomes a surface joining neighboring samples, leaving out
+// triangles that would bridge a jump in depth; one without is a cloud of
+// points, up to nt3d.MaxPoints.
 func DecodePLY(data []byte, o *Options) (*Model, error) {
 	elements, format, comments, body, err := plyHeader(data)
 	if err != nil {
@@ -168,6 +171,7 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 		}
 	}
 	var vertices []plyVertex
+	var grid *rangeGrid
 	for _, e := range elements {
 		// Each element takes at least a byte a value; a count the rest of
 		// the file cannot hold is refused before anything is allocated.
@@ -193,12 +197,22 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 			if err := plyFaces(r, e, vertices, s, o); err != nil {
 				return nil, err
 			}
+		case "range_grid":
+			if grid, err = plyRangeGrid(r, e, comments); err != nil {
+				return nil, err
+			}
 		default:
 			for range e.count {
 				if err := plySkip(r, e); err != nil {
 					return nil, err
 				}
 			}
+		}
+	}
+	// A range scan's grid joins neighboring samples into a surface.
+	if grid != nil && len(s.Geometry.Indices) == 0 {
+		if err := grid.mesh(vertices, s, o); err != nil {
+			return nil, err
 		}
 	}
 	m.Objects = s.objects()
@@ -499,4 +513,119 @@ func EncodePLY(w io.Writer, g nt3d.Geometry) error {
 		}
 	}
 	return b.Flush()
+}
+
+// rangeGrid is a scanner's grid of samples: rows of columns, each naming
+// the vertex sampled there, or -1 where the scanner saw nothing.
+type rangeGrid struct {
+	cols, rows int
+	cells      []int32
+}
+
+// plyRangeGrid reads a range_grid element, when the header's obj_info gives
+// its size; otherwise it skips it.
+func plyRangeGrid(r *plyReader, e plyElement, comments []string) (*rangeGrid, error) {
+	g := &rangeGrid{}
+	for _, c := range comments {
+		fields := strings.Fields(c)
+		if len(fields) == 2 && fields[0] == "num_cols" {
+			g.cols, _ = strconv.Atoi(fields[1])
+		}
+		if len(fields) == 2 && fields[0] == "num_rows" {
+			g.rows, _ = strconv.Atoi(fields[1])
+		}
+	}
+	scalars, lists := map[string]float64{}, map[string][]float64{}
+	if g.cols < 2 || g.rows < 2 || g.cols*g.rows != e.count {
+		for range e.count {
+			if err := plyValues(r, e, scalars, lists); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	}
+	g.cells = make([]int32, e.count)
+	for i := range g.cells {
+		if err := plyValues(r, e, scalars, lists); err != nil {
+			return nil, err
+		}
+		g.cells[i] = -1
+		for _, list := range lists {
+			if len(list) > 0 && list[0] >= 0 && list[0] == math.Trunc(list[0]) {
+				g.cells[i] = int32(list[0])
+			}
+		}
+	}
+	return g, nil
+}
+
+// mesh joins each cell's samples with the next row's and column's into
+// triangles facing the scanner, as the Stanford scans' rows run. A triangle with an edge over four times the
+// grid's usual spacing would bridge a jump in depth, from one surface to
+// another behind it, and is left out.
+func (g *rangeGrid) mesh(vertices []plyVertex, s *faceObject, o *Options) error {
+	at := func(r, c int) int {
+		v := int(g.cells[r*g.cols+c])
+		if v >= len(vertices) {
+			return -1
+		}
+		return v
+	}
+	// The usual spacing: the median distance between neighbors in a row.
+	var gaps []float64
+	for r := 0; r < g.rows; r++ {
+		for c := 0; c+1 < g.cols; c++ {
+			if a, b := at(r, c), at(r, c+1); a >= 0 && b >= 0 {
+				d := vertices[a].position.Sub(vertices[b].position)
+				gaps = append(gaps, math.Sqrt(float64(d.Dot(d))))
+			}
+		}
+	}
+	if len(gaps) == 0 {
+		return nil
+	}
+	slices.Sort(gaps)
+	limit := float32(4 * gaps[len(gaps)/2])
+	near := func(a, b int) bool {
+		d := vertices[a].position.Sub(vertices[b].position)
+		return d.Dot(d) <= limit*limit
+	}
+	triangle := func(a, b, c int) error {
+		if a < 0 || b < 0 || c < 0 || !near(a, b) || !near(b, c) || !near(c, a) {
+			return nil
+		}
+		v := [3]nt3dmath.Vec3{vertices[a].position, vertices[b].position, vertices[c].position}
+		var shades [3]color.RGBA
+		plain := true
+		for k, i := range []int{a, b, c} {
+			shades[k] = o.color()
+			if vertices[i].color != nil {
+				shades[k], plain = *vertices[i].color, false
+			}
+		}
+		return s.add(v, shades, plain, nil)
+	}
+	for r := 0; r+1 < g.rows; r++ {
+		for c := 0; c+1 < g.cols; c++ {
+			p, q, u, w := at(r, c), at(r, c+1), at(r+1, c), at(r+1, c+1)
+			// Two triangles a cell, or one where a corner is missing.
+			switch {
+			case p >= 0 && w >= 0:
+				if err := triangle(p, w, u); err != nil {
+					return err
+				}
+				if err := triangle(p, q, w); err != nil {
+					return err
+				}
+			case q >= 0 && u >= 0:
+				if err := triangle(p, q, u); err != nil {
+					return err
+				}
+				if err := triangle(q, w, u); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }

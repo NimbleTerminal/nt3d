@@ -12,7 +12,7 @@ The existing ntcharts3d repository is unchanged by this extraction.
 | `nimbleterminal.dev/nt3d` | `nt3d` | Scene graph, camera, geometry, textures, picking, rendering |
 | `nimbleterminal.dev/nt3d/math` | `nt3dmath` | Float32 vectors, matrices, rays and bounds |
 | `nimbleterminal.dev/nt3d/widget` | `nt3dwidget` | Bubble Tea widget and Kitty/glyph presentation |
-| `nimbleterminal.dev/nt3d/mesh` | `nt3dmesh` | STL, OBJ, 3MF, and PLY reading and writing |
+| `nimbleterminal.dev/nt3d/mesh` | `nt3dmesh` | STL, OBJ, 3MF, and PLY reading and writing; Stanford scan alignment |
 
 The library packages share one module. The terrain example has a separate module
 so its go-booba runner and Bubble Tea browser fork do not become library requirements.
@@ -140,10 +140,16 @@ err = scene.SetTransform(group, fit)
 positions, normals, colors (bytes or floats), and texture coordinates under
 their common names; polygons (concave ones ear-clipped) with face colors and
 MeshLab's per-corner `texcoord` lists; and the texture a `comment TextureFile`
-names. Unknown elements, such as a scanner's range grid, are skipped, and a
-file of vertices without faces, as raw scans are, becomes a point cloud. It
-reads the Stanford scanning repository's models, such as the bunny (69,451
-triangles in about 25 ms); `EncodePLY` writes binary PLY.
+names. Unknown elements are skipped. A raw scan's range grid (with obj_info
+`num_cols` and `num_rows`) becomes a surface joining neighboring samples,
+leaving out triangles that would bridge a jump in depth; vertices with neither
+faces nor grid become a point cloud. It reads the Stanford scanning
+repository's models, such as the bunny (69,451 triangles in about 25 ms);
+`EncodePLY` writes binary PLY. `DecodeConf` reads a Stanford `.conf`, which
+places a set of range scans together (each `bmesh` line's translation and
+quaternion, applied as those files need), reading each scan through
+`Options.Open`: the bunny's ten raw scans assemble into one model of 668,686
+triangles.
 
 `DecodeSTL` reads binary and ASCII STL, including several ASCII solids and
 VisCAM/SolidView or Magics face colors. Binary is recognized by its exact
