@@ -19,6 +19,7 @@ type meshScene struct {
 	sources   []nt3d.Geometry // As built or read, per node.
 	normals   int             // Index into meshNormals.
 	glass     bool            // Shapes drawn transparent.
+	shiny     bool            // Shapes with specular highlights.
 	triangles int
 	title     string
 }
@@ -26,9 +27,12 @@ type meshScene struct {
 var meshNormals = []string{"as built", "flat", "smooth 40°"}
 
 func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
-	d.meshes = &meshScene{}
+	d.meshes = &meshScene{shiny: true}
 	if len(files) == 0 {
-		return d.setupShapes()
+		if err := d.setupShapes(); err != nil {
+			return err
+		}
+		return d.rebuildMeshes()
 	}
 	d.meshes.title = filepath.Base(files[0])
 	if len(files) > 1 {
@@ -60,7 +64,7 @@ func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 		}
 		d.meshes.triangles += m.Triangles()
 	}
-	return nil
+	return d.rebuildMeshes()
 }
 
 func (d *demo) setupShapes() error {
@@ -126,11 +130,18 @@ func (d *demo) toggleGlass() error {
 	return d.rebuildMeshes()
 }
 
+// toggleShine turns specular highlights on or off.
+func (d *demo) toggleShine() error {
+	d.meshes.shiny = !d.meshes.shiny
+	return d.rebuildMeshes()
+}
+
 // glassAlpha is the glass shapes' opacity.
 const glassAlpha = 110
 
-// rebuildMeshes sets every mesh from its source, with the normal style and,
-// as glass, a transparent material and its vertices' alpha.
+// rebuildMeshes sets every mesh from its source, with the normal style,
+// highlights if shiny, and, as glass, a transparent material and its
+// vertices' alpha.
 func (d *demo) rebuildMeshes() error {
 	for i, id := range d.meshes.nodes {
 		g, err := d.meshes.sources[i], error(nil)
@@ -140,17 +151,22 @@ func (d *demo) rebuildMeshes() error {
 		case 2:
 			g, err = nt3d.SmoothNormals(g, 40)
 		}
-		if err == nil && d.meshes.glass {
+		if err == nil && (d.meshes.glass || d.meshes.shiny) {
 			m := nt3d.Material{}
 			if g.Material != nil {
 				m = *g.Material
 			}
-			m.Transparent, m.Cutout, m.EdgeOn = true, false, false
-			g.Material = &m
-			g.Vertices = append([]nt3d.Vertex(nil), g.Vertices...)
-			for j := range g.Vertices {
-				g.Vertices[j].Color.A = glassAlpha
+			if d.meshes.shiny {
+				m.Specular, m.Shininess = .5, 48
 			}
+			if d.meshes.glass {
+				m.Transparent, m.Cutout, m.EdgeOn = true, false, false
+				g.Vertices = append([]nt3d.Vertex(nil), g.Vertices...)
+				for j := range g.Vertices {
+					g.Vertices[j].Color.A = glassAlpha
+				}
+			}
+			g.Material = &m
 		}
 		if err == nil {
 			err = d.scene.SetNodeGeometry(id, g)
@@ -163,10 +179,13 @@ func (d *demo) rebuildMeshes() error {
 }
 
 func (d *demo) meshesView(content string) string {
-	glass := "opaque"
+	glass, shine := "opaque", "dull"
 	if d.meshes.glass {
 		glass = "glass"
 	}
-	return fmt.Sprintf("nt3d meshes · %s · s normals · t glass · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
-		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], glass, d.status)
+	if d.meshes.shiny {
+		shine = "highlights"
+	}
+	return fmt.Sprintf("nt3d meshes · %s · s normals · t glass · e highlights · d fog · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
+		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], glass, shine, d.status)
 }

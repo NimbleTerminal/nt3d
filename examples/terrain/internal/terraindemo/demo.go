@@ -23,6 +23,7 @@ import (
 
 type demo struct {
 	view              *nt3dwidget.Model
+	fog               bool // Fog that keeps its look as the camera zooms.
 	scene             *nt3d.Scene
 	group             nt3d.NodeID
 	zones             *zone.Manager
@@ -161,10 +162,17 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			d.dynamic.deform = !d.dynamic.deform
 		case "e":
+			if d.meshes != nil && d.models == nil {
+				err = d.toggleShine()
+				break
+			}
 			if d.fur == nil {
 				return d, nil
 			}
 			return d, d.cycleEffect()
+		case "d":
+			d.fog = !d.fog
+			return d, d.view.Refresh()
 		case "b", "x":
 			if v.String() == "x" && d.fur != nil {
 				return d, d.cycleSupersample()
@@ -279,7 +287,20 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // them on the status line stays put as they change.
 func (d *demo) rendering() string {
 	ms := min(999.9, float64(d.view.RenderTime().Microseconds())/1000)
-	return fmt.Sprintf("%s · %3.0f fps · %5.1f ms", d.view.RenderMode(), min(999, d.view.FrameRate()), ms)
+	s := fmt.Sprintf("%s · %3.0f fps · %5.1f ms", d.view.RenderMode(), min(999, d.view.FrameRate()), ms)
+	if d.fog {
+		s += " · fog"
+	}
+	return s
+}
+
+// decorate fogs frames, when fog is on, from just behind the camera's target
+// to well past it, so the far side of the scene fades whatever the zoom.
+func (d *demo) decorate(f *nt3d.Frame) {
+	if d.fog {
+		r := float32(d.view.Camera().Distance)
+		f.Fog = nt3d.Fog{Near: r * .9, Far: r * 1.8}
+	}
 }
 
 func (d *demo) View() tea.View {
@@ -448,7 +469,7 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Distance = 5.5
 	}
 	camera.AutoRotate = proceduralDefault
-	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones))
+	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))
 	defer d.view.Close()
 	switch kind {
 	case sceneMeshes, sceneLarge:

@@ -19,6 +19,7 @@ func bind(keys, help, desc string) key.Binding {
 var (
 	backendKeys = []key.Binding{bind("1", "1", "GPU"), bind("2", "2", "software"), bind("3", "3", "wireframe")}
 	fitKey      = bind("c", "c", "fit")
+	fogKey      = bind("d", "d", "fog")
 	// Dragging orbits, so the arrows are left out: they would push the
 	// terrain scene past booba's 2048-byte limit on an action message.
 	viewKeys = []key.Binding{
@@ -31,12 +32,12 @@ var (
 
 // ShortHelp is the compact bar: the scene's controls, fit, and backends.
 func (k keys) ShortHelp() []key.Binding {
-	return append(append(append([]key.Binding{}, k.scene...), fitKey), backendKeys...)
+	return append(append(append([]key.Binding{}, k.scene...), fitKey, fogKey), backendKeys...)
 }
 
 // FullHelp adds the camera's controls.
 func (k keys) FullHelp() [][]key.Binding {
-	return [][]key.Binding{append(append([]key.Binding{}, k.scene...), fitKey), backendKeys, viewKeys}
+	return [][]key.Binding{append(append([]key.Binding{}, k.scene...), fitKey, fogKey), backendKeys, viewKeys}
 }
 
 // sceneKeys are the keys the current scene answers to.
@@ -49,7 +50,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.models != nil:
 		return "models", keys{[]key.Binding{bind("[", "[", "previous"), bind("]", "]", "next"), bind("s", "s", "normals"), bind("n", "n", "turn")}}
 	case d.meshes != nil:
-		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("n", "n", "turn")}}
+		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("e", "e", "highlights"), bind("n", "n", "turn")}}
 	case d.dynamic != nil:
 		return "dynamic", keys{[]key.Binding{bind("a", "a", "pause"), bind("m", "m", "deform"), bind("b", "b", "add"), bind("x", "x", "remove"), bind("v", "v", "visibility")}}
 	}
