@@ -129,3 +129,64 @@ func TestPickIndexingCanBeTurnedOff(t *testing.T) {
 	}
 	<-s.nodes[id].pickIndex.done
 }
+
+// One node can opt out while others are indexed, and keeps its choice
+// across new geometry.
+func TestNodePickIndexing(t *testing.T) {
+	sphere, err := BuildSphere(Sphere{Radius: .5, Segments: 64, Rings: 32})
+	check(t, err)
+	right, err := TransformGeometry(sphere, nt3dmath.Translation(nt3dmath.Vec3{X: .8}))
+	check(t, err)
+	left, err := TransformGeometry(sphere, nt3dmath.Translation(nt3dmath.Vec3{X: -.8}))
+	check(t, err)
+	s := NewScene()
+	a, err := s.SetGeometry("indexed", right)
+	check(t, err)
+	b, err := s.SetGeometry("scanned", left)
+	check(t, err)
+	check(t, s.SetNodePickIndexing(b, false))
+	camera := DefaultCamera()
+	camera.Alpha, camera.Beta = 89, -90
+	f, err := s.Frame(camera, 320, 240)
+	check(t, err)
+	// Pick each sphere at its projected center.
+	at := func(x float32) (float32, float32) {
+		px, py, _, _ := f.Matrix.Project(nt3dmath.Vec3{X: x}, 320, 240)
+		return px, py
+	}
+	pick := func() {
+		for _, x := range []float32{.8, -.8} {
+			px, py := at(x)
+			if hit := s.Pick(camera, f, px, py, 0); hit == nil {
+				t.Fatalf("missed the sphere at x=%v", x)
+			}
+		}
+	}
+	pick()
+	if s.nodes[a].pickIndex == nil || s.nodes[b].pickIndex != nil {
+		t.Fatal("the opted-out node was indexed, or the other was not")
+	}
+	<-s.nodes[a].pickIndex.done
+	// New geometry keeps the node's choice.
+	check(t, s.SetNodeGeometry(b, left))
+	f, err = s.Frame(camera, 320, 240)
+	check(t, err)
+	pick()
+	if s.nodes[b].pickIndex != nil {
+		t.Fatal("new geometry forgot the node's choice")
+	}
+	// Turning it back on indexes it; off again drops the index.
+	check(t, s.SetNodePickIndexing(b, true))
+	pick()
+	if s.nodes[b].pickIndex == nil {
+		t.Fatal("not indexed once allowed")
+	}
+	<-s.nodes[b].pickIndex.done
+	check(t, s.SetNodePickIndexing(b, false))
+	if s.nodes[b].pickIndex != nil {
+		t.Fatal("index kept after opting out")
+	}
+	if s.SetNodePickIndexing(9999, false) == nil {
+		t.Fatal("accepted an unknown node")
+	}
+}

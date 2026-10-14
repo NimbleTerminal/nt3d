@@ -2,6 +2,7 @@
 package nt3d
 
 import (
+	"fmt"
 	"math"
 	"nimbleterminal.dev/nt3d/math"
 	"sync/atomic"
@@ -179,6 +180,24 @@ func (s *Scene) SetPickIndexing(on bool) {
 	}
 }
 
+// SetNodePickIndexing chooses whether Pick indexes one node's mesh, as
+// SetPickIndexing does for the whole scene; a node is indexed only when both
+// allow it. The choice belongs to the node and outlasts its geometry, so a
+// large mesh that is never picked, such as terrain or a backdrop, need not
+// pay for an index while the models around it are indexed. Turning it off
+// drops the node's index.
+func (s *Scene) SetNodePickIndexing(id NodeID, on bool) error {
+	n, ok := s.nodes[id]
+	if !ok {
+		return fmt.Errorf("nt3d: unknown node %d", id)
+	}
+	n.noPickIndex = !on
+	if !on {
+		n.pickIndex = nil
+	}
+	return nil
+}
+
 // bvhSlot receives the triangle index of one geometry, built on another
 // goroutine. Geometry is immutable once set, so the build only reads it; a
 // slot belongs to one geometry and is dropped with it.
@@ -198,7 +217,7 @@ func (s *Scene) pickIndex(f Frame, i int) *meshBVH {
 		return nil
 	}
 	n := s.nodes[instance(f, i).Node]
-	if n == nil || n.geometry == nil || n.geometryRevision != f.GeometryRevisions[i] {
+	if n == nil || n.noPickIndex || n.geometry == nil || n.geometryRevision != f.GeometryRevisions[i] {
 		return nil
 	}
 	if n.pickIndex == nil {

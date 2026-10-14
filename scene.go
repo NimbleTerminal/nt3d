@@ -31,6 +31,7 @@ type sceneNode struct {
 	geometry         *Geometry
 	geometryRevision uint64
 	pickIndex        *bvhSlot // Built for picking on demand, for this geometry.
+	noPickIndex      bool     // SetNodePickIndexing turned indexing off here.
 }
 
 // Scene owns a tree of groups and geometry. Use NewScene; do not copy it.

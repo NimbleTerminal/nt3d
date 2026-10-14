@@ -217,7 +217,9 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   256 triangles also starts indexing it (a bounding volume hierarchy) on another
   goroutine, and later picks, such as hover, take about a microsecond. The
   index lasts until the node's geometry changes. It takes about 28 bytes a
-  triangle; `Scene.SetPickIndexing(false)` opts out where picks are rare.
+  triangle; `Scene.SetPickIndexing(false)` opts out where picks are rare, and
+  `Scene.SetNodePickIndexing(id, false)` opts one node out, such as terrain
+  that is never picked, keeping its choice across new geometry.
   Points, boxes, and strokes are tested one by one.
 - Camera offers projection, rays, orbit/pan/zoom, and explicit `Step(elapsed, idle)`
   for automatic rotation. Units are world units; no automatic normalization occurs.
