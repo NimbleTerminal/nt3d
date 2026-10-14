@@ -479,7 +479,7 @@ func EncodeOBJ(w io.Writer, g nt3d.Geometry) error {
 func decodeTexture(data []byte, background color.RGBA) (*image.RGBA, error) {
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return nil, errors.New("not a PNG or JPEG")
+		return nil, errors.New("not a PNG, JPEG, or registered image format")
 	}
 	if config.Width > maxTextureSide || config.Height > maxTextureSide {
 		return nil, fmt.Errorf("larger than %d pixels a side", maxTextureSide)

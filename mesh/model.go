@@ -42,8 +42,11 @@ const (
 // DefaultColor is given to faces whose file names no color, unless Options.Color is set.
 var DefaultColor = color.RGBA{255, 255, 255, 255}
 
-// maxCoordinate keeps bounds and transforms of decoded meshes finite.
-const maxCoordinate = 1e15
+// MaxCoordinate keeps bounds and transforms of decoded meshes finite:
+// decoders refuse coordinates beyond it.
+const MaxCoordinate = 1e15
+
+const maxCoordinate = MaxCoordinate
 
 // ErrTooManyTriangles is wrapped by errors for models over Options.MaxTriangles.
 var ErrTooManyTriangles = errors.New("nt3dmesh: too many triangles")
@@ -135,6 +138,17 @@ func (o *Options) color() color.RGBA {
 	}
 	return o.Color
 }
+
+// TriangleLimit is the model's triangle limit: MaxTriangles, or the default.
+// Registered decoders honor it.
+func (o *Options) TriangleLimit() int { return o.limit() }
+
+// ByteLimit is how much a package and its side files may hold: MaxBytes,
+// or the default. Registered decoders honor it.
+func (o *Options) ByteLimit() int64 { return o.maxBytes() }
+
+// FaceColor paints faces the file leaves uncolored: Color, or DefaultColor.
+func (o *Options) FaceColor() color.RGBA { return o.color() }
 
 // Object is one named part of a model.
 type Object struct {
@@ -232,6 +246,9 @@ func FormatOf(name string, data []byte) (Format, bool) {
 	case ".conf":
 		return Conf, true
 	}
+	if f, ok := registeredExtension(name); ok {
+		return f, true
+	}
 	if bytes.HasPrefix(data, []byte("ply\n")) || bytes.HasPrefix(data, []byte("ply\r\n")) {
 		return PLY, true
 	}
@@ -241,7 +258,7 @@ func FormatOf(name string, data []byte) (Format, bool) {
 	if binarySTL(data) || bytes.HasPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte("solid")) {
 		return STL, true
 	}
-	return "", false
+	return registeredMagic(data)
 }
 
 // Decode reads a model in the given format.
@@ -257,6 +274,9 @@ func Decode(data []byte, f Format, o *Options) (*Model, error) {
 		return DecodePLY(data, o)
 	case Conf:
 		return DecodeConf(data, o)
+	}
+	if r, ok := registeredFormat(f); ok {
+		return r.decode(data, o)
 	}
 	return nil, fmt.Errorf("nt3dmesh: unsupported format %q", f)
 }
