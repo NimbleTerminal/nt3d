@@ -30,6 +30,7 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		m.sceneRevision = m.scene.Revision()
 		m.seq++
 		m.dirty = true
+		pictureCmd = tea.Batch(pictureCmd, m.retry())
 	}
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -41,6 +42,13 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		m.busy = false
 		if v.seq != m.seq {
 			return m, m.schedule()
+		}
+		if v.err != nil && v.renderMode == WebGPU {
+			// Reported, not fallen back: keep the renderer for a smaller scene.
+			m.err, m.failed = v.err, v.err
+			id, err := m.id, v.err
+			failed := func() tea.Msg { return RenderFailedMsg{ID: id, Err: err} }
+			return m, tea.Batch(m.pic.SetVisible(false), failed)
 		}
 		if v.err != nil {
 			m.err = v.err

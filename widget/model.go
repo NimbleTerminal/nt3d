@@ -5,6 +5,7 @@ package nt3dwidget
 import (
 	tea "charm.land/bubbletea/v2"
 	"fmt"
+	"github.com/charmbracelet/x/ansi"
 	zone "github.com/lrstanley/bubblezone/v2"
 	"image"
 	"image/color"
@@ -56,8 +57,36 @@ type Model struct {
 	err                             error
 	slow                            int
 	shrink                          float64
+	gpuFailure                      GPUFailure
+	failed                          error // A reported GPU failure; rendering waits for a change.
 }
 type Option func(*Model)
+
+// GPUFailure says what the widget does when the GPU fails to render a frame.
+// A GPU that cannot be used at all (nt3d.ErrGPUUnavailable: no adapter, or a
+// failed setup) always falls back to software, as terminals without one must.
+type GPUFailure int
+
+const (
+	// ReportGPUFailure, the default, stops drawing and reports the error: the
+	// view says so, Failed returns it, and the parent receives RenderFailedMsg.
+	// A GPU that ran out of memory for a scene would otherwise fall back to a
+	// software rendering far slower than the user expects. Rendering resumes
+	// when the scene changes or SetRenderMode is called, as after choosing
+	// fewer parts or Software.
+	ReportGPUFailure GPUFailure = iota
+	// FallBackOnGPUFailure switches to software rendering for good.
+	FallBackOnGPUFailure
+)
+
+// RenderFailedMsg reports a GPU failure under ReportGPUFailure.
+type RenderFailedMsg struct {
+	ID  uint64 // The widget's ID.
+	Err error
+}
+
+// WithGPUFailure chooses what a GPU render failure does.
+func WithGPUFailure(p GPUFailure) Option { return func(m *Model) { m.gpuFailure = p } }
 
 func WithRenderMode(mode nt3d.RenderMode) Option {
 	return func(m *Model) {
@@ -114,10 +143,13 @@ func New(scene *nt3d.Scene, width, height int, opts ...Option) *Model {
 	m.SetSize(width, height)
 	return m
 }
-func (m *Model) Scene() *nt3d.Scene               { return m.scene }
-func (m *Model) Camera() nt3d.Camera              { return m.camera }
-func (m *Model) ID() uint64                       { return m.id }
-func (m *Model) Err() error                       { return m.err }
+func (m *Model) Scene() *nt3d.Scene  { return m.scene }
+func (m *Model) Camera() nt3d.Camera { return m.camera }
+func (m *Model) ID() uint64          { return m.id }
+func (m *Model) Err() error          { return m.err }
+
+// Failed returns the GPU failure that has stopped rendering, or nil.
+func (m *Model) Failed() error                    { return m.failed }
 func (m *Model) RenderMode() RenderMode           { return m.renderMode }
 func (m *Model) RequestedRenderMode() RenderMode  { return m.requestedRenderMode }
 func (m *Model) PictureStatus() picture.Status    { return m.pic.Status() }
@@ -151,6 +183,7 @@ func (m *Model) SetRenderMode(mode RenderMode) tea.Cmd {
 	}
 	m.renderMode, m.requestedRenderMode = mode, mode
 	m.slow, m.shrink = 0, 0
+	m.failed = nil
 	m.wire = ""
 	m.wake++
 	if mode == WebGPU && m.renderer == nil {
@@ -202,6 +235,9 @@ func (m *Model) View() tea.View {
 	if m.renderMode == Wireframe {
 		body = m.wire
 	}
+	if m.failed != nil {
+		body = failedView(m.failed, m.width, m.height)
+	}
 	if body == "" {
 		body = strings.Repeat(strings.Repeat(" ", m.width)+"\n", m.height-1) + strings.Repeat(" ", m.width)
 	}
@@ -223,3 +259,20 @@ func (m *Model) SetBackground(c color.Color) tea.Cmd {
 	return m.changed(false)
 }
 func (m *Model) SetLight(l nt3d.Light) tea.Cmd { m.light = l; return m.changed(false) }
+
+// failedView fills the viewport with the reason nothing is drawn.
+func failedView(err error, width, height int) string {
+	lines := make([]string, height)
+	words := strings.Fields("Not rendered: " + err.Error())
+	for i, row := 0, height/2; i < len(words) && row < height; row++ {
+		line := words[i]
+		for i++; i < len(words) && len([]rune(line))+1+len([]rune(words[i])) <= width; i++ {
+			line += " " + words[i]
+		}
+		lines[row] = ansi.Truncate(line, width, "…")
+	}
+	for i, line := range lines {
+		lines[i] = line + strings.Repeat(" ", max(0, width-ansi.StringWidth(line)))
+	}
+	return strings.Join(lines, "\n")
+}

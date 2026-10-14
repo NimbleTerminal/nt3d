@@ -179,8 +179,9 @@ Each geometry may hold at most `MaxMeshTriangles` (932,067) triangles: its
 every device. Many adapters allow larger bindings, but only when requested, so
 nt3d keeps the portable limit and larger meshes are split across nodes. Frames
 have no total: each geometry is bound separately, and the bound is device
-memory, which WebGPU does not specify. A GPU render that fails, out of memory
-or otherwise, makes the widget fall back to software.
+memory, which WebGPU does not specify. Errors wrapping `ErrGPUUnavailable`
+concern the device (no adapter, failed setup); others concern the frame, such
+as running out of memory, and a smaller scene may still render.
 
 Frame area is limited to 4096 × 2160 pixels. Textures must be opaque and no larger
 than 8192 pixels per side. Color filtering/lighting retain the original renderer's
@@ -203,7 +204,13 @@ per-node revisions too, or clear `GeometryRevisions` and change `Revision`.
 ## Widget and transports
 
 The widget owns render scheduling, stale-frame rejection, GPU fallback, adaptive
-software resolution, and wireframe fallback. ntpicture `Picture` owns image
+software resolution, and wireframe fallback. Without a usable GPU
+(`ErrGPUUnavailable`) it renders in software. When a working GPU fails on a
+frame, by default (`ReportGPUFailure`) it stops drawing rather than switching to
+a much slower software rendering: the view shows the error, `Failed` returns it,
+and the parent receives `RenderFailedMsg`, so it can load less, show something
+else, or choose `Software`. Rendering resumes when the scene changes or a mode
+is set. `WithGPUFailure(FallBackOnGPUFailure)` falls back instead. ntpicture `Picture` owns image
 encoding, transmission pacing, stable streaming placements, and cleanup. Renderer
 snapshots are submitted with `SetImageImmutable`, avoiding a second pixel copy.
 Frame dimensions come from `Picture.RasterGeometry().Pixels`; camera projection
@@ -321,7 +328,7 @@ then samples it on the terrain mesh, using the same device and command encoder.
 Only the final scene image is read back for presentation. Pipelines and targets
 are cached per texture and renderer, and released when no longer referenced by
 the rendered frame. Shader compilation is lazy; `Renderer.Render` reports errors,
-while the widget can fall back to software. `NewShaderTextureWithParameters(source, [4]float32{phase, 0, 0, 0}, fallback)`
+which the widget reports or falls back from as `WithGPUFailure` chooses. `NewShaderTextureWithParameters(source, [4]float32{phase, 0, 0, 0}, fallback)`
 exposes `nt3dTextureParams`, a `vec4<f32>` uniform at group 0, binding 0.
 Create a new immutable texture and call `Scene.SetTexture` for each update;
 provide fallback pixels for the same phase. The renderer reuses the pipeline

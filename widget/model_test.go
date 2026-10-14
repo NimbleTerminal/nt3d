@@ -3,17 +3,31 @@ package nt3dwidget
 import (
 	tea "charm.land/bubbletea/v2"
 	"errors"
+	"fmt"
 	"image"
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
+	"strings"
 	"testing"
 	"time"
 )
 
-type failRenderer struct{ closed bool }
+// failRenderer fails with err, a missing GPU when nil, until ok.
+type failRenderer struct {
+	closed, ok bool
+	err        error
+}
 
-func (r *failRenderer) Render(Frame) (image.Image, error) { return nil, errors.New("GPU unavailable") }
-func (r *failRenderer) Close() error                      { r.closed = true; return nil }
+func (r *failRenderer) Render(f Frame) (image.Image, error) {
+	switch {
+	case r.ok:
+		return image.NewRGBA(image.Rect(0, 0, f.Width, f.Height)), nil
+	case r.err != nil:
+		return nil, r.err
+	}
+	return nil, fmt.Errorf("no adapter: %w", nt3d.ErrGPUUnavailable)
+}
+func (r *failRenderer) Close() error { r.closed = true; return nil }
 func scene(t *testing.T) *nt3d.Scene {
 	t.Helper()
 	s := nt3d.NewScene()
@@ -93,5 +107,82 @@ func TestPacingAndModelIsolation(t *testing.T) {
 	m.Update(tick{id: m.id, generation: generation - 1})
 	if m.dirty {
 		t.Fatal("stale tick")
+	}
+}
+
+// messages runs a command and the commands it batches, collecting messages.
+func messages(cmd tea.Cmd) (out []tea.Msg) {
+	if cmd == nil {
+		return nil
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		for _, c := range msg {
+			out = append(out, messages(c)...)
+		}
+	default:
+		out = append(out, msg)
+	}
+	return out
+}
+
+func TestGPUFailureIsReported(t *testing.T) {
+	r := &failRenderer{err: errors.New("out of memory")}
+	s := scene(t)
+	m := New(s, 30, 10, WithRenderer(r))
+	defer m.Close()
+	m.started = true
+	msg := m.schedule()().(rendered)
+	if msg.renderMode != WebGPU || msg.err == nil || msg.frame != nil {
+		t.Fatal("fell back instead of reporting")
+	}
+	_, cmd := m.Update(msg)
+	reported := false
+	for _, msg := range messages(cmd) {
+		if v, ok := msg.(RenderFailedMsg); ok && v.ID == m.ID() && v.Err != nil {
+			reported = true
+		}
+	}
+	if !reported || m.Failed() == nil || m.RenderMode() != WebGPU || r.closed {
+		t.Fatalf("reported=%v failed=%v mode=%v closed=%v", reported, m.Failed(), m.RenderMode(), r.closed)
+	}
+	if view := m.View().Content; !strings.Contains(view, "Not rendered: out of memory") {
+		t.Fatalf("view %q", view)
+	}
+	// Moving the camera cannot help, so nothing renders.
+	if m.SetCamera(m.Camera().Orbit(10, 0)) != nil || m.Busy() {
+		t.Fatal("rendered again for a camera change")
+	}
+	// A smaller scene is tried on the GPU again.
+	r.ok = true
+	_, err := s.SetGeometry("point", nt3d.Geometry{Points: []nt3d.Point{{Radius: 2}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh()
+	if m.Failed() != nil || m.Err() != nil || !m.Busy() {
+		t.Fatal("scene change did not retry")
+	}
+	// Choosing a mode also clears it.
+	m.failed = errors.New("again")
+	m.busy = false
+	m.SetRenderMode(Software)
+	if m.Failed() != nil {
+		t.Fatal("SetRenderMode kept the failure")
+	}
+}
+
+func TestGPUFailureCanFallBack(t *testing.T) {
+	r := &failRenderer{err: errors.New("out of memory")}
+	m := New(scene(t), 30, 10, WithRenderer(r), WithGPUFailure(FallBackOnGPUFailure))
+	defer m.Close()
+	m.started = true
+	msg := m.schedule()().(rendered)
+	if msg.renderMode != Software || msg.frame == nil {
+		t.Fatal("no fallback")
+	}
+	m.Update(msg)
+	if m.Failed() != nil || m.RenderMode() != Software || !r.closed {
+		t.Fatal("fallback state")
 	}
 }

@@ -65,8 +65,8 @@ const DefaultMaxBytes = 256 << 20
 type Options struct {
 	// MaxTriangles limits the triangles of the whole model, a budget for
 	// memory and time. Zero uses DefaultMaxTriangles. Device memory, not the
-	// format, sets how much a GPU can draw; a GPU renderer that runs out fails,
-	// and the widget falls back to software.
+	// format, sets how much a GPU can draw; a GPU renderer that runs out fails
+	// the frame, and the widget reports it (see nt3dwidget.WithGPUFailure).
 	MaxTriangles int
 	// Color paints faces the file leaves uncolored. Zero uses DefaultColor.
 	Color color.RGBA

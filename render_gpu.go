@@ -6,7 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/binary"
-	"errors"
+	"fmt"
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
 	"image"
@@ -145,15 +145,15 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		return nil, err
 	}
 	if g.closed {
-		return nil, errors.New("nt3d: renderer closed")
+		return nil, fmt.Errorf("%w: renderer closed", ErrGPUUnavailable)
 	}
 	if g.initErr != nil {
 		return nil, g.initErr
 	}
 	if g.r == nil {
 		if err := g.setup(); err != nil {
-			g.initErr = err
-			return nil, err
+			g.initErr = fmt.Errorf("%w: %w", ErrGPUUnavailable, err)
+			return nil, g.initErr
 		}
 	}
 	if w, h := g.r.Size(); w != f.Width || h != f.Height {

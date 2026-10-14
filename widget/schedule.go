@@ -3,6 +3,7 @@
 package nt3dwidget
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"math"
@@ -17,10 +18,21 @@ import (
 func (m *Model) changed(data bool) tea.Cmd {
 	m.seq++
 	m.dirty = true
+	var retry tea.Cmd
 	if data {
 		m.sceneRevision = m.scene.Revision()
+		retry = m.retry()
 	}
-	return m.schedule()
+	return tea.Batch(retry, m.schedule())
+}
+
+// retry clears a reported GPU failure when the scene has changed.
+func (m *Model) retry() tea.Cmd {
+	if m.failed == nil {
+		return nil
+	}
+	m.failed, m.err = nil, nil
+	return m.pic.SetVisible(m.renderMode != Wireframe)
 }
 
 type rendered struct {
@@ -121,14 +133,14 @@ func (m *Model) frame() Frame {
 }
 
 func (m *Model) schedule() tea.Cmd {
-	if !m.started || m.closed || m.busy || !m.dirty || (m.renderMode != Wireframe && m.pic.Status().Busy) {
+	if !m.started || m.closed || m.busy || !m.dirty || m.failed != nil || (m.renderMode != Wireframe && m.pic.Status().Busy) {
 		return nil
 	}
 	m.busy = true
 	m.dirty = false
 	resolutionCmd := m.resolution()
 	f := m.frame()
-	id, seq, renderMode, r, cols, rows := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height
+	id, seq, renderMode, r, cols, rows, fallBack := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height, m.gpuFailure == FallBackOnGPUFailure
 	return tea.Batch(resolutionCmd, func() tea.Msg {
 		start := time.Now()
 		var img image.Image
@@ -136,9 +148,12 @@ func (m *Model) schedule() tea.Cmd {
 		wire := ""
 		if renderMode == WebGPU {
 			if r == nil {
-				err = fmt.Errorf("nt3dwidget: GPU unavailable")
+				err = fmt.Errorf("nt3dwidget: %w", nt3d.ErrGPUUnavailable)
 			} else {
 				img, err = r.Render(f)
+			}
+			if err != nil && !fallBack && !errors.Is(err, nt3d.ErrGPUUnavailable) {
+				return rendered{id: id, seq: seq, renderMode: WebGPU, err: err, elapsed: time.Since(start)}
 			}
 			if err != nil {
 				renderMode = Software

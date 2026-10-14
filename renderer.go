@@ -2,6 +2,7 @@
 package nt3d
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -100,6 +101,12 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	return f, nil
 }
 
+// ErrGPUUnavailable is wrapped by GPU renderer errors that concern the
+// device rather than the frame: no adapter, a failed setup, or a closed
+// renderer. Other GPU errors concern the frame, such as running out of memory
+// for its geometry; a smaller scene may still render.
+var ErrGPUUnavailable = errors.New("nt3d: GPU unavailable")
+
 // Renderer implementations serialize Render and Close. Call Close after use.
 // Returned image pixels must remain stable across subsequent renders.
 type Renderer interface {
@@ -186,7 +193,7 @@ func validateFrame(f Frame) error {
 	// Each geometry has buffers and bindings of its own, so the 128 MiB binding
 	// WebGPU guarantees limits each geometry (see Validate), not the frame. The
 	// frame's total is bounded by device memory; a GPU that runs out fails the
-	// render, and the widget falls back to software. Decorations and overlays
+	// render, without ErrGPUUnavailable. Decorations and overlays
 	// share frame-wide buffers and keep frame limits.
 	if len(f.Geometry)+1 > (128<<20)/128 || len(f.DynamicLines) > (128<<20)/48 || len(f.Overlays) > (128<<20)/48/6 {
 		return fmt.Errorf("nt3d: frame exceeds GPU binding limit")

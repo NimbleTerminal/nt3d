@@ -125,6 +125,9 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return d, tea.Sequence(d.view.Dispose(), tea.Quit)
 	case tea.WindowSizeMsg:
 		return d, d.view.SetSize(v.Width, max(1, v.Height-2))
+	case nt3dwidget.RenderFailedMsg:
+		d.status = "GPU failed · 2 renders in software"
+		return d, nil
 	case nt3dwidget.PickMsg:
 		d.status = "no hit"
 		if v.Hit != nil {
