@@ -166,6 +166,7 @@ type part3MF struct {
 	objects  map[string]*object3MF
 	colors   map[string][]color.RGBA
 	textures map[string]string      // Texture paths in the package, by texture2d id.
+	clamped  map[string]bool        // Texture2d ids whose tile styles both clamp.
 	coords   map[string]*texture3MF // By texture2dgroup id.
 	build    []placed3MF
 }
@@ -323,19 +324,40 @@ func (p *package3MF) thumbnail(declared string) image.Image {
 
 // decoder3MF assembles the parts of a build.
 type decoder3MF struct {
-	pkg      *package3MF
-	build    []placed3MF
-	settings slicer3MF
-	model    *Model
-	textures map[string]*nt3d.Material // By path; nil where one did not load.
+	pkg       *package3MF
+	build     []placed3MF
+	settings  slicer3MF
+	model     *Model
+	textures  map[string]*nt3d.Texture // By path; nil where one did not load.
+	materials map[material3MF]*nt3d.Material
+}
+
+// material3MF names a texture's material: its path and whether it repeats.
+type material3MF struct {
+	path   string
+	repeat bool
+}
+
+// material is a texture's material, made once for each way it tiles.
+func (d *decoder3MF) material(path string, repeat bool) *nt3d.Material {
+	key := material3MF{path, repeat}
+	if m, ok := d.materials[key]; ok {
+		return m
+	}
+	var m *nt3d.Material
+	if t := d.texture(path); t != nil {
+		m = &nt3d.Material{Texture: t, Repeat: repeat}
+	}
+	d.materials[key] = m
+	return m
 }
 
 // texture loads a texture of the package once, flattening transparency over
 // white. A texture that cannot be used is a warning, and its faces are drawn
 // in their colors instead.
-func (d *decoder3MF) texture(path string) *nt3d.Material {
-	if m, ok := d.textures[path]; ok {
-		return m
+func (d *decoder3MF) texture(path string) *nt3d.Texture {
+	if t, ok := d.textures[path]; ok {
+		return t
 	}
 	d.textures[path] = nil
 	warn := func(err error) { d.model.Warnings = append(d.model.Warnings, fmt.Sprintf("texture %s: %v", path, err)) }
@@ -354,8 +376,8 @@ func (d *decoder3MF) texture(path string) *nt3d.Material {
 		warn(err)
 		return nil
 	}
-	d.textures[path] = &nt3d.Material{Texture: texture}
-	return d.textures[path]
+	d.textures[path] = texture
+	return texture
 }
 
 // walk gives emit each object placed by at, where it is placed, and the
@@ -422,7 +444,7 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 		return nil, err
 	}
 	m.Unit, m.Metadata = model.unit, model.metadata
-	d := &decoder3MF{pkg: pkg, build: model.build, settings: pkg.slicer(), model: m, textures: map[string]*nt3d.Material{}}
+	d := &decoder3MF{pkg: pkg, build: model.build, settings: pkg.slicer(), model: m, textures: map[string]*nt3d.Texture{}, materials: map[material3MF]*nt3d.Material{}}
 	if len(d.build) == 0 {
 		// Without a build, show what there is.
 		for id := range model.objects {
@@ -517,7 +539,7 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 				f, uv := gather(nil, ""), (*[3]nt3d.UV)(nil)
 				if coords := part.coords[group]; coords != nil {
 					path := part.textures[coords.texture]
-					if material := d.texture(path); material != nil {
+					if material := d.material(path, !part.clamped[coords.texture]); material != nil {
 						var corners [3]nt3d.UV
 						for k, n := range index {
 							if n >= 0 && n < len(coords.coords) {
@@ -606,7 +628,7 @@ func place3MF(e xml.StartElement) (placed3MF, error) {
 
 // parsePart3MF reads a model part as a stream: a mesh is millions of small elements.
 func parsePart3MF(data []byte) (*part3MF, error) {
-	part := &part3MF{unit: "millimeter", metadata: map[string]string{}, objects: map[string]*object3MF{}, colors: map[string][]color.RGBA{}, textures: map[string]string{}, coords: map[string]*texture3MF{}}
+	part := &part3MF{unit: "millimeter", metadata: map[string]string{}, objects: map[string]*object3MF{}, colors: map[string][]color.RGBA{}, textures: map[string]string{}, clamped: map[string]bool{}, coords: map[string]*texture3MF{}}
 	d := xml.NewDecoder(bytes.NewReader(data))
 	var object *object3MF
 	var group, name string
@@ -631,7 +653,11 @@ func parsePart3MF(data []byte) (*part3MF, error) {
 			case "basematerials", "colorgroup":
 				group = attribute(e, "id")
 			case "texture2d":
-				part.textures[attribute(e, "id")] = attribute(e, "path")
+				id := attribute(e, "id")
+				part.textures[id] = attribute(e, "path")
+				// Tile styles default to wrap; mirror is drawn as wrap.
+				clamp := func(style string) bool { return style == "clamp" || style == "none" }
+				part.clamped[id] = clamp(attribute(e, "tilestyleu")) && clamp(attribute(e, "tilestylev"))
 			case "texture2dgroup":
 				group = attribute(e, "id")
 				part.coords[group] = &texture3MF{texture: attribute(e, "texid")}

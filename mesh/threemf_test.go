@@ -489,3 +489,29 @@ func TestTextured3MF(t *testing.T) {
 		t.Fatalf("%d objects, warnings %v", len(m.Objects), m.Warnings)
 	}
 }
+
+// Decoders tile textures as their formats do: OBJ and PLY by default, 3MF
+// unless both tile styles clamp.
+func TestTextureTiling(t *testing.T) {
+	files := cubeFiles(t)
+	m, err := DecodeOBJ([]byte(cubeOBJ), &Options{Open: opener(files)})
+	check(t, err)
+	if !m.Objects[0].Geometry.Material.Repeat {
+		t.Fatal("OBJ texture does not repeat")
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	var texture bytes.Buffer
+	check(t, png.Encode(&texture, img))
+	textured := strings.Replace(tetrahedron, `<triangle v1="1" v2="2" v3="3"/>`, `<triangle v1="1" v2="2" v3="3" pid="7" p1="0" p2="1" p3="2"/>`, 1)
+	for style, want := range map[string]bool{``: true, `tilestyleu="clamp" tilestylev="clamp"`: false, `tilestyleu="mirror" tilestylev="clamp"`: true} {
+		model := model3MF(`xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`, `<resources>
+			<m:texture2d id="6" path="/3D/Textures/t.png" contenttype="image/png" `+style+`/>
+			<m:texture2dgroup id="7" texid="6"><m:tex2coord u="0" v="0"/><m:tex2coord u="2" v="0"/><m:tex2coord u="0" v="2"/></m:texture2dgroup>
+			<object id="1">`+textured+`</object></resources><build><item objectid="1"/></build>`)
+		m, err := Decode3MF(archive3MF(t, map[string]string{"3D/3dmodel.model": model, "3D/Textures/t.png": texture.String()}), nil)
+		check(t, err)
+		if got := m.Objects[1].Geometry.Material.Repeat; got != want {
+			t.Errorf("tile style %q: repeat %v, want %v", style, got, want)
+		}
+	}
+}

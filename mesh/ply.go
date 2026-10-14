@@ -161,7 +161,7 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 			} else if img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255}); err != nil {
 				m.Warnings = append(m.Warnings, fmt.Sprintf("texture %q: %v", name, err))
 			} else if t, err := nt3d.NewTexture(img); err == nil {
-				s.Geometry.Material = &nt3d.Material{Texture: t}
+				s.Geometry.Material = &nt3d.Material{Texture: t, Repeat: true}
 				s.Material = name
 			}
 			break

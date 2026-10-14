@@ -423,7 +423,8 @@ func (d *objDecoder) texture(m *objMaterial) *nt3d.Material {
 		d.warn("texture %q: %v", m.texture, err)
 		return nil
 	}
-	m.loaded = &nt3d.Material{Texture: texture}
+	// OBJ textures tile by default, and many models' UVs rely on it.
+	m.loaded = &nt3d.Material{Texture: texture, Repeat: true}
 	return m.loaded
 }
 
