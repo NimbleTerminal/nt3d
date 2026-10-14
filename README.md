@@ -99,7 +99,8 @@ err = scene.SetTransform(group, fit)
 VisCAM/SolidView or Magics face colors. Binary is recognized by its exact
 record length, as headers may begin with "solid". Facet normals are recomputed.
 `DecodeOBJ` reads positions with the r g b vertex-color extension, texture
-coordinates, normals, polygons (as fans), polylines, objects and groups, and
+coordinates, normals, polygons (convex ones as fans, concave ones ear-clipped),
+polylines, objects and groups, and
 material libraries: `Kd` colors and `map_Kd` PNG/JPEG textures, with
 transparent texels flattened over `Kd`. Each object or group becomes one
 `Object` per material. Faces without normals get flat ones.

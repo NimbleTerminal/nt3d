@@ -64,7 +64,8 @@ func (d *objDecoder) warn(format string, a ...any) {
 }
 
 // DecodeOBJ reads Wavefront OBJ: vertices, with the common r g b extension,
-// texture coordinates, normals, polygons (split into triangle fans), and
+// texture coordinates, normals, polygons (convex ones as fans, concave ones
+// ear-clipped), and
 // polylines. Each object or group becomes an object per material it uses.
 // Material libraries give diffuse colors (Kd) and textures (map_Kd, PNG or
 // JPEG) through Options.Open; transparent texels are flattened over Kd.
@@ -308,9 +309,13 @@ func (d *objDecoder) face(words []string) error {
 			return err
 		}
 	}
-	for k := 1; k+1 < len(corners); k++ {
+	positions := make([]nt3dmath.Vec3, len(corners))
+	for i, c := range corners {
+		positions[i] = d.positions[c[0]]
+	}
+	for _, t := range triangulate(positions) {
 		p := d.part()
-		tri := [3][3]int{corners[0], corners[k], corners[k+1]}
+		tri := [3][3]int{corners[t[0]], corners[t[1]], corners[t[2]]}
 		var flat *nt3dmath.Vec3
 		if tri[0][2] < 0 || tri[1][2] < 0 || tri[2][2] < 0 {
 			a, b, c := d.positions[tri[0][0]], d.positions[tri[1][0]], d.positions[tri[2][0]]
