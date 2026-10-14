@@ -18,7 +18,7 @@ import (
 func FurMain() { mainDemo(false, sceneFur) }
 
 var (
-	furShells  = []int{8, 12, 24}
+	furShells  = []int{8, 16, 32}
 	furLengths = []float32{.05, .09}
 )
 
@@ -80,7 +80,7 @@ func (d *demo) growFur() error {
 	}
 	d.fur.nodes = nil
 	// Spot's texture colors the fur: black and white, darker at the roots.
-	coat, err := nt3d.NewFur(nt3d.Fur{Length: furLengths[d.fur.length], Shells: furShells[d.fur.shells], Spacing: .016, Seed: 7})
+	coat, err := nt3d.NewFur(nt3d.Fur{Length: furLengths[d.fur.length], Shells: furShells[d.fur.shells], Spacing: .011, Seed: 7})
 	if err != nil {
 		return err
 	}

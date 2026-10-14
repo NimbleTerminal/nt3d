@@ -49,21 +49,21 @@ const (
 // them; a layer at the full length would only ever be empty.
 func (f Fur) height(k int) float32 { return float32(k) / float32(f.Shells) }
 
-// FurCoat grows a Fur on meshes. It makes each strand density's layer
-// textures once, for every mesh that needs them.
+// FurCoat grows a Fur on meshes. It makes each strand density's texture
+// once, for every mesh that needs it.
 type FurCoat struct {
 	fur    Fur
-	layers map[furLayers][]*Texture
+	layers map[furLayers]*Texture
 }
 
-// furLayers names a set of layer textures: their strands, and the texture
-// that colors them, if any.
+// furLayers names a strand texture: its strands, and the texture that colors
+// them, if any.
 type furLayers struct {
 	density int
 	source  *Texture
 }
 
-// NewFur checks a Fur and returns its coat. Layer textures are made by
+// NewFur checks a Fur and returns its coat. Strand textures are made by
 // Shells, when a mesh shows what they need.
 func NewFur(f Fur) (*FurCoat, error) {
 	if f.Shells == 0 {
@@ -88,7 +88,7 @@ func NewFur(f Fur) (*FurCoat, error) {
 	case f.Spacing == 0 && (f.Density < 4 || f.Density > furMaxDensity):
 		return nil, fmt.Errorf("nt3d: fur density must be 4..%d", furMaxDensity)
 	}
-	return &FurCoat{fur: f, layers: map[furLayers][]*Texture{}}, nil
+	return &FurCoat{fur: f, layers: map[furLayers]*Texture{}}, nil
 }
 
 // density is strands across the texture for a mesh: Density, or as many as
@@ -111,10 +111,16 @@ func (c *FurCoat) density(base Geometry) int {
 	return int(min(furMaxDensity, max(4, math.Round(math.Sqrt(surface/uv)/float64(c.fur.Spacing)))))
 }
 
-// layerTextures makes, or returns, one texture per shell above the skin.
-func (c *FurCoat) layerTextures(key furLayers) ([]*Texture, error) {
-	if layers, ok := c.layers[key]; ok {
-		return layers, nil
+// strands makes, or returns, the texture all the layers share. Its alpha is
+// the height, as a fraction of the fur's length, to which a strand reaches
+// at each texel: a tapered strand is tallest at its center and short at its
+// edge. A layer at height h is a cutout at threshold h, so it keeps just the
+// strands' cross-section there, as a texture per layer would, at a fraction
+// of the memory. A texel's color is that of its strand at its top, so short
+// strand edges, which lower layers show most of, are darker.
+func (c *FurCoat) strands(key furLayers) (*Texture, error) {
+	if texture, ok := c.layers[key]; ok {
+		return texture, nil
 	}
 	f, density := c.fur, key.density
 	size := min(furMaxTexture, density*furTexelsPerStrand)
@@ -145,37 +151,30 @@ func (c *FurCoat) layerTextures(key furLayers) ([]*Texture, error) {
 		}
 		strands[i] = s
 	}
-	var layers []*Texture
-	for k := 1; k < f.Shells; k++ {
-		h := float64(f.height(k))
-		img := image.NewNRGBA(image.Rect(0, 0, size, size))
-		for y := range size {
-			for x := range size {
-				s := &strands[min(density-1, int(float64(y)/cell))*density+min(density-1, int(float64(x)/cell))]
-				if h > s.length {
-					continue
-				}
-				// Strands taper to their tips, but keep enough body that the
-				// outer layers, which are what shows, still cover the fur.
-				along := h / s.length
-				if math.Hypot(float64(x)+.5-s.x, float64(y)+.5-s.y) > s.radius*(1-.6*along) {
-					continue
-				}
-				// Color turns toward the tip early, as most of a strand that
-				// shows is its upper part; light reaches the outer fur.
-				shade, tip := .7+.3*h, math.Sqrt(along)
-				mix := func(c int) uint8 { return uint8((s.root[c] + (s.tip[c]-s.root[c])*tip) * shade) }
-				img.SetNRGBA(x, y, color.NRGBA{mix(0), mix(1), mix(2), 255})
-			}
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	for y := range size {
+		for x := range size {
+			s := &strands[min(density-1, int(float64(y)/cell))*density+min(density-1, int(float64(x)/cell))]
+			// A strand's radius shrinks to 40% at its tip, so a texel at
+			// distance d stays inside it up to this height.
+			d := math.Hypot(float64(x)+.5-s.x, float64(y)+.5-s.y)
+			height := max(0, min(s.length, s.length*(1-d/s.radius)/.6))
+			// Color turns toward the tip early, as most of a strand that
+			// shows is its upper part; light reaches the outer fur. Texels
+			// outside strands keep their strand's color too, so filtering at
+			// strand edges does not darken them.
+			along := height / s.length
+			shade, tip := .7+.3*height, math.Sqrt(along)
+			mix := func(c int) uint8 { return uint8((s.root[c] + (s.tip[c]-s.root[c])*tip) * shade) }
+			img.SetNRGBA(x, y, color.NRGBA{mix(0), mix(1), mix(2), uint8(math.Round(height * 255))})
 		}
-		t, err := NewTexture(img)
-		if err != nil {
-			return nil, err
-		}
-		layers = append(layers, t)
 	}
-	c.layers[key] = layers
-	return layers, nil
+	texture, err := NewTexture(img)
+	if err != nil {
+		return nil, err
+	}
+	c.layers[key] = texture
+	return texture, nil
 }
 
 // Shells returns the fur on a base mesh: first an opaque skin, then one
@@ -196,7 +195,7 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	if textured(base) {
 		key.source = base.Material.Texture
 	}
-	layers, err := c.layerTextures(key)
+	strands, err := c.strands(key)
 	if err != nil {
 		return nil, err
 	}
@@ -212,9 +211,9 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	}
 	skin.Bounds = GeometryBounds(skin)
 	shells := []Geometry{skin}
-	for k, texture := range layers {
-		h := f.height(k + 1)
-		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: base.Indices, UV: base.UV, Material: &Material{Texture: texture, Cutout: true}}
+	for k := 1; k < f.Shells; k++ {
+		h := f.height(k)
+		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: base.Indices, UV: base.UV, Material: &Material{Texture: strands, Cutout: true, Threshold: h}}
 		for i := range g.Vertices {
 			v := &g.Vertices[i]
 			v.Position = v.Position.Add(v.Normal.Normalize().Scale(f.Length * h))

@@ -30,9 +30,12 @@ func TestFurShells(t *testing.T) {
 		}
 		kept := 0
 		for i := 3; i < len(g.Material.Texture.pixels); i += 4 {
-			if g.Material.Texture.pixels[i] >= 128 {
+			if float32(g.Material.Texture.pixels[i]) >= g.Material.Threshold*255 {
 				kept++
 			}
+		}
+		if g.Material.Texture != shells[1].Material.Texture {
+			t.Fatal("layers do not share one texture")
 		}
 		if kept == 0 || kept > previous {
 			t.Fatalf("shell %d keeps %d texels, below it %d", k+1, kept, previous)
@@ -98,7 +101,7 @@ func TestFurSpacingAndTexture(t *testing.T) {
 	for y := range layer.height {
 		for x := range layer.width {
 			i := (y*layer.width + x) * 4
-			if layer.pixels[i+3] < 128 {
+			if float32(layer.pixels[i+3]) < shells[1].Material.Threshold*255 {
 				continue
 			}
 			side := &left

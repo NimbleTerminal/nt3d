@@ -95,10 +95,13 @@ place, length, and taper. `Fur.Spacing` sets about how far apart strands grow
 in world units, from how much surface the mesh's UVs spread over the
 texture; `Density` sets strands across the texture directly. A textured base
 colors its fur from its texture and wears it as skin; otherwise color runs
-from `Root` to `Tip`. Either way, fur is darker deeper in. Layer textures are
-made once per density and color source, and take shells × (4 × density)²
-× 4 bytes, so dense fur with many shells costs memory: Spot's demo coat,
-12 shells at 225 strands a side, is about 36 MB.
+from `Root` to `Tip`. Every layer shares one strand texture whose alpha is the
+height each strand reaches at a texel; each layer is a cutout at its own
+`Material.Threshold`, so it keeps the strands' cross-section at its height.
+The texture takes (4 × density)² × 4 bytes whatever the shell count (Spot's
+demo coat, 330 strands a side: about 7 MB). A texel shows its strand's top
+color at every height, so short strand edges, which lower layers show most,
+make fur darker deeper in.
 `FurCoat.Sway(shell, v)` is the node transform that bends the fur as wind or
 gravity would; a uniform sway moves a whole layer, so animating it uploads no
 geometry. Shells sit at k/n of the length so the top one still meets the
@@ -106,7 +109,7 @@ longest strands. Seen edge-on, the layers show as dashes, the technique's
 known limit; more shells soften it. Wireframe draws the coat's outer outline.
 
 ```go
-coat, err := nt3d.NewFur(nt3d.Fur{Length: .05, Shells: 12, Spacing: .016})
+coat, err := nt3d.NewFur(nt3d.Fur{Length: .05, Shells: 16, Spacing: .011})
 shells, err := coat.Shells(spot) // Textured: the fur takes Spot's colors.
 for k, g := range shells {
 	id, _ := scene.SetGeometry(fmt.Sprintf("fur %d", k), g)
