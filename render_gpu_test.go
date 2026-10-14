@@ -453,3 +453,34 @@ func TestGPUCullMatchesUnculled(t *testing.T) {
 		t.Fatal("the overhanging point does not show")
 	}
 }
+
+// Transparent geometry blends on the GPU as in software: one pane, two in
+// either order, a sphere's two layers, a pane lit from behind, and a texture.
+func TestGPUTransparentMatchesSoftware(t *testing.T) {
+	red, green, white := color.RGBA{220, 0, 0, 128}, color.RGBA{0, 220, 0, 128}, color.RGBA{240, 240, 240, 128}
+	ball, err := BuildSphere(Sphere{Radius: .6, Color: white, Material: glass})
+	check(t, err)
+	half := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	half.SetNRGBA(0, 0, color.NRGBA{200, 200, 0, 128})
+	tex, err := NewTexture(half)
+	check(t, err)
+	textured := quad(1, .3, color.RGBA{255, 255, 255, 255}, &Material{Texture: tex, Transparent: true}, false)
+	textured.UV = make([]UV, 4)
+	light := &Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: .2}
+	r := &gpuRenderer{}
+	defer r.Close()
+	for name, f := range map[string]Frame{
+		"pane":       blendScene(t, nil, quad(1, .3, red, glass, false)),
+		"far first":  blendScene(t, nil, quad(1, .3, red, glass, false), quad(1, .6, green, glass, false)),
+		"near first": blendScene(t, nil, quad(1, .6, green, glass, false), quad(1, .3, red, glass, false)),
+		"sphere":     blendScene(t, nil, ball),
+		"back lit":   blendScene(t, light, quad(1, .3, white, glass, true)),
+		"textured":   blendScene(t, nil, textured),
+	} {
+		img, err := r.Render(f)
+		check(t, err)
+		if gpu, software := at(img, 40, 40), at(softwareRender(f), 40, 40); !closeRGB(gpu, software, 3) {
+			t.Errorf("%s: GPU %v, software %v", name, gpu, software)
+		}
+	}
+}

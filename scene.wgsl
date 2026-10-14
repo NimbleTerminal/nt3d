@@ -20,7 +20,11 @@ fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
  let p=items[ii];let corner=corners[vi];var o=output(p.a.xyz,vec3<f32>(0.0),p.color);
  o.clip=vec4<f32>(o.clip.xy+corner*p.a.w*2.0/u.viewport.xy*o.clip.w,o.clip.zw);o.uv=corner;o.point=1.0;return o;
 }
-@vertex fn vs_mesh(@builtin(vertex_index) vi:u32)->Out {let p=items[vi];return output(p.a.xyz,p.b.xyz,p.color);}
+// Mesh records carry opacity in a.w: one, unless the mesh is transparent.
+// Transparent meshes also draw their back faces, lit as seen from behind.
+fn meshOutput(vi:u32,side:f32)->Out {let p=items[vi];var o=output(p.a.xyz,p.b.xyz*side,p.color);o.color.a=p.a.w;return o;}
+@vertex fn vs_mesh(@builtin(vertex_index) vi:u32)->Out {return meshOutput(vi,1.0);}
+@vertex fn vs_mesh_back(@builtin(vertex_index) vi:u32)->Out {return meshOutput(vi,-1.0);}
 // Depth-clip the centerline before expanding it in pixel space.
 struct StrokeClip { a:vec4<f32>, b:vec4<f32>, t0:f32, t1:f32, visible:u32 };
 fn clipStroke(a:vec4<f32>,b:vec4<f32>)->StrokeClip {
@@ -91,13 +95,15 @@ let p=items[ii];return output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color
 
 @group(1) @binding(0) var mapTexture: texture_2d<f32>;
 @group(1) @binding(1) var mapSampler: sampler;
-// Textured records carry the cutout threshold where color would be; it
-// reaches the fragment in point, which only points otherwise use.
+// Textured records carry the cutout threshold, or a transparent vertex's
+// opacity, where color would be; it reaches the fragment in cut.
 // Flags: 1 repeat, 2 edge-on, 4 tint, whose color is a 24-bit integer.
-@vertex fn vs_texture(@builtin(vertex_index) vi:u32)->Out {
+// (Helpers named texture... are taken for WGSL builtins by the shader
+// translator, hence mapOutput.)
+fn mapOutput(vi:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
- var o=output(p.a.xyz,p.b.xyz,vec4<f32>(tint,p.color.w));o.uv=vec2<f32>(p.a.w,p.b.w);o.repeat=f32(flags&1u);o.cut=p.color.x;
+ var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,p.color.w));o.uv=vec2<f32>(p.a.w,p.b.w);o.repeat=f32(flags&1u);o.cut=p.color.x;
  // Edge-on cutouts fade out as the surface turns to face the viewer.
  if (flags&2u)!=0u && dot(p.b.xyz,p.b.xyz)>0.0 {
   let inst=instances[u32(p.color.w)];
@@ -109,6 +115,8 @@ let p=items[ii];return output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color
  }
  return o;
 }
+@vertex fn vs_texture(@builtin(vertex_index) vi:u32)->Out {return mapOutput(vi,1.0);}
+@vertex fn vs_texture_back(@builtin(vertex_index) vi:u32)->Out {return mapOutput(vi,-1.0);}
 // sampleMap filters the texture bilinearly. The sampler clamps to the edge,
 // so a repeating material filters by hand, wrapping the four texels it
 // blends; wrapping the coordinate alone would blend tiles' edges with clamped
@@ -125,6 +133,11 @@ fn sampleMap(uv:vec2<f32>,repeat:f32)->vec4<f32> {
 }
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
  return vec4<f32>(sampleMap(o.uv,o.repeat).rgb*o.color.rgb,1.0);
+}
+// Transparent materials blend by the texture's alpha times the vertex's.
+@fragment fn fs_blend_texture(o:Out)->@location(0) vec4<f32> {
+ let t=sampleMap(o.uv,o.repeat);
+ return vec4<f32>(t.rgb*o.color.rgb,t.a*o.cut);
 }
 // Cutout materials skip texels under their threshold; what remains is opaque.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {

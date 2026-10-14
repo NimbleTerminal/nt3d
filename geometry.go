@@ -86,6 +86,9 @@ func validateGeometry(g Geometry) error {
 	if g.Material != nil && (!validFloat(g.Material.Threshold) || g.Material.Threshold < 0 || g.Material.Threshold > 1) {
 		return fmt.Errorf("nt3d: cutout threshold must be 0..1")
 	}
+	if m := g.Material; m != nil && m.Transparent && (m.Cutout || m.EdgeOn) {
+		return fmt.Errorf("nt3d: a transparent material cannot be a cutout")
+	}
 	for _, uv := range g.UV {
 		if !validFloat(uv.U, uv.V) {
 			return fmt.Errorf("nt3d: non-finite UV")

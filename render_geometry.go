@@ -117,8 +117,16 @@ func geometryData(geom Geometry) (data [8][]byte) {
 	for _, p := range geom.Points {
 		vertex(0, Vertex{Position: p.Position, Color: p.Color}, p.Radius)
 	}
+	blended := transparent(&geom)
 	for _, index := range geom.Indices {
 		v := geom.Vertices[index]
+		// Opaque triangles are wholly opaque; transparent ones carry their
+		// vertices' alpha, where a mesh's radius or a texture's cutout
+		// threshold would be.
+		opacity := float32(1)
+		if blended {
+			opacity = float32(v.Color.A) / 255
+		}
 		if geom.Material != nil && geom.Material.Unlit {
 			v.Normal.X = 0
 			v.Normal.Y = 0
@@ -126,9 +134,13 @@ func geometryData(geom Geometry) (data [8][]byte) {
 		}
 		if textured(geom) {
 			// The texture gives color, so the color slot carries the cutout
-			// threshold, flags (1 repeat, 2 edge-on, 4 tint), and, for a tint,
-			// the vertex color as a 24-bit integer, which a float holds exactly.
-			m, flags := geom.Material, 0
+			// threshold (or a transparent vertex's opacity), flags (1 repeat,
+			// 2 edge-on, 4 tint), and, for a tint, the vertex color as a
+			// 24-bit integer, which a float holds exactly.
+			m, flags, cut := geom.Material, 0, geom.Material.threshold()
+			if blended {
+				cut = opacity
+			}
 			if m.Repeat {
 				flags |= 1
 			}
@@ -140,9 +152,9 @@ func geometryData(geom Geometry) (data [8][]byte) {
 			}
 			rgb := float32(int(v.Color.R)<<16 | int(v.Color.G)<<8 | int(v.Color.B))
 			uv := geom.UV[index]
-			data[7] = append(data[7], floats(v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, m.threshold(), float32(flags), rgb, 0)...)
+			data[7] = append(data[7], floats(v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, 0)...)
 		} else {
-			vertex(1, v, 1)
+			vertex(1, v, opacity)
 		}
 	}
 	for _, b := range geom.Boxes {

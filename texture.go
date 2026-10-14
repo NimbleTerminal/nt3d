@@ -34,14 +34,30 @@ type UV struct{ U, V float32 }
 // comes to face the camera, so it fades out face-on. Fur's fins use it to
 // fill the silhouette; it needs the frame's camera (Frame.Eye), which
 // Scene.Frame supplies, and wireframe rendering and picking leave it out.
+//
+// Transparent blends the triangles over what lies behind them, by the vertex
+// colors' alpha times the texture's: glass, water, ghosts. Opaque surfaces
+// are drawn first; then transparent geometries, farthest first by the
+// centers of their bounds, each with its back faces (lit from behind) before
+// its front faces. They are depth tested but hide nothing, so a convex shape
+// shows its far side through its near one. Interleaved or intersecting
+// transparent geometries, and the overlapping layers of one non-convex mesh,
+// can blend out of order. Wireframe and picking treat them as opaque. It
+// cannot be combined with Cutout or EdgeOn.
 type Material struct {
-	Texture   *Texture
-	Unlit     bool
-	Cutout    bool
-	Threshold float32
-	Repeat    bool
-	Tint      bool
-	EdgeOn    bool
+	Texture     *Texture
+	Unlit       bool
+	Cutout      bool
+	Threshold   float32
+	Repeat      bool
+	Tint        bool
+	EdgeOn      bool
+	Transparent bool
+}
+
+// transparent reports whether a geometry's triangles are blended.
+func transparent(g *Geometry) bool {
+	return g.Material != nil && g.Material.Transparent && len(g.Indices) > 0
 }
 
 // edgeOn reports whether a geometry is drawn only edge-on, so that wireframe

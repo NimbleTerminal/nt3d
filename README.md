@@ -282,10 +282,21 @@ supports.
 
 Frame area is limited to 4096 × 2160 pixels. Textures may be no larger
 than 8192 pixels per side. Color filtering/lighting retain the original renderer's
-sRGB-encoded arithmetic. Transparency blending is not implemented; `Material.Cutout` instead skips
+sRGB-encoded arithmetic. `Material.Transparent` blends a mesh's triangles
+over what lies behind, by the vertex colors' alpha times the texture's: after
+everything opaque, transparent geometries are drawn farthest first (by their
+bounds' centers), each with its back faces, lit as seen from behind, before
+its front faces, depth tested without hiding anything. So a glass sphere shows
+its far side through its near one, and panes blend in order whatever order the
+scene holds them; transparent geometries that interleave or intersect, and
+the overlapping layers of one non-convex mesh, can blend out of order (an
+order-independent method would fix that, at more cost). GPU and software
+agree; wireframe and picking treat transparent surfaces as opaque. The shapes
+demo shows it (`t`). `Material.Cutout` instead skips
 texels under its `Threshold` alpha (one half by default; on the GPU and in
-software alike), cutting shapes out of opaque, depth-tested triangles. Other
-materials ignore alpha. `Material.Tint` multiplies a texture by the vertex
+software alike), cutting shapes out of opaque, depth-tested triangles; it
+cannot be combined with Transparent. Other materials ignore alpha.
+`Material.Tint` multiplies a texture by the vertex
 colors. `Material.EdgeOn` shows a cutout only where the surface turns
 edge-on to the viewer, its threshold rising as the surface comes to face the
 camera; it uses the frame's camera (`Frame.Eye`, `Forward`, `Perspective`,

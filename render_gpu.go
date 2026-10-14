@@ -33,24 +33,27 @@ type gpuRenderer struct {
 	textureLayout   *wgpu.PipelineLayout
 	texturePipeline *wgpu.RenderPipeline
 	cutoutPipeline  *wgpu.RenderPipeline
-	textures        map[*Texture]*gpuimage.Texture
-	procedural      map[*Texture]*proceduralTexture
-	geometries      map[geometryKey]*gpuGeometry
-	nodes           []*gpuGeometry
-	textureUploads  uint64
-	mu              sync.Mutex
-	closed          bool
-	initErr         error
-	r               *gpuimage.Renderer
-	shader          *wgpu.ShaderModule
-	bindLayout      *wgpu.BindGroupLayout
-	layout          *wgpu.PipelineLayout
-	uniform         *wgpu.Buffer
-	transforms      *wgpu.Buffer
-	pipelines       [7]*wgpu.RenderPipeline
-	batches         [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
-	uploads         uint64
-	super           supersampler
+	// Transparent meshes' back faces, then front faces: untextured and textured.
+	blendPipelines [2]*wgpu.RenderPipeline
+	textureBlends  [2]*wgpu.RenderPipeline
+	textures       map[*Texture]*gpuimage.Texture
+	procedural     map[*Texture]*proceduralTexture
+	geometries     map[geometryKey]*gpuGeometry
+	nodes          []*gpuGeometry
+	textureUploads uint64
+	mu             sync.Mutex
+	closed         bool
+	initErr        error
+	r              *gpuimage.Renderer
+	shader         *wgpu.ShaderModule
+	bindLayout     *wgpu.BindGroupLayout
+	layout         *wgpu.PipelineLayout
+	uniform        *wgpu.Buffer
+	transforms     *wgpu.Buffer
+	pipelines      [7]*wgpu.RenderPipeline
+	batches        [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
+	uploads        uint64
+	super          supersampler
 }
 
 func (g *gpuRenderer) setup() (err error) {
@@ -89,6 +92,11 @@ func (g *gpuRenderer) setup() (err error) {
 			}
 			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: g.layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_main", Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, WriteMask: gputypes.ColorWriteMaskAll}}}})
 			if err != nil {
+				return err
+			}
+		}
+		for i, entry := range []string{"vs_mesh_back", "vs_mesh"} {
+			if g.blendPipelines[i], err = blendPipeline(dev, g.layout, g.shader, entry, "fs_main", i); err != nil {
 				return err
 			}
 		}
@@ -220,12 +228,31 @@ func (g *gpuRenderer) drawScene(f Frame, encoder *wgpu.CommandEncoder, color, de
 			return err
 		}
 		// Hidden and culled nodes keep their buffers but are not drawn.
+		// Transparent triangles wait for everything opaque.
 		drawn := f.drawn(1)
+		opaque := func(index int) bool { return drawn[index] && !transparent(&f.Geometry[index]) }
 		for _, i := range []int{5, 0, 1, 2, 3, 6, 4} {
+			if i == 4 {
+				// Then blend them, farthest first, back faces before front.
+				for _, index := range f.blendOrder(drawn) {
+					node := g.nodes[index]
+					for side := range 2 {
+						if b := node.batches[1]; b.count > 0 {
+							pass.SetPipeline(g.blendPipelines[side])
+							pass.SetBindGroup(0, b.bind, nil)
+							pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: 1})
+						}
+						if b := node.batches[7]; b.count > 0 {
+							pass.SetPipeline(g.textureBlends[side])
+							g.drawTextured(pass, f, index, b)
+						}
+					}
+				}
+			}
 			if i == 2 {
 				for index, node := range g.nodes {
 					b := node.batches[7]
-					if b.count == 0 || !drawn[index] {
+					if b.count == 0 || !opaque(index) {
 						continue
 					}
 					if f.Geometry[index].Material.Cutout {
@@ -233,14 +260,7 @@ func (g *gpuRenderer) drawScene(f Frame, encoder *wgpu.CommandEncoder, color, de
 					} else {
 						pass.SetPipeline(g.texturePipeline)
 					}
-					pass.SetBindGroup(0, b.bind, nil)
-					src := f.Geometry[index].Material.Texture
-					if t := g.procedural[src]; t != nil {
-						pass.SetBindGroup(1, t.target.BindGroup(), nil)
-					} else {
-						pass.SetBindGroup(1, g.textures[src].BindGroup(), nil)
-					}
-					pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: 1})
+					g.drawTextured(pass, f, index, b)
 				}
 			}
 			if i == 4 || i == 5 {
@@ -248,13 +268,24 @@ func (g *gpuRenderer) drawScene(f Frame, encoder *wgpu.CommandEncoder, color, de
 				continue
 			}
 			for index, node := range g.nodes {
-				if drawn[index] {
+				if drawn[index] && (i != 1 || opaque(index)) {
 					g.drawBatch(pass, i, node.batches[i])
 				}
 			}
 		}
 		return pass.End()
 	}
+}
+
+// blendPipeline draws a transparent mesh's back faces (side 0) or front faces
+// (side 1), blending by alpha, depth tested without writing depth.
+func blendPipeline(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.ShaderModule, vertex, fragment string, side int) (*wgpu.RenderPipeline, error) {
+	cull := gputypes.CullModeFront
+	if side == 1 {
+		cull = gputypes.CullModeBack
+	}
+	blend := gputypes.BlendStateAlpha()
+	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "transparent " + vertex, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: cull}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
 }
 
 func (g *gpuRenderer) Close() error {
@@ -283,6 +314,11 @@ func (g *gpuRenderer) Close() error {
 		}
 		if g.texturePipeline != nil {
 			g.texturePipeline.Release()
+		}
+		for _, p := range append(g.blendPipelines[:], g.textureBlends[:]...) {
+			if p != nil {
+				p.Release()
+			}
 		}
 		if g.textureLayout != nil {
 			g.textureLayout.Release()
@@ -338,6 +374,18 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 		g.transforms = nil
 	}
 	return err
+}
+
+// drawTextured draws a geometry's textured triangles with the pipeline set.
+func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, index int, b gpuBatch) {
+	pass.SetBindGroup(0, b.bind, nil)
+	src := f.Geometry[index].Material.Texture
+	if t := g.procedural[src]; t != nil {
+		pass.SetBindGroup(1, t.target.BindGroup(), nil)
+	} else {
+		pass.SetBindGroup(1, g.textures[src].BindGroup(), nil)
+	}
+	pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: 1})
 }
 
 func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBatch) {

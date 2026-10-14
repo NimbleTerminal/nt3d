@@ -30,10 +30,17 @@ func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGr
 	if err == nil {
 		g.cutoutPipeline, err = pipeline("cutout mesh", "fs_cutout")
 	}
+	for i, entry := range []string{"vs_texture_back", "vs_texture"} {
+		if err == nil {
+			g.textureBlends[i], err = blendPipeline(dev, g.textureLayout, g.shader, entry, "fs_blend_texture", i)
+		}
+	}
 	if err != nil {
-		if g.texturePipeline != nil {
-			g.texturePipeline.Release()
-			g.texturePipeline = nil
+		for _, p := range []**wgpu.RenderPipeline{&g.texturePipeline, &g.cutoutPipeline, &g.textureBlends[0], &g.textureBlends[1]} {
+			if *p != nil {
+				(*p).Release()
+				*p = nil
+			}
 		}
 		g.textureLayout.Release()
 		g.textureLayout = nil

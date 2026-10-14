@@ -55,15 +55,34 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = c.R, c.G, c.B
 		}
 	}
-	// raster fills a clip-space triangle that lies past the near plane.
-	raster := func(a, b, c *clipCorner, material *Material) {
+	// blend mixes a transparent fragment over the pixel, if no surface
+	// hides it, leaving the depth for what lies behind.
+	blend := func(x, y int, z float32, c color.RGBA, alpha float32) {
+		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
+			return
+		}
+		i := y*f.Width + x
+		if z <= depth[i]+.00001 {
+			alpha = max(0, min(1, alpha))
+			off := i * 4
+			for k, v := range [3]uint8{c.R, c.G, c.B} {
+				img.Pix[off+k] = uint8(float32(v)*alpha + float32(img.Pix[off+k])*(1-alpha) + .5)
+			}
+		}
+	}
+	// raster fills a clip-space triangle that lies past the near plane, if
+	// it shows the side drawn: front faces, or for transparent geometry's
+	// first pass, back faces. A transparent material's corners carry their
+	// opacity in cut.
+	raster := func(a, b, c *clipCorner, material *Material, side int) {
 		textured := material != nil && material.Texture != nil
 		cutout := textured && material.Cutout
+		blended := side != opaqueFaces
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
 		area := (x1-x0)*(y2-y0) - (y1-y0)*(x2-x0)
-		if area >= -.000001 {
+		if side == backFaces && area <= .000001 || side != backFaces && area >= -.000001 {
 			return
 		} // CCW faces become clockwise with screen Y down
 		loX, hiX := max(0, int(math.Floor(float64(min(x0, x1, x2))))), min(f.Width-1, int(math.Ceil(float64(max(x0, x1, x2)))))
@@ -79,6 +98,11 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 				}
 				mix := func(k int) uint8 { return uint8(max(0, min(255, u*a.shade[k]+v*b.shade[k]+t*c.shade[k]+.5))) }
 				pixel := color.RGBA{mix(0), mix(1), mix(2), 255}
+				var opacity float32
+				if blended {
+					q0, q1, q2 := u/a.w, v/b.w, t/c.w
+					opacity = (q0*a.cut + q1*b.cut + q2*c.cut) / (q0 + q1 + q2)
+				}
 				if textured {
 					q0, q1, q2 := u/a.w, v/b.w, t/c.w
 					sum := q0 + q1 + q2
@@ -92,6 +116,11 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 					// Lit white, or the tint, times the texture.
 					lit := func(k int) float32 { return (q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]) / 255 }
 					pixel = color.RGBA{uint8(min(255, float32(tex.R)*lit(0)+.5)), uint8(min(255, float32(tex.G)*lit(1)+.5)), uint8(min(255, float32(tex.B)*lit(2)+.5)), 255}
+					opacity *= float32(tex.A) / 255
+				}
+				if blended {
+					blend(x, y, u*z0+v*z1+t*z2, pixel, opacity)
+					continue
 				}
 				put(x, y, u*z0+v*z1+t*z2, pixel)
 			}
@@ -100,7 +129,9 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 	// tri draws a local-space triangle: m takes it to clip space, and normals
 	// takes its normals to world space, where the light is. A triangle that
 	// crosses the near plane is cut there, as the GPU does, not discarded.
-	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv []UV, material *Material) {
+	// side chooses the faces drawn, and how: opaque front faces, or a
+	// transparent geometry's back or front faces.
+	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv []UV, material *Material, side int) {
 		var corners [3]clipCorner
 		for k, i := range index {
 			corners[k].x, corners[k].y, corners[k].z, corners[k].w = m.Transform(vertices[i].Position)
@@ -111,13 +142,18 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		// Most triangles lie wholly past the near plane: cull those facing
 		// away before lighting them.
 		whole := corners[0].z >= 0 && corners[1].z >= 0 && corners[2].z >= 0
-		if whole && (min(corners[0].w, corners[1].w, corners[2].w) <= 0 || !facing(&corners[0], &corners[1], &corners[2])) {
+		if whole && (min(corners[0].w, corners[1].w, corners[2].w) <= 0 || facing(&corners[0], &corners[1], &corners[2]) == (side == backFaces)) {
 			return
 		}
 		unlit, textured := material != nil && material.Unlit, material != nil && material.Texture != nil
 		for k, i := range index {
 			c, n := vertices[i].Color, vertices[i].Normal
-			if textured && material.EdgeOn {
+			if side == backFaces {
+				n = n.Scale(-1) // Lit as seen from behind.
+			}
+			if side != opaqueFaces {
+				corners[k].cut = float32(c.A) / 255
+			} else if textured && material.EdgeOn {
 				corners[k].cut = edgeOnCut(material.threshold(), normals.Direction(n), f.viewAt(world.Point(vertices[i].Position)))
 			} else if material != nil {
 				corners[k].cut = material.threshold()
@@ -132,14 +168,14 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 			corners[k].shade = [3]float32{float32(lit.R), float32(lit.G), float32(lit.B)}
 		}
 		if whole {
-			raster(&corners[0], &corners[1], &corners[2], material)
+			raster(&corners[0], &corners[1], &corners[2], material, side)
 			return
 		}
 		var storage [4]clipCorner
 		polygon := clipNear(corners, &storage)
 		for k := 1; k+1 < len(polygon); k++ {
 			if polygon[0].w > 0 && polygon[k].w > 0 && polygon[k+1].w > 0 {
-				raster(&polygon[0], &polygon[k], &polygon[k+1], material)
+				raster(&polygon[0], &polygon[k], &polygon[k+1], material, side)
 			}
 		}
 	}
@@ -182,13 +218,15 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 				}
 			}
 		}
-		for i := 0; i+2 < len(g.Indices); i += 3 {
-			tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material)
+		if !transparent(&f.Geometry[gi]) {
+			for i := 0; i+2 < len(g.Indices); i += 3 {
+				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, opaqueFaces)
+			}
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil)
+				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, opaqueFaces)
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
@@ -199,6 +237,18 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		for i := 0; i < len(g.Arrows); i += arrowStep {
 			a := g.Arrows[i]
 			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put)
+		}
+	}
+	// Transparent triangles blend over everything opaque, farthest first.
+	for _, gi := range f.blendOrder(drawn) {
+		g, inst := &f.Geometry[gi], instance(f, gi)
+		m := f.Matrix.Mul(inst.World)
+		inverse, _ := inst.World.InverseAffine()
+		normals := inverse.Transpose()
+		for _, side := range []int{backFaces, frontFaces} {
+			for i := 0; i+2 < len(g.Indices); i += 3 {
+				tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, side)
+			}
 		}
 	}
 	drawOverlays(img, f)
