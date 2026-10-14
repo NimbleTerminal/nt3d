@@ -44,6 +44,7 @@ type demo struct {
 	large             *largeScene
 	fur               *furScene
 	mipmaps           *mipScene
+	forest            *forestScene
 }
 
 type sceneMode int
@@ -56,11 +57,12 @@ const (
 	sceneLarge
 	sceneFur
 	sceneMipmaps
+	sceneForest
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil
+	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil
 }
 
 type quitMsg struct{}
@@ -112,7 +114,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(v)
 		elapsed := now.Sub(d.lastPhase).Seconds()
 		d.lastPhase = now
-		if !d.animate || (!d.procedural && d.dynamic == nil && d.fur == nil) {
+		if !d.animate || (!d.procedural && d.dynamic == nil && d.fur == nil && d.forest == nil) {
 			return d, phaseTick()
 		}
 		d.phase = math.Mod(d.phase+elapsed, 2*math.Pi)
@@ -126,6 +128,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.stepDynamic()
 		case d.fur != nil:
 			err = d.stepFur()
+		case d.forest != nil:
+			err = d.stepForest()
 		default:
 			err = d.updatePlasma()
 		}
@@ -263,11 +267,19 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, d.stepSample(step)
 		case "i":
+			if d.forest != nil {
+				err = d.toggleInstancing()
+				break
+			}
 			if d.large == nil {
 				return d, nil
 			}
 			d.toggleIndexing()
 		case "n":
+			if d.forest != nil {
+				err = d.cycleForest()
+				break
+			}
 			d.angle += math.Pi / 12
 			err = d.scene.SetTransform(d.group, nt3dmath.RotationZ(d.angle))
 		case "v":
@@ -335,6 +347,11 @@ func (d *demo) View() tea.View {
 	}
 	if d.mipmaps != nil {
 		v.Content = d.zones.Scan(d.mipmapsView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.forest != nil {
+		v.Content = d.zones.Scan(d.forestView(v.Content))
 		v.AltScreen = true
 		return v
 	}
@@ -463,6 +480,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupMipmaps(); err != nil {
 			return err
 		}
+	case sceneForest:
+		if err = d.setupForest(); err != nil {
+			return err
+		}
 	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
@@ -489,6 +510,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	case sceneMipmaps:
 		// Low over the floor, so it runs to the horizon.
 		camera.Alpha, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
+	case sceneForest:
+		camera.Alpha, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
 	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))

@@ -25,8 +25,10 @@ move to Done with their commit; git history has the details.
 
 - [ ] **More lights**: point lights and a fill light; today there is one
   directional light plus ambient.
-- [ ] **Instancing follow-ups**: a demo of shared geometry (a forest, a
-  marker field); shared points, lines, and boxes, if charts need them.
+- [ ] **Shared points, lines, and boxes**, only if something needs them:
+  charts keep all their markers in one geometry, already one upload and
+  draw, and sharing them means instancing shaders that index primitives by
+  instance today.
 - [ ] **Mipmap follow-ups**: procedural textures (needs `ntgpuimage`
   render-target mips); coverage-preserving alpha mips for cutouts (fur and
   leaves sample full size today); anisotropic filtering for grazing floors.
@@ -75,6 +77,8 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
+- forest demo of shared geometry; transforms check only the subtree they
+  move (updating every node was quadratic: 3.3 s for 5,000)
 - `83f3da2`, `cd7488b` mipmaps and linear-light texture filtering, both
   renderers; mipmaps demo (`83b4925` builds against the sibling `ntgpuimage`)
 - `4fe7974` `RenderSoftware`: software pictures with their depth buffer (for gloss's outlines)

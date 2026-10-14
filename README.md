@@ -65,7 +65,8 @@ nodes different textures; transparent nodes still draw one by one, in blending
 order). 2,500 spheres drew their first frame in 43 ms instead of 189 ms, and
 then 5.5 ms a frame instead of 13.6. Shared geometry cannot change, and holds
 triangles only; points, boxes, lines, and arrows stay each node's own. Frames
-mark it in `Frame.Shared`.
+mark it in `Frame.Shared`. The forest demo (`task forest`) grows thousands of
+trees from three shared meshes and switches them to copies for comparison.
 
 Transforms must be finite, invertible, affine, and orientation-preserving.
 Reflections and zero scales are not supported in this initial graph. Local
@@ -493,6 +494,7 @@ task models               # Sample STL, OBJ, and 3MF files; [ and ] change model
 task large                # A 735,000-triangle asteroid: picking and outlines.
 task fur                  # Shell fur on Spot; x supersamples, e post effects.
 task mipmaps              # A tiled floor to the horizon; m toggles mipmaps.
+task forest               # Thousands of instanced trees; i toggles instancing.
 task meshes -- model.stl  # Your own mesh files (--up y for Y-up OBJ).
 task terrain -- --render-mode software
 task terrain -- --render-mode gpu --snapshot /tmp/terrain.png
@@ -512,7 +514,7 @@ Run `task build-web` and `task serve`, then open http://localhost:8768/.
 The gallery links to the terrain explorer at `/terrain/`, procedural plasma
 at `/procedural/`, a dynamic scene at `/dynamic/`, shape builders at
 `/shapes/`, mesh files at `/models/`, a dense mesh at `/large/`, fur at
-`/fur/`, and mipmaps at `/mipmaps/`, with
+`/fur/`, mipmaps at `/mipmaps/`, and a forest at `/forest/`, with
 rendered previews, controls, and source links. Each demo
 runs inside go-booba and supports GPU, software, and wireframe rendering.
 

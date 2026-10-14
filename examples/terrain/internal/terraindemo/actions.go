@@ -43,6 +43,8 @@ func (k keys) FullHelp() [][]key.Binding {
 // sceneKeys are the keys the current scene answers to.
 func (d *demo) sceneKeys() (string, keys) {
 	switch {
+	case d.forest != nil:
+		return "forest", keys{[]key.Binding{bind("i", "i", "instancing"), bind("n", "n", "trees"), bind("a", "a", "wind")}}
 	case d.mipmaps != nil:
 		return "mipmaps", keys{[]key.Binding{bind("m", "m", "mipmaps"), bind("t", "t", "texture"), bind("x", "x", "supersample")}}
 	case d.fur != nil:

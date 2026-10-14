@@ -48,13 +48,14 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-large ./cmd/large
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-fur ./cmd/fur
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-mipmaps ./cmd/mipmaps
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-forest ./cmd/forest
   build-wasm:
     env:
       GOOS: js
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/terrain/app.wasm .
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -63,6 +64,7 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/large/app.wasm ./cmd/large
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/fur/app.wasm ./cmd/fur
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/mipmaps/app.wasm ./cmd/mipmaps
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/forest/app.wasm ./cmd/forest
   web-assets:
     cmds:
       - go -C examples/terrain tool booba-assets ../../dist/web/terrain/
@@ -73,6 +75,7 @@ tasks:
       - go -C examples/terrain tool booba-assets ../../dist/web/large/
       - go -C examples/terrain tool booba-assets ../../dist/web/fur/
       - go -C examples/terrain tool booba-assets ../../dist/web/mipmaps/
+      - go -C examples/terrain tool booba-assets ../../dist/web/forest/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -118,6 +121,11 @@ tasks:
     deps: [build]
     cmds:
       - bin/nt3d-mipmaps {{.CLI_ARGS}}
+  forest:
+    desc: Show thousands of trees drawn instanced from three shared meshes
+    deps: [build]
+    cmds:
+      - bin/nt3d-forest {{.CLI_ARGS}}
   models-generate:
     desc: Regenerate the sample models the models demo embeds
     cmds:
