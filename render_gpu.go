@@ -20,6 +20,9 @@ import (
 //go:embed scene.wgsl
 var sceneShader string
 
+// uniformSize is the scene uniform's bytes: matrix, viewport, light, eye, forward.
+const uniformSize = 128
+
 type gpuBatch struct {
 	buffer *wgpu.Buffer
 	bind   *wgpu.BindGroup
@@ -89,7 +92,7 @@ func (g *gpuRenderer) setup() (err error) {
 				return err
 			}
 		}
-		g.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 112, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+		g.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			return err
 		}
@@ -172,7 +175,12 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	if err := g.prepareSupersample(f); err != nil {
 		return nil, err
 	}
-	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), 0, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, f.Light.Ambient, 0, 0, 0, 0)...)
+	perspective := float32(0)
+	if f.Perspective {
+		perspective = 1
+	}
+	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), 0, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, f.Light.Ambient,
+		f.Eye.X, f.Eye.Y, f.Eye.Z, perspective, f.Forward.X, f.Forward.Y, f.Forward.Z, 0)...)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
 			return err

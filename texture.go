@@ -9,6 +9,8 @@ import (
 	"math"
 	"reflect"
 	"strings"
+
+	"nimbleterminal.dev/nt3d/math"
 )
 
 // UV is a normalized image coordinate; (0,0) is the top-left corner.
@@ -25,12 +27,38 @@ type UV struct{ U, V float32 }
 // Repeat tiles the texture: UVs outside [0, 1] wrap, and filtering blends
 // across tile edges, so a texture made to tile shows no seams. Without it,
 // UVs clamp to the texture's edge.
+//
+// Tint multiplies the texture by the vertex colors, so one gray texture can
+// take many colors. EdgeOn shows a cutout texture only where the surface
+// turns edge-on to the viewer: its threshold rises toward 1 as the surface
+// comes to face the camera, so it fades out face-on. Fur's fins use it to
+// fill the silhouette; it needs the frame's camera (Frame.Eye), which
+// Scene.Frame supplies, and wireframe rendering and picking leave it out.
 type Material struct {
 	Texture   *Texture
 	Unlit     bool
 	Cutout    bool
 	Threshold float32
 	Repeat    bool
+	Tint      bool
+	EdgeOn    bool
+}
+
+// edgeOn reports whether a geometry is drawn only edge-on, so that wireframe
+// and picking, which have no view of it, leave it out.
+func edgeOn(g Geometry) bool { return g.Material != nil && g.Material.EdgeOn }
+
+// edgeOnCut is a cutout threshold raised as the surface faces the viewer:
+// unchanged edge-on, past 1 (cutting everything) once |normal · view| passes
+// one half, smoothly between. The GPU's vs_texture computes the same.
+func edgeOnCut(threshold float32, normal, view nt3dmath.Vec3) float32 {
+	if normal.Dot(normal) == 0 || view.Dot(view) == 0 {
+		return threshold
+	}
+	facing := float64(abs(normal.Normalize().Dot(view.Normalize())))
+	t := min(1, max(0, (facing-.15)/.35))
+	fade := float32(t * t * (3 - 2*t))
+	return threshold + (1.01-threshold)*fade
 }
 
 // threshold is the alpha below which a cutout material skips texels.

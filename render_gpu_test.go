@@ -401,3 +401,27 @@ func TestGPURepeat(t *testing.T) {
 		}
 	}
 }
+
+// Tint and edge-on cutouts on the GPU agree with software.
+func TestGPUTintAndEdgeOn(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	red, white := color.RGBA{255, 0, 0, 255}, color.RGBA{255, 255, 255, 255}
+	img, err := r.Render(materialScene(t, Material{Tint: true}, nt3dmath.Vec3{Z: 1}, red))
+	check(t, err)
+	if c := center(img); c.R < 120 || c.R > 136 || c.G > 5 {
+		t.Fatalf("tinted gray %v", c)
+	}
+	for _, c := range []struct {
+		normal nt3dmath.Vec3
+		shown  bool
+	}{{nt3dmath.Vec3{Z: 1}, false}, {nt3dmath.Vec3{X: 1}, true}} {
+		f := materialScene(t, Material{Cutout: true, EdgeOn: true}, c.normal, white)
+		img, err := r.Render(f)
+		check(t, err)
+		g, s := drawn(img, f.Background), drawn(softwareRender(f), f.Background)
+		if (g > 0) != c.shown || g-s > g/20+5 || s-g > g/20+5 {
+			t.Fatalf("normal %v: GPU %d, software %d pixels", c.normal, g, s)
+		}
+	}
+}

@@ -84,6 +84,19 @@ type Frame struct {
 	// 8192 pixels a side. Costs grow with its square, on the GPU and far more
 	// in software.
 	Supersample int
+	// Eye and Forward are the camera's position and viewing direction, in
+	// world space, and Perspective whether its view converges at Eye. They
+	// serve view-dependent materials (Material.EdgeOn); Scene.Frame sets them.
+	Eye, Forward nt3dmath.Vec3
+	Perspective  bool
+}
+
+// viewAt is the direction from a world point toward the viewer.
+func (f Frame) viewAt(p nt3dmath.Vec3) nt3dmath.Vec3 {
+	if f.Perspective {
+		return f.Eye.Sub(p).Normalize()
+	}
+	return f.Forward.Scale(-1)
 }
 
 const MaxFramePixels = 4096 * 2160
@@ -96,6 +109,8 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)
 	}
 	f.Matrix = camera.Matrix(float32(width) / float32(height))
+	f.Eye, _, _, f.Forward = camera.valid().basis()
+	f.Perspective = camera.valid().Projection == Perspective
 	for _, id := range s.order {
 		n := s.nodes[id]
 		if n.geometry == nil {

@@ -59,7 +59,6 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 	raster := func(a, b, c *clipCorner, material *Material) {
 		textured := material != nil && material.Texture != nil
 		cutout := textured && material.Cutout
-		threshold := uint8(math.Ceil(float64(material.threshold()) * 255))
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
@@ -87,11 +86,12 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 					q1 /= sum
 					q2 /= sum
 					tex := material.Texture.sampleWrap(UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}, material.Repeat)
-					if cutout && tex.A < threshold {
+					if cutout && float32(tex.A) < (q0*a.cut+q1*b.cut+q2*c.cut)*255 {
 						continue // Cut out: neither color nor depth.
 					}
-					light := (q0*a.shade[0] + q1*b.shade[0] + q2*c.shade[0]) / 255
-					pixel = color.RGBA{uint8(float32(tex.R)*light + .5), uint8(float32(tex.G)*light + .5), uint8(float32(tex.B)*light + .5), 255}
+					// Lit white, or the tint, times the texture.
+					lit := func(k int) float32 { return (q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]) / 255 }
+					pixel = color.RGBA{uint8(min(255, float32(tex.R)*lit(0)+.5)), uint8(min(255, float32(tex.G)*lit(1)+.5)), uint8(min(255, float32(tex.B)*lit(2)+.5)), 255}
 				}
 				put(x, y, u*z0+v*z1+t*z2, pixel)
 			}
@@ -100,7 +100,7 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 	// tri draws a local-space triangle: m takes it to clip space, and normals
 	// takes its normals to world space, where the light is. A triangle that
 	// crosses the near plane is cut there, as the GPU does, not discarded.
-	tri := func(m, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv []UV, material *Material) {
+	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv []UV, material *Material) {
 		var corners [3]clipCorner
 		for k, i := range index {
 			corners[k].x, corners[k].y, corners[k].z, corners[k].w = m.Transform(vertices[i].Position)
@@ -117,10 +117,15 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		unlit, textured := material != nil && material.Unlit, material != nil && material.Texture != nil
 		for k, i := range index {
 			c, n := vertices[i].Color, vertices[i].Normal
+			if textured && material.EdgeOn {
+				corners[k].cut = edgeOnCut(material.threshold(), normals.Direction(n), f.viewAt(world.Point(vertices[i].Position)))
+			} else if material != nil {
+				corners[k].cut = material.threshold()
+			}
 			if unlit {
 				n = nt3dmath.Vec3{}
 			}
-			if textured {
+			if textured && !material.Tint {
 				c = color.RGBA{255, 255, 255, 255}
 			}
 			lit := shade(c, normals.Direction(n), f.Light)
@@ -177,12 +182,12 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 			}
 		}
 		for i := 0; i+2 < len(g.Indices); i += 3 {
-			tri(&local.Matrix, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material)
+			tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material)
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(&local.Matrix, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil)
+				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil)
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)

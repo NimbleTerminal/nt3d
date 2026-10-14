@@ -51,8 +51,8 @@ func newWireDepth(f Frame, cols, rows int) *wireDepth {
 	}
 	for gi, g := range f.Geometry {
 		inst := instance(f, gi)
-		if !inst.Visible {
-			continue
+		if !inst.Visible || edgeOn(g) {
+			continue // Edge-on geometry depends on a view wireframe does not draw.
 		}
 		m := f.Matrix.Mul(inst.World)
 		inverse, _ := inst.World.InverseAffine()

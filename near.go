@@ -7,13 +7,14 @@ type clipCorner struct {
 	x, y, z, w float32
 	shade      [3]float32
 	uv         UV
+	cut        float32 // A cutout's threshold here.
 }
 
 func lerpCorner(a, b clipCorner, t float32) clipCorner {
 	mix := func(x, y float32) float32 { return x + (y-x)*t }
 	return clipCorner{mix(a.x, b.x), mix(a.y, b.y), mix(a.z, b.z), mix(a.w, b.w),
 		[3]float32{mix(a.shade[0], b.shade[0]), mix(a.shade[1], b.shade[1]), mix(a.shade[2], b.shade[2])},
-		UV{mix(a.uv.U, b.uv.U), mix(a.uv.V, b.uv.V)}}
+		UV{mix(a.uv.U, b.uv.U), mix(a.uv.V, b.uv.V)}, mix(a.cut, b.cut)}
 }
 
 // clipNear cuts a triangle at the near plane, z = 0 in WebGPU's depth range,

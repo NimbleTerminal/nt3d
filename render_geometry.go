@@ -101,7 +101,7 @@ func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, tr
 	if err = dev.Queue().WriteBuffer(b.buffer, 0, data); err != nil {
 		return err
 	}
-	b.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: 112}, {Binding: 1, Buffer: b.buffer, Size: uint64(len(data))}, {Binding: 2, Buffer: transform, Size: 128}}})
+	b.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: uint64(len(data))}, {Binding: 2, Buffer: transform, Size: 128}}})
 	if err != nil {
 		return err
 	}
@@ -126,12 +126,21 @@ func geometryData(geom Geometry) (data [8][]byte) {
 		}
 		if textured(geom) {
 			// The texture gives color, so the color slot carries the cutout
-			// threshold and whether the texture repeats; vs_texture lights white.
-			uv, repeat := geom.UV[index], float32(0)
-			if geom.Material.Repeat {
-				repeat = 1
+			// threshold, flags (1 repeat, 2 edge-on, 4 tint), and, for a tint,
+			// the vertex color as a 24-bit integer, which a float holds exactly.
+			m, flags := geom.Material, 0
+			if m.Repeat {
+				flags |= 1
 			}
-			data[7] = append(data[7], floats(v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, geom.Material.threshold(), repeat, 1, 0)...)
+			if m.EdgeOn {
+				flags |= 2
+			}
+			if m.Tint {
+				flags |= 4
+			}
+			rgb := float32(int(v.Color.R)<<16 | int(v.Color.G)<<8 | int(v.Color.B))
+			uv := geom.UV[index]
+			data[7] = append(data[7], floats(v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, m.threshold(), float32(flags), rgb, 0)...)
 		} else {
 			vertex(1, v, 1)
 		}

@@ -66,7 +66,7 @@ func wireRender(f Frame, cols, rows int) string {
 	}
 	for gi, g := range f.Geometry {
 		inst := instance(f, gi)
-		if !inst.Visible {
+		if !inst.Visible || edgeOn(g) {
 			continue
 		}
 		// Project local coordinates through the node's transform.

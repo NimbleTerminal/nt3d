@@ -1,4 +1,4 @@
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, light: vec4<f32>, reserved: vec4<f32> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, light: vec4<f32>, eye: vec4<f32>, forward: vec4<f32> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
@@ -9,7 +9,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
  if instance.normal[3][3]==0.0 {return vec4<f32>(0.0,0.0,2.0,1.0);}
  return u.matrix*instance.world*vec4<f32>(pos,1.0);
 }
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32 };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32 };
 fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
  var o: Out; o.clip=clipPosition(pos,color.w); var light=1.0;
  if dot(normal,normal)>0.0 { light=u.light.w+(1.0-u.light.w)*max(0.0,dot(normalize((instances[u32(color.w)].normal*vec4<f32>(normal,0.0)).xyz),normalize(u.light.xyz))); }
@@ -93,8 +93,21 @@ let p=items[ii];return output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color
 @group(1) @binding(1) var mapSampler: sampler;
 // Textured records carry the cutout threshold where color would be; it
 // reaches the fragment in point, which only points otherwise use.
+// Flags: 1 repeat, 2 edge-on, 4 tint, whose color is a 24-bit integer.
 @vertex fn vs_texture(@builtin(vertex_index) vi:u32)->Out {
- let p=items[vi];var o=output(p.a.xyz,p.b.xyz,vec4<f32>(1.0,1.0,1.0,p.color.w));o.uv=vec2<f32>(p.a.w,p.b.w);o.point=p.color.x;o.repeat=p.color.y;return o;
+ let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
+ if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
+ var o=output(p.a.xyz,p.b.xyz,vec4<f32>(tint,p.color.w));o.uv=vec2<f32>(p.a.w,p.b.w);o.repeat=f32(flags&1u);o.cut=p.color.x;
+ // Edge-on cutouts fade out as the surface turns to face the viewer.
+ if (flags&2u)!=0u && dot(p.b.xyz,p.b.xyz)>0.0 {
+  let inst=instances[u32(p.color.w)];
+  let world=(inst.world*vec4<f32>(p.a.xyz,1.0)).xyz;
+  let n=normalize((inst.normal*vec4<f32>(p.b.xyz,0.0)).xyz);
+  var view=-u.forward.xyz;
+  if u.eye.w>0.5 {view=normalize(u.eye.xyz-world);}
+  if dot(view,view)>0.0 {o.cut=mix(p.color.x,1.01,smoothstep(0.15,0.5,abs(dot(n,normalize(view)))));}
+ }
+ return o;
 }
 // sampleMap filters the texture bilinearly. The sampler clamps to the edge,
 // so a repeating material filters by hand, wrapping the four texels it
@@ -116,6 +129,6 @@ fn sampleMap(uv:vec2<f32>,repeat:f32)->vec4<f32> {
 // Cutout materials skip texels under their threshold; what remains is opaque.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
  let t=sampleMap(o.uv,o.repeat);
- if t.a<o.point {discard;}
+ if t.a<o.cut {discard;}
  return vec4<f32>(t.rgb*o.color.rgb,1.0);
 }

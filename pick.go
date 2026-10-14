@@ -47,8 +47,8 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 	var hit *Hit
 	for i, g := range f.Geometry {
 		inst := instance(f, i)
-		if !inst.Visible {
-			continue
+		if !inst.Visible || edgeOn(g) {
+			continue // Edge-on geometry shows only at silhouettes; the surface beneath is picked.
 		}
 		inv, ok := inst.World.InverseAffine()
 		if !ok {

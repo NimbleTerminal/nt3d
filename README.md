@@ -265,7 +265,12 @@ than 8192 pixels per side. Color filtering/lighting retain the original renderer
 sRGB-encoded arithmetic. Transparency blending is not implemented; `Material.Cutout` instead skips
 texels under its `Threshold` alpha (one half by default; on the GPU and in
 software alike), cutting shapes out of opaque, depth-tested triangles. Other
-materials ignore alpha. `Material.Repeat` tiles a texture: UVs outside
+materials ignore alpha. `Material.Tint` multiplies a texture by the vertex
+colors. `Material.EdgeOn` shows a cutout only where the surface turns
+edge-on to the viewer, its threshold rising as the surface comes to face the
+camera; it uses the frame's camera (`Frame.Eye`, `Forward`, `Perspective`,
+which `Scene.Frame` sets), and wireframe and picking leave it out.
+`Material.Repeat` tiles a texture: UVs outside
 [0, 1] wrap, and filtering blends across tile edges (the GPU filters such
 textures itself, wrapping the texels it blends), so textures made to tile show
 no seams; otherwise UVs clamp to the edge. The OBJ, 3MF (unless both tile
