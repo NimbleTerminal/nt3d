@@ -38,3 +38,18 @@ func TestSamplesLoad(t *testing.T) {
 		t.Fatalf("%d models in the scene", len(node.Children))
 	}
 }
+
+// Spot loads with its texture and smooth normals, ready for fur.
+func TestSpotLoads(t *testing.T) {
+	g, err := spot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Indices) != 3*5856 || g.Material == nil || g.Material.Texture == nil || len(g.UV) != len(g.Vertices) {
+		t.Fatalf("%d triangles, textured %v", len(g.Indices)/3, g.Material != nil)
+	}
+	// The file's top, at y = 0.954, is the top once turned Z-up.
+	if b := g.Bounds; b.Max.Z < .95 || b.Max.Z > .96 {
+		t.Fatalf("Spot is not standing Z-up: %+v", b)
+	}
+}

@@ -319,7 +319,7 @@ task dynamic              # Moving nodes, deforming mesh, and add/remove control
 task shapes               # Shape builders and normal styles.
 task models               # Sample STL, OBJ, and 3MF files; [ and ] change model.
 task large                # A 735,000-triangle asteroid: picking and outlines.
-task fur                  # Shell fur on a torus, swaying in the wind.
+task fur                  # Shell fur on Spot the cow, swaying in the wind.
 task meshes -- model.stl  # Your own mesh files (--up y for Y-up OBJ).
 task terrain -- --render-mode software
 task terrain -- --render-mode gpu --snapshot /tmp/terrain.png
@@ -347,6 +347,10 @@ The static site sources live in `web/`; the complete generated site is
 `dist/web/`. It can be served under a subdirectory without changing asset paths.
 
 ### Mesh demos
+
+The fur demo uses Spot the cow, by Keenan Crane, which he released into the
+public domain ([model repository](https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/);
+see `spot_README.txt` beside it).
 
 `task models` (or `/models/`) shows three sample files, embedded in the
 program: a 3MF robot (components with a mirrored arm, a per-corner color

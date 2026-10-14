@@ -423,7 +423,12 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones))
 	defer d.view.Close()
 	switch kind {
-	case sceneMeshes, sceneLarge, sceneFur:
+	case sceneMeshes, sceneLarge:
+		d.view.Fit()
+	case sceneFur:
+		camera := d.view.Camera()
+		camera.Beta = 30
+		d.view.SetCamera(camera)
 		d.view.Fit()
 	case sceneModels:
 		d.frameSample()
