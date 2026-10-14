@@ -16,13 +16,24 @@ type UV struct{ U, V float32 }
 
 // Material controls triangle appearance. Texture replaces vertex colors.
 // Unlit preserves colors without applying the scene light. Cutout skips
-// texels whose alpha is below one half, so a texture can cut shapes out of a
-// triangle, as leaves, lace, and fur do; what remains is opaque and depth
-// tested as usual, with no blending. Without Cutout, alpha is ignored.
+// texels whose alpha is below Threshold (zero means one half), so a texture
+// can cut shapes out of a triangle, as leaves, lace, and fur do; what remains
+// is opaque and depth tested as usual, with no blending. Without Cutout,
+// alpha is ignored. Varying Threshold over copies of one texture reveals
+// different parts of it, as fur's layers do.
 type Material struct {
-	Texture *Texture
-	Unlit   bool
-	Cutout  bool
+	Texture   *Texture
+	Unlit     bool
+	Cutout    bool
+	Threshold float32
+}
+
+// threshold is the alpha below which a cutout material skips texels.
+func (m *Material) threshold() float32 {
+	if m == nil || m.Threshold == 0 {
+		return .5
+	}
+	return m.Threshold
 }
 
 // Texture owns an immutable snapshot of image pixels, with straight

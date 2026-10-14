@@ -83,6 +83,9 @@ func validateGeometry(g Geometry) error {
 	if textured(g) && (!g.Material.Texture.valid() || len(g.UV) != len(g.Vertices)) {
 		return fmt.Errorf("nt3d: invalid texture or missing UVs")
 	}
+	if g.Material != nil && (!validFloat(g.Material.Threshold) || g.Material.Threshold < 0 || g.Material.Threshold > 1) {
+		return fmt.Errorf("nt3d: cutout threshold must be 0..1")
+	}
 	for _, uv := range g.UV {
 		if !validFloat(uv.U, uv.V) {
 			return fmt.Errorf("nt3d: non-finite UV")

@@ -72,3 +72,43 @@ func TestSoftwareCutout(t *testing.T) {
 		t.Fatalf("%d back pixels through an opaque material", n)
 	}
 }
+
+// rampScene is a quad whose alpha rises left to right, cut at threshold.
+func rampScene(t *testing.T, threshold float32) (Frame, color.RGBA) {
+	t.Helper()
+	front := color.RGBA{230, 40, 30, 255}
+	ramp := image.NewNRGBA(image.Rect(0, 0, 64, 4))
+	for y := range 4 {
+		for x := range 64 {
+			ramp.SetNRGBA(x, y, color.NRGBA{front.R, front.G, front.B, uint8(x * 255 / 63)})
+		}
+	}
+	texture, err := NewTexture(ramp)
+	check(t, err)
+	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -.8, MaxX: .8, MinY: -.8, MaxY: .8, Heights: make([]float32, 4), Material: &Material{Texture: texture, Unlit: true, Cutout: true, Threshold: threshold}})
+	check(t, err)
+	s := NewScene()
+	_, err = s.SetGeometry("ramp", g)
+	check(t, err)
+	camera := DefaultCamera()
+	camera.Alpha = 89
+	f, err := s.Frame(camera, 160, 160)
+	check(t, err)
+	return f, front
+}
+
+func TestSoftwareCutoutThreshold(t *testing.T) {
+	var shown [2]int
+	for i, threshold := range []float32{.25, .75} {
+		f, front := rampScene(t, threshold)
+		shown[i] = count(softwareRender(f), front)
+	}
+	// Three times as much of the ramp clears a quarter as clears three quarters.
+	if ratio := float64(shown[0]) / float64(shown[1]); ratio < 2.6 || ratio > 3.4 {
+		t.Fatalf("kept %v pixels at thresholds 0.25 and 0.75", shown)
+	}
+	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: 0, MaxX: 1, MinY: 0, MaxY: 1, Heights: make([]float32, 4), Material: &Material{Cutout: true, Threshold: 1.5}})
+	if err == nil {
+		t.Fatal("accepted a threshold over 1", g.Material)
+	}
+}

@@ -344,3 +344,18 @@ func TestGPUCutoutMatchesSoftware(t *testing.T) {
 		t.Fatalf("%d back pixels through an opaque material", n)
 	}
 }
+
+// Thresholds cut the same share of a ramp on the GPU as in software.
+func TestGPUCutoutThreshold(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	for _, threshold := range []float32{.25, .75} {
+		f, front := rampScene(t, threshold)
+		img, err := r.Render(f)
+		check(t, err)
+		g, s := count(img, front), count(softwareRender(f), front)
+		if g < 1000 || g-s > g/20 || s-g > g/20 {
+			t.Fatalf("threshold %v: GPU %d, software %d", threshold, g, s)
+		}
+	}
+}

@@ -41,6 +41,7 @@ func softwareRender(f Frame) image.Image {
 	raster := func(a, b, c *clipCorner, material *Material) {
 		textured := material != nil && material.Texture != nil
 		cutout := textured && material.Cutout
+		threshold := uint8(math.Ceil(float64(material.threshold()) * 255))
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
@@ -68,7 +69,7 @@ func softwareRender(f Frame) image.Image {
 					q1 /= sum
 					q2 /= sum
 					tex := material.Texture.sample(UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V})
-					if cutout && tex.A < 128 {
+					if cutout && tex.A < threshold {
 						continue // Cut out: neither color nor depth.
 					}
 					light := (q0*a.shade[0] + q1*b.shade[0] + q2*c.shade[0]) / 255

@@ -236,8 +236,9 @@ as running out of memory, and a smaller scene may still render.
 Frame area is limited to 4096 × 2160 pixels. Textures may be no larger
 than 8192 pixels per side. Color filtering/lighting retain the original renderer's
 sRGB-encoded arithmetic. Transparency blending is not implemented; `Material.Cutout` instead skips
-texels under half alpha (on the GPU and in software alike), cutting shapes out
-of opaque, depth-tested triangles. Other materials ignore alpha. Software and
+texels under its `Threshold` alpha (one half by default; on the GPU and in
+software alike), cutting shapes out of opaque, depth-tested triangles. Other
+materials ignore alpha. Software and
 wireframe rendering cut triangles at the near plane, as the GPU does, so
 geometry reaching behind the camera stays drawn up close.
 
