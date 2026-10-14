@@ -359,3 +359,31 @@ func TestGPUCutoutThreshold(t *testing.T) {
 		}
 	}
 }
+
+// The GPU supersamples as software does: gray edges, points of their size.
+func TestGPUSupersample(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	var edge, red [2]int
+	for i, s := range []int{1, 3} {
+		img, err := r.Render(edgeScene(t, s))
+		check(t, err)
+		if img.Bounds() != image.Rect(0, 0, 120, 120) {
+			t.Fatal(img.Bounds())
+		}
+		edge[i], red[i] = shades(img)
+	}
+	if edge[0] > 5 || edge[1] < 60 || red[1] < red[0]*2/3 || red[1] > red[0]*3/2 {
+		t.Fatalf("GPU edge %v, point %v", edge, red)
+	}
+	sw, _ := shades(softwareRender(edgeScene(t, 3)))
+	if edge[1] < sw*2/3 || edge[1] > sw*3/2 {
+		t.Fatalf("GPU gray edge %d, software %d", edge[1], sw)
+	}
+	// Back to one: the enlarged target is released.
+	_, err := r.Render(edgeScene(t, 1))
+	check(t, err)
+	if r.super.target != nil {
+		t.Fatal("kept the enlarged target")
+	}
+}

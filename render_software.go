@@ -18,7 +18,25 @@ func shade(c color.RGBA, n nt3dmath.Vec3, l Light) color.RGBA {
 	return color.RGBA{uint8(float32(c.R) * v), uint8(float32(c.G) * v), uint8(float32(c.B) * v), 255}
 }
 
+// softwareRender draws a frame, at its supersampling factor if it has one:
+// the scene at that multiple of its size, averaged back down, with overlays
+// drawn after, at the frame's own size.
 func softwareRender(f Frame) image.Image {
+	s := supersampleFactor(f)
+	if s == 1 {
+		return softwareDraw(f, 1)
+	}
+	big := f
+	big.Width, big.Height, big.Overlays = f.Width*s, f.Height*s, nil
+	img := shrink(softwareDraw(big, s), s)
+	drawOverlays(img, f)
+	return img
+}
+
+// softwareDraw draws a frame whose pixel sizes (points, line widths, arrow
+// heads) are scaled by scale, as a supersampled frame's are.
+func softwareDraw(f Frame, scale int) *image.RGBA {
+	px := float32(scale)
 	img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
 	depth := make([]float32, f.Width*f.Height)
 	for i := range depth {
@@ -121,7 +139,7 @@ func softwareRender(f Frame) image.Image {
 		}
 	}
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
-		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], 1, 0, .00002, put)
+		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], px, 0, .00002, put)
 	}
 	// Interactive frames sample screen-space marks (points, lines, arrows),
 	// which stay legible thinned. Every triangle is drawn: sampling surfaces
@@ -149,7 +167,7 @@ func softwareRender(f Frame) image.Image {
 			if !ok {
 				continue
 			}
-			radius := max(1, min(8, int(p.Radius)))
+			radius := max(1, min(8, int(p.Radius))) * scale
 			for dy := -radius; dy <= radius; dy++ {
 				for dx := -radius; dx <= radius; dx++ {
 					if dx*dx+dy*dy <= radius*radius {
@@ -169,12 +187,12 @@ func softwareRender(f Frame) image.Image {
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
 		for i := 0; i+1 < len(g.Lines); i += lineStep {
-			rasterStroke(local, g.Lines[i], g.Lines[i+1], g.LineWidth, 0, -.00001, put)
+			rasterStroke(local, g.Lines[i], g.Lines[i+1], lineWidth(g.LineWidth)*px, 0, -.00001, put)
 		}
 		arrowStep := sampled(len(g.Arrows), 10000)
 		for i := 0; i < len(g.Arrows); i += arrowStep {
 			a := g.Arrows[i]
-			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, a.Width, a.HeadSize, 0, put)
+			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put)
 		}
 	}
 	drawOverlays(img, f)

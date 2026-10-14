@@ -77,6 +77,13 @@ type Frame struct {
 	Background        color.RGBA
 	Light             Light
 	Complete          bool // Disable interactive software sampling for full snapshots.
+	// Supersample renders at this multiple of Width and Height, 1..4, and
+	// averages each block back to one pixel, smoothing edges, thin strands,
+	// and cutouts. Zero means 1. Pixel sizes (points, line widths, overlays)
+	// keep their size. The factor is lowered until the enlarged frame fits
+	// 8192 pixels a side. Costs grow with its square, on the GPU and far more
+	// in software.
+	Supersample int
 }
 
 const MaxFramePixels = 4096 * 2160
@@ -161,6 +168,9 @@ func instance(f Frame, i int) Instance {
 	return f.Instances[i]
 }
 func validateFrame(f Frame) error {
+	if f.Supersample < 0 || f.Supersample > MaxSupersample {
+		return fmt.Errorf("nt3d: supersample must be 0..%d", MaxSupersample)
+	}
 	if f.Width < 1 || f.Height < 1 || f.Width > MaxFramePixels || f.Height > MaxFramePixels/f.Width {
 		return fmt.Errorf("nt3d: invalid frame dimensions")
 	}

@@ -236,6 +236,15 @@ memory, which WebGPU does not specify. Errors wrapping `ErrGPUUnavailable`
 concern the device (no adapter, failed setup); others concern the frame, such
 as running out of memory, and a smaller scene may still render.
 
+`Frame.Supersample` (1..4) renders at that multiple of the frame's size and
+averages each block back to one pixel, smoothing edges, thin strands, and
+cutouts. On the GPU, the scene draws into an enlarged target that a resolve
+pass averages before readback, so the readback stays the frame's size;
+software draws large and averages likewise, at far greater cost. Pixel sizes
+(points, line widths, overlays) keep their size. The factor is lowered until
+the enlarged frame fits 8192 pixels a side, the size every WebGPU device
+supports.
+
 Frame area is limited to 4096 × 2160 pixels. Textures may be no larger
 than 8192 pixels per side. Color filtering/lighting retain the original renderer's
 sRGB-encoded arithmetic. Transparency blending is not implemented; `Material.Cutout` instead skips

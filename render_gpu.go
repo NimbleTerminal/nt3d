@@ -47,6 +47,7 @@ type gpuRenderer struct {
 	pipelines       [7]*wgpu.RenderPipeline
 	batches         [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
 	uploads         uint64
+	super           supersampler
 }
 
 func (g *gpuRenderer) setup() (err error) {
@@ -168,6 +169,9 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	if err := g.prepareTextures(f); err != nil {
 		return nil, err
 	}
+	if err := g.prepareSupersample(f); err != nil {
+		return nil, err
+	}
 	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), 0, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, f.Light.Ambient, 0, 0, 0, 0)...)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
@@ -189,7 +193,21 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		if err := dev.Queue().WriteBuffer(g.uniform, 0, ub); err != nil {
 			return err
 		}
-		pass, err := frame.Encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: frame.Color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: gputypes.Color{R: float64(f.Background.R) / 255, G: float64(f.Background.G) / 255, B: float64(f.Background.B) / 255, A: 1}}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: frame.Depth, DepthLoadOp: gputypes.LoadOpClear, DepthStoreOp: gputypes.StoreOpStore, DepthClearValue: 1, StencilReadOnly: true}})
+		// The scene draws into the frame, or into the enlarged target that a
+		// resolve pass averages down. Pixel sizes stay the frame's, through
+		// the uniform viewport, so points and lines keep their size.
+		if s := supersampleFactor(f); s > 1 {
+			return g.renderSupersampled(frame, s, func(color, depth *wgpu.TextureView) error { return g.drawScene(f, frame.Encoder, color, depth) })
+		}
+		return g.drawScene(f, frame.Encoder, frame.Color, frame.Depth)
+	})
+	return img, err
+}
+
+// drawScene records the scene's pass into a color and depth target.
+func (g *gpuRenderer) drawScene(f Frame, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
+	{
+		pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: gputypes.Color{R: float64(f.Background.R) / 255, G: float64(f.Background.G) / 255, B: float64(f.Background.B) / 255, A: 1}}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpClear, DepthStoreOp: gputypes.StoreOpStore, DepthClearValue: 1, StencilReadOnly: true}})
 		if err != nil {
 			return err
 		}
@@ -224,8 +242,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 			}
 		}
 		return pass.End()
-	})
-	return img, err
+	}
 }
 
 func (g *gpuRenderer) Close() error {
@@ -288,6 +305,7 @@ func (g *gpuRenderer) Close() error {
 		}
 		return nil
 	})
+	g.releaseSupersample()
 	err := g.r.Close()
 	g.r = nil
 	return err
