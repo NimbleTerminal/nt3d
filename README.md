@@ -194,13 +194,15 @@ The static site sources live in `web/`; the complete generated site is
 
 The standalone entry point is `examples/terrain/cmd/procedural`; it shares scene
 and transport code with terrain. Both use pflag (`--render-mode`, `--snapshot`,
-`--duration`, `--medium`, `--procedural`, and `--help`). After `task build-web`
+`--duration`, `--medium`, `--procedural`, `--animate`, and `--help`). After `task build-web`
 and `task serve`, open http://localhost:8768/procedural/ for the browser demo.
 
 Run `task procedural`, or press `p` in the native/browser terrain
-example to toggle procedural textures. `t` switches between two fixed shader
-phases; `r` rotates the camera, `l` toggles lighting, and `1`/`2`/`3` select GPU,
-software, and wireframe. This demo does not animate shader time.
+example to toggle procedural textures. Phase animates at up to 30 updates per
+second; `a` pauses/resumes it and `t` shifts phase. `r` independently rotates the
+camera, `l` toggles lighting, and `1`/`2`/`3` select GPU, software, and wireframe.
+Use `--animate=false` to start paused. Snapshots capture the initial phase.
+The demo skips updates while the widget is busy and advances by elapsed time.
 
 `NewShaderTexture(source, fallback)` accepts WGSL defining
 `fn nt3dTexture(uv: vec2<f32>) -> vec4<f32>`. UVs start at the top-left;
@@ -214,8 +216,13 @@ then samples it on the terrain mesh, using the same device and command encoder.
 Only the final scene image is read back for presentation. Pipelines and targets
 are cached per texture and renderer, and released when no longer referenced by
 the rendered frame. Shader compilation is lazy; `Renderer.Render` reports errors,
-while the widget can fall back to software. No time uniforms or custom bindings
-are exposed yet.
+while the widget can fall back to software. `NewShaderTextureWithParameters(source, [4]float32{phase, 0, 0, 0}, fallback)`
+exposes `nt3dTextureParams`, a `vec4<f32>` uniform at group 0, binding 0.
+Create a new immutable texture and call `Scene.SetTexture` for each update;
+provide fallback pixels for the same phase. The renderer reuses the pipeline
+and target when source and dimensions match, updating only the uniform on the
+GPU. Old frames remain replayable. `NewShaderTexture` uses zero parameters.
+Custom bindings are not exposed.
 
 ```sh
 task terrain -- --procedural --snapshot /tmp/plasma-gpu.png

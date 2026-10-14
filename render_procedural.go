@@ -3,13 +3,16 @@
 package nt3d
 
 import (
+	"encoding/binary"
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
+	"math"
 	"nimbleterminal.dev/ntgpuimage"
 )
 
 // Explicit UVs avoid naga's Metal indexed-array arithmetic issue.
 const proceduralQuad = `
+@group(0) @binding(0) var<uniform> nt3dTextureParams: vec4<f32>;
 struct NT3DTextureOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 @vertex fn nt3d_texture_vertex(@builtin(vertex_index) i: u32) -> NT3DTextureOut {
  let pos = array<vec2<f32>, 6>(vec2<f32>(-1,1), vec2<f32>(1,1), vec2<f32>(1,-1), vec2<f32>(-1,1), vec2<f32>(1,-1), vec2<f32>(-1,-1));
@@ -25,10 +28,13 @@ struct NT3DTextureOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2
 `
 
 type proceduralTexture struct {
-	target   *ntgpuimage.Texture
-	shader   *wgpu.ShaderModule
-	layout   *wgpu.PipelineLayout
-	pipeline *wgpu.RenderPipeline
+	target     *ntgpuimage.Texture
+	uniform    *wgpu.Buffer
+	bindLayout *wgpu.BindGroupLayout
+	bind       *wgpu.BindGroup
+	shader     *wgpu.ShaderModule
+	layout     *wgpu.PipelineLayout
+	pipeline   *wgpu.RenderPipeline
 }
 
 // Called outside the render callback: NewTexture and Close use the executor.
@@ -42,13 +48,31 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 			used[geom.Material.Texture] = true
 		}
 	}
+	// Recycle only snapshots absent from this frame. Multiple parameter variants
+	// used by the same frame retain independent targets and uniforms.
+	spare := make(map[*Texture]*proceduralTexture)
 	for src, t := range g.procedural {
 		if !used[src] {
-			g.releaseProcedural(t)
+			spare[src] = t
 			delete(g.procedural, src)
 		}
 	}
+	defer func() {
+		for _, t := range spare {
+			g.releaseProcedural(t)
+		}
+	}()
 	for src := range used {
+		if g.procedural[src] != nil {
+			continue
+		}
+		for old, t := range spare {
+			if old.shader == src.shader && old.width == src.width && old.height == src.height {
+				g.procedural[src] = t
+				delete(spare, old)
+				break
+			}
+		}
 		if g.procedural[src] != nil {
 			continue
 		}
@@ -63,7 +87,19 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 			if err != nil {
 				return err
 			}
-			t.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{})
+			t.bindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}}})
+			if err != nil {
+				return err
+			}
+			t.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 16, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+			if err != nil {
+				return err
+			}
+			t.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: t.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: t.uniform, Size: 16}}})
+			if err != nil {
+				return err
+			}
+			t.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{t.bindLayout}})
 			if err != nil {
 				return err
 			}
@@ -86,13 +122,21 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 }
 
 func (g *gpuRenderer) drawProcedural(f *ntgpuimage.Frame) error {
-	for _, t := range g.procedural {
+	for src, t := range g.procedural {
+		var data [16]byte
+		for i, v := range src.parameters {
+			binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(v))
+		}
+		if err := f.Device.Queue().WriteBuffer(t.uniform, 0, data[:]); err != nil {
+			return err
+		}
 		if err := f.RenderTo(t.target, func(target *ntgpuimage.Frame) error {
 			pass, err := target.Encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: target.Color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore}}})
 			if err != nil {
 				return err
 			}
 			pass.SetPipeline(t.pipeline)
+			pass.SetBindGroup(0, t.bind, nil)
 			pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: 1})
 			return pass.End()
 		}); err != nil {
@@ -109,6 +153,15 @@ func (g *gpuRenderer) releaseProcedural(t *proceduralTexture) {
 		}
 		if t.layout != nil {
 			t.layout.Release()
+		}
+		if t.bind != nil {
+			t.bind.Release()
+		}
+		if t.uniform != nil {
+			t.uniform.Release()
+		}
+		if t.bindLayout != nil {
+			t.bindLayout.Release()
 		}
 		if t.shader != nil {
 			t.shader.Release()

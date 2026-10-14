@@ -124,6 +124,10 @@ func (m *Model) PictureStatus() picture.Status    { return m.pic.Status() }
 func (m *Model) PictureMode() picture.PictureMode { return m.pic.Mode() }
 func (m *Model) Init() tea.Cmd                    { m.started = true; return tea.Batch(m.pic.Init(), m.schedule()) }
 
+// Busy reports whether rendering or picture presentation is in flight.
+// Animation drivers can skip intermediate updates until it becomes false.
+func (m *Model) Busy() bool { return m.busy || m.pic.Status().Busy }
+
 // Refresh schedules scene edits made by a parent. Execute the returned command.
 func (m *Model) Refresh() tea.Cmd { return m.changed(true) }
 func (m *Model) SetCamera(c nt3d.Camera) tea.Cmd {

@@ -154,3 +154,48 @@ func TestGPUProceduralTexture(t *testing.T) {
 		t.Fatal("shader snapshot replay failed")
 	}
 }
+
+func TestGPUProceduralParameters(t *testing.T) {
+	const source = `fn nt3dTexture(uv: vec2<f32>) -> vec4<f32> { return nt3dTextureParams; }`
+	red := color.RGBA{255, 0, 0, 255}
+	green := color.RGBA{0, 255, 0, 255}
+	first, err := NewShaderTextureWithParameters(source, [4]float32{1, 0, 0, 1}, testTexture(t, red))
+	check(t, err)
+	second, err := NewShaderTextureWithParameters(source, [4]float32{0, 1, 0, 1}, testTexture(t, green))
+	check(t, err)
+	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Texture: first, Unlit: true}})
+	check(t, err)
+	s := NewScene()
+	_, err = s.SetGeometry("terrain", mesh)
+	check(t, err)
+	old := frame(t, s)
+	r := &gpuRenderer{}
+	defer r.Close()
+	img, err := r.Render(old)
+	check(t, err)
+	if coloredPixels(img, red) < 100 {
+		t.Fatal("initial parameters missing")
+	}
+	resources := r.procedural[first]
+	check(t, s.SetTexture("terrain", second))
+	img, err = r.Render(frame(t, s))
+	check(t, err)
+	if coloredPixels(img, green) < 100 || r.procedural[second] != resources {
+		t.Fatal("parameter update failed to reuse resources")
+	}
+	img, err = r.Render(old)
+	check(t, err)
+	if coloredPixels(img, red) < 100 {
+		t.Fatal("old snapshot parameters changed")
+	}
+	// Simultaneous variants must never share a uniform or render target.
+	mesh.Material.Texture = second
+	_, err = s.SetGeometry("other", mesh)
+	check(t, err)
+	check(t, s.SetTexture("terrain", first))
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if len(r.procedural) != 2 || r.procedural[first] == r.procedural[second] {
+		t.Fatal("simultaneous parameter variants aliased")
+	}
+}

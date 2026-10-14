@@ -32,8 +32,26 @@ type demo struct {
 	angle             float64
 	status            string
 	duration          time.Duration
+	animate           bool
+	phase             float64
+	lastPhase         time.Time
+	closed            bool
 }
 type quitMsg struct{}
+type phaseMsg time.Time
+
+func phaseTick() tea.Cmd {
+	return tea.Tick(time.Second/30, func(t time.Time) tea.Msg { return phaseMsg(t) })
+}
+
+func (d *demo) updatePlasma() error {
+	tex, err := plasmaTexture(d.phase + float64(d.style)*2)
+	if err != nil {
+		return err
+	}
+	d.textures[d.style] = tex
+	return d.scene.SetTexture("terrain", tex)
+}
 
 func (d *demo) terrain() error {
 	g, err := nt3d.BuildHeightfield(nt3d.Heightfield{NX: 72, NY: 56, MinX: -1.5, MaxX: 1.5, MinY: -1, MaxY: 1, Sampler: func(x, y float32) float32 {
@@ -52,7 +70,8 @@ func (d *demo) terrain() error {
 	return d.scene.Reparent(id, d.group)
 }
 func (d *demo) Init() tea.Cmd {
-	cmd := d.view.Init()
+	d.lastPhase = time.Now()
+	cmd := tea.Batch(d.view.Init(), phaseTick())
 	if d.duration > 0 {
 		return tea.Batch(cmd, tea.Tick(d.duration, func(time.Time) tea.Msg { return quitMsg{} }))
 	}
@@ -60,7 +79,29 @@ func (d *demo) Init() tea.Cmd {
 }
 func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case phaseMsg:
+		if d.closed {
+			return d, nil
+		}
+		now := time.Time(v)
+		elapsed := now.Sub(d.lastPhase).Seconds()
+		d.lastPhase = now
+		if !d.animate || !d.procedural {
+			return d, phaseTick()
+		}
+		d.phase = math.Mod(d.phase+elapsed, 2*math.Pi)
+		// Let an in-flight frame finish; the next update catches up to wall time.
+		if d.view.Busy() {
+			return d, phaseTick()
+		}
+		if err := d.updatePlasma(); err != nil {
+			d.status = err.Error()
+			d.animate = false
+			return d, phaseTick()
+		}
+		return d, tea.Batch(d.view.Refresh(), phaseTick())
 	case quitMsg:
+		d.closed = true
 		return d, tea.Sequence(d.view.Dispose(), tea.Quit)
 	case tea.WindowSizeMsg:
 		return d, d.view.SetSize(v.Width, max(1, v.Height-2))
@@ -74,7 +115,11 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var err error
 		switch v.String() {
 		case "q", "ctrl+c":
+			d.closed = true
 			return d, tea.Sequence(d.view.Dispose(), tea.Quit)
+		case "a":
+			d.animate = !d.animate
+			d.lastPhase = time.Now()
 		case "p":
 			d.procedural = !d.procedural
 			err = d.loadTextures()
@@ -83,7 +128,11 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "t":
 			d.style = 1 - d.style
-			err = d.scene.SetTexture("terrain", d.textures[d.style])
+			if d.procedural {
+				err = d.updatePlasma()
+			} else {
+				err = d.scene.SetTexture("terrain", d.textures[d.style])
+			}
 		case "f":
 			d.flat = !d.flat
 			err = d.terrain()
@@ -123,8 +172,13 @@ func (d *demo) View() tea.View {
 	title := "nt3d terrain"
 	if d.procedural {
 		title = "nt3d procedural plasma"
+		if d.animate {
+			status += " · animating"
+		} else {
+			status += " · paused"
+		}
 	}
-	v.Content = d.zones.Scan(title + " · p procedural · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.view.RenderMode().String() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
+	v.Content = d.zones.Scan(title + " · a animate · p procedural · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.view.RenderMode().String() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
 	v.AltScreen = true
 	return v
 }
@@ -150,6 +204,7 @@ func mapImage(topo bool) *image.RGBA {
 }
 func run(proceduralDefault bool) error {
 	procedural := flag.Bool("procedural", proceduralDefault, "generate plasma textures with a GPU shader (CPU image fallback)")
+	animate := flag.Bool("animate", true, "animate procedural texture phase (a toggles pause)")
 	mode := flag.String("render-mode", "gpu", "gpu, software, or wireframe")
 	snapshot := flag.String("snapshot", "", "write a PNG without opening a terminal")
 	duration := flag.Duration("duration", 0, "exit after a duration")
@@ -177,7 +232,7 @@ func run(proceduralDefault bool) error {
 	default:
 		return fmt.Errorf("invalid medium")
 	}
-	d := &demo{scene: nt3d.NewScene(), zones: zone.New(), duration: *duration}
+	d := &demo{scene: nt3d.NewScene(), zones: zone.New(), duration: *duration, animate: *animate}
 	defer d.zones.Close()
 	var err error
 	d.group, err = d.scene.Add(nt3d.Root, "island")
@@ -241,7 +296,7 @@ func (d *demo) loadTextures() error {
 	for i := range d.textures {
 		var err error
 		if d.procedural {
-			d.textures[i], err = plasmaTexture(float64(i) * 2)
+			d.textures[i], err = plasmaTexture(d.phase + float64(i)*2)
 		} else {
 			d.textures[i], err = nt3d.NewTexture(mapImage(i == 1))
 		}
@@ -250,7 +305,7 @@ func (d *demo) loadTextures() error {
 		}
 	}
 	if d.procedural {
-		d.status = "procedural plasma · t switches shader phase"
+		d.status = "procedural plasma · a pause · t shifts phase"
 	} else {
 		d.status = "image texture"
 	}
