@@ -95,7 +95,11 @@ place, length, and taper. `Fur.Spacing` sets about how far apart strands grow
 in world units, from how much surface the mesh's UVs spread over the
 texture; `Density` sets strands across the texture directly. A textured base
 colors its fur from its texture and wears it as skin; otherwise color runs
-from `Root` to `Tip`. Every layer shares one strand texture whose alpha is the
+from `Root` to `Tip`. An untextured mesh's fur repeats a tile of 64 strands,
+each UV axis as often as `Spacing` and that axis's stretch need, so dense fur
+costs no memory and strands stay round where UVs span more surface one way;
+a textured mesh's fur, colored strand by strand, has one texture of up to 512
+strands. Every layer shares one strand texture whose alpha is the
 height each strand reaches at a texel; each layer is a cutout at its own
 `Material.Threshold`, so it keeps the strands' cross-section at its height.
 The texture takes (4 × density)² × 4 bytes whatever the shell count (Spot's

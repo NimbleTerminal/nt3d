@@ -22,12 +22,14 @@ type Fur struct {
 	// smoother strands, especially seen from the side, at a cost in triangles.
 	Shells int
 	// Spacing is about how far apart strands grow, in the mesh's units. It
-	// sets how many strands cross the texture from how much surface the
-	// mesh's UVs spread over it, up to 512. Leave it zero to set Density.
+	// sets how many strands cross the UV square from how much surface the
+	// mesh's UVs spread over it. Leave it zero to set Density.
 	Spacing float32
-	// Density is strands across the texture, 4..512 (default 64), when
+	// Density is strands across the UV square, 4..4096 (default 64), when
 	// Spacing is zero. Strands follow the mesh's UVs, so they spread where its
-	// UVs stretch.
+	// UVs stretch. An untextured mesh's fur repeats a tile of 64 strands as
+	// often as that needs, so density costs no memory; a textured mesh's fur,
+	// colored strand by strand, takes one texture of up to 512 strands.
 	Density int
 	// Root and Tip color strands at the skin and at their ends (defaults dark
 	// and light brown). A textured mesh's fur takes the texture's color
@@ -41,7 +43,9 @@ type Fur struct {
 const (
 	furTexelsPerStrand = 4
 	furMaxTexture      = 2048
-	furMaxDensity      = 512
+	furMaxTextured     = 512  // Strands across a textured mesh's one texture.
+	furMaxDensity      = 4096 // Strands across the UV square, tiled.
+	furTile            = 64   // Strands across a repeating tile.
 )
 
 // height is shell k's fraction of the fur's length. Layers sit at k/n, so the
@@ -109,6 +113,32 @@ func (c *FurCoat) density(base Geometry) int {
 		return 4
 	}
 	return int(min(furMaxDensity, max(4, math.Round(math.Sqrt(surface/uv)/float64(c.fur.Spacing)))))
+}
+
+// stretch is how much surface one unit of each UV axis spans, averaged over
+// the mesh by area: from each triangle's derivatives of position along u and v.
+func stretch(base Geometry) (su, sv float64) {
+	var area float64
+	for i := 0; i+2 < len(base.Indices); i += 3 {
+		a, b, d := base.Indices[i], base.Indices[i+1], base.Indices[i+2]
+		e1, e2 := base.Vertices[b].Position.Sub(base.Vertices[a].Position), base.Vertices[d].Position.Sub(base.Vertices[a].Position)
+		u1, v1 := base.UV[b].U-base.UV[a].U, base.UV[b].V-base.UV[a].V
+		u2, v2 := base.UV[d].U-base.UV[a].U, base.UV[d].V-base.UV[a].V
+		det := u1*v2 - u2*v1
+		if det == 0 {
+			continue
+		}
+		dpdu, dpdv := e1.Scale(v2/det).Sub(e2.Scale(v1/det)), e2.Scale(u1/det).Sub(e1.Scale(u2/det))
+		n := e1.Cross(e2)
+		w := math.Sqrt(float64(n.Dot(n))) / 2
+		su += w * math.Sqrt(float64(dpdu.Dot(dpdu)))
+		sv += w * math.Sqrt(float64(dpdv.Dot(dpdv)))
+		area += w
+	}
+	if area == 0 {
+		return 1, 1
+	}
+	return su / area, sv / area
 }
 
 // strands makes, or returns, the texture all the layers share. Its alpha is
@@ -191,10 +221,31 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	if len(base.Indices) == 0 || len(base.UV) != len(base.Vertices) {
 		return nil, fmt.Errorf("nt3d: fur needs a mesh with UVs")
 	}
-	key := furLayers{density: c.density(base)}
-	if textured(base) {
+	// A textured mesh colors its strands from its texture, so they need one
+	// texture of their own; others repeat a tile of strands, the shells'
+	// UVs scaled so that it repeats as often as the density needs.
+	// With Spacing, each axis tiles as often as its own stretch needs, so
+	// strands stay round where UVs span more surface one way than the other.
+	density := c.density(base)
+	tilesU, tilesV := 1, 1
+	key := furLayers{density: density}
+	switch {
+	case textured(base):
 		key.source = base.Material.Texture
+		key.density = min(density, furMaxTextured)
+	case c.fur.Spacing != 0:
+		su, sv := stretch(base)
+		count := func(s float64) int {
+			return int(max(1, math.Round(min(furMaxDensity, s/float64(c.fur.Spacing))/furTile)))
+		}
+		tilesU, tilesV = count(su), count(sv)
+		key.density = min(density, furTile)
+	case density > furTile:
+		tilesU = int(math.Round(float64(density) / furTile))
+		tilesV = tilesU
+		key.density = furTile
 	}
+	tiled := tilesU > 1 || tilesV > 1
 	strands, err := c.strands(key)
 	if err != nil {
 		return nil, err
@@ -211,9 +262,16 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	}
 	skin.Bounds = GeometryBounds(skin)
 	shells := []Geometry{skin}
+	uv := base.UV
+	if tiled {
+		uv = make([]UV, len(base.UV))
+		for i, t := range base.UV {
+			uv[i] = UV{U: t.U * float32(tilesU), V: t.V * float32(tilesV)}
+		}
+	}
 	for k := 1; k < f.Shells; k++ {
 		h := f.height(k)
-		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: base.Indices, UV: base.UV, Material: &Material{Texture: strands, Cutout: true, Threshold: h}}
+		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: base.Indices, UV: uv, Material: &Material{Texture: strands, Cutout: true, Threshold: h, Repeat: tiled}}
 		for i := range g.Vertices {
 			v := &g.Vertices[i]
 			v.Position = v.Position.Add(v.Normal.Normalize().Scale(f.Length * h))

@@ -125,3 +125,52 @@ func TestFurSpacingAndTexture(t *testing.T) {
 		t.Fatal("accepted negative spacing")
 	}
 }
+
+// An untextured mesh's fur repeats a small tile, however dense.
+func TestFurTiles(t *testing.T) {
+	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 32, Rings: 16})
+	check(t, err)
+	coat, err := NewFur(Fur{Length: .05, Shells: 4, Spacing: .005})
+	check(t, err)
+	shells, err := coat.Shells(sphere)
+	check(t, err)
+	if d := coat.density(sphere); d < 700 || d > 760 {
+		t.Fatalf("density %d", d)
+	}
+	layer := shells[1]
+	if !layer.Material.Repeat || layer.Material.Texture.width != furTile*furTexelsPerStrand {
+		t.Fatalf("not a repeating %d-strand tile: %d wide", furTile, layer.Material.Texture.width)
+	}
+	// A unit sphere's v spans a meridian, π; u spans a parallel, whose
+	// length, averaged by area, is π²/2. At 0.005 apart, with 64 strands a
+	// tile: 15 tiles around and 10 from pole to pole.
+	last := layer.UV[len(layer.UV)-1]
+	if last.U < 14 || last.U > 16 || last.V < 9 || last.V > 11 {
+		t.Fatalf("UVs reach %v", last)
+	}
+	if shells[0].UV[len(shells[0].UV)-1].U != 1 {
+		t.Fatal("the skin's UVs changed")
+	}
+}
+
+// Each UV axis tiles for its own stretch, so strands stay round on a torus
+// whose u spans, averaged by area, 2π(R + r²/2R) and v 2πr: 2.55 times as much.
+func TestFurTilesEachAxis(t *testing.T) {
+	torus, err := BuildTorus(Torus{MajorRadius: .7, MinorRadius: .3, Segments: 96, Sides: 32})
+	check(t, err)
+	su, sv := stretch(torus)
+	if r := su / sv; r < 2.45 || r > 2.65 {
+		t.Fatalf("stretch %v by %v", su, sv)
+	}
+	coat, err := NewFur(Fur{Length: .05, Shells: 4, Spacing: .005})
+	check(t, err)
+	shells, err := coat.Shells(torus)
+	check(t, err)
+	var top UV
+	for _, uv := range shells[1].UV {
+		top.U, top.V = max(top.U, uv.U), max(top.V, uv.V)
+	}
+	if r := top.U / top.V; r < 2.2 || r > 2.9 {
+		t.Fatalf("tiles %v across, %v around the tube", top.U, top.V)
+	}
+}
