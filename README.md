@@ -12,7 +12,9 @@ The existing ntcharts3d repository is unchanged by this extraction.
 | `nimbleterminal.dev/nt3d` | `nt3d` | Scene graph, camera, geometry, textures, picking, rendering |
 | `nimbleterminal.dev/nt3d/math` | `nt3dmath` | Float32 vectors, matrices, rays and bounds |
 | `nimbleterminal.dev/nt3d/widget` | `nt3dwidget` | Bubble Tea widget and Kitty/glyph presentation |
-| `nimbleterminal.dev/nt3d/mesh` | `nt3dmesh` | STL, OBJ, 3MF, and PLY reading and writing; Stanford scan alignment |
+| `nimbleterminal.dev/nt3d/mesh` | `nt3dmesh` | STL, OBJ, 3MF, and PLY reading and writing; Stanford scan alignment; format registration |
+| `nimbleterminal.dev/nt3d/mesh/gltf` | `nt3dgltf` | glTF 2.0 reading (`.gltf`, `.glb`), registered with `nt3dmesh` on import |
+| `nimbleterminal.dev/nt3d/mesh/formats` | `formats` | Import for side effects: every optional mesh format, and WebP textures |
 
 The library packages share one module. The terrain example has a separate module
 so its go-booba runner and Bubble Tea browser fork do not become library requirements.
@@ -150,6 +152,32 @@ places a set of range scans together (each `bmesh` line's translation and
 quaternion, applied as those files need), reading each scan through
 `Options.Open`: the bunny's ten raw scans assemble into one model of 668,686
 triangles.
+
+Formats beyond these register with `nt3dmesh.RegisterFormat` when their
+packages are imported, as image formats do with `image`, so programs that do
+not read them do not carry them. `import _ "nimbleterminal.dev/nt3d/mesh/formats"`
+adds them all, with WebP textures, the way `ntpicture/decoders` adds image
+formats; the gallery's `meshes` command does, while the web demos, which read
+no files, do not (glTF would add about 0.6 MB to each).
+
+`nt3dgltf.Decode` (`nimbleterminal.dev/nt3d/mesh/gltf`) reads glTF 2.0,
+`.gltf` with its buffers and images (through `Options.Open`, within
+`Options.MaxBytes`) or a binary `.glb`, using
+[qmuntal/gltf](https://github.com/qmuntal/gltf); imported, it lets
+`ReadFile` open them too. The default scene's nodes are
+walked and each mesh primitive becomes an object placed by its node's world
+transform (mirroring transforms keep faces outward), named for its node.
+glTF is Y-up by its specification, so models are always turned Z-up. The base
+color and vertex colors, linear in glTF, become sRGB vertex colors; base
+color textures keep their alpha and repeat unless clamped; `MASK` becomes a
+cutout, `BLEND` a transparent material, `KHR_materials_unlit` an unlit one,
+and double-sided materials get back faces. Roughness and metalness become an
+approximate highlight; metals, which glTF colors by reflected surroundings,
+draw as their base color. Strips, fans, points, and lines are read; missing
+normals are computed flat. Files requiring an extension nt3d cannot honor
+(such as Draco or meshopt compression) are refused; animation, skins, morph
+targets, cameras, normal and emission maps, and texture transforms are passed
+over, with warnings where they change the look.
 
 `DecodeSTL` reads binary and ASCII STL, including several ASCII solids and
 VisCAM/SolidView or Magics face colors. Binary is recognized by its exact

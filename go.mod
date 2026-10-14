@@ -9,6 +9,8 @@ require (
 	github.com/gogpu/gputypes v0.8.0
 	github.com/gogpu/wgpu v0.34.5
 	github.com/lrstanley/bubblezone/v2 v2.0.0
+	github.com/qmuntal/gltf v0.29.0
+	golang.org/x/image v0.47.0
 	nimbleterminal.dev/ntcanvas v0.1.0
 	nimbleterminal.dev/ntgpuimage v0.2.0
 	nimbleterminal.dev/ntpicture v0.0.0-20261014022756-acfa6954d2d0
@@ -32,7 +34,6 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
-	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )
