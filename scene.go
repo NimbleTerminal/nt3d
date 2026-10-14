@@ -132,14 +132,11 @@ func (s *Scene) Reparent(id, parent NodeID) error {
 	}
 	oldParent := n.Parent
 	n.Parent = parent
-	for node := range s.nodes {
-		w := s.world(node)
-		if _, ok := w.InverseAffine(); !ok || w.Determinant3() <= 0 {
-			n.Parent = oldParent
-			return errors.New("nt3d: reparent would produce invalid world transform")
-		}
-	}
+	valid := s.validSubtree(id)
 	n.Parent = oldParent
+	if !valid {
+		return errors.New("nt3d: reparent would produce invalid world transform")
+	}
 	old := s.nodes[n.Parent]
 	old.Children = slices.DeleteFunc(old.Children, func(v NodeID) bool { return v == id })
 	p.Children = append(p.Children, id)
@@ -161,15 +158,38 @@ func (s *Scene) SetTransform(id NodeID, m nt3dmath.Mat4) error {
 	old := n.Local
 	n.Local = m
 	// Validate affected world transforms, including extreme nested scales.
-	for node := range s.nodes {
-		w := s.world(node)
-		if _, ok := w.InverseAffine(); !ok || w.Determinant3() <= 0 {
-			n.Local = old
-			return errors.New("nt3d: world transform overflow or singularity")
-		}
+	if !s.validSubtree(id) {
+		n.Local = old
+		return errors.New("nt3d: world transform overflow or singularity")
 	}
 	s.changed(false, false)
 	return nil
+}
+
+// validSubtree reports whether every world transform in a node's subtree
+// is invertible and keeps orientation: the only ones its transform or
+// parent change. It walks down from the parent's world transform,
+// multiplying as world does, so a scene of n nodes updates every transform
+// in time proportional to n, not n².
+func (s *Scene) validSubtree(id NodeID) bool {
+	type visit struct {
+		id     NodeID
+		parent nt3dmath.Mat4
+	}
+	stack := []visit{{id, s.world(s.nodes[id].Parent)}}
+	for len(stack) > 0 {
+		v := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		n := s.nodes[v.id]
+		w := v.parent.Mul(n.Local)
+		if _, ok := w.InverseAffine(); !ok || w.Determinant3() <= 0 {
+			return false
+		}
+		for _, c := range n.Children {
+			stack = append(stack, visit{c, w})
+		}
+	}
+	return true
 }
 func (s *Scene) SetVisible(id NodeID, visible bool) error {
 	n, ok := s.nodes[id]
