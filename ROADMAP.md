@@ -6,7 +6,8 @@ move to Done with their commit; git history has the details.
 ## Next
 
 - [ ] **gloss migration onto `nt3dmesh`** — in progress in gloss. nt3d
-  supports it as needed: `Model.Keep` and `RenderSoftware` so far; a helper
+  supports it as needed: `Model.Keep`, `RenderSoftware`, and the 3MF
+  `Model.Summary` so far; a helper
   turning `RenderSoftware` depth into view distance, if its outlines need one.
 - [ ] **Release**:
   - push `ntgpuimage` now: nt3d uses its unpushed sRGB, mipmap, and sampler
@@ -77,8 +78,9 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
-- forest demo of shared geometry; transforms check only the subtree they
-  move (updating every node was quadratic: 3.3 s for 5,000)
+- 3MF `Model.Summary`: bounds, area, and mesh counts past the triangle limit (for gloss)
+- `6e4685a`, `cf8172c` forest demo of shared geometry; transforms check only
+  the subtree they move (updating every node was quadratic: 3.3 s for 5,000)
 - `83f3da2`, `cd7488b` mipmaps and linear-light texture filtering, both
   renderers; mipmaps demo (`83b4925` builds against the sibling `ntgpuimage`)
 - `4fe7974` `RenderSoftware`: software pictures with their depth buffer (for gloss's outlines)

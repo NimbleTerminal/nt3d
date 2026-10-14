@@ -216,6 +216,13 @@ are filled too. Packages are limited to 4096 entries and `Options.MaxBytes`
 unpacked (256 MiB by default). Over the triangle or byte limit, `Decode3MF`
 returns what it learned with an error wrapping `ErrTooManyTriangles` or
 `ErrTooLarge`, so a caller can choose fewer parts or show the thumbnail.
+`Model.Summary` measures the whole build without assembling it, past the
+triangle limit too: total triangles, the distinct mesh objects placed (not
+counting objects that only assemble components), and world-space bounds and
+surface area after build and component transforms; each `Part` carries its
+own bounds and area. A summary, then a second decode with `Options.Parts`,
+lets a viewer describe a model too large to load whole and assemble only
+what is chosen.
 
 Decoding is bounded: `Options.MaxTriangles` (a memory and time budget for the
 whole model, `DefaultMaxTriangles` = 4M by default, which callers may raise),

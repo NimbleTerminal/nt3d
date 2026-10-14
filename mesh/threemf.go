@@ -128,6 +128,20 @@ func (m matrix3MF) then(next matrix3MF) (out matrix3MF) {
 	return out
 }
 
+// place is apply in float64, for measuring.
+func (m matrix3MF) place(v [3]float64) [3]float64 {
+	x, y, z := v[0], v[1], v[2]
+	return [3]float64{x*m[0] + y*m[3] + z*m[6] + m[9], x*m[1] + y*m[4] + z*m[7] + m[10], x*m[2] + y*m[5] + z*m[8] + m[11]}
+}
+
+// triangleArea is half the length of the cross product of two sides.
+func triangleArea(a, b, c [3]float64) float64 {
+	u := [3]float64{b[0] - a[0], b[1] - a[1], b[2] - a[2]}
+	v := [3]float64{c[0] - a[0], c[1] - a[1], c[2] - a[2]}
+	x, y, z := u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]
+	return math.Sqrt(x*x+y*y+z*z) / 2
+}
+
 // A mirror turns faces inside out.
 func (m matrix3MF) mirrors() bool {
 	return m[0]*(m[4]*m[8]-m[5]*m[7])-m[1]*(m[3]*m[8]-m[5]*m[6])+m[2]*(m[3]*m[7]-m[4]*m[6]) < 0
@@ -451,17 +465,36 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 			d.build = append(d.build, placed3MF{object: id, transform: identity3MF})
 		}
 	}
-	// Count before assembling: a model over the limit is measured, not stored.
+	// Count and measure before assembling: a model over the limit is
+	// measured, not stored. Each placed object's vertices are placed once,
+	// in a scratch buffer, for its triangles' bounds and areas.
 	visits, counted, chosen := 0, 0, 0
+	summary, meshes := &Summary{}, map[*object3MF]bool{}
+	var placed [][3]float64
 	for i, item := range d.build {
 		part := Part{Name: d.settings.names[item.object]}
 		named := false
-		err := d.walk(item, root, item.object, identity3MF, 0, &visits, func(_ *part3MF, obj *object3MF, _ matrix3MF, _ *color.RGBA) error {
+		err := d.walk(item, root, item.object, identity3MF, 0, &visits, func(_ *part3MF, obj *object3MF, transform matrix3MF, _ *color.RGBA) error {
 			if !named {
 				part.Name, named = cmp.Or(part.Name, obj.name), true
 			}
 			if part.Triangles += len(obj.triangles); counted+part.Triangles > max3MFCounted {
 				return fmt.Errorf("%w: 3MF has more than %d", ErrTooManyTriangles, max3MFCounted)
+			}
+			if len(obj.triangles) == 0 {
+				return nil
+			}
+			meshes[obj] = true
+			placed = placed[:0]
+			for _, v := range obj.vertices {
+				placed = append(placed, transform.place(v))
+			}
+			for _, t := range obj.triangles {
+				a, b, c := placed[t.v[0]], placed[t.v[1]], placed[t.v[2]]
+				for _, p := range [3][3]float64{a, b, c} {
+					part.Bounds.Include(nt3dmath.Vec3{X: float32(p[0]), Y: float32(p[1]), Z: float32(p[2])})
+				}
+				part.Area += triangleArea(a, b, c)
 			}
 			return nil
 		})
@@ -472,12 +505,20 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 			return nil, err
 		}
 		part.Name = cmp.Or(part.Name, "Object "+item.object)
+		part.Bounds = o.orientBounds(part.Bounds)
+		if part.Bounds.IsValid() {
+			summary.Bounds.Include(part.Bounds.Min)
+			summary.Bounds.Include(part.Bounds.Max)
+		}
+		summary.Area += part.Area
 		counted += part.Triangles
 		if o.chosen(i) {
 			chosen += part.Triangles
 		}
 		m.Parts = append(m.Parts, part)
 	}
+	summary.Triangles, summary.Meshes = counted, len(meshes)
+	m.Summary = summary
 	if counted == 0 {
 		return nil, errors.New("nt3dmesh: 3MF contains no triangles")
 	}

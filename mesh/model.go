@@ -116,6 +116,17 @@ func (o *Options) orient(m *Model) {
 	}
 }
 
+// orientBounds turns bounds to Z-up as orient turns the objects.
+func (o *Options) orientBounds(b nt3dmath.AABB) nt3dmath.AABB {
+	if o == nil || o.Up != YUp || !b.IsValid() {
+		return b
+	}
+	var out nt3dmath.AABB
+	out.Include(nt3dmath.Vec3{X: b.Min.X, Y: -b.Max.Z, Z: b.Min.Y})
+	out.Include(nt3dmath.Vec3{X: b.Max.X, Y: -b.Min.Z, Z: b.Max.Y})
+	return out
+}
+
 func (o *Options) maxBytes() int64 {
 	if o == nil || o.MaxBytes <= 0 {
 		return DefaultMaxBytes
@@ -174,12 +185,35 @@ type Model struct {
 	Unit      string            // Such as "millimeter"; empty when unstated.
 	Metadata  map[string]string // The root model's metadata, by name.
 	Thumbnail image.Image       // The slicer's plate picture, else the declared thumbnail.
+	// Summary measures every part, chosen or not, from the file without
+	// assembling it, so it is there with ErrTooManyTriangles too; nil for
+	// other formats, and when a package is too large to measure.
+	Summary *Summary
 }
 
 // Part is one item a 3MF build places, with whatever it holds.
 type Part struct {
 	Name      string // The slicer's name, else the object's, else "Object <id>".
 	Triangles int
+	// Bounds and Area measure the part where the build places it, as
+	// Summary does.
+	Bounds nt3dmath.AABB
+	Area   float64
+}
+
+// Summary measures a 3MF model's whole build, every part whether chosen or
+// not, as the file places it, without assembling its geometry.
+type Summary struct {
+	Triangles int // In every part.
+	// Meshes counts the distinct mesh objects the build places, however
+	// often: objects that only assemble components are not counted.
+	Meshes int
+	// Bounds encloses every triangle in world space: after build and
+	// component transforms, and turned as Options.Up turns the objects.
+	Bounds nt3dmath.AABB
+	// Area is the surface area, in the file's unit (Model.Unit) squared,
+	// after the transforms.
+	Area float64
 }
 
 // Triangles counts the model's faces.

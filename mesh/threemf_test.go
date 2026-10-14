@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"strings"
 	"testing"
 
@@ -513,5 +514,74 @@ func TestTextureTiling(t *testing.T) {
 		if got := m.Objects[1].Geometry.Material.Repeat; got != want {
 			t.Errorf("tile style %q: repeat %v, want %v", style, got, want)
 		}
+	}
+}
+
+// tetraArea is the tetrahedron's surface: three right triangles and the
+// slanted face.
+var tetraArea = 1.5 + math.Sqrt(3)/2
+
+func near3(a, b nt3dmath.Vec3) bool {
+	d := a.Sub(b)
+	return d.Dot(d) < 1e-9
+}
+
+// The summary measures every part where the build places it, through
+// components and scales, even past the triangle limit, without assembling.
+func TestSummary3MF(t *testing.T) {
+	// Part 0: object 2 holds the tetrahedron as it is and at twice its size,
+	// moved 20 along x; the build lifts it 5. Part 1: the tetrahedron
+	// itself, moved -10 along y. Object 2 only assembles.
+	data := archive3MF(t, map[string]string{"3D/3dmodel.model": model3MF(`unit="millimeter"`,
+		`<resources><object id="1">`+tetrahedron+`</object>
+		 <object id="2"><components>
+		   <component objectid="1"/>
+		   <component objectid="1" transform="2 0 0 0 2 0 0 0 2 20 0 0"/>
+		 </components></object></resources>
+		 <build><item objectid="2" transform="1 0 0 0 1 0 0 0 1 0 0 5"/>
+		  <item objectid="1" transform="1 0 0 0 1 0 0 0 1 0 -10 0"/></build>`)})
+	for _, o := range []*Options{nil, {MaxTriangles: 4}, {Parts: []bool{false, true}}} {
+		m, err := Decode3MF(data, o)
+		if o != nil && o.MaxTriangles == 4 {
+			if !errors.Is(err, ErrTooManyTriangles) || len(m.Objects) != 0 {
+				t.Fatalf("over the limit: %v", err)
+			}
+		} else {
+			check(t, err)
+		}
+		s := m.Summary
+		if s == nil || s.Triangles != 12 || s.Meshes != 1 || math.Abs(s.Area-6*tetraArea) > 1e-9 {
+			t.Fatalf("options %+v: summary %+v", o, s)
+		}
+		if !near3(s.Bounds.Min, nt3dmath.Vec3{X: 0, Y: -10, Z: 0}) || !near3(s.Bounds.Max, nt3dmath.Vec3{X: 22, Y: 2, Z: 7}) {
+			t.Fatalf("bounds %v", s.Bounds)
+		}
+		p := m.Parts
+		if len(p) != 2 || math.Abs(p[0].Area-5*tetraArea) > 1e-9 || math.Abs(p[1].Area-tetraArea) > 1e-9 ||
+			!near3(p[0].Bounds.Min, nt3dmath.Vec3{Z: 5}) || !near3(p[0].Bounds.Max, nt3dmath.Vec3{X: 22, Y: 2, Z: 7}) {
+			t.Fatalf("parts %+v", p)
+		}
+	}
+	// Turned Y-up, as the objects are.
+	m, err := Decode3MF(data, &Options{Up: YUp})
+	check(t, err)
+	if b := m.Summary.Bounds; !near3(b.Min, nt3dmath.Vec3{X: 0, Y: -7, Z: -10}) || !near3(b.Max, nt3dmath.Vec3{X: 22, Y: 0, Z: 2}) || !near3(m.Bounds().Max, b.Max) {
+		t.Fatalf("Y-up bounds %v, objects %v", b, m.Bounds())
+	}
+	// A mirrored placement measures its area outward, the same.
+	m, err = Decode3MF(archive3MF(t, map[string]string{"3D/3dmodel.model": model3MF(``,
+		`<resources><object id="1">`+tetrahedron+`</object></resources>
+		 <build><item objectid="1" transform="1 0 0 0 1 0 0 0 -1 0 0 0"/></build>`)}), nil)
+	check(t, err)
+	if math.Abs(m.Summary.Area-tetraArea) > 1e-9 || m.Summary.Bounds.Min.Z != -1 {
+		t.Fatalf("mirrored: %+v", m.Summary)
+	}
+}
+
+// A model over a low limit still summarizes all of it.
+func TestLarge3MFSummary(t *testing.T) {
+	m, err := Decode3MF(many3MF(t, 1001, map[string]string{}), &Options{MaxTriangles: 10})
+	if !errors.Is(err, ErrTooManyTriangles) || m.Summary == nil || m.Summary.Triangles != 1001 || m.Summary.Meshes != 1 || !m.Summary.Bounds.IsValid() || m.Summary.Area <= 0 {
+		t.Fatalf("err %v, summary %+v", err, m.Summary)
 	}
 }
