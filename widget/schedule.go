@@ -19,7 +19,6 @@ func (m *Model) changed(data bool) tea.Cmd {
 	m.dirty = true
 	if data {
 		m.sceneRevision = m.scene.Revision()
-
 	}
 	return m.schedule()
 }
@@ -33,20 +32,9 @@ type rendered struct {
 	elapsed    time.Duration
 }
 
-type encoded struct {
-	id  uint64
-	msg tea.Msg
-}
-
-type presented struct{ id uint64 }
-
 type tick struct {
 	id, generation uint64
-	at             time.Time
 }
-
-// maxFramePixels bounds the framebuffer's area.
-const maxFramePixels = 4096 * 2160
 
 // Software frames are drawn at full size while they are prompt, and smaller
 // while they are not: a frame over softwareSlow is followed by one reduced to
@@ -57,9 +45,8 @@ const (
 	softwareFast = 20 * time.Millisecond
 )
 
-// smallest is the scale at which the plot fits 320 by 200 pixels. Glyphs
-// show two pixels to a cell, and are never given more. Software frames are
-// never reduced further.
+// smallest caps the source image at 320 by 200 pixels. Glyph mode uses this
+// scale; adaptive software rendering never reduces the source further.
 func (m *Model) smallest() float64 {
 	cw, ch := m.pic.CellPixelSize()
 	return math.Min(1, math.Min(320/float64(m.width*cw), 200/float64(m.height*ch)))
@@ -101,9 +88,7 @@ func (m *Model) paced(elapsed time.Duration) bool {
 // the picture is shown as glyphs or drawn slowly in software.
 func (m *Model) frame() Frame {
 	cw, ch := m.pic.CellPixelSize()
-	plotRows := m.height
-	plotCols := m.width
-	w, h := plotCols*cw, plotRows*ch
+	w, h := m.width*cw, m.height*ch
 	factor := 1.0
 	switch {
 	case m.pic.Mode() == picture.PictureGlyph:
@@ -112,16 +97,13 @@ func (m *Model) frame() Frame {
 		factor = m.softwareScale()
 	}
 	w, h = max(1, int(float64(w)*factor)), max(1, int(float64(h)*factor))
-	if w*h > maxFramePixels {
-		factor := math.Sqrt(float64(maxFramePixels) / float64(w*h))
+	if w*h > nt3d.MaxFramePixels {
+		factor := math.Sqrt(float64(nt3d.MaxFramePixels) / float64(w*h))
 		w, h = max(1, int(float64(w)*factor)), max(1, int(float64(h)*factor))
 	}
-	return m.frameSized(w, h, float32(plotCols*cw)/float32(plotRows*ch), m.renderMode)
-}
 
-func (m *Model) frameSized(w, h int, aspect float32, mode RenderMode) Frame {
 	f, _ := m.scene.Frame(m.camera, w, h)
-	f.Matrix = m.camera.Matrix(aspect)
+	f.Matrix = m.camera.Matrix(float32(m.width*cw) / float32(m.height*ch))
 	f.Background = m.background
 	f.Light = m.light
 	if m.decorate != nil {
@@ -131,7 +113,7 @@ func (m *Model) frameSized(w, h int, aspect float32, mode RenderMode) Frame {
 }
 
 func (m *Model) schedule() tea.Cmd {
-	if !m.started || m.closed || m.busy || !m.dirty {
+	if !m.started || m.closed || m.busy || !m.dirty || (m.renderMode != Wireframe && m.pic.Status().Busy) {
 		return nil
 	}
 	m.busy = true
@@ -151,7 +133,6 @@ func (m *Model) schedule() tea.Cmd {
 			}
 			if err != nil {
 				renderMode = Software
-
 			}
 		}
 		if renderMode == Software {
@@ -172,14 +153,12 @@ func (m *Model) schedule() tea.Cmd {
 	}
 }
 
-// present sends a complete frame to picture. The dirty rectangle is unused.
-func (m *Model) present(img image.Image, dirty image.Rectangle) tea.Cmd {
-	cmd := m.pic.SetImage(img)
-	id := m.id
-	if cmd == nil {
-		return func() tea.Msg { return presented{id} }
+// finish schedules the newest scene or resumes idle camera animation.
+func (m *Model) finish() tea.Cmd {
+	if m.dirty {
+		return m.schedule()
 	}
-	return func() tea.Msg { return encoded{id, cmd()} }
+	return m.timer()
 }
 
 func (m *Model) timer() tea.Cmd {
@@ -188,5 +167,5 @@ func (m *Model) timer() tea.Cmd {
 	}
 	m.wake++
 	id, generation := m.id, m.wake
-	return tea.Tick(time.Second/30, func(t time.Time) tea.Msg { return tick{id, generation, t} })
+	return tea.Tick(time.Second/30, func(time.Time) tea.Msg { return tick{id, generation} })
 }

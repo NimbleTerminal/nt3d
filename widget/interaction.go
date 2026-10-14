@@ -79,10 +79,9 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 	return m.changed(false)
 }
 func (m *Model) togglePicture() tea.Cmd {
-	was := m.pic.Mode() == picture.PictureKitty
-	cmd := m.pic.Toggle()
-	if was {
-		return cmd
+	mode := picture.PictureKitty
+	if m.forceGlyph || m.session.Snapshot().Kitty != picture.KittyCapabilitySupported {
+		mode = picture.PictureGlyph
 	}
-	return nil
+	return m.pic.SetMode(mode)
 }

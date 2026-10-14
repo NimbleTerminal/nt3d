@@ -115,18 +115,32 @@ revisions automatically across scene instances.
 
 ## Widget and transports
 
-The widget owns scheduling, stale-frame rejection, GPU fallback, adaptive software
-resolution, wireframe fallback, and ntpicture presentation. It renders only the
+The widget owns render scheduling, stale-frame rejection, GPU fallback, adaptive
+software resolution, and wireframe fallback. ntpicture `Picture` owns image
+encoding, transmission pacing, stable streaming placements, and cleanup. Renderer
+snapshots are submitted with `SetImageImmutable`, avoiding a second pixel copy. It renders only the
 viewport; application headers, footers, and quit handling belong to the parent.
 Call `Refresh()` and execute its command after editing the scene from a parent.
+Execute every returned command, including resize and mode changes.
 Forward terminal size/cell-size events. When embedded, share a zone manager and
 have the parent scan the complete view.
 
 Controls: drag to orbit, shift-drag to pan, wheel or +/- to zoom, arrows/hjkl to
 orbit, `r` for automatic rotation, `o` for projection, `g` for glyph/Kitty output.
+`PictureStatus()` exposes presentation generation, busy/error state, and selected
+format/medium. Completion means ordered output/grid completion, not terminal
+display acknowledgement.
+
+Each widget creates an explicit terminal session by default. For multiple widgets
+on one terminal, pass the same `WithTerminalSession(session)` to all of them; the
+host owns and closes that shared session after disposing its widgets. Forward
+terminal events to the widgets, including while wireframe is visible.
+
 Clicks emit `nt3dwidget.PickMsg`. `WithFrameDecorator` adds generic decorations
 on the update goroutine. `Dispose` returns terminal cleanup to run before exit;
-`Close` releases GPU and shared-memory resources after exit.
+`Close` releases GPU resources after exit. `Dispose` also closes a widget-owned
+session; caller-owned sessions remain open. Continue forwarding late messages
+while a disposed widget is still in the event loop.
 
 Kitty encoding/direct/shared-memory transport comes from ntpicture. The example
 runs natively and in browsers through go-booba; the browser-specific Bubble Tea
@@ -136,7 +150,8 @@ fork remains pinned in the example module.
 
 ntcanvas and ntgpuimage are pinned to published upstream versions and downloaded
 through Go modules. ntpicture still uses a pinned sibling checkout in CI while
-its vanity version is prepared. For local development:
+its upstream publication is prepared. The pinned commit must be pushed before
+CI can fetch that checkout. For local development:
 
 ```sh
 # Sibling layout: nt3d/, ntpicture/

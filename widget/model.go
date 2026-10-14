@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Aliases here keep the rendering scheduler independent of chart types.
+// Rendering types are shared with the engine.
 type Frame = nt3d.Frame
 type RenderMode = nt3d.RenderMode
 
@@ -35,15 +35,18 @@ type Model struct {
 	background                      color.RGBA
 	renderer                        nt3d.Renderer
 	decorate                        func(*nt3d.Frame)
-	pic                             picture.Model
-	width, height, kittyID          int
+	pic                             *picture.Picture
+	session                         *picture.TerminalSession
+	ownSession                      bool
+	nextImageID                     func() (int, error)
+	width, height                   int
 	medium                          picture.KittyMedium
 	kittyFormat                     picture.KittyFormat
 	renderMode, requestedRenderMode RenderMode
 	id, seq, wake                   uint64
 	started, busy, dirty, closed    bool
 	forceGlyph                      bool
-	transport, wire                 string
+	wire                            string
 	zones                           *zone.Manager
 	ownZones                        bool
 	zoneID                          string
@@ -71,7 +74,15 @@ func WithCamera(c nt3d.Camera) Option     { return func(m *Model) { m.camera = c
 func WithBackground(c color.Color) Option {
 	return func(m *Model) { m.background = color.RGBAModel.Convert(c).(color.RGBA); m.background.A = 255 }
 }
-func WithKittyID(id int) Option                    { return func(m *Model) { m.kittyID = id } }
+
+// WithTerminalSession shares discovery with other pictures on the same terminal.
+// The caller owns the session and must close it after its widgets are disposed.
+func WithTerminalSession(s *picture.TerminalSession) Option { return func(m *Model) { m.session = s } }
+
+// WithImageIDAllocator shares a fresh-ID allocator with other image components.
+func WithImageIDAllocator(next func() (int, error)) Option {
+	return func(m *Model) { m.nextImageID = next }
+}
 func WithKittyMedium(v picture.KittyMedium) Option { return func(m *Model) { m.medium = v } }
 func WithKittyFormat(v picture.KittyFormat) Option { return func(m *Model) { m.kittyFormat = v } }
 
@@ -89,15 +100,17 @@ func New(scene *nt3d.Scene, width, height int, opts ...Option) *Model {
 	for _, o := range opts {
 		o(m)
 	}
-	if m.kittyID <= 0 {
-		m.kittyID = picture.DefaultKittyID + 1000 + int(m.id)
+	if m.session == nil {
+		m.session = picture.NewTerminalSession(picture.TerminalOptions{})
+		m.ownSession = true
 	}
 	if m.zones == nil {
 		m.zones = zone.New()
 		m.ownZones = true
 	}
 	m.zoneID = m.zones.NewPrefix() + "nt3d"
-	m.pic = picture.NewModelWithConfig(picture.Config{KittyZ: -1, Fit: picture.FitFill, Background: m.background, KittyID: m.kittyID, KittyMedium: m.medium, KittyFormat: m.kittyFormat, CellPixelWidth: 8, CellPixelHeight: 16})
+	m.pic = picture.New(picture.Options{Session: m.session, NextID: m.nextImageID, StableID: true, Render: picture.Config{KittyZ: -1, Fit: picture.FitFill, Background: m.background, KittyMedium: m.medium, KittyFormat: m.kittyFormat}})
+	_ = m.pic.SetVisible(m.renderMode != Wireframe)
 	m.SetSize(width, height)
 	return m
 }
@@ -107,6 +120,7 @@ func (m *Model) ID() uint64                       { return m.id }
 func (m *Model) Err() error                       { return m.err }
 func (m *Model) RenderMode() RenderMode           { return m.renderMode }
 func (m *Model) RequestedRenderMode() RenderMode  { return m.requestedRenderMode }
+func (m *Model) PictureStatus() picture.Status    { return m.pic.Status() }
 func (m *Model) PictureMode() picture.PictureMode { return m.pic.Mode() }
 func (m *Model) Init() tea.Cmd                    { m.started = true; return tea.Batch(m.pic.Init(), m.schedule()) }
 
@@ -123,8 +137,7 @@ func (m *Model) SetSize(w, h int) tea.Cmd {
 		return nil
 	}
 	m.width, m.height = w, h
-	_ = m.pic.SetSize(w, h)
-	return m.changed(false)
+	return tea.Batch(m.pic.SetSize(w, h), m.changed(false))
 }
 func (m *Model) SetRenderMode(mode RenderMode) tea.Cmd {
 	if mode > Wireframe {
@@ -137,7 +150,7 @@ func (m *Model) SetRenderMode(mode RenderMode) tea.Cmd {
 	if mode == WebGPU && m.renderer == nil {
 		m.renderer = nt3d.NewGPURenderer()
 	}
-	return m.changed(false)
+	return tea.Batch(m.pic.SetVisible(mode != Wireframe), m.changed(false))
 }
 func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	if m.closed {
@@ -156,7 +169,18 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 
 // Dispose clears terminal resources while the event loop is still running.
 // Call Close after the program exits to release GPU resources as well.
-func (m *Model) Dispose() tea.Cmd { m.closed = true; m.wake++; return m.pic.SetImage(nil) }
+func (m *Model) Dispose() tea.Cmd {
+	if m.closed {
+		return nil
+	}
+	m.closed = true
+	m.wake++
+	cmd := m.pic.Close()
+	if m.ownSession {
+		m.session.Close()
+	}
+	return cmd
+}
 func (m *Model) Close() error {
 	m.Dispose()
 	if m.ownZones {
@@ -168,7 +192,7 @@ func (m *Model) Close() error {
 	return nil
 }
 func (m *Model) View() tea.View {
-	body := m.pic.View().Content
+	body := m.pic.View()
 	if m.renderMode == Wireframe {
 		body = m.wire
 	}

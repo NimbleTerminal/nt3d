@@ -7,7 +7,7 @@ require (
 	github.com/NimbleMarkets/go-booba v0.9.2
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	nimbleterminal.dev/nt3d v0.0.0
-	nimbleterminal.dev/ntpicture v0.0.0-20261013002434-da82d92e53c3
+	nimbleterminal.dev/ntpicture v0.0.0-20261014000326-204e10268ffe
 )
 
 require (

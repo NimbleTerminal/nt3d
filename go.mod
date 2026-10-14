@@ -11,7 +11,7 @@ require (
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	nimbleterminal.dev/ntcanvas v0.1.0
 	nimbleterminal.dev/ntgpuimage v0.2.0
-	nimbleterminal.dev/ntpicture v0.0.0-20261013002434-da82d92e53c3
+	nimbleterminal.dev/ntpicture v0.0.0-20261014000326-204e10268ffe
 )
 
 require (

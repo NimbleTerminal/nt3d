@@ -90,7 +90,7 @@ func TestPacingAndModelIsolation(t *testing.T) {
 	m.camera.AutoRotate = true
 	m.lastInput = time.Now()
 	generation := m.wake
-	m.Update(tick{id: m.id, generation: generation - 1, at: time.Now()})
+	m.Update(tick{id: m.id, generation: generation - 1})
 	if m.dirty {
 		t.Fatal("stale tick")
 	}

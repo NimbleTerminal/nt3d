@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: NimbleTerminal/ntpicture
-          ref: da82d92e53c3577752498da5dd0dae83be0d2075
+          ref: 204e10268ffe4ee1785a606423a66df27483beb5
           path: ntpicture
       - uses: actions/setup-go@v7
         with:

@@ -66,11 +66,32 @@ verify the existing gallery on native Kitty, browser WebGPU, software, and wiref
 
 ## Release coordination
 
-Keep Go 1.26.8 and the MIT copyright notices. Dependency pins currently correspond
-to ntcanvas commit 9a1ee31c6cec and ntpicture commit da82d92e53c3. They were tested
-from clean git snapshots as well as the active local checkouts. Once those
-versions resolve through nimbleterminal.dev, run tidy/checksum generation without
-workspace replacements and remove CI's bootstrap dependency checkouts.
+Keep Go 1.26.8 and the MIT copyright notices. ntcanvas v0.1.0 and ntgpuimage
+v0.2.0 resolve upstream. ntpicture is pinned to commit 204e10268ffe and CI uses
+a clean sibling checkout until its vanity module resolves. Publish that commit
+to the ntpicture remote before running CI (the remote advertised no refs during
+this migration). No uncommitted
+ntpicture changes are required.
+
+## Widget presentation migration
+
+The widget now uses ntpicture `Picture` and explicit `TerminalSession` instead
+of the legacy `Model`. Existing render modes, camera controls, medium/format
+options, and scene APIs remain available.
+
+- `WithKittyID` is removed. Use `WithImageIDAllocator(func() (int, error))` when
+  coordinating image IDs with other components. Every allocation must return a
+  fresh positive 24-bit ID; streaming reuses the displayed ID internally, while
+  resize/mode changes require fresh placements. The default is ntpicture's shared
+  allocator.
+- Use `WithTerminalSession(session)` for widgets sharing one terminal connection.
+  Hosts own supplied sessions. Default sessions are owned by the widget.
+- Execute commands from `SetSize`, `SetRenderMode`, `Update`, and `Dispose`.
+  `Dispose` cancels preparation and returns placement deletion commands; run it
+  before quitting. `Close` releases GPU resources after the event loop exits.
+- `PictureStatus()` reports the presentation generation, busy/error state, and
+  encoding/transport choice. ntpicture presentation events identify ordered
+  output completion, not a terminal display acknowledgement.
 
 Register nt3d in NimbleTerminal-infra's module mapping:
 `nt3d = "https://github.com/NimbleTerminal/nt3d"`.
