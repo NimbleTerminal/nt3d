@@ -118,8 +118,10 @@ func slab(origin, inverse [3]float32, lower, upper nt3dmath.Vec3, near, far floa
 }
 
 // nearest finds the nearest front face the ray meets, returning its triangle
-// number and ray parameter.
-func (b *meshBVH) nearest(g *Geometry, r nt3dmath.Ray) (int, float32, bool) {
+// number and ray parameter. Hits that skip, when given, reports (with the
+// triangle and the hit's barycentric weights toward its second and third
+// corners) are passed through, as at a cutout's gaps.
+func (b *meshBVH) nearest(g *Geometry, r nt3dmath.Ray, skip func(tri int, u, w float32) bool) (int, float32, bool) {
 	origin, direction := components(r.Origin), components(r.Direction)
 	var inverse [3]float32
 	for k := range 3 {
@@ -137,7 +139,7 @@ func (b *meshBVH) nearest(g *Geometry, r nt3dmath.Ray) (int, float32, bool) {
 		if node.count > 0 {
 			for _, t := range b.tris[node.start : node.start+node.count] {
 				i := 3 * int(t)
-				if d, ok := rayTriangle(r, g.Vertices[g.Indices[i]].Position, g.Vertices[g.Indices[i+1]].Position, g.Vertices[g.Indices[i+2]].Position); ok && d < best {
+				if d, u, w, ok := rayTriangle(r, g.Vertices[g.Indices[i]].Position, g.Vertices[g.Indices[i+1]].Position, g.Vertices[g.Indices[i+2]].Position); ok && d < best && (skip == nil || !skip(int(t), u, w)) {
 					best, found = d, int(t)
 				}
 			}

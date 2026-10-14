@@ -236,7 +236,8 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
 - `DynamicLines`, `Overlays` (pixel rectangles), and `CellText` (wireframe labels)
   let higher layers supply decorations without importing their concepts.
 - `Scene.Pick` returns node identity, primitive kind/index, application datum ID,
-  and world position. Mesh picking intersects triangle faces. Hidden subtrees
+  and world position. Mesh picking intersects triangle faces, passing through
+  a cutout material's gaps to what shows behind them. Hidden subtrees
   are excluded. Testing every triangle takes milliseconds even for a 1.5M
   triangle mesh, so a click is answered at once; the first pick of a mesh over
   256 triangles also starts indexing it (a bounding volume hierarchy) on another

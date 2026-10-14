@@ -9,10 +9,10 @@ import (
 )
 
 // linearNearest is the brute-force answer the index must match.
-func linearNearest(g *Geometry, r nt3dmath.Ray) (int, float32, bool) {
+func linearNearest(g *Geometry, r nt3dmath.Ray, skip func(int, float32, float32) bool) (int, float32, bool) {
 	best, found := float32(0), -1
 	for i := 0; i+2 < len(g.Indices); i += 3 {
-		if t, ok := rayTriangle(r, g.Vertices[g.Indices[i]].Position, g.Vertices[g.Indices[i+1]].Position, g.Vertices[g.Indices[i+2]].Position); ok && (found < 0 || t < best) {
+		if t, u, w, ok := rayTriangle(r, g.Vertices[g.Indices[i]].Position, g.Vertices[g.Indices[i+1]].Position, g.Vertices[g.Indices[i+2]].Position); ok && (found < 0 || t < best) && (skip == nil || !skip(i/3, u, w)) {
 			best, found = t, i/3
 		}
 	}
@@ -44,8 +44,14 @@ func TestBVHMatchesLinear(t *testing.T) {
 			if i%10 == 0 {
 				r.Direction.Y = 0 // Parallel to a pair of slabs.
 			}
-			tri, d, ok := index.nearest(&g, r)
-			want, wantD, wantOK := linearNearest(&g, r)
+			// Every other ray passes through odd triangles' outer halves,
+			// as through a cutout's gaps.
+			var skip func(int, float32, float32) bool
+			if i%2 == 1 {
+				skip = func(tri int, u, w float32) bool { return tri%2 == 1 && u+w > .5 }
+			}
+			tri, d, ok := index.nearest(&g, r, skip)
+			want, wantD, wantOK := linearNearest(&g, r, skip)
 			if ok != wantOK || ok && d != wantD {
 				t.Fatalf("%s ray %d: index %d at %v (%v), linear %d at %v (%v)", name, i, tri, d, ok, want, wantD, wantOK)
 			}

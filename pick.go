@@ -73,13 +73,13 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 			}
 		}
 		if index := s.pickIndex(f, i); index != nil {
-			if tri, t, ok := index.nearest(&g, localRay); ok {
+			if tri, t, ok := index.nearest(&g, localRay, func(tri int, u, w float32) bool { return cutAt(&g, tri, u, w) }); ok {
 				set(TrianglePrimitive, tri, tri, localRay.Origin.Add(localRay.Direction.Scale(t)))
 			}
 		} else {
 			for j := 0; j+2 < len(g.Indices); j += 3 {
 				a, b, c := g.Vertices[g.Indices[j]].Position, g.Vertices[g.Indices[j+1]].Position, g.Vertices[g.Indices[j+2]].Position
-				if t, ok := rayTriangle(localRay, a, b, c); ok {
+				if t, u, w, ok := rayTriangle(localRay, a, b, c); ok && !cutAt(&g, j/3, u, w) {
 					set(TrianglePrimitive, j/3, j/3, localRay.Origin.Add(localRay.Direction.Scale(t)))
 				}
 			}
@@ -123,25 +123,45 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 }
 
 // rayTriangle follows the renderer's counterclockwise, front-face convention.
-func rayTriangle(r nt3dmath.Ray, a, b, c nt3dmath.Vec3) (float32, bool) {
+// It returns the ray parameter of the hit and its barycentric weights toward
+// b and c.
+func rayTriangle(r nt3dmath.Ray, a, b, c nt3dmath.Vec3) (t, u, w float32, ok bool) {
 	edge1, edge2 := b.Sub(a), c.Sub(a)
 	p := r.Direction.Cross(edge2)
 	det := edge1.Dot(p)
 	if det <= 1e-8 {
-		return 0, false
+		return 0, 0, 0, false
 	}
 	v := r.Origin.Sub(a)
-	u := v.Dot(p) / det
+	u = v.Dot(p) / det
 	if u < 0 || u > 1 {
-		return 0, false
+		return 0, 0, 0, false
 	}
 	q := v.Cross(edge1)
-	w := r.Direction.Dot(q) / det
+	w = r.Direction.Dot(q) / det
 	if w < 0 || u+w > 1 {
-		return 0, false
+		return 0, 0, 0, false
 	}
-	t := edge2.Dot(q) / det
-	return t, t >= 0
+	t = edge2.Dot(q) / det
+	return t, u, w, t >= 0
+}
+
+// cutAt reports whether a cutout material cuts out the point of triangle tri
+// with barycentric weights u and w toward its second and third corners: its
+// texel's alpha falls below the threshold, so renderers draw nothing there.
+func cutAt(g *Geometry, tri int, u, w float32) bool {
+	m := g.Material
+	if m == nil || !m.Cutout || m.Texture == nil {
+		return false
+	}
+	var uv UV
+	if len(g.UV) > 0 {
+		i := 3 * tri
+		a, b, c := g.UV[g.Indices[i]], g.UV[g.Indices[i+1]], g.UV[g.Indices[i+2]]
+		s := 1 - u - w
+		uv = UV{s*a.U + u*b.U + w*c.U, s*a.V + u*b.V + w*c.V}
+	}
+	return float32(m.Texture.sampleWrap(uv, m.Repeat).A) < m.threshold()*255
 }
 func rayBox(r nt3dmath.Ray, b Box) (float32, bool) {
 	lo, hi := float32(0), float32(math.Inf(1))
