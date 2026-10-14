@@ -3,6 +3,7 @@ module nimbleterminal.dev/nt3d/examples/terrain
 go 1.26.8
 
 require (
+	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.0
 	github.com/NimbleMarkets/go-booba v0.9.2
 	github.com/lrstanley/bubblezone/v2 v2.0.0
@@ -12,7 +13,6 @@ require (
 )
 
 require (
-	charm.land/bubbles/v2 v2.2.1 // indirect
 	charm.land/lipgloss/v2 v2.0.6 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect

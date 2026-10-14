@@ -476,7 +476,12 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		return closeErr
 	}
 	if runtime.GOOS == "js" {
-		return booba.Run(d, tea.WithoutSignalHandler())
+		// In the browser, the page shows the scene's keys as touch controls.
+		model, err := d.withActions()
+		if err != nil {
+			return err
+		}
+		return booba.Run(model, tea.WithoutSignalHandler())
 	}
 	return booba.Run(d)
 }
