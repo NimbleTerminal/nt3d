@@ -18,6 +18,7 @@ type meshScene struct {
 	nodes     []nt3d.NodeID
 	sources   []nt3d.Geometry // As built or read, per node.
 	normals   int             // Index into meshNormals.
+	glass     bool            // Shapes drawn transparent.
 	triangles int
 	title     string
 }
@@ -116,6 +117,21 @@ func (d *demo) setupShapes() error {
 // cycleNormals rebuilds every mesh with the next normal style.
 func (d *demo) cycleNormals() error {
 	d.meshes.normals = (d.meshes.normals + 1) % len(meshNormals)
+	return d.rebuildMeshes()
+}
+
+// toggleGlass makes every mesh transparent, or opaque again.
+func (d *demo) toggleGlass() error {
+	d.meshes.glass = !d.meshes.glass
+	return d.rebuildMeshes()
+}
+
+// glassAlpha is the glass shapes' opacity.
+const glassAlpha = 110
+
+// rebuildMeshes sets every mesh from its source, with the normal style and,
+// as glass, a transparent material and its vertices' alpha.
+func (d *demo) rebuildMeshes() error {
 	for i, id := range d.meshes.nodes {
 		g, err := d.meshes.sources[i], error(nil)
 		switch d.meshes.normals {
@@ -123,6 +139,18 @@ func (d *demo) cycleNormals() error {
 			g, err = nt3d.FlatNormals(g)
 		case 2:
 			g, err = nt3d.SmoothNormals(g, 40)
+		}
+		if err == nil && d.meshes.glass {
+			m := nt3d.Material{}
+			if g.Material != nil {
+				m = *g.Material
+			}
+			m.Transparent, m.Cutout, m.EdgeOn = true, false, false
+			g.Material = &m
+			g.Vertices = append([]nt3d.Vertex(nil), g.Vertices...)
+			for j := range g.Vertices {
+				g.Vertices[j].Color.A = glassAlpha
+			}
 		}
 		if err == nil {
 			err = d.scene.SetNodeGeometry(id, g)
@@ -135,6 +163,10 @@ func (d *demo) cycleNormals() error {
 }
 
 func (d *demo) meshesView(content string) string {
-	return fmt.Sprintf("nt3d meshes · %s · s normals · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · drag orbit · wheel zoom · c fit · r rotate · %s",
-		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], d.status)
+	glass := "opaque"
+	if d.meshes.glass {
+		glass = "glass"
+	}
+	return fmt.Sprintf("nt3d meshes · %s · s normals · t glass · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
+		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], glass, d.status)
 }

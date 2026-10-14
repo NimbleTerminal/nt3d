@@ -49,7 +49,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.models != nil:
 		return "models", keys{[]key.Binding{bind("[", "[", "previous"), bind("]", "]", "next"), bind("s", "s", "normals"), bind("n", "n", "turn")}}
 	case d.meshes != nil:
-		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("n", "n", "turn")}}
+		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("n", "n", "turn")}}
 	case d.dynamic != nil:
 		return "dynamic", keys{[]key.Binding{bind("a", "a", "pause"), bind("m", "m", "deform"), bind("b", "b", "add"), bind("x", "x", "remove"), bind("v", "v", "visibility")}}
 	}

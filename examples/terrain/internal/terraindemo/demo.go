@@ -190,6 +190,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "t":
+			if d.meshes != nil && d.models == nil {
+				err = d.toggleGlass()
+				break
+			}
 			if !d.terrainScene() {
 				return d, nil
 			}
