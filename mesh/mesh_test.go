@@ -331,3 +331,30 @@ func TestReadFileAndScene(t *testing.T) {
 		t.Fatal("failed AddTo left nodes")
 	}
 }
+
+func TestYUpTurnsToZUp(t *testing.T) {
+	cone, err := nt3d.BuildCylinder(nt3d.Cylinder{BottomRadius: 1, Height: 2})
+	check(t, err)
+	// A Y-up cone, as a Y-up exporter would write it.
+	yUp, err := nt3d.TransformGeometry(cone, nt3dmath.Mat4{1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1})
+	check(t, err)
+	if yUp.Bounds.Max.Y != 1 {
+		t.Fatal("fixture is not Y-up")
+	}
+	var buf bytes.Buffer
+	check(t, EncodeSTL(&buf, yUp))
+	m, err := DecodeSTL(buf.Bytes(), &Options{Up: YUp})
+	check(t, err)
+	g := m.Objects[0].Geometry
+	if g.Bounds.Max.Z != 1 || g.Bounds.Min.Z != -1 || g.Bounds.Max.Y != 1 {
+		t.Fatalf("bounds %+v", g.Bounds)
+	}
+	closedOutward(t, g)
+	// Normals turn with positions: a face's normal points the way it winds.
+	for i := 0; i < len(g.Indices); i += 3 {
+		a, b, c := g.Vertices[g.Indices[i]], g.Vertices[g.Indices[i+1]], g.Vertices[g.Indices[i+2]]
+		if b.Position.Sub(a.Position).Cross(c.Position.Sub(a.Position)).Dot(a.Normal) < 0 {
+			t.Fatal("normal turned the wrong way")
+		}
+	}
+}

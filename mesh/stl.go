@@ -93,6 +93,7 @@ func DecodeSTL(data []byte, o *Options) (*Model, error) {
 			return nil, err
 		}
 	}
+	o.orient(m)
 	return m, nil
 }
 

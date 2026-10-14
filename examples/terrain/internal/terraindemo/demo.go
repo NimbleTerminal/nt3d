@@ -13,6 +13,7 @@ import (
 	"math"
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/mesh"
 	"nimbleterminal.dev/nt3d/widget"
 	"nimbleterminal.dev/ntpicture"
 	"os"
@@ -284,7 +285,16 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	snapshot := flag.String("snapshot", "", "write a PNG without opening a terminal")
 	duration := flag.Duration("duration", 0, "exit after a duration")
 	medium := flag.String("medium", "auto", "auto, direct, or shm")
+	up := flag.String("up", "z", "mesh files' up axis: z, or y for most OBJ files")
 	flag.Parse()
+	upAxis := nt3dmesh.ZUp
+	switch *up {
+	case "z":
+	case "y":
+		upAxis = nt3dmesh.YUp
+	default:
+		return fmt.Errorf("invalid up axis")
+	}
 	renderMode := nt3d.WebGPU
 	switch *mode {
 	case "gpu":
@@ -320,7 +330,7 @@ func run(proceduralDefault bool, kind sceneMode) error {
 			return err
 		}
 	case sceneMeshes:
-		if err = d.setupMeshes(flag.Args()); err != nil {
+		if err = d.setupMeshes(flag.Args(), upAxis); err != nil {
 			return err
 		}
 	default:

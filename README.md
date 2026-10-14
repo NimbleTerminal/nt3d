@@ -127,7 +127,9 @@ which merges into one geometry, fails for them. Side files are read only through
 `Decode` without `Open` skips them. Missing side files become `Model.Warnings`.
 `Object.Plain` marks vertices the file left uncolored, so a viewer can repaint
 them. `EncodeSTL` (binary, with colors), `EncodeOBJ`, and `Encode3MF` (one object,
-face colors as base materials) write triangles; OBJ writes lines too. Units are the file's own; nothing is normalized or reoriented.
+face colors as base materials) write triangles; OBJ writes lines too. Units are
+the file's own and nothing is normalized. Files do not say which way is up:
+`Options.Up = YUp` turns Y-up models, as many OBJ files are, to nt3d's Z up.
 
 ## Frames and rendering
 

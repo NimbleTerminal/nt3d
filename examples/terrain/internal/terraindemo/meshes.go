@@ -24,7 +24,7 @@ type meshScene struct {
 
 var meshNormals = []string{"as built", "flat", "smooth 40°"}
 
-func (d *demo) setupMeshes(files []string) error {
+func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 	d.meshes = &meshScene{}
 	if len(files) == 0 {
 		return d.setupShapes()
@@ -36,7 +36,7 @@ func (d *demo) setupMeshes(files []string) error {
 	// Lay files out in a row, each fitted to a cell two units wide.
 	spacing := float32(2.2)
 	for i, name := range files {
-		m, err := nt3dmesh.ReadFile(name, &nt3dmesh.Options{Color: color.RGBA{100, 180, 230, 255}})
+		m, err := nt3dmesh.ReadFile(name, &nt3dmesh.Options{Color: color.RGBA{100, 180, 230, 255}, Up: up})
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}

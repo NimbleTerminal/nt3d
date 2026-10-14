@@ -61,6 +61,18 @@ var pieceTriangles = nt3d.MaxMeshTriangles
 // DefaultMaxBytes is how much a 3MF package may unpack to when Options.MaxBytes is zero.
 const DefaultMaxBytes = 256 << 20
 
+// Up names the axis a file treats as up.
+type Up uint8
+
+const (
+	// ZUp, the default, keeps coordinates as they are: nt3d, STL from most
+	// CAD and slicing tools, and 3MF (by its specification) are Z-up.
+	ZUp Up = iota
+	// YUp turns a Y-up model, as many OBJ and some STL files are, to Z-up:
+	// (x, y, z) becomes (x, -z, y), a rotation that keeps faces outward.
+	YUp
+)
+
 // Options control decoding. The zero value, or nil, uses the defaults.
 type Options struct {
 	// MaxTriangles limits the triangles of the whole model, a budget for
@@ -79,6 +91,26 @@ type Options struct {
 	Parts []bool
 	// MaxBytes limits what a 3MF package may unpack to. Zero uses DefaultMaxBytes.
 	MaxBytes int64
+	// Up is the file's up axis. Files do not say, so the caller must.
+	Up Up
+}
+
+// orient turns a decoded model to Z-up.
+func (o *Options) orient(m *Model) {
+	if o == nil || o.Up != YUp {
+		return
+	}
+	turn := func(v nt3dmath.Vec3) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v.X, Y: -v.Z, Z: v.Y} }
+	for i := range m.Objects {
+		g := &m.Objects[i].Geometry
+		for j := range g.Vertices {
+			g.Vertices[j].Position, g.Vertices[j].Normal = turn(g.Vertices[j].Position), turn(g.Vertices[j].Normal)
+		}
+		for j := range g.Lines {
+			g.Lines[j].Position = turn(g.Lines[j].Position)
+		}
+		g.Bounds = nt3d.GeometryBounds(*g)
+	}
 }
 
 func (o *Options) maxBytes() int64 {

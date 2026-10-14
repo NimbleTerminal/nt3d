@@ -468,6 +468,7 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 			m.Objects = append(m.Objects, piece)
 		}
 	}
+	o.orient(m)
 	return m, nil
 }
 

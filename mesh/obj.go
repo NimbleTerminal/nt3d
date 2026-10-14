@@ -99,6 +99,7 @@ func DecodeOBJ(data []byte, o *Options) (*Model, error) {
 	if len(d.m.Objects) == 0 {
 		return nil, errors.New("nt3dmesh: OBJ contains no faces or lines")
 	}
+	o.orient(d.m)
 	return d.m, nil
 }
 
