@@ -15,10 +15,10 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go math/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/procedural/*.go examples/terrain/internal/terraindemo/*.go
+      - gofmt -w *.go math/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go math/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/procedural/*.go examples/terrain/internal/terraindemo/*.go)"
+      - test -z "$(gofmt -l *.go math/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...
@@ -40,19 +40,22 @@ tasks:
       - go build -mod=readonly ./...
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-terrain .
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-procedural ./cmd/procedural
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-dynamic ./cmd/dynamic
   build-wasm:
     env:
       GOOS: js
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/terrain/app.wasm .
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
   web-assets:
     cmds:
       - go -C examples/terrain tool booba-assets ../../dist/web/terrain/
       - go -C examples/terrain tool booba-assets ../../dist/web/procedural/
+      - go -C examples/terrain tool booba-assets ../../dist/web/dynamic/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -68,6 +71,11 @@ tasks:
     deps: [build]
     cmds:
       - bin/nt3d-procedural {{.CLI_ARGS}}
+  dynamic:
+    desc: Run independently moving nodes and a deforming mesh
+    deps: [build]
+    cmds:
+      - bin/nt3d-dynamic {{.CLI_ARGS}}
   serve:
     desc: Serve the browser gallery after task build-web
     cmds:

@@ -9,11 +9,6 @@ import (
 	"nimbleterminal.dev/ntgpuimage"
 )
 
-type texturedBatch struct {
-	gpuBatch
-	geometry int
-}
-
 func releaseBatch(b gpuBatch) {
 	if b.bind != nil {
 		b.bind.Release()
@@ -33,44 +28,6 @@ func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGr
 		g.textureLayout.Release()
 		g.textureLayout = nil
 		return err
-	}
-	return nil
-}
-func (g *gpuRenderer) uploadTexturedMeshes(dev *wgpu.Device, f Frame) error {
-	for _, b := range g.texturedBatches {
-		releaseBatch(b.gpuBatch)
-	}
-	g.texturedBatches = nil
-	for i, geom := range f.Geometry {
-		if !textured(geom) || len(geom.Indices) == 0 {
-			continue
-		}
-		var data []byte
-		for _, index := range geom.Indices {
-			v, uv := geom.Vertices[index], geom.UV[index]
-			nx, ny, nz := v.Normal.X, v.Normal.Y, v.Normal.Z
-			if geom.Material.Unlit {
-				nx, ny, nz = 0, 0, 0
-			}
-			data = append(data, floats(v.Position.X, v.Position.Y, v.Position.Z, uv.U, nx, ny, nz, uv.V, 1, 1, 1, float32(i+1))...)
-		}
-		b := texturedBatch{geometry: i}
-		// Keep partially created resources reachable for Close on errors.
-		g.texturedBatches = append(g.texturedBatches, b)
-		target := &g.texturedBatches[len(g.texturedBatches)-1]
-		var err error
-		target.buffer, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(len(data)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
-		if err != nil {
-			return err
-		}
-		if err = dev.Queue().WriteBuffer(target.buffer, 0, data); err != nil {
-			return err
-		}
-		target.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: 112}, {Binding: 1, Buffer: target.buffer, Size: uint64(len(data))}, {Binding: 2, Buffer: g.transforms, Size: g.transformBytes}}})
-		if err != nil {
-			return err
-		}
-		target.count = uint32(len(geom.Indices))
 	}
 	return nil
 }

@@ -64,13 +64,18 @@ type Frame struct {
 	Matrix                    nt3dmath.Mat4
 	Revision, TextureRevision uint64
 	Geometry                  []Geometry
-	Instances                 []Instance
-	DynamicLines              []Vertex // World-space pairs, depth-tested with a small positive bias.
-	Overlays                  []OverlayRect
-	CellText                  []CellText
-	Background                color.RGBA
-	Light                     Light
-	Complete                  bool // Disable interactive software sampling for full snapshots.
+	// GeometryRevisions optionally enables per-node GPU caching. Each entry must
+	// have a nonzero, unique Instance.Node and a revision that changes whenever
+	// its geometry or material (except Texture) changes. Scene.Frame supplies it.
+	// Omit this slice to use the frame-wide Revision and geometry order.
+	GeometryRevisions []uint64
+	Instances         []Instance
+	DynamicLines      []Vertex // World-space pairs, depth-tested with a small positive bias.
+	Overlays          []OverlayRect
+	CellText          []CellText
+	Background        color.RGBA
+	Light             Light
+	Complete          bool // Disable interactive software sampling for full snapshots.
 }
 
 const MaxFramePixels = 4096 * 2160
@@ -89,6 +94,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 			continue
 		}
 		f.Geometry = append(f.Geometry, *n.geometry)
+		f.GeometryRevisions = append(f.GeometryRevisions, n.geometryRevision)
 		f.Instances = append(f.Instances, Instance{id, n.Name, s.world(id), s.visible(id)})
 	}
 	return f, nil
@@ -154,6 +160,18 @@ func validateFrame(f Frame) error {
 	if len(f.Instances) != 0 && len(f.Instances) != len(f.Geometry) {
 		return fmt.Errorf("nt3d: instance count mismatch")
 	}
+	if len(f.GeometryRevisions) != 0 {
+		if len(f.GeometryRevisions) != len(f.Geometry) || len(f.Instances) != len(f.Geometry) {
+			return fmt.Errorf("nt3d: geometry revision count mismatch")
+		}
+		seen := make(map[NodeID]bool, len(f.Instances))
+		for _, v := range f.Instances {
+			if v.Node == Root || seen[v.Node] {
+				return fmt.Errorf("nt3d: per-node caching requires unique nonzero node IDs")
+			}
+			seen[v.Node] = true
+		}
+	}
 	if !validFloat(f.Matrix[:]...) || !finiteVec(f.Light.Direction) || !validFloat(f.Light.Ambient) {
 		return fmt.Errorf("nt3d: non-finite frame")
 	}
@@ -165,8 +183,8 @@ func validateFrame(f Frame) error {
 			return fmt.Errorf("nt3d: invalid dynamic line")
 		}
 	}
-	// Each packed primitive record is 48 bytes; respect WebGPU's portable
-	// 128 MiB storage binding limit across combined batches, not only per node.
+	// Keep the existing aggregate scene budget of 128 MiB per primitive kind
+	// (48-byte records), even though geometry is now bound separately per node.
 	var counts [5]int
 	for _, g := range f.Geometry {
 		counts[0] += len(g.Points)

@@ -36,6 +36,7 @@ type demo struct {
 	phase             float64
 	lastPhase         time.Time
 	closed            bool
+	dynamic           *dynamicScene
 }
 type quitMsg struct{}
 type phaseMsg time.Time
@@ -86,7 +87,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(v)
 		elapsed := now.Sub(d.lastPhase).Seconds()
 		d.lastPhase = now
-		if !d.animate || !d.procedural {
+		if !d.animate || (!d.procedural && d.dynamic == nil) {
 			return d, phaseTick()
 		}
 		d.phase = math.Mod(d.phase+elapsed, 2*math.Pi)
@@ -94,7 +95,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if d.view.Busy() {
 			return d, phaseTick()
 		}
-		if err := d.updatePlasma(); err != nil {
+		var err error
+		if d.dynamic != nil {
+			err = d.stepDynamic()
+		} else {
+			err = d.updatePlasma()
+		}
+		if err != nil {
 			d.status = err.Error()
 			d.animate = false
 			return d, phaseTick()
@@ -120,13 +127,36 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			d.animate = !d.animate
 			d.lastPhase = time.Now()
+		case "m":
+			if d.dynamic == nil {
+				return d, nil
+			}
+			d.dynamic.deform = !d.dynamic.deform
+		case "b", "x":
+			if d.dynamic == nil {
+				return d, nil
+			}
+			if v.String() == "b" {
+				err = d.addBody()
+			} else {
+				err = d.removeBody()
+			}
+			if err == nil {
+				err = d.stepDynamic()
+			}
 		case "p":
+			if d.dynamic != nil {
+				return d, nil
+			}
 			d.procedural = !d.procedural
 			err = d.loadTextures()
 			if err == nil {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "t":
+			if d.dynamic != nil {
+				return d, nil
+			}
 			d.style = 1 - d.style
 			if d.procedural {
 				err = d.updatePlasma()
@@ -134,9 +164,15 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "f":
+			if d.dynamic != nil {
+				return d, nil
+			}
 			d.flat = !d.flat
 			err = d.terrain()
 		case "l":
+			if d.dynamic != nil {
+				return d, nil
+			}
 			d.lit = !d.lit
 			err = d.terrain()
 		case "n":
@@ -178,6 +214,19 @@ func (d *demo) View() tea.View {
 			status += " · paused"
 		}
 	}
+	if d.dynamic != nil {
+		state := "paused"
+		if d.animate {
+			state = "running"
+		}
+		mesh := "held"
+		if d.dynamic.deform {
+			mesh = "deforming"
+		}
+		v.Content = d.zones.Scan("nt3d dynamic scene · a pause · m deform · b add · x remove · v visibility · 1/2/3 backend · q quit\n" + v.Content + fmt.Sprintf("\n%s · %s · mesh %s · %d orbiters · drag orbit · wheel zoom · r camera · %s", d.view.RenderMode(), state, mesh, len(d.dynamic.bodies), status))
+		v.AltScreen = true
+		return v
+	}
 	v.Content = d.zones.Scan(title + " · a animate · p procedural · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.view.RenderMode().String() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
 	v.AltScreen = true
 	return v
@@ -202,9 +251,9 @@ func mapImage(topo bool) *image.RGBA {
 	}
 	return img
 }
-func run(proceduralDefault bool) error {
+func run(proceduralDefault, dynamic bool) error {
 	procedural := flag.Bool("procedural", proceduralDefault, "generate plasma textures with a GPU shader (CPU image fallback)")
-	animate := flag.Bool("animate", true, "animate procedural texture phase (a toggles pause)")
+	animate := flag.Bool("animate", true, "animate the scene or procedural phase (a toggles pause)")
 	mode := flag.String("render-mode", "gpu", "gpu, software, or wireframe")
 	snapshot := flag.String("snapshot", "", "write a PNG without opening a terminal")
 	duration := flag.Duration("duration", 0, "exit after a duration")
@@ -239,24 +288,33 @@ func run(proceduralDefault bool) error {
 	if err != nil {
 		return err
 	}
-	d.procedural = *procedural
-	if err = d.loadTextures(); err != nil {
-		return err
-	}
+	if dynamic {
+		if err = d.setupDynamic(); err != nil {
+			return err
+		}
+	} else {
+		d.procedural = *procedural
+		if err = d.loadTextures(); err != nil {
+			return err
+		}
 
-	if err = d.terrain(); err != nil {
-		return err
-	}
-	// A child marker makes parent transformations and inherited visibility visible.
-	marker, err := d.scene.SetGeometry("marker", nt3d.Geometry{Boxes: []nt3d.Box{{Min: nt3dmath.Vec3{X: .65, Y: .25, Z: .2}, Size: nt3dmath.Vec3{X: .12, Y: .12, Z: .35}, Color: color.RGBA{200, 72, 48, 255}}}})
-	if err != nil {
-		return err
-	}
-	if err = d.scene.Reparent(marker, d.group); err != nil {
-		return err
+		if err = d.terrain(); err != nil {
+			return err
+		}
+		// A child marker makes parent transformations and inherited visibility visible.
+		marker, err := d.scene.SetGeometry("marker", nt3d.Geometry{Boxes: []nt3d.Box{{Min: nt3dmath.Vec3{X: .65, Y: .25, Z: .2}, Size: nt3dmath.Vec3{X: .12, Y: .12, Z: .35}, Color: color.RGBA{200, 72, 48, 255}}}})
+		if err != nil {
+			return err
+		}
+		if err = d.scene.Reparent(marker, d.group); err != nil {
+			return err
+		}
 	}
 	camera := nt3d.DefaultCamera()
 	camera.Distance = 4.3
+	if dynamic {
+		camera.Distance = 5.5
+	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones))
 	defer d.view.Close()
@@ -284,8 +342,10 @@ func run(proceduralDefault bool) error {
 }
 
 // Main runs the terrain scene, optionally starting with procedural textures.
-func Main(proceduralDefault bool) {
-	if err := run(proceduralDefault); err != nil {
+func Main(proceduralDefault bool) { mainDemo(proceduralDefault, false) }
+
+func mainDemo(proceduralDefault, dynamic bool) {
+	if err := run(proceduralDefault, dynamic); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -106,7 +106,11 @@ func TestGPUAllPrimitivesAndOverlays(t *testing.T) {
 		t.Fatal("overlay")
 	}
 	for _, batch := range []int{0, 1, 2, 3, 4, 5, 6} {
-		if r.batches[batch].count == 0 {
+		b := r.batches[batch]
+		if batch != 4 && batch != 5 {
+			b = r.nodes[0].batches[batch]
+		}
+		if b.count == 0 {
 			t.Fatalf("missing GPU batch %d", batch)
 		}
 	}
@@ -197,5 +201,109 @@ func TestGPUProceduralParameters(t *testing.T) {
 	check(t, err)
 	if len(r.procedural) != 2 || r.procedural[first] == r.procedural[second] {
 		t.Fatal("simultaneous parameter variants aliased")
+	}
+}
+
+func TestGPUPerNodeGeometryCache(t *testing.T) {
+	s := NewScene()
+	moving, err := s.SetGeometry("moving", pointGeometry())
+	check(t, err)
+	tex := testTexture(t, color.RGBA{10, 220, 80, 255})
+	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Texture: tex, Unlit: true}})
+	check(t, err)
+	stable, err := s.SetGeometry("stable", mesh)
+	check(t, err)
+	r := &gpuRenderer{}
+	defer r.Close()
+	old := frame(t, s)
+	original, err := r.Render(old)
+	check(t, err)
+	fixed := r.nodes[1]
+	originalBuffer := fixed.batches[7].buffer
+	uploads := r.uploads
+	// Replacing one node, including its primitive type, leaves the other untouched.
+	changed := Geometry{Boxes: []Box{{Min: nt3dmath.Vec3{X: .2, Y: .2}, Size: nt3dmath.Vec3{X: .3, Y: .3, Z: .5}, Color: color.RGBA{250, 30, 20, 255}}}}
+	check(t, s.SetNodeGeometry(moving, changed))
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.uploads != uploads+1 || r.nodes[1] != fixed || fixed.batches[7].buffer != originalBuffer {
+		t.Fatal("unrelated geometry reuploaded")
+	}
+	uploads = r.uploads
+	group, err := s.Add(Root, "group")
+	check(t, err)
+	check(t, s.Reparent(stable, group))
+	check(t, s.SetTransform(group, nt3dmath.Translation(nt3dmath.Vec3{X: .1})))
+	check(t, s.SetVisible(moving, false))
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.uploads != uploads {
+		t.Fatal("transform/reparent/visibility reuploaded geometry")
+	}
+	// Removal shifts the stable node's frame index, but not its GPU identity.
+	check(t, s.Remove(moving))
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.uploads != uploads || len(r.geometries) != 1 || r.nodes[0] != fixed {
+		t.Fatal("removal invalidated surviving node")
+	}
+	_, err = s.SetGeometry("new", pointGeometry())
+	check(t, err)
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.uploads != uploads+1 || r.nodes[0] != fixed {
+		t.Fatal("insertion invalidated surviving node")
+	}
+	// Old snapshots restore removed/replaced nodes, without corrupting transforms.
+	replay, err := r.Render(old)
+	check(t, err)
+	for y := range old.Height {
+		for x := range old.Width {
+			if original.At(x, y) != replay.At(x, y) {
+				t.Fatal("snapshot replay changed pixels")
+			}
+		}
+	}
+	if r.nodes[1] != fixed {
+		t.Fatal("snapshot replay invalidated unchanged mesh")
+	}
+	// Material changes invalidate only their own node, including textured -> plain.
+	mesh.Material = &Material{Unlit: true}
+	check(t, s.SetNodeGeometry(stable, mesh))
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.nodes[0].batches[7].count != 0 || r.nodes[0].batches[1].count == 0 {
+		t.Fatal("stale textured batch after material change")
+	}
+	s.Clear()
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if len(r.geometries) != 0 {
+		t.Fatal("removed geometry retained")
+	}
+}
+
+func TestGPUManualFrameGeometryCache(t *testing.T) {
+	s := NewScene()
+	_, err := s.SetGeometry("point", pointGeometry())
+	check(t, err)
+	f := frame(t, s)
+	f.GeometryRevisions = nil
+	f.Instances = nil
+	r := &gpuRenderer{}
+	defer r.Close()
+	_, err = r.Render(f)
+	check(t, err)
+	before := r.uploads
+	_, err = r.Render(f)
+	check(t, err)
+	if r.uploads != before {
+		t.Fatal("unchanged manual frame reuploaded")
+	}
+	f.Revision++
+	_, err = r.Render(f)
+	check(t, err)
+	if r.uploads != before+1 {
+		t.Fatal("manual revision ignored")
 	}
 }

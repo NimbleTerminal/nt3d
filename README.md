@@ -56,8 +56,12 @@ geometry. There is no axes, legend, palette, category, or plot-range policy.
 Transforms must be finite, invertible, affine, and orientation-preserving.
 Reflections and zero scales are not supported in this initial graph. Local
 geometry stays cached on the GPU: camera motion, node transforms, and visibility
-update matrices rather than mesh buffers. Structural/geometry changes currently
-rebuild combined mesh batches; per-node mesh upload caching is future work.
+update matrices rather than mesh buffers. Each node has an independent geometry
+revision, GPU primitive buffers, and transform buffer. Replacing geometry uploads
+only that node; adding/removing nodes preserves
+surviving buffers. Texture replacement preserves mesh buffers too. Removed or
+superseded buffers are released; replaying an old frame reuploads only missing
+geometry. This trades combined draw batches for draws per node and primitive type.
 
 ## Frames and rendering
 
@@ -109,9 +113,15 @@ rejection behavior; this is not a full general-purpose clipping pipeline.
 
 If constructing Frames manually, keep geometry immutable, supply one `Instance`
 per geometry (or omit instances for identity transforms), and change `Revision`
-when geometry changes and `TextureRevision` when textures change. Revision values
+when geometry changes and `TextureRevision` when textures change.
+For per-node caching, additionally supply `GeometryRevisions`, one revision per
+geometry, and unique nonzero `Instance.Node` identities. Change a node's revision
+for geometry or material changes (except texture replacement). Without this slice,
+the renderer retains frame-wide revision invalidation. Revision values
 must not collide with other frames sent to that renderer. Scene creates these
 revisions automatically across scene instances.
+If manually editing the geometry entries of a scene-produced frame, update its
+per-node revisions too, or clear `GeometryRevisions` and change `Revision`.
 
 ## Widget and transports
 
@@ -168,6 +178,7 @@ task workspace
 task ci
 task test-gpu             # Requires a real WebGPU adapter; fails if unavailable.
 task procedural           # Starts plasma textures and camera rotation.
+task dynamic              # Moving nodes, deforming mesh, and add/remove controls.
 task terrain -- --render-mode software
 task terrain -- --render-mode gpu --snapshot /tmp/terrain.png
 task build-web
@@ -184,11 +195,27 @@ Use `--medium direct` or `--medium shm` to select transport explicitly.
 
 Run `task build-web` and `task serve`, then open http://localhost:8768/.
 The gallery links to the terrain explorer at `/terrain/` and procedural plasma
-at `/procedural/`, with rendered previews, controls, and source links. Each demo
+at `/procedural/`, plus a dynamic scene at `/dynamic/`, with rendered previews,
+controls, and source links. Each demo
 runs inside go-booba and supports GPU, software, and wireframe rendering.
 
 The static site sources live in `web/`; the complete generated site is
 `dist/web/`. It can be served under a subdirectory without changing asset paths.
+
+### Dynamic scene demo
+
+Run `task dynamic` or open http://localhost:8768/dynamic/ after building the gallery.
+A static textured floor surrounds a deforming wave mesh and independently orbiting
+boxes. The wave changes vertex positions and topology; each box moves through
+`SetTransform` without replacing geometry. `m` holds the wave mesh so you can
+observe transform-only animation, `b` adds an object, `x` removes the oldest,
+`a` pauses/resumes, and `v` toggles inherited visibility. `1`/`2`/`3` select GPU,
+software, and wireframe. The camera remains interactive. Use `--animate=false`
+to start paused or `--snapshot /tmp/dynamic.png` for a still image.
+
+See [dynamic.go](examples/terrain/internal/terraindemo/dynamic.go). GPU tests assert
+that changing one node uploads only that node, surviving buffer identities stay
+stable across insertion/removal, and old snapshots replay with identical pixels.
 
 ### Procedural texture demo
 

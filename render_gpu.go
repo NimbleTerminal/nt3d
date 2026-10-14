@@ -31,7 +31,8 @@ type gpuRenderer struct {
 	texturePipeline *wgpu.RenderPipeline
 	textures        map[*Texture]*gpuimage.Texture
 	procedural      map[*Texture]*proceduralTexture
-	texturedBatches []texturedBatch
+	geometries      map[geometryKey]*gpuGeometry
+	nodes           []*gpuGeometry
 	textureUploads  uint64
 	mu              sync.Mutex
 	closed          bool
@@ -42,10 +43,8 @@ type gpuRenderer struct {
 	layout          *wgpu.PipelineLayout
 	uniform         *wgpu.Buffer
 	transforms      *wgpu.Buffer
-	transformBytes  uint64
 	pipelines       [7]*wgpu.RenderPipeline
 	batches         [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
-	revision        uint64
 	uploads         uint64
 }
 
@@ -104,75 +103,6 @@ func floats(values ...float32) []byte {
 	return out
 }
 
-func (g *gpuRenderer) upload(dev *wgpu.Device, f Frame) error {
-	var data [7][]byte
-	nodeIndex := float32(0)
-	vertex := func(kind int, v Vertex, radius float32) {
-		data[kind] = append(data[kind], floats(v.Position.X, v.Position.Y, v.Position.Z, radius, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, nodeIndex)...)
-	}
-	for index, geom := range f.Geometry {
-		nodeIndex = float32(index + 1)
-		for _, p := range geom.Points {
-			vertex(0, Vertex{Position: p.Position, Color: p.Color}, p.Radius)
-		}
-		for _, i := range geom.Indices {
-			if !textured(geom) {
-				v := geom.Vertices[i]
-				if geom.Material != nil && geom.Material.Unlit {
-					v.Normal.X = 0
-					v.Normal.Y = 0
-					v.Normal.Z = 0
-				}
-				vertex(1, v, 1)
-			}
-		}
-		for _, b := range geom.Boxes {
-			vertex(2, Vertex{b.Min, b.Size, b.Color}, 1)
-		}
-		for _, v := range geom.Lines {
-			vertex(3, v, lineWidth(geom.LineWidth))
-		}
-		for _, a := range geom.Arrows {
-			data[6] = append(data[6], floats(a.Start.X, a.Start.Y, a.Start.Z, lineWidth(a.Width), a.End.X, a.End.Y, a.End.Z, a.HeadSize, float32(a.Color.R)/255, float32(a.Color.G)/255, float32(a.Color.B)/255, nodeIndex)...)
-		}
-	}
-	for i, d := range data {
-		if i == 4 || i == 5 {
-			continue
-		}
-		old := &g.batches[i]
-		if old.bind != nil {
-			old.bind.Release()
-		}
-		if old.buffer != nil {
-			old.buffer.Release()
-		}
-		*old = gpuBatch{}
-		if len(d) == 0 {
-			continue
-		}
-		var err error
-		old.buffer, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(len(d)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
-		if err != nil {
-			return err
-		}
-		if err = dev.Queue().WriteBuffer(old.buffer, 0, d); err != nil {
-			return err
-		}
-		old.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: 112}, {Binding: 1, Buffer: old.buffer, Size: uint64(len(d))}, {Binding: 2, Buffer: g.transforms, Size: g.transformBytes}}})
-		if err != nil {
-			return err
-		}
-		old.count = uint32(len(d) / 48)
-	}
-	if err := g.uploadTexturedMeshes(dev, f); err != nil {
-		return err
-	}
-	g.revision = f.Revision
-	g.uploads++
-	return nil
-}
-
 func (g *gpuRenderer) uploadUI(dev *wgpu.Device, f Frame) error {
 	var data []byte
 	vertex := func(x, y int, c color.RGBA) {
@@ -203,30 +133,9 @@ func (g *gpuRenderer) uploadLines(dev *wgpu.Device, f Frame) error {
 
 func (g *gpuRenderer) uploadDynamic(dev *wgpu.Device, index int, data []byte) error {
 	b := &g.batches[index]
-	if b.bind != nil {
-		b.bind.Release()
-	}
-	if b.buffer != nil {
-		b.buffer.Release()
-	}
+	releaseBatch(*b)
 	*b = gpuBatch{}
-	if len(data) == 0 {
-		return nil
-	}
-	var err error
-	b.buffer, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(len(data)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
-	if err != nil {
-		return err
-	}
-	if err = dev.Queue().WriteBuffer(b.buffer, 0, data); err != nil {
-		return err
-	}
-	b.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: 112}, {Binding: 1, Buffer: b.buffer, Size: uint64(len(data))}, {Binding: 2, Buffer: g.transforms, Size: g.transformBytes}}})
-	if err != nil {
-		return err
-	}
-	b.count = uint32(len(data) / 48)
-	return nil
+	return g.uploadBatch(dev, b, data, g.transforms)
 }
 
 func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
@@ -264,13 +173,11 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 			return err
 		}
 		dev := frame.Device
-		if err := g.uploadTransforms(dev, f); err != nil {
+		if err := g.uploadIdentity(dev); err != nil {
 			return err
 		}
-		if g.uploads == 0 || g.revision != f.Revision {
-			if err := g.upload(dev, f); err != nil {
-				return err
-			}
+		if err := g.prepareGeometry(dev, f); err != nil {
+			return err
 		}
 		if err := g.uploadLines(dev, f); err != nil {
 			return err
@@ -287,10 +194,14 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		}
 		for _, i := range []int{5, 0, 1, 2, 3, 6, 4} {
 			if i == 2 {
-				for _, b := range g.texturedBatches {
+				for index, node := range g.nodes {
+					b := node.batches[7]
+					if b.count == 0 {
+						continue
+					}
 					pass.SetPipeline(g.texturePipeline)
 					pass.SetBindGroup(0, b.bind, nil)
-					src := f.Geometry[b.geometry].Material.Texture
+					src := f.Geometry[index].Material.Texture
 					if t := g.procedural[src]; t != nil {
 						pass.SetBindGroup(1, t.target.BindGroup(), nil)
 					} else {
@@ -299,26 +210,13 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 					pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: 1})
 				}
 			}
-			b := g.batches[i]
-			if b.count == 0 {
+			if i == 4 || i == 5 {
+				g.drawBatch(pass, i, g.batches[i])
 				continue
 			}
-			pass.SetPipeline(g.pipelines[i])
-			pass.SetBindGroup(0, b.bind, nil)
-			v, n := b.count, uint32(1)
-			if i == 0 {
-				v, n = 6, b.count
+			for _, node := range g.nodes {
+				g.drawBatch(pass, i, node.batches[i])
 			}
-			if i == 2 {
-				v, n = 36, b.count
-			}
-			if i == 3 || i == 5 {
-				v, n = 6, b.count/2
-			}
-			if i == 6 {
-				v, n = 9, b.count
-			}
-			pass.Draw(gputypes.DrawArgs{VertexCount: v, InstanceCount: n})
 		}
 		return pass.End()
 	})
@@ -341,9 +239,11 @@ func (g *gpuRenderer) Close() error {
 		delete(g.textures, src)
 	}
 	_ = g.r.Do(func(*wgpu.Device) error {
-		for _, b := range g.texturedBatches {
-			releaseBatch(b.gpuBatch)
+		for key, node := range g.geometries {
+			node.release()
+			delete(g.geometries, key)
 		}
+		g.nodes = nil
 		if g.texturePipeline != nil {
 			g.texturePipeline.Release()
 		}
@@ -385,36 +285,39 @@ func (g *gpuRenderer) Close() error {
 	return err
 }
 
-// uploadTransforms preserves geometry buffers on camera/transform/visibility edits.
-func (g *gpuRenderer) uploadTransforms(dev *wgpu.Device, f Frame) error {
-	size := uint64(len(f.Geometry)+1) * 128
-	if g.transforms == nil || g.transformBytes != size {
-		if g.transforms != nil {
-			g.transforms.Release()
-		}
-		var err error
-		g.transforms, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: size, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
-		if err != nil {
-			return err
-		}
-		g.transformBytes = size
-		g.uploads = 0
+// Dynamic world-space decorations always use an identity transform.
+func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
+	if g.transforms != nil {
+		return nil
 	}
-	data := make([]byte, 0, size)
-	put := func(m nt3dmath.Mat4, visible bool) {
-		inv, _ := m.InverseAffine()
-		normal := inv.Transpose()
-		normal[15] = 0
-		if visible {
-			normal[15] = 1
-		}
-		data = append(data, floats(m[:]...)...)
-		data = append(data, floats(normal[:]...)...)
+	var err error
+	g.transforms, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 128, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+	if err != nil {
+		return err
 	}
-	put(nt3dmath.Identity(), true)
-	for i := range f.Geometry {
-		v := instance(f, i)
-		put(v.World, v.Visible)
+	if err = writeTransform(dev, g.transforms, Instance{World: nt3dmath.Identity(), Visible: true}); err != nil {
+		g.transforms.Release()
+		g.transforms = nil
 	}
-	return dev.Queue().WriteBuffer(g.transforms, 0, data)
+	return err
+}
+
+func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBatch) {
+	if b.count == 0 {
+		return
+	}
+	pass.SetPipeline(g.pipelines[kind])
+	pass.SetBindGroup(0, b.bind, nil)
+	v, n := b.count, uint32(1)
+	switch kind {
+	case 0:
+		v, n = 6, b.count
+	case 2:
+		v, n = 36, b.count
+	case 3, 5:
+		v, n = 6, b.count/2
+	case 6:
+		v, n = 9, b.count
+	}
+	pass.Draw(gputypes.DrawArgs{VertexCount: v, InstanceCount: n})
 }

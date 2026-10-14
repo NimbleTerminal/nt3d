@@ -28,7 +28,8 @@ type Node struct {
 }
 type sceneNode struct {
 	Node
-	geometry *Geometry
+	geometry         *Geometry
+	geometryRevision uint64
 }
 
 // Scene owns a tree of groups and geometry. Use NewScene; do not copy it.
@@ -206,6 +207,7 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	g.Bounds = GeometryBounds(g)
 	n.geometry = &g
 	s.changed(true, true)
+	n.geometryRevision = s.revision
 	return nil
 }
 
