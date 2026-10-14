@@ -15,10 +15,10 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go math/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go
+      - gofmt -w *.go math/*.go mesh/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go math/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go)"
+      - test -z "$(gofmt -l *.go math/*.go mesh/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...
@@ -41,6 +41,7 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-terrain .
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-procedural ./cmd/procedural
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-dynamic ./cmd/dynamic
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-meshes ./cmd/meshes
   build-wasm:
     env:
       GOOS: js
@@ -76,6 +77,11 @@ tasks:
     deps: [build]
     cmds:
       - bin/nt3d-dynamic {{.CLI_ARGS}}
+  meshes:
+    desc: Show the shape builders, or mesh files given after --
+    deps: [build]
+    cmds:
+      - bin/nt3d-meshes {{.CLI_ARGS}}
   serve:
     desc: Serve the browser gallery after task build-web
     cmds:

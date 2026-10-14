@@ -37,7 +37,20 @@ type demo struct {
 	lastPhase         time.Time
 	closed            bool
 	dynamic           *dynamicScene
+	meshes            *meshScene
 }
+
+type sceneMode int
+
+const (
+	sceneTerrain sceneMode = iota
+	sceneDynamic
+	sceneMeshes
+)
+
+// terrainScene reports whether the terrain controls apply.
+func (d *demo) terrainScene() bool { return d.dynamic == nil && d.meshes == nil }
+
 type quitMsg struct{}
 type phaseMsg time.Time
 
@@ -145,7 +158,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.stepDynamic()
 			}
 		case "p":
-			if d.dynamic != nil {
+			if !d.terrainScene() {
 				return d, nil
 			}
 			d.procedural = !d.procedural
@@ -154,7 +167,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "t":
-			if d.dynamic != nil {
+			if !d.terrainScene() {
 				return d, nil
 			}
 			d.style = 1 - d.style
@@ -164,17 +177,22 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "f":
-			if d.dynamic != nil {
+			if !d.terrainScene() {
 				return d, nil
 			}
 			d.flat = !d.flat
 			err = d.terrain()
 		case "l":
-			if d.dynamic != nil {
+			if !d.terrainScene() {
 				return d, nil
 			}
 			d.lit = !d.lit
 			err = d.terrain()
+		case "s":
+			if d.meshes == nil {
+				return d, nil
+			}
+			err = d.cycleNormals()
 		case "n":
 			d.angle += math.Pi / 12
 			err = d.scene.SetTransform(d.group, nt3dmath.RotationZ(d.angle))
@@ -214,6 +232,11 @@ func (d *demo) View() tea.View {
 			status += " · paused"
 		}
 	}
+	if d.meshes != nil {
+		v.Content = d.zones.Scan(d.meshesView(v.Content))
+		v.AltScreen = true
+		return v
+	}
 	if d.dynamic != nil {
 		state := "paused"
 		if d.animate {
@@ -251,7 +274,7 @@ func mapImage(topo bool) *image.RGBA {
 	}
 	return img
 }
-func run(proceduralDefault, dynamic bool) error {
+func run(proceduralDefault bool, kind sceneMode) error {
 	procedural := flag.Bool("procedural", proceduralDefault, "generate plasma textures with a GPU shader (CPU image fallback)")
 	animate := flag.Bool("animate", true, "animate the scene or procedural phase (a toggles pause)")
 	mode := flag.String("render-mode", "gpu", "gpu, software, or wireframe")
@@ -288,11 +311,16 @@ func run(proceduralDefault, dynamic bool) error {
 	if err != nil {
 		return err
 	}
-	if dynamic {
+	switch kind {
+	case sceneDynamic:
 		if err = d.setupDynamic(); err != nil {
 			return err
 		}
-	} else {
+	case sceneMeshes:
+		if err = d.setupMeshes(flag.Args()); err != nil {
+			return err
+		}
+	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
 			return err
@@ -312,8 +340,11 @@ func run(proceduralDefault, dynamic bool) error {
 	}
 	camera := nt3d.DefaultCamera()
 	camera.Distance = 4.3
-	if dynamic {
+	switch kind {
+	case sceneDynamic:
 		camera.Distance = 5.5
+	case sceneMeshes:
+		camera.Distance = 4.3 + 2.2*float64(max(len(flag.Args())-1, 0))
 	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones))
@@ -342,10 +373,10 @@ func run(proceduralDefault, dynamic bool) error {
 }
 
 // Main runs the terrain scene, optionally starting with procedural textures.
-func Main(proceduralDefault bool) { mainDemo(proceduralDefault, false) }
+func Main(proceduralDefault bool) { mainDemo(proceduralDefault, sceneTerrain) }
 
-func mainDemo(proceduralDefault, dynamic bool) {
-	if err := run(proceduralDefault, dynamic); err != nil {
+func mainDemo(proceduralDefault bool, mode sceneMode) {
+	if err := run(proceduralDefault, mode); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

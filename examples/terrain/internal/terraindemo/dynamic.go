@@ -10,7 +10,7 @@ import (
 )
 
 // DynamicMain runs a scene with independently moving nodes and a changing mesh.
-func DynamicMain() { mainDemo(false, true) }
+func DynamicMain() { mainDemo(false, sceneDynamic) }
 
 type dynamicScene struct {
 	bodies []nt3d.NodeID

@@ -12,6 +12,7 @@ The existing ntcharts3d repository is unchanged by this extraction.
 | `nimbleterminal.dev/nt3d` | `nt3d` | Scene graph, camera, geometry, textures, picking, rendering |
 | `nimbleterminal.dev/nt3d/math` | `nt3dmath` | Float32 vectors, matrices, rays and bounds |
 | `nimbleterminal.dev/nt3d/widget` | `nt3dwidget` | Bubble Tea widget and Kitty/glyph presentation |
+| `nimbleterminal.dev/nt3d/mesh` | `nt3dmesh` | STL and OBJ reading and writing |
 
 The library packages share one module. The terrain example has a separate module
 so its go-booba runner and Bubble Tea browser fork do not become library requirements.
@@ -62,6 +63,55 @@ only that node; adding/removing nodes preserves
 surviving buffers. Texture replacement preserves mesh buffers too. Removed or
 superseded buffers are released; replaying an old frame reuploads only missing
 geometry. This trades combined draw batches for draws per node and primitive type.
+
+## Shapes and geometry operations
+
+`BuildSphere`, `BuildCylinder` (also cones and frusta), `BuildTorus`, and
+`BuildCuboid` return lit, UV-mapped meshes centered on the origin with Z up,
+following the `BuildHeightfield` pattern: a spec struct whose zero tessellation
+counts and color take defaults. Faces wind counterclockwise from outside.
+
+```go
+sphere, err := nt3d.BuildSphere(nt3d.Sphere{Radius: .5, Material: &nt3d.Material{Texture: tex}})
+cone, err := nt3d.BuildCylinder(nt3d.Cylinder{BottomRadius: .4, Height: 1})
+moved, err := nt3d.TransformGeometry(cone, nt3dmath.Translation(nt3dmath.Vec3{X: 1}))
+both, err := nt3d.MergeGeometry(sphere, moved) // Fails: different materials.
+smooth, err := nt3d.SmoothNormals(stlGeometry, 40)
+```
+
+`TransformGeometry` bakes a transform into vertices and normals. Unlike node
+transforms it accepts reflections, reversing winding to keep faces outward.
+`MergeGeometry` concatenates geometry that shares a material. `FlatNormals`
+gives each face its own normal. `SmoothNormals` averages, weighted by corner
+angle, the faces meeting at equal positions within a crease angle, so unwelded
+STL meshes smooth too.
+
+## Mesh files
+
+```go
+model, err := nt3dmesh.ReadFile("part.obj", &nt3dmesh.Options{Color: grey})
+group, err := model.AddTo(scene, nt3d.Root, "part")   // One child node per object.
+fit, _, _ := model.Bounds().Normalization()
+err = scene.SetTransform(group, fit)
+```
+
+`DecodeSTL` reads binary and ASCII STL, including several ASCII solids and
+VisCAM/SolidView or Magics face colors. Binary is recognized by its exact
+record length, as headers may begin with "solid". Facet normals are recomputed.
+`DecodeOBJ` reads positions with the r g b vertex-color extension, texture
+coordinates, normals, polygons (as fans), polylines, objects and groups, and
+material libraries: `Kd` colors and `map_Kd` PNG/JPEG textures, with
+transparent texels flattened over `Kd`. Each object or group becomes one
+`Object` per material. Faces without normals get flat ones.
+
+Decoding is bounded: `Options.MaxTriangles` (default and ceiling
+`nt3d.MaxMeshTriangles`), coordinates within ±1e15, and textures at most 8192
+pixels a side, checked before decoding. Side files are read only through
+`Options.Open`; `ReadFile` confines them to the model's directory, and
+`Decode` without `Open` skips them. Missing side files become `Model.Warnings`.
+`Object.Plain` marks vertices the file left uncolored, so a viewer can repaint
+them. `EncodeSTL` (binary, with colors) and `EncodeOBJ` write triangles and
+lines. Units are the file's own; nothing is normalized or reoriented.
 
 ## Frames and rendering
 
@@ -179,6 +229,7 @@ task ci
 task test-gpu             # Requires a real WebGPU adapter; fails if unavailable.
 task procedural           # Starts plasma textures and camera rotation.
 task dynamic              # Moving nodes, deforming mesh, and add/remove controls.
+task meshes               # Shape builders; or: task meshes -- model.stl part.obj
 task terrain -- --render-mode software
 task terrain -- --render-mode gpu --snapshot /tmp/terrain.png
 task build-web
