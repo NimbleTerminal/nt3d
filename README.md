@@ -89,8 +89,10 @@ STL meshes smooth too.
 ## Fur
 
 `FurCoat.Shells(base)` returns an opaque skin and one cutout layer per shell,
-pushed out along the base's normals (which needs normals and UVs; smooth them
-first, or shells crack apart along flat-shaded edges). Each strand has its own
+pushed out along the base's normals. Where faces meet with different normals,
+as on flat-shaded STL, 3MF, and PLY meshes, the normals are averaged so the
+shells stay closed. A mesh without UVs gets them by projecting each face along
+its main axis, in world units, so any mesh file can be furred directly. Each strand has its own
 place, length, and taper. `Fur.Spacing` sets about how far apart strands grow
 in world units, from how much surface the mesh's UVs spread over the
 texture; `Density` sets strands across the texture directly. A textured base
@@ -110,7 +112,11 @@ make fur darker deeper in.
 gravity would; a uniform sway moves a whole layer, so animating it uploads no
 geometry. Shells sit at k/n of the length so the top one still meets the
 longest strands. Seen edge-on, the layers show as dashes, the technique's
-known limit; more shells soften it. Wireframe draws the coat's outer outline.
+known limit; `FurCoat.Fins(base)` fixes it: a strip of strands standing on
+every edge, shown only where the surface turns edge-on to the viewer
+(`Material.EdgeOn`), so the silhouette fills with strands; fins are tinted
+(`Material.Tint`) from the base's texture or Root to Tip, and stand straight
+when shells sway. Wireframe draws the coat's outer outline.
 
 ```go
 coat, err := nt3d.NewFur(nt3d.Fur{Length: .05, Shells: 16, Spacing: .011})

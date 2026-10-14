@@ -61,10 +61,6 @@ func TestFurShells(t *testing.T) {
 			t.Fatalf("accepted %+v", bad)
 		}
 	}
-	sphere.UV = nil
-	if _, err = coat.Shells(sphere); err == nil {
-		t.Fatal("furred a mesh without UVs")
-	}
 }
 
 // Spacing sets strands from surface per unit of UV; a textured mesh colors
@@ -172,5 +168,74 @@ func TestFurTilesEachAxis(t *testing.T) {
 	}
 	if r := top.U / top.V; r < 2.2 || r > 2.9 {
 		t.Fatalf("tiles %v across, %v around the tube", top.U, top.V)
+	}
+}
+
+// A flat-shaded mesh without UVs, as an STL file is, grows a closed coat
+// with strands the same size on every side.
+func TestFurWithoutUVs(t *testing.T) {
+	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
+	check(t, err)
+	cube.UV = nil // Six flat faces, corners split, no UVs.
+	coat, err := NewFur(Fur{Length: .1, Shells: 4, Spacing: .01})
+	check(t, err)
+	shells, err := coat.Shells(cube)
+	check(t, err)
+	layer := shells[1]
+	// Normals averaged at the corners keep the shell closed: its corners
+	// coincide as the cube's do, eight places in all.
+	corners := map[nt3dmath.Vec3]bool{}
+	for _, v := range layer.Vertices {
+		corners[v.Position] = true
+	}
+	if len(corners) != 8 {
+		t.Fatalf("the shell has %d corner positions; it cracked", len(corners))
+	}
+	// A unit face spans 1 / (64 × 0.01) = 1.5625 tiles on each axis, on every side.
+	if !layer.Material.Repeat {
+		t.Fatal("projected fur does not repeat")
+	}
+	for i := 0; i+2 < len(layer.Indices); i += 3 {
+		lo, hi := UV{9, 9}, UV{-9, -9}
+		for _, k := range layer.Indices[i : i+3] {
+			uv := layer.UV[k]
+			lo, hi = UV{min(lo.U, uv.U), min(lo.V, uv.V)}, UV{max(hi.U, uv.U), max(hi.V, uv.V)}
+		}
+		if du, dv := hi.U-lo.U, hi.V-lo.V; abs(du-1.5625) > 1e-4 || abs(dv-1.5625) > 1e-4 {
+			t.Fatalf("triangle %d spans %v by %v tiles", i/3, du, dv)
+		}
+	}
+}
+
+// Fins stand on every edge once, both ways round, as long as the fur, and
+// are drawn only edge-on.
+func TestFurFins(t *testing.T) {
+	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
+	check(t, err)
+	coat, err := NewFur(Fur{Length: .2, Shells: 4, Spacing: .01, Root: color.RGBA{10, 20, 30, 255}, Tip: color.RGBA{200, 150, 100, 255}})
+	check(t, err)
+	fins, err := coat.Fins(cube)
+	check(t, err)
+	// A cube's 12 edges and 6 face diagonals: 18 strips of 4 triangles.
+	if len(fins.Indices)/3 != 18*4 {
+		t.Fatalf("%d fin triangles", len(fins.Indices)/3)
+	}
+	m := fins.Material
+	if !m.Cutout || !m.EdgeOn || !m.Repeat || !m.Tint {
+		t.Fatalf("material %+v", m)
+	}
+	// Tops stand the fur's length off the corner, along its averaged normal.
+	for i := 0; i < len(fins.Vertices); i += 4 {
+		root, top := fins.Vertices[i], fins.Vertices[i+3]
+		if d := top.Position.Sub(root.Position); abs(d.Dot(d)-.04) > 1e-5 || d.Normalize().Dot(root.Normal) < .9999 {
+			t.Fatalf("fin %d rises %v", i/4, d)
+		}
+		if root.Color != coat.fur.Root || top.Color != coat.fur.Tip {
+			t.Fatal("fin colors")
+		}
+	}
+	// Each strip faces both ways.
+	if a, b := faceNormal(fins, 0), faceNormal(fins, 6); a.Dot(b) >= 0 {
+		t.Fatal("strips face one way")
 	}
 }
