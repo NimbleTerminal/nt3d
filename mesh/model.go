@@ -227,6 +227,11 @@ func FormatOf(name string, data []byte) (Format, bool) {
 		return OBJ, true
 	case ".3mf":
 		return ThreeMF, true
+	case ".ply":
+		return PLY, true
+	}
+	if bytes.HasPrefix(data, []byte("ply\n")) || bytes.HasPrefix(data, []byte("ply\r\n")) {
+		return PLY, true
 	}
 	if bytes.HasPrefix(data, []byte("PK\x03\x04")) {
 		return ThreeMF, true
@@ -246,6 +251,8 @@ func Decode(data []byte, f Format, o *Options) (*Model, error) {
 		return DecodeOBJ(data, o)
 	case ThreeMF:
 		return Decode3MF(data, o)
+	case PLY:
+		return DecodePLY(data, o)
 	}
 	return nil, fmt.Errorf("nt3dmesh: unsupported format %q", f)
 }

@@ -47,8 +47,13 @@ func (s *faceObject) objects() []Object {
 }
 
 // add appends a face with a color for each corner and, for a textured
-// object, texture coordinates.
+// object, texture coordinates. Its normal is the face's own.
 func (s *faceObject) add(v [3]nt3dmath.Vec3, shades [3]color.RGBA, plain bool, uv *[3]nt3d.UV) error {
+	return s.addNormals(v, nil, shades, plain, uv)
+}
+
+// addNormals is add with the file's normal at each corner, when it has them.
+func (s *faceObject) addNormals(v [3]nt3dmath.Vec3, normals *[3]nt3dmath.Vec3, shades [3]color.RGBA, plain bool, uv *[3]nt3d.UV) error {
 	if err := s.budget.take(1); err != nil {
 		return err
 	}
@@ -64,8 +69,12 @@ func (s *faceObject) add(v [3]nt3dmath.Vec3, shades [3]color.RGBA, plain bool, u
 	n := v[1].Sub(v[0]).Cross(v[2].Sub(v[0])).Normalize()
 	g := &s.Geometry
 	for k, p := range v {
+		normal := n
+		if normals != nil {
+			normal = normals[k]
+		}
 		g.Indices = append(g.Indices, uint32(len(g.Vertices)))
-		g.Vertices = append(g.Vertices, nt3d.Vertex{Position: p, Normal: n, Color: shades[k]})
+		g.Vertices = append(g.Vertices, nt3d.Vertex{Position: p, Normal: normal, Color: shades[k]})
 		g.Bounds.Include(p)
 		s.Plain = append(s.Plain, plain)
 		if uv != nil {
