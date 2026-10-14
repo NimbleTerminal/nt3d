@@ -30,6 +30,7 @@ type sceneNode struct {
 	Node
 	geometry         *Geometry
 	geometryRevision uint64
+	pickIndex        *bvhSlot // Built for picking on demand, for this geometry.
 }
 
 // Scene owns a tree of groups and geometry. Use NewScene; do not copy it.
@@ -40,6 +41,7 @@ type Scene struct {
 	names                                    map[string]NodeID
 	order                                    []NodeID
 	revision, textureRevision, stateRevision uint64
+	noPickIndex                              bool
 }
 
 func NewScene() *Scene {
@@ -205,7 +207,7 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	}
 	g = cloneGeometry(g)
 	g.Bounds = GeometryBounds(g)
-	n.geometry = &g
+	n.geometry, n.pickIndex = &g, nil
 	s.changed(true, true)
 	n.geometryRevision = s.revision
 	return nil

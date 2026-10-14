@@ -174,7 +174,13 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   let higher layers supply decorations without importing their concepts.
 - `Scene.Pick` returns node identity, primitive kind/index, application datum ID,
   and world position. Mesh picking intersects triangle faces. Hidden subtrees
-  are excluded. Picking is linear in primitive count in this initial version.
+  are excluded. Testing every triangle takes milliseconds even for a 1.5M
+  triangle mesh, so a click is answered at once; the first pick of a mesh over
+  256 triangles also starts indexing it (a bounding volume hierarchy) on another
+  goroutine, and later picks, such as hover, take about a microsecond. The
+  index lasts until the node's geometry changes. It takes about 28 bytes a
+  triangle; `Scene.SetPickIndexing(false)` opts out where picks are rare.
+  Points, boxes, and strokes are tested one by one.
 - Camera offers projection, rays, orbit/pan/zoom, and explicit `Step(elapsed, idle)`
   for automatic rotation. Units are world units; no automatic normalization occurs.
   The default camera suits an origin-centered scene roughly two units across.
