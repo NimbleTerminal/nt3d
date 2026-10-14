@@ -161,3 +161,83 @@ func TestWireframeDoesNotTruncateOffscreenLineIntoGrid(t *testing.T) {
 		t.Fatal("offscreen segment leaked into grid")
 	}
 }
+
+func wireText(t *testing.T, s *Scene, cols, rows int) []string {
+	t.Helper()
+	f, err := s.Frame(DefaultCamera(), cols*8, rows*16)
+	check(t, err)
+	wire, err := RenderWireframe(f, cols, rows)
+	check(t, err)
+	return strings.Split(ansi.Strip(wire), "\n")
+}
+
+func TestWireframeHidesOccludedEdges(t *testing.T) {
+	front, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
+	check(t, err)
+	// A small box straight behind the large one, as the camera looks.
+	_, _, _, forward := DefaultCamera().basis()
+	// It is large enough on screen that its edges, not its outline, are drawn.
+	behind, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .6, Y: .6, Z: .6}})
+	check(t, err)
+	behind, err = TransformGeometry(behind, nt3dmath.Translation(forward.Scale(1.4)))
+	check(t, err)
+	alone, both := NewScene(), NewScene()
+	for _, s := range []*Scene{alone, both} {
+		_, err = s.SetGeometry("front", front)
+		check(t, err)
+	}
+	_, err = both.SetGeometry("behind", behind)
+	check(t, err)
+	a, b := wireText(t, alone, 60, 24), wireText(t, both, 60, 24)
+	if f, _ := both.Frame(DefaultCamera(), 480, 384); newWireDepth(f, 60, 24).dense(1) {
+		t.Fatal("the hidden box is dense, so this tests nothing")
+	}
+	if strings.Join(a, "\n") != strings.Join(b, "\n") {
+		t.Fatalf("hidden box drawn:\n%s\n---\n%s", strings.Join(a, "\n"), strings.Join(b, "\n"))
+	}
+	// Box instances are hidden alike, and hide what is behind them.
+	boxes := NewScene()
+	_, err = boxes.SetGeometry("front", Geometry{Boxes: []Box{{Min: nt3dmath.Vec3{X: -.5, Y: -.5, Z: -.5}, Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}}}})
+	check(t, err)
+	before := strings.Join(wireText(t, boxes, 60, 24), "\n")
+	_, err = boxes.SetGeometry("behind", behind)
+	check(t, err)
+	if after := strings.Join(wireText(t, boxes, 60, 24), "\n"); after != before {
+		t.Fatal("box instances did not hide the mesh behind them")
+	}
+}
+
+func TestWireframeOutlinesDenseMeshes(t *testing.T) {
+	sphere, err := BuildSphere(Sphere{Radius: .8, Segments: 128, Rings: 64})
+	check(t, err)
+	s := NewScene()
+	_, err = s.SetGeometry("sphere", sphere)
+	check(t, err)
+	rows := wireText(t, s, 60, 24)
+	// Each row crossing the sphere shows its two silhouette edges, with the
+	// many small triangles between them left out.
+	top, bottom := -1, -1
+	for i, row := range rows {
+		if strings.Contains(row, "·") {
+			if top < 0 {
+				top = i
+			}
+			bottom = i
+		}
+	}
+	crossed := 0
+	for _, row := range rows[top+(bottom-top)/3 : bottom-(bottom-top)/3+1] {
+		first, last := strings.Index(row, "·"), strings.LastIndex(row, "·")
+		if first < 0 || last-first < 12 {
+			t.Fatalf("silhouette missing: %q", row)
+		}
+		crossed++
+		middle := []rune(row)[len([]rune(row[:first]))+4 : len([]rune(row[:last]))-4]
+		if strings.Contains(string(middle), "·") {
+			t.Fatalf("interior drawn: %q", row)
+		}
+	}
+	if crossed < 2 {
+		t.Fatalf("no outline:\n%s", strings.Join(rows, "\n"))
+	}
+}

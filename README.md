@@ -160,8 +160,14 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   Heightfields use a coarse, continuous row/column lattice whose density adapts
   to projected size in terminal cells. Borders and the original curve samples
   are retained; triangle diagonals are omitted. `Geometry.WireGrid` supplies this
-  optional topology hint (`BuildHeightfield` sets it automatically). General
-  meshes retain triangle edges; wireframe does not remove hidden lines.
+  optional topology hint (`BuildHeightfield` sets it automatically). Front faces
+  of meshes and boxes are rasterized into a coarse depth buffer (2×4 samples a
+  cell), which hides mesh edges, lattices, and box edges behind nearer surfaces;
+  lines, arrows, and decorations are not hidden. A mesh whose triangles average
+  at least two cells on screen draws its front faces' edges. A denser one draws
+  its feature lines instead: silhouettes, creases sharper than 40°, and
+  occluding contours, found in the depth and normal buffers. A 1.5M-triangle
+  mesh takes about 50 ms.
   Lines use ntcanvas `RasterLine`: clipping to cell centers precedes
   nearest-cell endpoint rounding and connected rasterization.
 - `DynamicLines`, `Overlays` (pixel rectangles), and `CellText` (wireframe labels)

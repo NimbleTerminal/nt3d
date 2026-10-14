@@ -65,3 +65,21 @@ func TestSoftwareClipsAtTheNearPlane(t *testing.T) {
 		}
 	}
 }
+
+func TestWireframeClipsAtTheNearPlane(t *testing.T) {
+	f, _ := nearScene(t)
+	d := newWireDepth(f, 40, 20)
+	if d.faces[0] == 0 || d.far[19*40+20] > 1e30 {
+		t.Fatal("the floor near the camera is missing from the depth buffer")
+	}
+	// The floor covers the bottom row, which would otherwise show what is
+	// behind it, and its edges are drawn.
+	for x := range 40 {
+		if d.far[19*40+x] > 1e30 {
+			t.Fatalf("cell %d of the bottom row is uncovered", x)
+		}
+	}
+	if _, err := RenderWireframe(f, 40, 20); err != nil {
+		t.Fatal(err)
+	}
+}
