@@ -37,18 +37,22 @@ func softwareRender(f Frame) image.Image {
 			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = c.R, c.G, c.B
 		}
 	}
-	tri := func(a, b, c Vertex, uv [3]UV, material *Material) {
+	// tri draws a local-space triangle: m takes it to clip space, and normals
+	// takes its normals to world space, where the light is.
+	tri := func(m, normals nt3dmath.Mat4, a, b, c Vertex, uv [3]UV, material *Material) {
 		if material != nil && material.Unlit {
 			a.Normal = nt3dmath.Vec3{}
 			b.Normal = nt3dmath.Vec3{}
 			c.Normal = nt3dmath.Vec3{}
 		}
-		x0, y0, z0, _ := f.Matrix.Project(a.Position, f.Width, f.Height)
-		x1, y1, z1, _ := f.Matrix.Project(b.Position, f.Width, f.Height)
-		x2, y2, z2, _ := f.Matrix.Project(c.Position, f.Width, f.Height)
-		_, _, _, w0 := f.Matrix.Transform(a.Position)
-		_, _, _, w1 := f.Matrix.Transform(b.Position)
-		_, _, _, w2 := f.Matrix.Transform(c.Position)
+		// Project each corner once, as Mat4.Project does, keeping w.
+		project := func(p nt3dmath.Vec3) (x, y, z, w float32) {
+			x, y, z, w = m.Transform(p)
+			return (x/w + 1) * float32(f.Width) * .5, (1 - y/w) * float32(f.Height) * .5, z / w, w
+		}
+		x0, y0, z0, w0 := project(a.Position)
+		x1, y1, z1, w1 := project(b.Position)
+		x2, y2, z2, w2 := project(c.Position)
 		if min(w0, w1, w2) <= 0 {
 			return
 		}
@@ -63,7 +67,7 @@ func softwareRender(f Frame) image.Image {
 			b.Color = a.Color
 			c.Color = a.Color
 		}
-		ca, cb, cc := shade(a.Color, a.Normal, f.Light), shade(b.Color, b.Normal, f.Light), shade(c.Color, c.Normal, f.Light)
+		ca, cb, cc := shade(a.Color, normals.Direction(a.Normal), f.Light), shade(b.Color, normals.Direction(b.Normal), f.Light), shade(c.Color, normals.Direction(c.Normal), f.Light)
 		for y := loY; y <= hiY; y++ {
 			for x := loX; x <= hiX; x++ {
 				px, py := float32(x)+.5, float32(y)+.5
@@ -92,18 +96,29 @@ func softwareRender(f Frame) image.Image {
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
 		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], 1, 0, .00002, put)
 	}
-	// sampled is the step that draws at most limit of n, or all of them.
+	// Interactive frames sample screen-space marks (points, lines, arrows),
+	// which stay legible thinned. Every triangle is drawn: sampling surfaces
+	// leaves dots; the widget lowers resolution when frames are slow instead.
 	sampled := func(n, limit int) int {
 		if f.Complete {
 			return 1
 		}
 		return max(1, (n+limit-1)/limit)
 	}
-	for _, g := range worldGeometry(f) {
+	for gi, g := range f.Geometry {
+		inst := instance(f, gi)
+		if !inst.Visible {
+			continue
+		}
+		// Transform as primitives are drawn rather than copying the scene.
+		local := f
+		local.Matrix = f.Matrix.Mul(inst.World)
+		inverse, _ := inst.World.InverseAffine()
+		normals := inverse.Transpose()
 		step := sampled(len(g.Points), 10000)
 		for i := 0; i < len(g.Points); i += step {
 			p := g.Points[i]
-			x, y, z, ok := f.Matrix.Project(p.Position, f.Width, f.Height)
+			x, y, z, ok := local.Matrix.Project(p.Position, f.Width, f.Height)
 			if !ok {
 				continue
 			}
@@ -116,36 +131,29 @@ func softwareRender(f Frame) image.Image {
 				}
 			}
 		}
-		stride := 3 * sampled(len(g.Indices)/3, 20000)
-		if textured(g) {
-			stride = 3
-		}
-		for i := 0; i+2 < len(g.Indices); i += stride {
+		for i := 0; i+2 < len(g.Indices); i += 3 {
 			var uv [3]UV
 			if len(g.UV) > 0 {
 				for j := range 3 {
 					uv[j] = g.UV[g.Indices[i+j]]
 				}
 			}
-			tri(g.Vertices[g.Indices[i]], g.Vertices[g.Indices[i+1]], g.Vertices[g.Indices[i+2]], uv, g.Material)
+			tri(local.Matrix, normals, g.Vertices[g.Indices[i]], g.Vertices[g.Indices[i+1]], g.Vertices[g.Indices[i+2]], uv, g.Material)
 		}
-		for i, b := range g.Boxes {
-			if i >= 2000 && !f.Complete {
-				break
-			}
+		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(v[j], v[j+1], v[j+2], [3]UV{}, nil)
+				tri(local.Matrix, normals, v[j], v[j+1], v[j+2], [3]UV{}, nil)
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
 		for i := 0; i+1 < len(g.Lines); i += lineStep {
-			rasterStroke(f, g.Lines[i], g.Lines[i+1], g.LineWidth, 0, -.00001, put)
+			rasterStroke(local, g.Lines[i], g.Lines[i+1], g.LineWidth, 0, -.00001, put)
 		}
 		arrowStep := sampled(len(g.Arrows), 10000)
 		for i := 0; i < len(g.Arrows); i += arrowStep {
 			a := g.Arrows[i]
-			rasterStroke(f, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, a.Width, a.HeadSize, 0, put)
+			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, a.Width, a.HeadSize, 0, put)
 		}
 	}
 	drawOverlays(img, f)

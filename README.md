@@ -151,8 +151,11 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   packed; Go struct memory is never assumed to match WGSL padding. Image uploads,
   texture views/samplers, sample bindings, and GPU texture lifetimes are owned by
   ntgpuimage; nt3d retains immutable CPU snapshots for software fallback.
-- Software shares the primitive and texture semantics. Interactive frames sample
-  large geometry sets; `Snapshot` draws all primitives.
+- Software shares the primitive and texture semantics. It draws every triangle
+  and box, transforming each node's local geometry as it rasterizes rather than
+  copying the scene. Interactive frames thin only screen-space marks (points,
+  lines, arrows); `Snapshot` draws all primitives. Slow frames are handled by the
+  widget, which lowers resolution and finally switches to wireframe.
 - `RenderWireframe` returns terminal text using ntcanvas. It has no image snapshot.
   Heightfields use a coarse, continuous row/column lattice whose density adapts
   to projected size in terminal cells. Borders and the original curve samples
