@@ -160,7 +160,15 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, nil
 			}
 			d.dynamic.deform = !d.dynamic.deform
+		case "e":
+			if d.fur == nil {
+				return d, nil
+			}
+			return d, d.cycleEffect()
 		case "b", "x":
+			if v.String() == "x" && d.fur != nil {
+				return d, d.cycleSupersample()
+			}
 			if d.dynamic == nil {
 				return d, nil
 			}
@@ -336,6 +344,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	duration := flag.Duration("duration", 0, "exit after a duration")
 	medium := flag.String("medium", "auto", "auto, direct, or shm")
 	up := flag.String("up", "z", "mesh files' up axis: z, or y for most OBJ files")
+	supersample := flag.Int("supersample", 0, "GPU supersampling, 1..4 (x cycles it in the fur demo)")
+	effectName := flag.String("effect", "none", "fur demo post effect: none, soft focus, or vignette")
 	flag.Parse()
 	upAxis := nt3dmesh.ZUp
 	switch *up {
@@ -430,8 +440,18 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Beta = 30
 		d.view.SetCamera(camera)
 		d.view.Fit()
+		d.view.SetSupersample(2) // Fur's thin strands are what supersampling smooths best.
+		for i, e := range effects {
+			if e.name == *effectName {
+				d.fur.effect = i
+				d.view.SetPostProcess(e.apply)
+			}
+		}
 	case sceneModels:
 		d.frameSample()
+	}
+	if *supersample != 0 {
+		d.view.SetSupersample(*supersample)
 	}
 	if *snapshot != "" {
 		img, used, err := d.view.Snapshot(960, 640)

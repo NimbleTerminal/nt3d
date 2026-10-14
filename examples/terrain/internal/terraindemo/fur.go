@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"math"
 
+	tea "charm.land/bubbletea/v2"
+
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/examples/terrain/internal/terraindemo/models"
 	"nimbleterminal.dev/nt3d/math"
@@ -23,6 +25,7 @@ var (
 )
 
 type furScene struct {
+	effect         int // Index into effects.
 	base           nt3d.Geometry
 	coat           *nt3d.FurCoat
 	nodes          []nt3d.NodeID
@@ -114,7 +117,18 @@ func (d *demo) stepFur() error {
 	return nil
 }
 
+// cycleSupersample steps GPU supersampling through 1×, 2×, and 3×.
+func (d *demo) cycleSupersample() tea.Cmd {
+	return d.view.SetSupersample(d.view.Supersample()%3 + 1)
+}
+
+// cycleEffect steps through the post-processing effects.
+func (d *demo) cycleEffect() tea.Cmd {
+	d.fur.effect = (d.fur.effect + 1) % len(effects)
+	return d.view.SetPostProcess(effects[d.fur.effect].apply)
+}
+
 func (d *demo) furView(content string) string {
-	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · c fit · n rotate · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s",
-		content, d.view.RenderMode(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, d.status)
+	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · supersample %d× · %s · %s",
+		content, d.view.RenderMode(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, d.view.Supersample(), effects[d.fur.effect].name, d.status)
 }
