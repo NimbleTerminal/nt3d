@@ -431,6 +431,17 @@ on the update goroutine. `Dispose` returns terminal cleanup to run before exit;
 session; caller-owned sessions remain open. Continue forwarding late messages
 while a disposed widget is still in the event loop.
 
+`Keep` is the other way out, for a viewer that quits and leaves its last
+frame on screen, as `ntpicture.Picture.Keep` does: it stops auto-rotation
+and discards renders still pending, so nothing newer is presented, and keeps
+the last frame's placement and view; a Kitty image sent through shared
+memory is resent directly by its command. Run that command before quitting,
+`tea.Sequence(view.Keep(), tea.Quit)`, then `Close` after the program
+returns: it releases the renderer and an owned session and leaves the image.
+Repeated `Keep`, and `Dispose` after it, do nothing; `Dispose` remains the
+way to remove the widget's images. The image outlasts the program only on the
+main screen.
+
 Kitty encoding/direct/shared-memory transport comes from ntpicture. The example
 runs natively and in browsers through go-booba; the browser-specific Bubble Tea
 fork remains pinned in the example module.

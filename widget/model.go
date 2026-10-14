@@ -306,6 +306,37 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	return postProcessed(img, m.postProcess), mode, err
 }
 
+// Keep stops the widget for good while leaving its last presented frame on
+// screen, as ntpicture.Picture.Keep does, for a viewer that quits and leaves
+// its picture behind. Auto-rotation stops, and renders still running or
+// pending are discarded, so nothing newer is presented; the last frame
+// keeps its placement, and View keeps returning it. A Kitty image sent
+// through shared memory is sent again directly by the returned command, as
+// its buffer is released; one sent directly stays in place.
+//
+// Call Keep from Update as the program quits, and run its command before
+// quitting, after any final layout:
+//
+//	return m, tea.Sequence(view.Keep(), tea.Quit)
+//
+// Then call Close after the program returns, to release the GPU renderer
+// and an owned terminal session; it leaves the kept image alone, and the
+// returned command stays valid. Keep after Keep or Dispose, and Dispose
+// after Keep, do nothing, and Keep with nothing yet presented keeps an empty
+// view. To remove the widget's images instead, use Dispose. An image outlasts
+// the program only on the main screen: the alternate screen is cleared on
+// exit.
+func (m *Model) Keep() tea.Cmd {
+	if m.closed {
+		return nil
+	}
+	m.closed = true
+	m.wake++ // Pending auto-rotation ticks are stale.
+	m.seq++  // So are renders in flight.
+	m.dirty, m.busy = false, false
+	return m.pic.Keep()
+}
+
 // Dispose clears terminal resources while the event loop is still running.
 // Call Close after the program exits to release GPU resources as well.
 func (m *Model) Dispose() tea.Cmd {
@@ -322,6 +353,9 @@ func (m *Model) Dispose() tea.Cmd {
 }
 func (m *Model) Close() error {
 	m.Dispose()
+	if m.ownSession {
+		m.session.Close() // Again after Dispose does nothing; after Keep it is due.
+	}
 	if m.ownZones {
 		m.zones.Close()
 	}
