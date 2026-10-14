@@ -15,10 +15,10 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go math/*.go mesh/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go
+      - gofmt -w *.go math/*.go mesh/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go examples/terrain/internal/terraindemo/models/*.go examples/terrain/internal/terraindemo/models/generate/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go math/*.go mesh/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go)"
+      - test -z "$(gofmt -l *.go math/*.go mesh/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go examples/terrain/internal/terraindemo/models/*.go examples/terrain/internal/terraindemo/models/generate/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...

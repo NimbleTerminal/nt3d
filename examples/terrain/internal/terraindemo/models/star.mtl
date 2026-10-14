@@ -1,0 +1,5 @@
+newmtl enamel
+Kd 0.86 0.22 0.2
+newmtl wood
+Kd 0.62 0.42 0.22
+map_Kd wood.png
