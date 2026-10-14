@@ -2,6 +2,8 @@
 package nt3d
 
 import (
+	"image"
+	"image/color"
 	"testing"
 
 	"nimbleterminal.dev/nt3d/math"
@@ -59,5 +61,64 @@ func TestFurShells(t *testing.T) {
 	sphere.UV = nil
 	if _, err = coat.Shells(sphere); err == nil {
 		t.Fatal("furred a mesh without UVs")
+	}
+}
+
+// Spacing sets strands from surface per unit of UV; a textured mesh colors
+// its fur and wears its texture as skin; layers are made once per need.
+func TestFurSpacingAndTexture(t *testing.T) {
+	half := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for y := range 8 {
+		for x := range 8 {
+			c := color.NRGBA{220, 30, 20, 255}
+			if x >= 4 {
+				c = color.NRGBA{20, 40, 230, 255}
+			}
+			half.SetNRGBA(x, y, c)
+		}
+	}
+	texture, err := NewTexture(half)
+	check(t, err)
+	// A unit sphere: 4π of surface over one square of UV.
+	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 32, Rings: 16, Material: &Material{Texture: texture}})
+	check(t, err)
+	coat, err := NewFur(Fur{Length: .1, Shells: 4, Spacing: .05})
+	check(t, err)
+	shells, err := coat.Shells(sphere)
+	check(t, err)
+	if d := coat.density(sphere); d < 66 || d > 76 { // The poles leave a little UV uncovered.
+		t.Fatalf("density %d for 3.5 units of surface a side, 0.05 apart", d)
+	}
+	if shells[0].Material == nil || shells[0].Material.Texture != texture || shells[0].Material.Cutout {
+		t.Fatal("the skin does not wear the texture")
+	}
+	// Strands on the left of the texture are red, on the right blue.
+	layer := shells[1].Material.Texture
+	var left, right [3]int
+	for y := range layer.height {
+		for x := range layer.width {
+			i := (y*layer.width + x) * 4
+			if layer.pixels[i+3] < 128 {
+				continue
+			}
+			side := &left
+			if x >= layer.width/2 {
+				side = &right
+			}
+			side[0] += int(layer.pixels[i])
+			side[2] += int(layer.pixels[i+2])
+		}
+	}
+	if left[0] <= left[2] || right[2] <= right[0] {
+		t.Fatalf("fur colors: left %v, right %v", left, right)
+	}
+	// A second mesh at the same density shares the layers.
+	again, err := coat.Shells(sphere)
+	check(t, err)
+	if again[1].Material.Texture != layer || len(coat.layers) != 1 {
+		t.Fatal("layers made again")
+	}
+	if _, err := NewFur(Fur{Length: .1, Spacing: -1}); err == nil {
+		t.Fatal("accepted negative spacing")
 	}
 }
