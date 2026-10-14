@@ -126,9 +126,12 @@ func geometryData(geom Geometry) (data [8][]byte) {
 		}
 		if textured(geom) {
 			// The texture gives color, so the color slot carries the cutout
-			// threshold instead; vs_texture lights white.
-			uv := geom.UV[index]
-			data[7] = append(data[7], floats(v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, geom.Material.threshold(), 1, 1, 0)...)
+			// threshold and whether the texture repeats; vs_texture lights white.
+			uv, repeat := geom.UV[index], float32(0)
+			if geom.Material.Repeat {
+				repeat = 1
+			}
+			data[7] = append(data[7], floats(v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, geom.Material.threshold(), repeat, 1, 0)...)
 		} else {
 			vertex(1, v, 1)
 		}

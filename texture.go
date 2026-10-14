@@ -21,11 +21,16 @@ type UV struct{ U, V float32 }
 // is opaque and depth tested as usual, with no blending. Without Cutout,
 // alpha is ignored. Varying Threshold over copies of one texture reveals
 // different parts of it, as fur's layers do.
+//
+// Repeat tiles the texture: UVs outside [0, 1] wrap, and filtering blends
+// across tile edges, so a texture made to tile shows no seams. Without it,
+// UVs clamp to the texture's edge.
 type Material struct {
 	Texture   *Texture
 	Unlit     bool
 	Cutout    bool
 	Threshold float32
+	Repeat    bool
 }
 
 // threshold is the alpha below which a cutout material skips texels.
@@ -83,13 +88,27 @@ func textured(g Geometry) bool { return g.Material != nil && g.Material.Texture 
 
 // sample uses the same texel-center convention as a bilinear clamp-to-edge
 // sampler, filtering straight alpha as the GPU does.
-func (t *Texture) sample(uv UV) color.NRGBA {
-	x := float64(max(0, min(1, uv.U)))*float64(t.width) - .5
-	y := float64(max(0, min(1, uv.V)))*float64(t.height) - .5
+func (t *Texture) sample(uv UV) color.NRGBA { return t.sampleWrap(uv, false) }
+
+// sampleWrap samples clamped, or repeating, as the GPU's sampleMap does:
+// wrapping the four texels it blends, so tiles meet without a seam.
+func (t *Texture) sampleWrap(uv UV, repeat bool) color.NRGBA {
+	u, v := float64(uv.U), float64(uv.V)
+	if !repeat {
+		u, v = max(0, min(1, u)), max(0, min(1, v))
+	}
+	x := u*float64(t.width) - .5
+	y := v*float64(t.height) - .5
 	x0, y0 := int(math.Floor(x)), int(math.Floor(y))
 	fx, fy := x-float64(x0), y-float64(y0)
+	at := func(i, n int) int {
+		if repeat {
+			return ((i % n) + n) % n
+		}
+		return max(0, min(n-1, i))
+	}
 	pixel := func(x, y, c int) float64 {
-		return float64(t.pixels[(max(0, min(t.height-1, y))*t.width+max(0, min(t.width-1, x)))*4+c])
+		return float64(t.pixels[(at(y, t.height)*t.width+at(x, t.width))*4+c])
 	}
 	var c [4]uint8
 	for i := range c {

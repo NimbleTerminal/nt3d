@@ -387,3 +387,17 @@ func TestGPUSupersample(t *testing.T) {
 		t.Fatal("kept the enlarged target")
 	}
 }
+
+// The GPU tiles as software does.
+func TestGPURepeat(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	for _, repeat := range []bool{true, false} {
+		f := repeatScene(t, repeat)
+		img, err := r.Render(f)
+		check(t, err)
+		if g, s := bands(img), bands(softwareRender(f)); g != s {
+			t.Fatalf("repeat %v: GPU %d bands, software %d", repeat, g, s)
+		}
+	}
+}

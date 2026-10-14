@@ -86,7 +86,7 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 					q0 /= sum
 					q1 /= sum
 					q2 /= sum
-					tex := material.Texture.sample(UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V})
+					tex := material.Texture.sampleWrap(UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}, material.Repeat)
 					if cutout && tex.A < threshold {
 						continue // Cut out: neither color nor depth.
 					}

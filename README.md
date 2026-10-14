@@ -261,7 +261,12 @@ than 8192 pixels per side. Color filtering/lighting retain the original renderer
 sRGB-encoded arithmetic. Transparency blending is not implemented; `Material.Cutout` instead skips
 texels under its `Threshold` alpha (one half by default; on the GPU and in
 software alike), cutting shapes out of opaque, depth-tested triangles. Other
-materials ignore alpha. Software and
+materials ignore alpha. `Material.Repeat` tiles a texture: UVs outside
+[0, 1] wrap, and filtering blends across tile edges (the GPU filters such
+textures itself, wrapping the texels it blends), so textures made to tile show
+no seams; otherwise UVs clamp to the edge. The OBJ, 3MF (unless both tile
+styles clamp), and PLY decoders set it, as those formats tile by default.
+Software and
 wireframe rendering cut triangles at the near plane, as the GPU does, so
 geometry reaching behind the camera stays drawn up close.
 

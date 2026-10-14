@@ -9,7 +9,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
  if instance.normal[3][3]==0.0 {return vec4<f32>(0.0,0.0,2.0,1.0);}
  return u.matrix*instance.world*vec4<f32>(pos,1.0);
 }
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32 };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32 };
 fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
  var o: Out; o.clip=clipPosition(pos,color.w); var light=1.0;
  if dot(normal,normal)>0.0 { light=u.light.w+(1.0-u.light.w)*max(0.0,dot(normalize((instances[u32(color.w)].normal*vec4<f32>(normal,0.0)).xyz),normalize(u.light.xyz))); }
@@ -94,14 +94,28 @@ let p=items[ii];return output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color
 // Textured records carry the cutout threshold where color would be; it
 // reaches the fragment in point, which only points otherwise use.
 @vertex fn vs_texture(@builtin(vertex_index) vi:u32)->Out {
- let p=items[vi];var o=output(p.a.xyz,p.b.xyz,vec4<f32>(1.0,1.0,1.0,p.color.w));o.uv=vec2<f32>(p.a.w,p.b.w);o.point=p.color.x;return o;
+ let p=items[vi];var o=output(p.a.xyz,p.b.xyz,vec4<f32>(1.0,1.0,1.0,p.color.w));o.uv=vec2<f32>(p.a.w,p.b.w);o.point=p.color.x;o.repeat=p.color.y;return o;
+}
+// sampleMap filters the texture bilinearly. The sampler clamps to the edge,
+// so a repeating material filters by hand, wrapping the four texels it
+// blends; wrapping the coordinate alone would blend tiles' edges with clamped
+// texels and show a seam between them. Textures have no mipmaps, so sampling
+// at level zero is exact, and allowed where materials differ by primitive.
+fn sampleMap(uv:vec2<f32>,repeat:f32)->vec4<f32> {
+ if repeat<0.5 {return textureSampleLevel(mapTexture,mapSampler,uv,0.0);}
+ let size=vec2<i32>(textureDimensions(mapTexture,0));
+ let p=uv*vec2<f32>(size)-0.5;let f=floor(p);let t=p-f;let i=vec2<i32>(f);
+ let i0=((i%size)+size)%size;let i1=(((i+1)%size)+size)%size;
+ let a=textureLoad(mapTexture,i0,0);let b=textureLoad(mapTexture,vec2<i32>(i1.x,i0.y),0);
+ let c=textureLoad(mapTexture,vec2<i32>(i0.x,i1.y),0);let d=textureLoad(mapTexture,i1,0);
+ return mix(mix(a,b,t.x),mix(c,d,t.x),t.y);
 }
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
- return vec4<f32>(textureSample(mapTexture,mapSampler,o.uv).rgb*o.color.rgb,1.0);
+ return vec4<f32>(sampleMap(o.uv,o.repeat).rgb*o.color.rgb,1.0);
 }
 // Cutout materials skip texels under their threshold; what remains is opaque.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
- let t=textureSample(mapTexture,mapSampler,o.uv);
+ let t=sampleMap(o.uv,o.repeat);
  if t.a<o.point {discard;}
  return vec4<f32>(t.rgb*o.color.rgb,1.0);
 }
