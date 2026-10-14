@@ -12,7 +12,8 @@ import (
 
 // Execute Bubble Tea batches/sequences and route their messages through Update.
 // Reflection unwraps Tea's unexported sequence slice without depending on its name.
-func drain(t *testing.T, m *Model, cmd tea.Cmd) {
+func drain(t *testing.T, m *Model, cmd tea.Cmd) []tea.Msg {
+	var messages []tea.Msg
 	t.Helper()
 	count := 0
 	var run func(tea.Cmd)
@@ -25,6 +26,7 @@ func drain(t *testing.T, m *Model, cmd tea.Cmd) {
 			t.Fatal("command loop did not settle")
 		}
 		msg := cmd()
+		messages = append(messages, msg)
 		if msg == nil {
 			return
 		}
@@ -42,6 +44,7 @@ func drain(t *testing.T, m *Model, cmd tea.Cmd) {
 		run(next)
 	}
 	run(cmd)
+	return messages
 }
 
 func TestPicturePresentationLifecycle(t *testing.T) {

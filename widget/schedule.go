@@ -45,8 +45,8 @@ const (
 	softwareFast = 20 * time.Millisecond
 )
 
-// smallest caps the source image at 320 by 200 pixels. Glyph mode uses this
-// scale; adaptive software rendering never reduces the source further.
+// smallest is the Kitty resolution floor for adaptive software rendering.
+// Glyph resolution is fixed by ntpicture and does not use this scale.
 func (m *Model) smallest() float64 {
 	cw, ch := m.pic.CellPixelSize()
 	return math.Min(1, math.Min(320/float64(m.width*cw), 200/float64(m.height*ch)))
@@ -54,9 +54,6 @@ func (m *Model) smallest() float64 {
 
 // softwareScale is the scale of the next software frame.
 func (m *Model) softwareScale() float64 {
-	if m.pic.Mode() == picture.PictureGlyph {
-		return m.smallest()
-	}
 	return math.Max(m.smallest(), 1-m.shrink)
 }
 
@@ -64,10 +61,13 @@ func (m *Model) softwareScale() float64 {
 // It reports whether that frame was slow at the smallest size, where there
 // is nothing left to reduce.
 func (m *Model) paced(elapsed time.Duration) bool {
+	if m.pic.Mode() == picture.PictureGlyph {
+		return elapsed > 150*time.Millisecond
+	}
 	scale, smallest := m.softwareScale(), m.smallest()
 	switch {
 	case scale <= smallest:
-		if elapsed < softwareFast && m.pic.Mode() != picture.PictureGlyph && scale < 1 {
+		if elapsed < softwareFast && scale < 1 {
 			break
 		}
 		return elapsed > 150*time.Millisecond
@@ -84,26 +84,34 @@ func (m *Model) paced(elapsed time.Duration) bool {
 	return false
 }
 
-// frame is what the terminal shows: sized by its cells, and reduced where
-// the picture is shown as glyphs or drawn slowly in software.
-func (m *Model) frame() Frame {
-	cw, ch := m.pic.CellPixelSize()
-	w, h := m.width*cw, m.height*ch
+// resolution applies nt3d's quality policy; ntpicture owns target rounding and
+// encoding dimensions. Run its command even when a new frame is also scheduled.
+func (m *Model) resolution() tea.Cmd {
 	factor := 1.0
-	switch {
-	case m.pic.Mode() == picture.PictureGlyph:
-		factor = m.smallest()
-	case m.renderMode == Software:
+	if m.renderMode == Software {
 		factor = m.softwareScale()
 	}
-	w, h = max(1, int(float64(w)*factor)), max(1, int(float64(h)*factor))
-	if w*h > nt3d.MaxFramePixels {
-		factor := math.Sqrt(float64(nt3d.MaxFramePixels) / float64(w*h))
-		w, h = max(1, int(float64(w)*factor)), max(1, int(float64(h)*factor))
+	cw, ch := m.pic.CellPixelSize()
+	area := float64(m.width) * float64(cw) * float64(m.height) * float64(ch)
+	if area > float64(nt3d.MaxFramePixels) {
+		factor = math.Min(factor, math.Sqrt(float64(nt3d.MaxFramePixels)/area))
 	}
+	cmd := m.pic.SetResolution(factor)
+	// Whole-image rounding can put the target just above the framebuffer budget.
+	// Leave a small margin in that rare case and retain all lifecycle commands.
+	for g := m.pic.RasterGeometry(); g.Mode == picture.PictureKitty && g.Pixels.X > nt3d.MaxFramePixels/max(1, g.Pixels.Y); g = m.pic.RasterGeometry() {
+		factor *= .99
+		cmd = tea.Batch(cmd, m.pic.SetResolution(factor))
+	}
+	return cmd
+}
 
-	f, _ := m.scene.Frame(m.camera, w, h)
-	f.Matrix = m.camera.Matrix(float32(m.width*cw) / float32(m.height*ch))
+// frame uses the exact encoding target but projects with physical display
+// aspect, which differs from pixel aspect in glyph mode and after rounding.
+func (m *Model) frame() Frame {
+	g := m.pic.RasterGeometry()
+	f, _ := m.scene.Frame(m.camera, max(1, g.Pixels.X), max(1, g.Pixels.Y))
+	f.Matrix = m.camera.Matrix(float32(g.DisplayAspect))
 	f.Background = m.background
 	f.Light = m.light
 	if m.decorate != nil {
@@ -118,9 +126,10 @@ func (m *Model) schedule() tea.Cmd {
 	}
 	m.busy = true
 	m.dirty = false
+	resolutionCmd := m.resolution()
 	f := m.frame()
 	id, seq, renderMode, r, cols, rows := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height
-	return func() tea.Msg {
+	return tea.Batch(resolutionCmd, func() tea.Msg {
 		start := time.Now()
 		var img image.Image
 		var err error
@@ -150,11 +159,16 @@ func (m *Model) schedule() tea.Cmd {
 			}
 		}
 		return rendered{id, seq, img, wire, renderMode, err, time.Since(start)}
-	}
+	})
 }
 
 // finish schedules the newest scene or resumes idle camera animation.
 func (m *Model) finish() tea.Cmd {
+	// A resolution change can finish re-encoding the old front while its
+	// replacement is still rendering. Do not start another camera tick yet.
+	if m.busy {
+		return nil
+	}
 	if m.dirty {
 		return m.schedule()
 	}

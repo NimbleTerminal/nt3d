@@ -12,8 +12,7 @@ import (
 
 func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	// Always route late preparation/retirement messages, including after Dispose.
-	beforeMode := m.pic.Mode()
-	beforeW, beforeH := m.pic.CellPixelSize()
+	before := m.pic.RasterGeometry()
 	pictureCmd := m.pic.Update(msg)
 	defer func() { cmd = tea.Batch(pictureCmd, cmd) }()
 	if m.closed {
@@ -22,8 +21,7 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	if !m.forceGlyph && m.pic.Mode() == picture.PictureGlyph && m.session.Snapshot().Kitty == picture.KittyCapabilitySupported {
 		pictureCmd = tea.Batch(pictureCmd, m.pic.SetMode(picture.PictureKitty))
 	}
-	cw, ch := m.pic.CellPixelSize()
-	if beforeMode != m.pic.Mode() || beforeW != cw || beforeH != ch {
+	if before != m.pic.RasterGeometry() {
 		m.seq++
 		m.dirty = true
 		m.wake++

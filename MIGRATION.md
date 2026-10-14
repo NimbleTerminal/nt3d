@@ -67,7 +67,7 @@ verify the existing gallery on native Kitty, browser WebGPU, software, and wiref
 ## Release coordination
 
 Keep Go 1.26.8 and the MIT copyright notices. ntcanvas v0.1.0 and ntgpuimage
-v0.2.0 resolve upstream. ntpicture is pinned to commit 204e10268ffe and CI uses
+v0.2.0 resolve upstream. ntpicture is pinned to commit acfa6954d2d0 and CI uses
 a clean sibling checkout until its vanity module resolves. Publish that commit
 to the ntpicture remote before running CI (the remote advertised no refs during
 this migration). No uncommitted
@@ -89,6 +89,9 @@ options, and scene APIs remain available.
 - Execute commands from `SetSize`, `SetRenderMode`, `Update`, and `Dispose`.
   `Dispose` cancels preparation and returns placement deletion commands; run it
   before quitting. `Close` releases GPU resources after the event loop exits.
+- Render sizing now comes from ntpicture `RasterGeometry`; adaptive Kitty
+  resolution uses `SetResolution`. Projection retains physical display aspect
+  even when glyph pixels or rounded output dimensions have a different ratio.
 - `PictureStatus()` reports the presentation generation, busy/error state, and
   encoding/transport choice. ntpicture presentation events identify ordered
   output completion, not a terminal display acknowledgement.

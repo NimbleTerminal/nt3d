@@ -132,7 +132,9 @@ func (m *Model) SetCamera(c nt3d.Camera) tea.Cmd {
 	return m.changed(false)
 }
 func (m *Model) SetSize(w, h int) tea.Cmd {
-	w, h = max(1, min(4096, w)), max(1, min(2160, h))
+	w = max(1, min(4096, w))
+	// Glyphs require two pixel rows per cell; keep their fixed raster in budget.
+	h = max(1, min(2160, nt3d.MaxFramePixels/(2*w), h))
 	if m.width == w && m.height == h {
 		return nil
 	}

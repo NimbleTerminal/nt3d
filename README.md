@@ -118,7 +118,16 @@ revisions automatically across scene instances.
 The widget owns render scheduling, stale-frame rejection, GPU fallback, adaptive
 software resolution, and wireframe fallback. ntpicture `Picture` owns image
 encoding, transmission pacing, stable streaming placements, and cleanup. Renderer
-snapshots are submitted with `SetImageImmutable`, avoiding a second pixel copy. It renders only the
+snapshots are submitted with `SetImageImmutable`, avoiding a second pixel copy.
+Frame dimensions come from `Picture.RasterGeometry().Pixels`; camera projection
+uses its separate `DisplayAspect`. Glyphs render directly at one pixel column
+and two pixel rows per cell. Adaptive software rendering sets Kitty resolution
+through `SetResolution`, so newly rendered frames match encoded dimensions
+instead of being enlarged before transmission. Resolution changes retain the
+previous front until ready and may replace its placement ID. The existing
+20/60 ms pacing thresholds keep resolution changes outside a stable timing band.
+The widget caps cell layout so the fixed glyph raster fits `MaxFramePixels`, and
+reduces Kitty resolution when needed to respect the same framebuffer budget. It renders only the
 viewport; application headers, footers, and quit handling belong to the parent.
 Call `Refresh()` and execute its command after editing the scene from a parent.
 Execute every returned command, including resize and mode changes.
