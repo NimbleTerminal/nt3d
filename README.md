@@ -293,6 +293,14 @@ Execute every returned command, including resize and mode changes.
 Forward terminal size/cell-size events. When embedded, share a zone manager and
 have the parent scan the complete view.
 
+`WithSupersample(n)` and `SetSupersample(n)` supersample the widget's GPU
+frames (software frames are not, since their pacing already trades resolution
+for speed; `Snapshot` supersamples on every backend). `WithPostProcess(fn)`
+and `SetPostProcess(fn)` run `fn(*image.RGBA)` on each rendered frame and
+snapshot, GPU or software, before it is shown: blur, vignette, color grading,
+or dithering are ordinary Go. It runs on the render goroutine, one frame at a
+time, and may change pixels in place. The fur demo shows both (`x`, `e`).
+
 Controls: drag to orbit, shift-drag to pan, wheel or +/- to zoom, arrows/hjkl to
 orbit, `c` to fit the scene (`Fit()`), `r` for automatic rotation, `o` for
 projection, `g` for glyph/Kitty output.

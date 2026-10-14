@@ -140,7 +140,8 @@ func (m *Model) schedule() tea.Cmd {
 	m.dirty = false
 	resolutionCmd := m.resolution()
 	f := m.frame()
-	id, seq, renderMode, r, cols, rows, fallBack := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height, m.gpuFailure == FallBackOnGPUFailure
+	id, seq, renderMode, r, cols, rows, fallBack, post := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height, m.gpuFailure == FallBackOnGPUFailure, m.postProcess
+	f.Supersample = m.supersample
 	return tea.Batch(resolutionCmd, func() tea.Msg {
 		start := time.Now()
 		var img image.Image
@@ -161,6 +162,7 @@ func (m *Model) schedule() tea.Cmd {
 		}
 		if renderMode == Software {
 			var renderErr error
+			f.Supersample = 0 // Software pacing trades resolution for speed instead.
 			img, renderErr = nt3d.NewSoftwareRenderer().Render(f)
 			if renderErr != nil {
 				err = renderErr
@@ -173,7 +175,7 @@ func (m *Model) schedule() tea.Cmd {
 				err = renderErr
 			}
 		}
-		return rendered{id, seq, img, wire, renderMode, err, time.Since(start)}
+		return rendered{id, seq, postProcessed(img, post), wire, renderMode, err, time.Since(start)}
 	})
 }
 

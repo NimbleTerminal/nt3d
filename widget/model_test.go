@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"strings"
@@ -212,5 +213,50 @@ func TestFitShowsTheScene(t *testing.T) {
 		if _, _, _, ok := f.Matrix.Project(p, f.Width, f.Height); !ok {
 			t.Fatalf("corner %v not in view", p)
 		}
+	}
+}
+
+// recordRenderer returns an opaque NRGBA image, as GPU readbacks are, and
+// remembers the frame it drew.
+type recordRenderer struct{ frame Frame }
+
+func (r *recordRenderer) Render(f Frame) (image.Image, error) {
+	r.frame = f
+	img := image.NewNRGBA(image.Rect(0, 0, f.Width, f.Height))
+	for i := 3; i < len(img.Pix); i += 4 {
+		img.Pix[i] = 255
+	}
+	return img, nil
+}
+func (r *recordRenderer) Close() error { return nil }
+
+func TestSupersampleAndPostProcess(t *testing.T) {
+	r := &recordRenderer{}
+	marked := func(img *image.RGBA) { img.Pix[0] = 200 }
+	m := New(scene(t), 30, 10, WithRenderer(r), WithSupersample(3), WithPostProcess(marked))
+	defer m.Close()
+	m.started = true
+	msg := m.schedule()().(rendered)
+	if r.frame.Supersample != 3 || m.Supersample() != 3 {
+		t.Fatalf("GPU frame supersample %d", r.frame.Supersample)
+	}
+	// The post-process sees the GPU's NRGBA pixels as RGBA, in place.
+	if img, ok := msg.frame.(*image.RGBA); !ok || img.Pix[0] != 200 {
+		t.Fatalf("post-process not applied: %T", msg.frame)
+	}
+	// Software frames are not supersampled, but are post-processed.
+	soft := New(scene(t), 30, 10, WithRenderMode(Software), WithSupersample(3), WithPostProcess(marked))
+	defer soft.Close()
+	soft.started = true
+	msg = soft.schedule()().(rendered)
+	if img, ok := msg.frame.(*image.RGBA); !ok || img.Pix[0] != 200 || msg.renderMode != Software {
+		t.Fatal("software frame not post-processed")
+	}
+	if m.SetSupersample(9); m.Supersample() != 4 {
+		t.Fatal("factor not limited")
+	}
+	img, _, err := m.Snapshot(40, 20)
+	if err != nil || color.RGBAModel.Convert(img.At(0, 0)).(color.RGBA).R != 200 {
+		t.Fatal("snapshot not post-processed", err)
 	}
 }

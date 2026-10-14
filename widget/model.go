@@ -9,6 +9,7 @@ import (
 	zone "github.com/lrstanley/bubblezone/v2"
 	"image"
 	"image/color"
+	"image/draw"
 	"nimbleterminal.dev/nt3d"
 	picture "nimbleterminal.dev/ntpicture"
 	"strings"
@@ -59,6 +60,8 @@ type Model struct {
 	shrink                          float64
 	gpuFailure                      GPUFailure
 	failed                          error // A reported GPU failure; rendering waits for a change.
+	supersample                     int
+	postProcess                     func(*image.RGBA)
 }
 type Option func(*Model)
 
@@ -84,6 +87,21 @@ type RenderFailedMsg struct {
 	ID  uint64 // The widget's ID.
 	Err error
 }
+
+// WithSupersample renders GPU frames at n times the size, 1..4, averaged
+// down: smoother edges, thin strands, and cutouts, at a cost growing with
+// n². Software frames are not supersampled, since their pacing already trades
+// resolution for speed; Snapshot supersamples on every backend.
+func WithSupersample(n int) Option {
+	return func(m *Model) { m.supersample = max(0, min(nt3d.MaxSupersample, n)) }
+}
+
+// WithPostProcess runs fn on each rendered image, GPU or software, before it
+// is shown, and on snapshots. fn may change the pixels in place; it runs on
+// the render goroutine, one frame at a time, so it must not touch state the
+// update goroutine changes without synchronization. Wireframe text is not
+// passed to it.
+func WithPostProcess(fn func(*image.RGBA)) Option { return func(m *Model) { m.postProcess = fn } }
 
 // WithGPUFailure chooses what a GPU render failure does.
 func WithGPUFailure(p GPUFailure) Option { return func(m *Model) { m.gpuFailure = p } }
@@ -147,6 +165,42 @@ func (m *Model) Scene() *nt3d.Scene  { return m.scene }
 func (m *Model) Camera() nt3d.Camera { return m.camera }
 func (m *Model) ID() uint64          { return m.id }
 func (m *Model) Err() error          { return m.err }
+
+// Supersample is the GPU supersampling factor; see WithSupersample.
+func (m *Model) Supersample() int { return max(1, m.supersample) }
+
+// SetSupersample changes the GPU supersampling factor, 1..4.
+func (m *Model) SetSupersample(n int) tea.Cmd {
+	m.supersample = max(0, min(nt3d.MaxSupersample, n))
+	return m.changed(false)
+}
+
+// SetPostProcess replaces the post-processing function; nil removes it.
+func (m *Model) SetPostProcess(fn func(*image.RGBA)) tea.Cmd {
+	m.postProcess = fn
+	return m.changed(false)
+}
+
+// postProcessed hands a rendered image to fn as RGBA. Renderers return
+// opaque images they no longer use, so GPU readbacks, which are NRGBA, are
+// viewed as RGBA without a copy.
+func postProcessed(img image.Image, fn func(*image.RGBA)) image.Image {
+	if fn == nil || img == nil {
+		return img
+	}
+	var rgba *image.RGBA
+	switch v := img.(type) {
+	case *image.RGBA:
+		rgba = v
+	case *image.NRGBA:
+		rgba = &image.RGBA{Pix: v.Pix, Stride: v.Stride, Rect: v.Rect}
+	default:
+		rgba = image.NewRGBA(img.Bounds())
+		draw.Draw(rgba, rgba.Rect, img, img.Bounds().Min, draw.Src)
+	}
+	fn(rgba)
+	return rgba
+}
 
 // Failed returns the GPU failure that has stopped rendering, or nil.
 func (m *Model) Failed() error                    { return m.failed }
@@ -213,7 +267,9 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	if m.decorate != nil {
 		m.decorate(&f)
 	}
-	return nt3d.Snapshot(f, m.requestedRenderMode, m.renderer)
+	f.Supersample = m.supersample
+	img, mode, err := nt3d.Snapshot(f, m.requestedRenderMode, m.renderer)
+	return postProcessed(img, m.postProcess), mode, err
 }
 
 // Dispose clears terminal resources while the event loop is still running.
