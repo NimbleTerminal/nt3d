@@ -6,10 +6,13 @@ move to Done with their commit; git history has the details.
 ## Next
 
 - [ ] **gloss migration onto `nt3dmesh`** — in progress in gloss. nt3d
-  supports it as needed (`Model.Keep` was the first request).
+  supports it as needed: `Model.Keep` and `RenderSoftware` so far; a helper
+  turning `RenderSoftware` depth into view distance, if its outlines need one.
 - [ ] **Release**:
-  - push and release `ntgpuimage` (nt3d uses its unpushed sRGB, mipmap, and
-    sampler commits through `go.work`; CI checks it out at `933755e`)
+  - push `ntgpuimage` now: nt3d uses its unpushed sRGB, mipmap, and sampler
+    commits through `go.work`, and CI fails until it can check out `933755e`
+  - release `ntgpuimage`, bump nt3d's pin from `v0.2.0`, and drop CI's
+    checkout of it
   - publish `ntpicture`
   - update nt3d's pinned version of it (`go get` fails until then, because
     the pin is an unpublished revision; dependencies are added to `go.mod`
@@ -72,7 +75,8 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
-- mipmaps and linear-light texture filtering, both renderers; mipmaps demo
+- `83f3da2`, `cd7488b` mipmaps and linear-light texture filtering, both
+  renderers; mipmaps demo (`83b4925` builds against the sibling `ntgpuimage`)
 - `4fe7974` `RenderSoftware`: software pictures with their depth buffer (for gloss's outlines)
 - `3a1ccc4` shared geometry and GPU instancing (`NewSharedGeometry`, `SetShared`)
 - `b79bfc1` widget `Keep()`: leave the last frame on screen at exit (for gloss)
