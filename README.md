@@ -86,6 +86,27 @@ gives each face its own normal. `SmoothNormals` averages, weighted by corner
 angle, the faces meeting at equal positions within a crease angle, so unwelded
 STL meshes smooth too.
 
+## Fur
+
+`NewFur` makes shell fur's strand textures once; `FurCoat.Shells(base)`
+returns an opaque skin and one cutout layer per shell, pushed out along the
+base's normals (which needs normals and UVs). Each strand has its own place,
+length, and taper, and color runs from `Root` to `Tip`, darker deeper in.
+`FurCoat.Sway(shell, v)` is the node transform that bends the fur as wind or
+gravity would; a uniform sway moves a whole layer, so animating it uploads no
+geometry. Shells sit at k/n of the length so the top one still meets the
+longest strands. Seen edge-on, the layers show as dashes, the technique's
+known limit; more shells soften it. Wireframe draws the coat's outer outline.
+
+```go
+coat, err := nt3d.NewFur(nt3d.Fur{Length: .16, Shells: 16, Density: 96, Root: brown, Tip: ginger})
+shells, err := coat.Shells(torus)
+for k, g := range shells {
+	id, _ := scene.SetGeometry(fmt.Sprintf("fur %d", k), g)
+	scene.SetTransform(id, coat.Sway(k, wind)) // Each frame, to animate.
+}
+```
+
 ## Mesh files
 
 ```go
