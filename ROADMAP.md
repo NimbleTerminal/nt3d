@@ -72,7 +72,8 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
-- shared geometry and GPU instancing (`NewSharedGeometry`, `SetShared`)
+- `RenderSoftware`: software pictures with their depth buffer (for gloss's outlines)
+- `3a1ccc4` shared geometry and GPU instancing (`NewSharedGeometry`, `SetShared`)
 - `b79bfc1` widget `Keep()`: leave the last frame on screen at exit (for gloss)
 - `4cd35b4`, `2c577bc` mesh format registry; glTF in `mesh/gltf`, `mesh/formats` bundle
 - `c82960e`, `768c46c` specular highlights and fog

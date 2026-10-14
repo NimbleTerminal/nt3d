@@ -22,25 +22,50 @@ func shade(c color.RGBA, n nt3dmath.Vec3, l Light) color.RGBA {
 // the scene at that multiple of its size, averaged back down, with overlays
 // drawn after, at the frame's own size.
 func softwareRender(f Frame) image.Image {
+	img, _ := softwareRenderDepth(f)
+	return img
+}
+
+// softwareRenderDepth is softwareRender with its depth buffer, at the
+// frame's size: each pixel's depth, or noDepth where nothing is. A
+// supersampled pixel's is the nearest of its block.
+func softwareRenderDepth(f Frame) (*image.RGBA, []float32) {
 	s := supersampleFactor(f)
 	if s == 1 {
 		return softwareDraw(f, 1)
 	}
 	big := f
 	big.Width, big.Height, big.Overlays = f.Width*s, f.Height*s, nil
-	img := shrink(softwareDraw(big, s), s, f.Linear)
+	bigImg, bigDepth := softwareDraw(big, s)
+	img := shrink(bigImg, s, f.Linear)
+	depth := make([]float32, f.Width*f.Height)
+	for y := range f.Height {
+		for x := range f.Width {
+			d := float32(noDepth)
+			for j := range s {
+				for i := range s {
+					d = min(d, bigDepth[(y*s+j)*big.Width+x*s+i])
+				}
+			}
+			depth[y*f.Width+x] = d
+		}
+	}
 	drawOverlays(img, f)
-	return img
+	return img, depth
 }
+
+// noDepth is the depth buffer's value where nothing is drawn: past the far
+// plane, at 1.
+const noDepth = 2
 
 // softwareDraw draws a frame whose pixel sizes (points, line widths, arrow
 // heads) are scaled by scale, as a supersampled frame's are.
-func softwareDraw(f Frame, scale int) *image.RGBA {
+func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	px := float32(scale)
 	img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
 	depth := make([]float32, f.Width*f.Height)
 	for i := range depth {
-		depth[i] = 2
+		depth[i] = noDepth
 		off := i * 4
 		img.Pix[off], img.Pix[off+1], img.Pix[off+2], img.Pix[off+3] = f.Background.R, f.Background.G, f.Background.B, 255
 	}
@@ -324,7 +349,7 @@ func softwareDraw(f Frame, scale int) *image.RGBA {
 		}
 	}
 	drawOverlays(img, f)
-	return img
+	return img, depth
 }
 
 func abs(v float32) float32 {

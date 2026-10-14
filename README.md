@@ -258,6 +258,12 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   copying the scene. Interactive frames thin only screen-space marks (points,
   lines, arrows); `Snapshot` draws all primitives. Slow frames are handled by the
   widget, which lowers resolution and finally switches to wireframe.
+  `RenderSoftware(frame)` draws the same picture and also returns the depth
+  buffer (`SoftwareResult`: the image, `Width × Height` depths row by row):
+  WebGPU's normalized depth, 0 at the near plane to 1 at the far, +Inf where
+  nothing is drawn; transparent surfaces and overlays write none, and a
+  supersampled pixel keeps its nearest sample. It serves outlines and
+  compositing done after rendering.
 - `RenderWireframe` returns terminal text using ntcanvas. It has no image snapshot.
   Heightfields use a coarse, continuous row/column lattice whose density adapts
   to projected size in terminal cells. Borders and the original curve samples
