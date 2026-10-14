@@ -211,7 +211,7 @@ func (d *objDecoder) statement(fields []string) error {
 func (d *objDecoder) part() *objPart {
 	key := [2]string{d.name, d.material}
 	p := d.parts[key]
-	if p == nil {
+	if p == nil || len(p.Geometry.Indices) >= 3*pieceTriangles {
 		p = &objPart{Object: Object{Name: d.name, Material: d.material}, shared: map[[3]int]uint32{}}
 		d.parts[key] = p
 		d.order = append(d.order, p)
@@ -307,8 +307,8 @@ func (d *objDecoder) face(words []string) error {
 			return err
 		}
 	}
-	p := d.part()
 	for k := 1; k+1 < len(corners); k++ {
+		p := d.part()
 		tri := [3][3]int{corners[0], corners[k], corners[k+1]}
 		var flat *nt3dmath.Vec3
 		if tri[0][2] < 0 || tri[1][2] < 0 || tri[2][2] < 0 {

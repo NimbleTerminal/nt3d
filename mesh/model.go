@@ -3,10 +3,15 @@
 // Package nt3dmesh reads and writes mesh files as nt3d geometry.
 //
 // Decoders bound their work: the triangle count is limited (by default to
-// nt3d.MaxMeshTriangles), coordinates must be finite and within ±1e15, 3MF
+// DefaultMaxTriangles), coordinates must be finite and within ±1e15, 3MF
 // packages are limited in entries and unpacked bytes, and side files such
-// as OBJ materials and textures are read only through Options.Open. Faces keep their file's winding; normals the file omits are
-// computed flat. Units are whatever the file uses; nothing is normalized.
+// as OBJ materials and textures are read only through Options.Open.
+//
+// Faces keep their file's winding; normals the file omits are computed flat.
+// An object with more triangles than one geometry may hold
+// (nt3d.MaxMeshTriangles, the largest buffer every WebGPU device binds) is
+// split into consecutive Objects with the same Name, Material, and Part.
+// Units are whatever the file uses; nothing is normalized.
 package nt3dmesh
 
 import (
@@ -46,13 +51,22 @@ var ErrTooManyTriangles = errors.New("nt3dmesh: too many triangles")
 // ErrTooLarge is wrapped by errors for packages that unpack past Options.MaxBytes.
 var ErrTooLarge = errors.New("nt3dmesh: package unpacks to too many bytes")
 
+// DefaultMaxTriangles is the model's triangle limit when Options.MaxTriangles
+// is zero: about 600 MB of GPU buffers, and somewhat less of decoded memory.
+const DefaultMaxTriangles = 4 << 20
+
+// pieceTriangles is the most triangles one Object holds. Tests lower it.
+var pieceTriangles = nt3d.MaxMeshTriangles
+
 // DefaultMaxBytes is how much a 3MF package may unpack to when Options.MaxBytes is zero.
 const DefaultMaxBytes = 256 << 20
 
 // Options control decoding. The zero value, or nil, uses the defaults.
 type Options struct {
-	// MaxTriangles limits the triangles of the whole model. Zero, or a value
-	// above nt3d.MaxMeshTriangles, uses nt3d.MaxMeshTriangles.
+	// MaxTriangles limits the triangles of the whole model, a budget for
+	// memory and time. Zero uses DefaultMaxTriangles. Device memory, not the
+	// format, sets how much a GPU can draw; a GPU renderer that runs out fails,
+	// and the widget falls back to software.
 	MaxTriangles int
 	// Color paints faces the file leaves uncolored. Zero uses DefaultColor.
 	Color color.RGBA
@@ -78,8 +92,8 @@ func (o *Options) chosen(part int) bool {
 }
 
 func (o *Options) limit() int {
-	if o == nil || o.MaxTriangles <= 0 || o.MaxTriangles > nt3d.MaxMeshTriangles {
-		return nt3d.MaxMeshTriangles
+	if o == nil || o.MaxTriangles <= 0 {
+		return DefaultMaxTriangles
 	}
 	return o.MaxTriangles
 }
@@ -142,7 +156,8 @@ func (m *Model) Bounds() (b nt3dmath.AABB) {
 }
 
 // Geometry merges the objects into one geometry. It fails when objects have
-// different materials, as textured OBJ parts do; add those with AddTo.
+// different materials, as textured OBJ parts do, or together exceed
+// nt3d.MaxMeshTriangles; add those with AddTo.
 func (m *Model) Geometry() (nt3d.Geometry, error) {
 	gs := make([]nt3d.Geometry, len(m.Objects))
 	for i, o := range m.Objects {

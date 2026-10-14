@@ -427,7 +427,7 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 		if !o.chosen(i) || m.Parts[i].Triangles == 0 {
 			continue
 		}
-		s := &stlObject{Object: Object{Name: m.Parts[i].Name, Part: i}, budget: budget, format: "3MF"}
+		s := &faceObject{Object: Object{Name: m.Parts[i].Name, Part: i}, budget: budget, format: "3MF"}
 		err := d.walk(item, root, item.object, identity3MF, 0, &visits, func(part *part3MF, obj *object3MF, transform matrix3MF, slicer *color.RGBA) error {
 			mirrored := transform.mirrors()
 			for _, t := range obj.triangles {
@@ -461,10 +461,12 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := s.Geometry.Validate(); err != nil {
-			return nil, err
+		for _, piece := range s.objects() {
+			if err := piece.Geometry.Validate(); err != nil {
+				return nil, err
+			}
+			m.Objects = append(m.Objects, piece)
 		}
-		m.Objects = append(m.Objects, s.Object)
 	}
 	return m, nil
 }

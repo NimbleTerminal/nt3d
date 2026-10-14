@@ -28,17 +28,31 @@ func binarySTL(data []byte) bool {
 	return 84+50*n == uint64(len(data))
 }
 
-// stlObject accumulates one solid. Each face has vertices of its own, carrying
-// its recomputed normal: exporters often leave facet normals zero or stale.
-type stlObject struct {
+// faceObject accumulates an STL solid or a 3MF part. Each face has vertices
+// of its own, carrying its recomputed normal: exporters often leave facet
+// normals zero or stale. A full piece is set aside and another begun.
+type faceObject struct {
 	Object
+	pieces []Object
 	budget *triangleBudget
 	format string // For errors; empty is STL.
 }
 
-func (s *stlObject) add(v [3]nt3dmath.Vec3, shade color.RGBA, plain bool) error {
+// objects returns the pieces, ending with the current one if it has faces.
+func (s *faceObject) objects() []Object {
+	if len(s.Geometry.Indices) != 0 {
+		return append(s.pieces, s.Object)
+	}
+	return s.pieces
+}
+
+func (s *faceObject) add(v [3]nt3dmath.Vec3, shade color.RGBA, plain bool) error {
 	if err := s.budget.take(1); err != nil {
 		return err
+	}
+	if len(s.Geometry.Indices) >= 3*pieceTriangles {
+		s.pieces = append(s.pieces, s.Object)
+		s.Object = Object{Name: s.Name, Material: s.Material, Part: s.Part}
 	}
 	for _, p := range v {
 		if !validCoordinate(p.X, p.Y, p.Z) {
@@ -96,10 +110,11 @@ func decodeBinarySTL(data []byte, o *Options, budget *triangleBudget) (*Model, e
 		magics = true
 		objectColor = color.RGBA{header[i+6], header[i+7], header[i+8], 255}
 	}
-	s := &stlObject{budget: budget}
-	s.Geometry.Vertices = make([]nt3d.Vertex, 0, 3*n)
-	s.Geometry.Indices = make([]uint32, 0, 3*n)
-	s.Plain = make([]bool, 0, 3*n)
+	s := &faceObject{budget: budget}
+	first := 3 * min(n, pieceTriangles)
+	s.Geometry.Vertices = make([]nt3d.Vertex, 0, first)
+	s.Geometry.Indices = make([]uint32, 0, first)
+	s.Plain = make([]bool, 0, first)
 	for off := 84; off < len(data); off += 50 {
 		var v [3]nt3dmath.Vec3
 		for j := range v {
@@ -120,7 +135,7 @@ func decodeBinarySTL(data []byte, o *Options, budget *triangleBudget) (*Model, e
 			return nil, err
 		}
 	}
-	return &Model{Format: STL, Objects: []Object{s.Object}}, nil
+	return &Model{Format: STL, Objects: s.objects()}, nil
 }
 
 // stlWords splits ASCII STL into whitespace-separated words, counting lines.
@@ -201,7 +216,7 @@ func decodeASCIISTL(data []byte, o *Options, budget *triangleBudget) (*Model, er
 			}
 			return nil, w.errorf("unexpected data after endsolid")
 		}
-		s := &stlObject{budget: budget}
+		s := &faceObject{budget: budget}
 		s.Name = w.rest()
 		for {
 			word, ok := w.next()
@@ -247,9 +262,7 @@ func decodeASCIISTL(data []byte, o *Options, budget *triangleBudget) (*Model, er
 				return nil, err
 			}
 		}
-		if len(s.Geometry.Indices) != 0 {
-			m.Objects = append(m.Objects, s.Object)
-		}
+		m.Objects = append(m.Objects, s.objects()...)
 	}
 }
 

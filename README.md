@@ -116,9 +116,13 @@ unpacked (256 MiB by default). Over the triangle or byte limit, `Decode3MF`
 returns what it learned with an error wrapping `ErrTooManyTriangles` or
 `ErrTooLarge`, so a caller can choose fewer parts or show the thumbnail.
 
-Decoding is bounded: `Options.MaxTriangles` (default and ceiling
-`nt3d.MaxMeshTriangles`), coordinates within ±1e15, and textures at most 8192
-pixels a side, checked before decoding. Side files are read only through
+Decoding is bounded: `Options.MaxTriangles` (a memory and time budget for the
+whole model, `DefaultMaxTriangles` = 4M by default, which callers may raise),
+coordinates within ±1e15, and textures at most 8192 pixels a side, checked
+before decoding. An object larger than one geometry may hold
+(`nt3d.MaxMeshTriangles`) becomes consecutive `Object` pieces sharing its
+name, material, and part; `AddTo` gives each a node, while `Model.Geometry`,
+which merges into one geometry, fails for them. Side files are read only through
 `Options.Open`; `ReadFile` confines them to the model's directory, and
 `Decode` without `Open` skips them. Missing side files become `Model.Warnings`.
 `Object.Plain` marks vertices the file left uncolored, so a viewer can repaint
@@ -166,6 +170,14 @@ creation. Rendering may run asynchronously; GPU render/close calls are serialize
   for automatic rotation. Units are world units; no automatic normalization occurs.
   The default camera suits an origin-centered scene roughly two units across.
   `AABB.Normalization` can provide an explicit fitting transform.
+
+Each geometry may hold at most `MaxMeshTriangles` (932,067) triangles: its
+48-byte records must fit the 128 MiB storage binding that WebGPU guarantees on
+every device. Many adapters allow larger bindings, but only when requested, so
+nt3d keeps the portable limit and larger meshes are split across nodes. Frames
+have no total: each geometry is bound separately, and the bound is device
+memory, which WebGPU does not specify. A GPU render that fails, out of memory
+or otherwise, makes the widget fall back to software.
 
 Frame area is limited to 4096 × 2160 pixels. Textures must be opaque and no larger
 than 8192 pixels per side. Color filtering/lighting retain the original renderer's
