@@ -57,9 +57,10 @@ fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {
 }
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
-fn meshOutput(vi:u32,side:f32)->Out {let p=items[vi];var o=output(p.a.xyz,p.b.xyz*side,p.color);o.color.a=p.a.w;return o;}
-@vertex fn vs_mesh(@builtin(vertex_index) vi:u32)->Out {return meshOutput(vi,1.0);}
-@vertex fn vs_mesh_back(@builtin(vertex_index) vi:u32)->Out {return meshOutput(vi,-1.0);}
+// Meshes are drawn instanced: each instance's transform is its own.
+fn meshOutput(vi:u32,ii:u32,side:f32)->Out {let p=items[vi];var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(p.color.rgb,f32(ii)));o.color.a=p.a.w;return o;}
+@vertex fn vs_mesh(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,1.0);}
+@vertex fn vs_mesh_back(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,-1.0);}
 // Depth-clip the centerline before expanding it in pixel space.
 struct StrokeClip { a:vec4<f32>, b:vec4<f32>, t0:f32, t1:f32, visible:u32 };
 fn clipStroke(a:vec4<f32>,b:vec4<f32>)->StrokeClip {
@@ -139,13 +140,13 @@ let p=items[ii];var o=output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color)
 // Flags: 1 repeat, 2 edge-on, 4 tint, whose color is a 24-bit integer.
 // (Helpers named texture... are taken for WGSL builtins by the shader
 // translator, hence mapOutput.)
-fn mapOutput(vi:u32,side:f32)->Out {
+fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
- var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,p.color.w));o.uv=vec2<f32>(p.a.w,p.b.w);o.repeat=f32(flags&1u);o.cut=p.color.x;
+ var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.repeat=f32(flags&1u);o.cut=p.color.x;
  // Edge-on cutouts fade out as the surface turns to face the viewer.
  if (flags&2u)!=0u && dot(p.b.xyz,p.b.xyz)>0.0 {
-  let inst=instances[u32(p.color.w)];
+  let inst=instances[ii];
   let world=(inst.world*vec4<f32>(p.a.xyz,1.0)).xyz;
   let n=normalize((inst.normal*vec4<f32>(p.b.xyz,0.0)).xyz);
   var view=-u.forward.xyz;
@@ -154,8 +155,8 @@ fn mapOutput(vi:u32,side:f32)->Out {
  }
  return o;
 }
-@vertex fn vs_texture(@builtin(vertex_index) vi:u32)->Out {return mapOutput(vi,1.0);}
-@vertex fn vs_texture_back(@builtin(vertex_index) vi:u32)->Out {return mapOutput(vi,-1.0);}
+@vertex fn vs_texture(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return mapOutput(vi,ii,1.0);}
+@vertex fn vs_texture_back(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return mapOutput(vi,ii,-1.0);}
 // sampleMap filters the texture bilinearly. The sampler clamps to the edge,
 // so a repeating material filters by hand, wrapping the four texels it
 // blends; wrapping the coordinate alone would blend tiles' edges with clamped

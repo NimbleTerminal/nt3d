@@ -29,6 +29,7 @@ type Node struct {
 type sceneNode struct {
 	Node
 	geometry         *Geometry
+	shared           *SharedGeometry // When geometry is shared's.
 	geometryRevision uint64
 	pickIndex        *bvhSlot // Built for picking on demand, for this geometry.
 	noPickIndex      bool     // SetNodePickIndexing turned indexing off here.
@@ -208,9 +209,69 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	}
 	g = cloneGeometry(g)
 	g.Bounds = GeometryBounds(g)
-	n.geometry, n.pickIndex = &g, nil
+	n.geometry, n.shared, n.pickIndex = &g, nil, nil
 	s.changed(true, true)
 	n.geometryRevision = s.revision
+	return nil
+}
+
+// SharedGeometry is a triangle mesh that many nodes show: a forest of one
+// tree, a field of markers. It is checked and copied once and held once;
+// the GPU uploads it once and draws all its nodes in view at once (one
+// instanced draw, or one per texture where SetTexture gave nodes their
+// own), and picking indexes it once. It cannot change: to show something
+// else, make another and set it. Points, boxes, lines, and arrows are not
+// shared; they belong to each node's own geometry.
+type SharedGeometry struct {
+	geometry Geometry
+	id       uint64
+	pick     *bvhSlot // Built for picking on demand.
+}
+
+// NewSharedGeometry checks and copies a triangle mesh for nodes to share.
+func NewSharedGeometry(g Geometry) (*SharedGeometry, error) {
+	if err := g.Validate(); err != nil {
+		return nil, err
+	}
+	if len(g.Points)+len(g.Boxes)+len(g.Lines)+len(g.Arrows) != 0 {
+		return nil, errors.New("nt3d: shared geometry holds triangles only")
+	}
+	g = cloneGeometry(g)
+	g.Bounds = GeometryBounds(g)
+	return &SharedGeometry{geometry: g, id: nextRevision.Add(1)}, nil
+}
+
+// Bounds is the geometry's local bounds.
+func (sg *SharedGeometry) Bounds() nt3dmath.AABB { return sg.geometry.Bounds }
+
+// SetShared makes a named node show shared geometry, creating the node
+// under Root if there is none, as SetGeometry does.
+func (s *Scene) SetShared(name string, sg *SharedGeometry) (NodeID, error) {
+	if sg == nil {
+		return 0, errors.New("nt3d: nil shared geometry")
+	}
+	id, ok := s.Find(name)
+	if !ok {
+		var err error
+		if id, err = s.Add(Root, name); err != nil {
+			return 0, err
+		}
+	}
+	return id, s.SetNodeShared(id, sg)
+}
+
+// SetNodeShared makes a node show shared geometry, in place of its own.
+func (s *Scene) SetNodeShared(id NodeID, sg *SharedGeometry) error {
+	n, ok := s.nodes[id]
+	if !ok || id == Root {
+		return fmt.Errorf("nt3d: invalid geometry node %d", id)
+	}
+	if sg == nil {
+		return errors.New("nt3d: nil shared geometry")
+	}
+	n.geometry, n.shared, n.pickIndex = &sg.geometry, sg, nil
+	s.changed(true, true)
+	n.geometryRevision = sg.id // The same for every node that shows it.
 	return nil
 }
 

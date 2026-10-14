@@ -4,6 +4,7 @@ package nt3d
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -561,5 +562,104 @@ func TestGPUSpecularAndFogMatchSoftware(t *testing.T) {
 		if off > f.Width*f.Height/50 {
 			t.Errorf("%s: %d of %d pixels differ; center GPU %v, software %v", name, off, f.Width*f.Height, at(img, 40, 40), at(sw, 40, 40))
 		}
+	}
+}
+
+// Nodes that share geometry upload it once and draw it in one instanced
+// call, with the picture of separate copies.
+func TestGPUSharedGeometry(t *testing.T) {
+	shared, ids, _ := grid(t, 10, .25, true)
+	copies, _, _ := grid(t, 10, .25, false)
+	r := &gpuRenderer{}
+	defer r.Close()
+	f := frame(t, shared)
+	visible := 0
+	for _, d := range f.drawn(1) {
+		if d {
+			visible++
+		}
+	}
+	img, err := r.Render(f)
+	check(t, err)
+	instanced := append([]byte(nil), img.(*image.NRGBA).Pix...)
+	if r.uploads != 1 || len(r.draws) != 1 || r.draws[0].count != uint32(visible) || visible < 50 {
+		t.Fatalf("%d uploads, %d draws of %d nodes in view", r.uploads, len(r.draws), visible)
+	}
+	separate := &gpuRenderer{}
+	defer separate.Close()
+	img, err = separate.Render(frame(t, copies))
+	check(t, err)
+	if separate.uploads != 100 || len(separate.draws) != visible || !bytes.Equal(instanced, img.(*image.NRGBA).Pix) {
+		t.Fatalf("copies: %d uploads, %d draws; pictures equal %v", separate.uploads, len(separate.draws), bytes.Equal(instanced, img.(*image.NRGBA).Pix))
+	}
+	// Moving and hiding nodes rewrites transforms, uploading nothing.
+	check(t, shared.SetTransform(ids[0], nt3dmath.Translation(nt3dmath.Vec3{Z: .5})))
+	check(t, shared.SetVisible(ids[1], false))
+	f = frame(t, shared)
+	_, err = r.Render(f)
+	check(t, err)
+	if r.uploads != 1 || len(r.draws) != 1 || r.draws[0].count != uint32(visible-1) {
+		t.Fatalf("after moving and hiding: %d uploads, %d draws of %d", r.uploads, len(r.draws), r.draws[0].count)
+	}
+	shared.Clear()
+	_, err = r.Render(frame(t, shared))
+	check(t, err)
+	if len(r.geometries) != 0 || len(r.draws) != 0 {
+		t.Fatal("cleared shared geometry retained")
+	}
+}
+
+// Shared geometry splits its draws where nodes' textures differ, and draws
+// transparent nodes one by one, in blending order, as copies would be.
+func TestGPUSharedGeometrySplits(t *testing.T) {
+	tex, other := testTexture(t, color.RGBA{10, 220, 80, 255}), testTexture(t, color.RGBA{200, 0, 0, 255})
+	plane, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -.2, MaxX: .2, MinY: -.2, MaxY: .2, Heights: make([]float32, 4), Material: &Material{Texture: tex}})
+	check(t, err)
+	sg, err := NewSharedGeometry(plane)
+	check(t, err)
+	s := NewScene()
+	for i := range 3 {
+		id, err := s.SetShared(fmt.Sprint("plane ", i), sg)
+		check(t, err)
+		check(t, s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: float32(i-1) * .5})))
+	}
+	check(t, s.SetTexture("plane 2", other))
+	r := &gpuRenderer{}
+	defer r.Close()
+	_, err = r.Render(frame(t, s))
+	check(t, err)
+	if r.uploads != 1 || len(r.draws) != 2 || r.draws[0].count+r.draws[1].count != 3 {
+		t.Fatalf("%d uploads, %d draws", r.uploads, len(r.draws))
+	}
+	// Transparent shared spheres, one behind another, blend as copies do.
+	glassBall, err := BuildSphere(Sphere{Radius: .3, Color: color.RGBA{240, 240, 240, 128}, Material: glass})
+	check(t, err)
+	shareGlass, err := NewSharedGeometry(glassBall)
+	check(t, err)
+	build := func(shared bool) Frame {
+		s := NewScene()
+		for i := range 3 {
+			name := fmt.Sprint("glass ", i)
+			var id NodeID
+			if shared {
+				id, err = s.SetShared(name, shareGlass)
+			} else {
+				id, err = s.SetGeometry(name, glassBall)
+			}
+			check(t, err)
+			check(t, s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: float32(i) * .2, Z: float32(i) * .3})))
+		}
+		return frame(t, s)
+	}
+	a, err := r.Render(build(true))
+	check(t, err)
+	if len(r.draws) != 3 || r.uploads != 2 {
+		t.Fatalf("transparent: %d draws, %d uploads", len(r.draws), r.uploads)
+	}
+	instanced := append([]byte(nil), a.(*image.NRGBA).Pix...)
+	b, err := r.Render(build(false))
+	check(t, err)
+	if !bytes.Equal(instanced, b.(*image.NRGBA).Pix) {
+		t.Fatal("transparent shared spheres blend unlike copies")
 	}
 }

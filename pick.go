@@ -241,13 +241,18 @@ func (s *Scene) pickIndex(f Frame, i int) *meshBVH {
 	if n == nil || n.noPickIndex || n.geometry == nil || n.geometryRevision != f.GeometryRevisions[i] {
 		return nil
 	}
-	if n.pickIndex == nil {
-		slot, geometry := &bvhSlot{done: make(chan struct{})}, n.geometry
-		n.pickIndex = slot
+	// Shared geometry is indexed once, for every node that shows it.
+	slot := &n.pickIndex
+	if n.shared != nil {
+		slot = &n.shared.pick
+	}
+	if *slot == nil {
+		built, geometry := &bvhSlot{done: make(chan struct{})}, n.geometry
+		*slot = built
 		go func() {
-			slot.index.Store(buildBVH(geometry))
-			close(slot.done)
+			built.index.Store(buildBVH(geometry))
+			close(built.done)
 		}()
 	}
-	return n.pickIndex.index.Load()
+	return (*slot).index.Load()
 }

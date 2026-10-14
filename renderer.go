@@ -70,13 +70,18 @@ type Frame struct {
 	// its geometry or material (except Texture) changes. Scene.Frame supplies it.
 	// Omit this slice to use the frame-wide Revision and geometry order.
 	GeometryRevisions []uint64
-	Instances         []Instance
-	DynamicLines      []Vertex // World-space pairs, depth-tested with a small positive bias.
-	Overlays          []OverlayRect
-	CellText          []CellText
-	Background        color.RGBA
-	Light             Light
-	Complete          bool // Disable interactive software sampling for full snapshots.
+	// Shared optionally marks geometry several instances show: entries with
+	// the same nonzero value hold the same geometry, which renderers may
+	// upload once and draw together. Scene.Frame supplies it for nodes that
+	// show one SharedGeometry.
+	Shared       []uint64
+	Instances    []Instance
+	DynamicLines []Vertex // World-space pairs, depth-tested with a small positive bias.
+	Overlays     []OverlayRect
+	CellText     []CellText
+	Background   color.RGBA
+	Light        Light
+	Complete     bool // Disable interactive software sampling for full snapshots.
 	// Supersample renders at this multiple of Width and Height, 1..4, and
 	// averages each block back to one pixel, smoothing edges, thin strands,
 	// and cutouts. Zero means 1. Pixel sizes (points, line widths, overlays)
@@ -132,6 +137,11 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 		}
 		f.Geometry = append(f.Geometry, *n.geometry)
 		f.GeometryRevisions = append(f.GeometryRevisions, n.geometryRevision)
+		var shared uint64
+		if n.shared != nil {
+			shared = n.shared.id
+		}
+		f.Shared = append(f.Shared, shared)
 		f.Instances = append(f.Instances, Instance{id, n.Name, s.world(id), s.visible(id)})
 	}
 	return f, nil
@@ -205,6 +215,9 @@ func validateFrame(f Frame) error {
 	}
 	if len(f.Instances) != 0 && len(f.Instances) != len(f.Geometry) {
 		return fmt.Errorf("nt3d: instance count mismatch")
+	}
+	if len(f.Shared) != 0 && len(f.Shared) != len(f.Geometry) {
+		return fmt.Errorf("nt3d: shared geometry count mismatch")
 	}
 	if !validFog(f.Fog) {
 		return fmt.Errorf("nt3d: non-finite fog")

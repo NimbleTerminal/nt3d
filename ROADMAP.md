@@ -24,8 +24,8 @@ move to Done with their commit; git history has the details.
   and filters in linear light in software to match.
 - [ ] **More lights**: point lights and a fill light; today there is one
   directional light plus ambient.
-- [ ] **Shared geometry and GPU instancing**: the GPU caches geometry per
-  node, so many copies of one mesh cost one upload each.
+- [ ] **Instancing follow-ups**: a demo of shared geometry (a forest, a
+  marker field); shared points, lines, and boxes, if charts need them.
 - [ ] **Mipmaps**: distant textures shimmer. Needs `ntgpuimage` support too.
 - [ ] **World-anchored labels and billboards** on every renderer; `CellText`
   is wireframe-only.
@@ -72,6 +72,7 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
+- shared geometry and GPU instancing (`NewSharedGeometry`, `SetShared`)
 - `b79bfc1` widget `Keep()`: leave the last frame on screen at exit (for gloss)
 - `4cd35b4`, `2c577bc` mesh format registry; glTF in `mesh/gltf`, `mesh/formats` bundle
 - `c82960e`, `768c46c` specular highlights and fog

@@ -26,8 +26,9 @@ const uniformSize = 160
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
-	bind   *wgpu.BindGroup
+	bind   *wgpu.BindGroup // Frame-wide batches only; geometry binds per instance set.
 	count  uint32
+	size   uint64
 }
 
 type gpuRenderer struct {
@@ -40,7 +41,9 @@ type gpuRenderer struct {
 	textures       map[*Texture]*gpuimage.Texture
 	procedural     map[*Texture]*proceduralTexture
 	geometries     map[geometryKey]*gpuGeometry
-	nodes          []*gpuGeometry
+	nodes          []*gpuGeometry // By frame geometry index.
+	draws          []gpuDraw      // The frame's draws of geometry.
+	blendDraw      map[int]int    // A transparent frame geometry's draw.
 	textureUploads uint64
 	mu             sync.Mutex
 	closed         bool
@@ -212,6 +215,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		}
 	}
 	ub = append(ub, floats(fog[:]...)...)
+	drawn := f.drawn(1)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
 			return err
@@ -220,7 +224,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		if err := g.uploadIdentity(dev); err != nil {
 			return err
 		}
-		if err := g.prepareGeometry(dev, f); err != nil {
+		if err := g.prepareGeometry(dev, f, drawn); err != nil {
 			return err
 		}
 		if err := g.uploadLines(dev, f); err != nil {
@@ -236,7 +240,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		// averages down and encodes. Pixel sizes stay the frame's, through
 		// the uniform viewport, so points and lines keep their size when
 		// supersampled.
-		return g.renderScene(frame, f, func(color, depth *wgpu.TextureView) error { return g.drawScene(f, frame.Encoder, color, depth) })
+		return g.renderScene(frame, f, func(color, depth *wgpu.TextureView) error { return g.drawScene(f, drawn, frame.Encoder, color, depth) })
 	})
 	return img, err
 }
@@ -253,55 +257,61 @@ func background(f Frame) gputypes.Color {
 }
 
 // drawScene records the scene's pass into a color and depth target.
-func (g *gpuRenderer) drawScene(f Frame, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
+func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
 		pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: background(f)}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpClear, DepthStoreOp: gputypes.StoreOpStore, DepthClearValue: 1, StencilReadOnly: true}})
 		if err != nil {
 			return err
 		}
-		// Hidden and culled nodes keep their buffers but are not drawn.
+		// Draws hold the drawn instances: hidden and culled nodes keep their
+		// buffers but are not drawn. Meshes draw each run of instances at once;
+		// other primitives belong to unshared geometry, one instance each.
 		// Transparent triangles wait for everything opaque.
-		drawn := f.drawn(1)
-		opaque := func(index int) bool { return drawn[index] && !transparent(&f.Geometry[index]) }
 		for _, i := range []int{5, 0, 1, 2, 3, 6, 4} {
 			if i == 4 {
 				// Then blend them, farthest first, back faces before front.
 				for _, index := range f.blendOrder(drawn) {
-					node := g.nodes[index]
+					d := g.draws[g.blendDraw[index]]
 					for side := range 2 {
-						if b := node.batches[1]; b.count > 0 {
+						if b := d.geom.batches[1]; b.count > 0 {
 							pass.SetPipeline(g.blendPipelines[side])
-							pass.SetBindGroup(0, b.bind, nil)
-							pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: 1})
+							pass.SetBindGroup(0, d.set.binds[1], nil)
+							pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 						}
-						if b := node.batches[7]; b.count > 0 {
+						if d.geom.batches[7].count > 0 {
 							pass.SetPipeline(g.textureBlends[side])
-							g.drawTextured(pass, f, index, b)
+							g.drawTextured(pass, f, d)
 						}
 					}
 				}
 			}
 			if i == 2 {
-				for index, node := range g.nodes {
-					b := node.batches[7]
-					if b.count == 0 || !opaque(index) {
+				for _, d := range g.draws {
+					if d.blended || d.geom.batches[7].count == 0 {
 						continue
 					}
-					if f.Geometry[index].Material.Cutout {
+					if f.Geometry[d.index].Material.Cutout {
 						pass.SetPipeline(g.cutoutPipeline)
 					} else {
 						pass.SetPipeline(g.texturePipeline)
 					}
-					g.drawTextured(pass, f, index, b)
+					g.drawTextured(pass, f, d)
 				}
 			}
 			if i == 4 || i == 5 {
-				g.drawBatch(pass, i, g.batches[i])
+				g.drawBatch(pass, i, g.batches[i], g.batches[i].bind)
 				continue
 			}
-			for index, node := range g.nodes {
-				if drawn[index] && (i != 1 || opaque(index)) {
-					g.drawBatch(pass, i, node.batches[i])
+			for _, d := range g.draws {
+				b := d.geom.batches[i]
+				switch {
+				case b.count == 0 || i == 1 && d.blended:
+				case i == 1:
+					pass.SetPipeline(g.pipelines[1])
+					pass.SetBindGroup(0, d.set.binds[1], nil)
+					pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
+				default:
+					g.drawBatch(pass, i, b, d.set.binds[i])
 				}
 			}
 		}
@@ -409,23 +419,24 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 }
 
 // drawTextured draws a geometry's textured triangles with the pipeline set.
-func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, index int, b gpuBatch) {
-	pass.SetBindGroup(0, b.bind, nil)
-	src := f.Geometry[index].Material.Texture
+// drawTextured draws a run's textured triangles with the pipeline set.
+func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
+	pass.SetBindGroup(0, d.set.binds[7], nil)
+	src := f.Geometry[d.index].Material.Texture
 	if t := g.procedural[src]; t != nil {
 		pass.SetBindGroup(1, t.target.BindGroup(), nil)
 	} else {
 		pass.SetBindGroup(1, g.textures[src].BindGroup(), nil)
 	}
-	pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: 1})
+	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count})
 }
 
-func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBatch) {
+func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBatch, bind *wgpu.BindGroup) {
 	if b.count == 0 {
 		return
 	}
 	pass.SetPipeline(g.pipelines[kind])
-	pass.SetBindGroup(0, b.bind, nil)
+	pass.SetBindGroup(0, bind, nil)
 	v, n := b.count, uint32(1)
 	switch kind {
 	case 0:

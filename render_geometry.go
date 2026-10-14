@@ -1,98 +1,264 @@
 // Copyright (c) 2026 Neomantra Corp.
 package nt3d
 
-import "github.com/gogpu/wgpu"
+import (
+	"slices"
+
+	"github.com/gogpu/wgpu"
+
+	"nimbleterminal.dev/nt3d/math"
+)
 
 // Manual frames retain their frame-wide revision/index contract. Scene frames
-// use stable node identities and independent geometry revisions.
+// use stable node identities and independent geometry revisions, and shared
+// geometry (Frame.Shared) its own identity, whatever nodes show it.
 type geometryKey struct {
 	node     NodeID
 	revision uint64
 	index    int
 	manual   bool
+	shared   uint64
 }
+
+// gpuGeometry is a geometry's uploaded primitives and the instance sets that
+// draw them: one set for each draw of the frame, reused across frames.
 type gpuGeometry struct {
-	batches     [8]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles.
-	transform   *wgpu.Buffer
-	last        Instance
-	transformed bool
+	batches [8]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles.
+	sets    []*instanceSet
+	used    int // Sets drawn from this frame.
 }
 
 func (n *gpuGeometry) release() {
 	for _, b := range n.batches {
 		releaseBatch(b)
 	}
-	if n.transform != nil {
-		n.transform.Release()
+	for _, s := range n.sets {
+		s.release()
 	}
 }
+
+// instanceSet is one draw's instances of a geometry: their transforms, an
+// array the mesh shaders index by instance, and bind groups pairing it with
+// each of the geometry's batches. Draws cannot start mid-array (a nonzero
+// first instance needs an optional feature), so each draw has its own.
+type instanceSet struct {
+	transform *wgpu.Buffer
+	capacity  int
+	binds     [8]*wgpu.BindGroup
+	last      []transformState // What the buffer holds.
+}
+
+func (s *instanceSet) release() {
+	for _, b := range s.binds {
+		if b != nil {
+			b.Release()
+		}
+	}
+	if s.transform != nil {
+		s.transform.Release()
+	}
+}
+
+// transformState is what an instance's transform record holds.
+type transformState struct {
+	world               nt3dmath.Mat4
+	specular, shininess float32
+}
+
+// gpuDraw draws a run of a geometry's instances.
+type gpuDraw struct {
+	geom    *gpuGeometry
+	set     *instanceSet
+	count   uint32
+	index   int  // The frame geometry of its first instance: material and texture.
+	blended bool // One transparent instance, drawn in blending order.
+}
+
 func frameGeometryKey(f Frame, i int) geometryKey {
+	if len(f.Shared) != 0 && f.Shared[i] != 0 {
+		return geometryKey{shared: f.Shared[i]}
+	}
 	if len(f.GeometryRevisions) != 0 {
 		return geometryKey{node: f.Instances[i].Node, revision: f.GeometryRevisions[i]}
 	}
 	return geometryKey{revision: f.Revision, index: i, manual: true}
 }
 
-func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame) error {
+// prepareGeometry uploads geometry the cache lacks and groups the frame's
+// drawn instances into draws: each geometry's opaque instances together,
+// split only by texture, and each transparent instance alone, as blending
+// order needs.
+func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) error {
 	if g.geometries == nil {
 		g.geometries = make(map[geometryKey]*gpuGeometry)
 	}
+	keys := make([]geometryKey, len(f.Geometry))
 	used := make(map[geometryKey]bool, len(f.Geometry))
 	for i := range f.Geometry {
-		used[frameGeometryKey(f, i)] = true
+		keys[i] = frameGeometryKey(f, i)
+		used[keys[i]] = true
 	}
 	for key, node := range g.geometries {
 		if !used[key] {
 			node.release()
 			delete(g.geometries, key)
 		}
+		node.used = 0
 	}
+	type groupKey struct {
+		geometry geometryKey
+		texture  *Texture
+	}
+	type group struct {
+		key     geometryKey
+		members []int
+		blended bool
+	}
+	var groups []*group
+	byKey := map[groupKey]*group{}
 	g.nodes = make([]*gpuGeometry, len(f.Geometry))
 	for i, geom := range f.Geometry {
-		key := frameGeometryKey(f, i)
-		node := g.geometries[key]
+		node := g.geometries[keys[i]]
 		if node == nil {
 			node = &gpuGeometry{}
-			var err error
-			node.transform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 128, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
-			if err != nil {
-				return err
-			}
 			for kind, data := range geometryData(geom) {
-				if err = g.uploadBatch(dev, &node.batches[kind], data, node.transform); err != nil {
+				if err := g.uploadData(dev, &node.batches[kind], data); err != nil {
 					node.release()
 					return err
 				}
 			}
-			g.geometries[key] = node
+			g.geometries[keys[i]] = node
 			g.uploads++
 		}
 		g.nodes[i] = node
-		v := instance(f, i)
-		if !node.transformed || node.last.World != v.World || node.last.Visible != v.Visible {
-			if err := writeTransform(dev, node.transform, v, geom.Material); err != nil {
-				return err
-			}
-			node.last, node.transformed = v, true
+		if !drawn[i] {
+			continue
 		}
+		if transparent(&f.Geometry[i]) {
+			groups = append(groups, &group{keys[i], []int{i}, true})
+			continue
+		}
+		k := groupKey{geometry: keys[i]}
+		if textured(geom) {
+			k.texture = geom.Material.Texture
+		}
+		if grp := byKey[k]; grp != nil {
+			grp.members = append(grp.members, i)
+		} else {
+			byKey[k] = &group{key: keys[i], members: []int{i}}
+			groups = append(groups, byKey[k])
+		}
+	}
+	g.draws, g.blendDraw = g.draws[:0], map[int]int{}
+	for _, grp := range groups {
+		node := g.geometries[grp.key]
+		set, err := g.instanceSet(dev, node, len(grp.members))
+		if err != nil {
+			return err
+		}
+		if err := writeTransforms(dev, set, f, grp.members); err != nil {
+			return err
+		}
+		if grp.blended {
+			g.blendDraw[grp.members[0]] = len(g.draws)
+		}
+		g.draws = append(g.draws, gpuDraw{node, set, uint32(len(grp.members)), grp.members[0], grp.blended})
+	}
+	// Sets no draw used this frame are freed.
+	for _, node := range g.geometries {
+		for _, s := range node.sets[node.used:] {
+			s.release()
+		}
+		node.sets = node.sets[:node.used]
 	}
 	return nil
 }
 
-// writeTransform writes an instance's world and normal matrices. The normal
+// instanceSet takes a geometry's next set for this frame, sized for n
+// instances.
+func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*instanceSet, error) {
+	if node.used == len(node.sets) {
+		node.sets = append(node.sets, &instanceSet{})
+	}
+	s := node.sets[node.used]
+	node.used++
+	if s.capacity >= n {
+		return s, nil
+	}
+	s.release()
+	*s = instanceSet{capacity: max(n, 2*s.capacity)}
+	size := uint64(s.capacity) * 128
+	var err error
+	if s.transform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: size, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
+		return nil, err
+	}
+	for kind, b := range node.batches {
+		if b.buffer == nil {
+			continue
+		}
+		if s.binds[kind], err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: s.transform, Size: size}}}); err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+// writeTransforms writes a draw's instance transforms, when they changed.
+func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) error {
+	states := make([]transformState, len(members))
+	for k, i := range members {
+		states[k].world = instance(f, i).World
+		if m := f.Geometry[i].Material; m != nil && m.Specular > 0 && !m.Unlit {
+			states[k].specular, states[k].shininess = m.Specular, m.shininess()
+		}
+	}
+	if slices.Equal(states, s.last) {
+		return nil
+	}
+	data := make([]byte, 0, 128*len(states))
+	for _, st := range states {
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, true)...)
+	}
+	s.last = states
+	return dev.Queue().WriteBuffer(s.transform, 0, data)
+}
+
+// transformRecord is an instance's world and normal matrices. The normal
 // matrix only turns directions, so its last column is free: it carries the
 // material's specular strength and exponent, and whether the node shows.
-func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {
-	inv, _ := v.World.InverseAffine()
+func transformRecord(world nt3dmath.Mat4, specular, shininess float32, visible bool) []byte {
+	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
-	normal[12], normal[13], normal[14], normal[15] = 0, 0, 0, 0
-	if m != nil && m.Specular > 0 && !m.Unlit {
-		normal[12], normal[13] = m.Specular, m.shininess()
-	}
-	if v.Visible {
+	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
+	if visible {
 		normal[15] = 1
 	}
-	return dev.Queue().WriteBuffer(buffer, 0, append(floats(v.World[:]...), floats(normal[:]...)...))
+	return append(floats(world[:]...), floats(normal[:]...)...)
+}
+
+func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {
+	var specular, shininess float32
+	if m != nil && m.Specular > 0 && !m.Unlit {
+		specular, shininess = m.Specular, m.shininess()
+	}
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, v.Visible))
+}
+
+// uploadData uploads a geometry batch's records, to be bound per instance set.
+func (g *gpuRenderer) uploadData(dev *wgpu.Device, b *gpuBatch, data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	var err error
+	b.buffer, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(len(data)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+	if err != nil {
+		return err
+	}
+	if err = dev.Queue().WriteBuffer(b.buffer, 0, data); err != nil {
+		return err
+	}
+	b.count, b.size = uint32(len(data)/48), uint64(len(data))
+	return nil
 }
 
 func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, transform *wgpu.Buffer) error {
@@ -111,7 +277,7 @@ func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, tr
 	if err != nil {
 		return err
 	}
-	b.count = uint32(len(data) / 48)
+	b.count, b.size = uint32(len(data)/48), uint64(len(data))
 	return nil
 }
 
