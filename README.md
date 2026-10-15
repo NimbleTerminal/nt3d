@@ -24,9 +24,9 @@ view := nt3dwidget.New(scene, 80, 24) // a Bubble Tea model you can drag to orbi
 
 ## Learn more
 
-The **[guide](docs/hugo/content/guide/)** covers it all, from a first program to scenes, materials, mesh files, rendering, and the widget. To read it as a site, run `task docs:hugo:serve` (needs [Hugo](https://gohugo.io/) extended and `git submodule update --init`).
+The **[guide](https://nimbleterminal.github.io/nt3d/docs/)** covers it all, from a first program to scenes, materials, mesh files, rendering, and the widget, and the **[gallery](https://nimbleterminal.github.io/nt3d/)** runs every demo in your browser. The guide's source is in [`docs/hugo`](docs/hugo/content/guide/); `task docs:hugo:serve` serves it locally (needs [Hugo](https://gohugo.io/) extended and `git submodule update --init`).
 
-To see it in action, run the demos:
+To run the demos yourself:
 
 ```sh
 task workspace   # needs ../ntpicture checked out beside nt3d, until it's published

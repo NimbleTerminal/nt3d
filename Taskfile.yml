@@ -81,6 +81,12 @@ tasks:
       - task: build-wasm
       - task: web-assets
       - cp -R web/. dist/web/
+  build-site:
+    desc: Build the gallery with the guide at its /docs/, as Pages serves them (needs hugo, extended)
+    cmds:
+      - task: build-web
+      - task: docs:hugo:build
+        vars: {CLI_ARGS: --destination ../../dist/web/docs}
   terrain:
     deps: [build]
     cmds:

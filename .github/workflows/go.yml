@@ -19,7 +19,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: nt3d
-      # Bootstrap ntpicture at its go.mod pin until its vanity version resolves.
+      # Bootstrap ntpicture at its go.mod pin until its vanity version resolves
+      # (pages.yml pins the same ref; keep the two together).
       # ntcanvas and ntgpuimage are downloaded normally.
       - uses: actions/checkout@v7
         with:

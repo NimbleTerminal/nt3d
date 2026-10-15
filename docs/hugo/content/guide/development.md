@@ -41,7 +41,7 @@ The gallery's posters are frames of the terminal demos, Kitty graphics and all, 
 
 ## This guide
 
-The guide is a [Hugo](https://gohugo.io/) site in `docs/hugo`, using the [hugo-book](https://github.com/alex-shpak/hugo-book) theme as a git submodule. Fetch it once with `git submodule update --init`, then `task docs:hugo:serve` serves the guide with live reload (it needs Hugo extended). `task docs:hugo:build` builds it into `docs/hugo/public`. The demo posters come straight from `web/assets`.
+The guide is a [Hugo](https://gohugo.io/) site in `docs/hugo`, using the [hugo-book](https://github.com/alex-shpak/hugo-book) theme as a git submodule. Fetch it once with `git submodule update --init`, then `task docs:hugo:serve` serves the guide with live reload (it needs Hugo extended). `task docs:hugo:build` builds it into `docs/hugo/public`, and `task build-site` builds the gallery with the guide at its `/docs/`, as GitHub Pages serves them (`.github/workflows/pages.yml` deploys every push to main). The demo posters come straight from `web/assets`.
 
 ## Where it came from
 

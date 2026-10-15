@@ -1,0 +1,66 @@
+name: Build and deploy the gallery and guide
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: nt3d
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: nt3d
+          persist-credentials: false
+          submodules: true # the hugo-book theme for the guide
+      # Bootstrap ntpicture at its go.mod pin until its vanity version resolves,
+      # as go.yml does; keep the two refs together.
+      - uses: actions/checkout@v7
+        with:
+          repository: NimbleTerminal/ntpicture
+          ref: acfa6954d2d0bcef277f65317528b9a7cdc85017
+          path: ntpicture
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: nt3d/go.mod
+          cache-dependency-path: |
+            nt3d/go.sum
+            nt3d/examples/terrain/go.sum
+      - uses: go-task/setup-task@v2
+        with:
+          version: '3.x'
+      - uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: '0.167.0'
+          extended: true
+      - run: task workspace
+      # The gallery, with the guide at its /docs/.
+      - run: task build-site
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: nt3d/dist/web
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v6
+      - id: deployment
+        uses: actions/deploy-pages@v5

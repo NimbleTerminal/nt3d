@@ -58,9 +58,6 @@ move to Done with their commit; git history has the details.
 
 ## Web demos
 
-- [ ] **Host the gallery and guide**: a Pages workflow like gloss's, with
-  the guide (`docs/hugo`) at `/docs/` beside the gallery; nothing is
-  deployed yet, so the guide links to neither.
 - [ ] **The touch-control bar's wasm cost**: about 640 KB per demo, from
   `bubbles/help` and booba's help publishing.
 - [ ] **The action list's 2048-byte limit**: the terrain scene has room for

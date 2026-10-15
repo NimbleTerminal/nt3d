@@ -79,8 +79,10 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 ## In a browser
 
+The [gallery](https://nimbleterminal.github.io/nt3d/) is online. To build and serve it yourself:
+
 ```sh
-task build-web
+task build-web  # or task build-site, to include this guide at /docs/
 task serve      # then open http://localhost:8768
 ```
 

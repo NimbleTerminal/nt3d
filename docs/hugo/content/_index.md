@@ -10,7 +10,7 @@ A small 3D scene engine for Go programs that draw in the terminal or the browser
 
 <img class="poster" src="posters/fur.png" alt="Spot the cow covered in black-and-white fur">
 
-[**See the demos →**](guide/demos/) Each one runs in a terminal, and in a browser as the same Go program compiled to WebAssembly.
+[**Try the demos in your browser →**](https://nimbleterminal.github.io/nt3d/) Every demo in the gallery is the same Go program you can run in a terminal, compiled to WebAssembly.
 
 ## A first look
 
