@@ -44,6 +44,15 @@ func TestSubtreeTransformChecks(t *testing.T) {
 	check(t, s.SetTransform(parent, nt3dmath.Translation(nt3dmath.Vec3{X: 1})))
 }
 
+// Root's transform is checked once, not multiplied by itself as its own
+// parent: a scale that is fine on any other node is fine on Root.
+func TestRootTransformCheckedOnce(t *testing.T) {
+	for _, k := range []float32{1e20, 1e-30} {
+		s := NewScene()
+		check(t, s.SetTransform(Root, nt3dmath.Scaling(nt3dmath.Vec3{X: k, Y: k, Z: k})))
+	}
+}
+
 // Moving every node of a large scene takes time in proportion to it, as
 // animating thousands of instances needs.
 func TestManyTransformsAreFast(t *testing.T) {

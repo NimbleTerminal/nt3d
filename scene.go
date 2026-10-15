@@ -176,7 +176,12 @@ func (s *Scene) validSubtree(id NodeID) bool {
 		id     NodeID
 		parent nt3dmath.Mat4
 	}
-	stack := []visit{{id, s.world(s.nodes[id].Parent)}}
+	// Root is its own parent, so its walk starts from Identity, not world(Root).
+	start := nt3dmath.Identity()
+	if id != Root {
+		start = s.world(s.nodes[id].Parent)
+	}
+	stack := []visit{{id, start}}
 	for len(stack) > 0 {
 		v := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
