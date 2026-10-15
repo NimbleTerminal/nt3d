@@ -137,6 +137,10 @@ func eachLine(data []byte, fn func(line int, fields []string) error) error {
 			return err
 		}
 	}
+	// A statement continued past the last line ends with the file.
+	if fields := strings.Fields(string(statement)); len(fields) > 0 {
+		return fn(start, fields)
+	}
 	return nil
 }
 

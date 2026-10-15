@@ -363,6 +363,30 @@ func TestGLTFRefusals(t *testing.T) {
 
 	_, err = Decode([]byte("glTF garbage"), nil)
 	fails(t, err, "glTF")
+
+	nan := float32(math.NaN())
+	_, err = Decode(glb(t, gltfDoc(prim{positions: upTriangle.positions, normals: [][3]float32{{0, 0, 1}, {nan, 0, 1}, {0, 0, 1}}})), nil)
+	fails(t, err, "non-finite normal")
+
+	textured := gltfDoc(prim{positions: upTriangle.positions, uv: [][2]float32{{0, 0}, {nan, 0}, {0, 1}}, material: gltf.Index(0)})
+	img, err := modeler.WriteImage(textured, "leaf", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{200, 100, 50, 255})))
+	check(t, err)
+	textured.Textures = []*gltf.Texture{{Source: gltf.Index(img)}}
+	textured.Materials = []*gltf.Material{{PBRMetallicRoughness: &gltf.PBRMetallicRoughness{BaseColorTexture: &gltf.TextureInfo{Index: 0}}}}
+	_, err = Decode(glb(t, textured), nil)
+	fails(t, err, "non-finite texture coordinate")
+
+	// Points and lines count against caps of their own, across primitives.
+	cloud := make([][3]float32, nt3d.MaxPoints/2+1)
+	_, err = Decode(glb(t, gltfDoc(prim{positions: cloud, mode: gltf.PrimitivePoints}, prim{positions: cloud, mode: gltf.PrimitivePoints})), nil)
+	if !errors.Is(err, nt3dmesh.ErrTooManyTriangles) {
+		t.Fatalf("over the point cap: %v", err)
+	}
+	ends := make([][3]float32, maxLineVertices/2+2)
+	_, err = Decode(glb(t, gltfDoc(prim{positions: ends, mode: gltf.PrimitiveLines}, prim{positions: ends, mode: gltf.PrimitiveLines})), nil)
+	if !errors.Is(err, nt3dmesh.ErrTooManyTriangles) {
+		t.Fatalf("over the line cap: %v", err)
+	}
 }
 
 // Decoded glTF adds to a scene like any model.

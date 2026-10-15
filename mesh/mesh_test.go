@@ -267,7 +267,13 @@ func TestOBJErrors(t *testing.T) {
 		_, err := DecodeOBJ([]byte(c.data), nil)
 		fails(t, err, c.want)
 	}
-	_, err := DecodeOBJ([]byte("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n"), &Options{MaxTriangles: 1})
+	// A statement continued to the end of the file is still read.
+	m, err := DecodeOBJ([]byte("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3\nf 1 3 4 \\"), nil)
+	check(t, err)
+	if m.Triangles() != 2 {
+		t.Fatalf("%d triangles", m.Triangles())
+	}
+	_, err = DecodeOBJ([]byte("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n"), &Options{MaxTriangles: 1})
 	fails(t, err, "exceeds 1")
 	if !errors.Is(err, ErrTooManyTriangles) {
 		t.Fatal("not ErrTooManyTriangles")
@@ -356,5 +362,31 @@ func TestYUpTurnsToZUp(t *testing.T) {
 		if b.Position.Sub(a.Position).Cross(c.Position.Sub(a.Position)).Dot(a.Normal) < 0 {
 			t.Fatal("normal turned the wrong way")
 		}
+	}
+}
+
+// Points, boxes, and arrows turn up with the rest of a model.
+func TestYUpTurnsEverything(t *testing.T) {
+	m, err := DecodePLY([]byte("ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n0 1 0\n"), &Options{Up: YUp})
+	check(t, err)
+	if p := m.Objects[0].Geometry.Points[0].Position; p != (nt3dmath.Vec3{Z: 1}) {
+		t.Fatalf("point at %v", p)
+	}
+	g := nt3d.Geometry{
+		Boxes:  []nt3d.Box{{Min: nt3dmath.Vec3{X: 1, Y: 2, Z: 3}, Size: nt3dmath.Vec3{X: 4, Y: 5, Z: 6}}},
+		Arrows: []nt3d.Arrow{{Start: nt3dmath.Vec3{Y: 1}, End: nt3dmath.Vec3{Z: 1}, Width: 1, HeadSize: 1}},
+	}
+	m = &Model{Objects: []Object{{Geometry: g}}}
+	(&Options{Up: YUp}).orient(m)
+	g = m.Objects[0].Geometry
+	// (x, y, z) turns to (x, -z, y): the box spans y in [-9, -3], z in [2, 7].
+	if b := g.Boxes[0]; b.Min != (nt3dmath.Vec3{X: 1, Y: -9, Z: 2}) || b.Size != (nt3dmath.Vec3{X: 4, Y: 6, Z: 5}) {
+		t.Fatalf("box %+v", b)
+	}
+	if a := g.Arrows[0]; a.Start != (nt3dmath.Vec3{Z: 1}) || a.End != (nt3dmath.Vec3{Y: -1}) {
+		t.Fatalf("arrow %+v", a)
+	}
+	if g.Bounds.Max.Z != 7 || g.Bounds.Min.Y != -9 {
+		t.Fatalf("bounds %+v", g.Bounds)
 	}
 }

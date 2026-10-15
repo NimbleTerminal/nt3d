@@ -33,3 +33,21 @@ func TestAffineInverseAndBounds(t *testing.T) {
 		}
 	}
 }
+
+// A non-finite point leaves bounds as they were, rather than carrying NaN
+// into every later one.
+func TestAABBIgnoresNonFinite(t *testing.T) {
+	var b AABB
+	nan := float32(math.NaN())
+	b.Include(Vec3{Z: nan})
+	if b.IsValid() {
+		t.Fatal("a NaN point made the bounds valid")
+	}
+	b.Include(Vec3{X: 1, Y: 2, Z: 3})
+	b.Include(Vec3{X: nan})
+	b.Include(Vec3{Y: float32(math.Inf(-1))})
+	b.Include(Vec3{X: -1})
+	if b.Min != (Vec3{X: -1}) || b.Max != (Vec3{X: 1, Y: 2, Z: 3}) {
+		t.Fatalf("bounds %+v", b)
+	}
+}

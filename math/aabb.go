@@ -14,8 +14,12 @@ func (b AABB) IsValid() bool {
 	return b.valid
 }
 
-// Include expands b to contain p.
+// Include expands b to contain p. A non-finite p is ignored: min and max
+// would carry its NaN to every later bound.
 func (b *AABB) Include(p Vec3) {
+	if !IsFinite(float64(p.X)) || !IsFinite(float64(p.Y)) || !IsFinite(float64(p.Z)) {
+		return
+	}
 	if !b.valid {
 		b.Min = p
 		b.Max = p

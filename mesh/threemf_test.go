@@ -4,6 +4,7 @@ package nt3dmesh
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
@@ -231,6 +232,12 @@ func TestDamaged3MF(t *testing.T) {
 		fmt.Fprint(f, "x")
 	}
 	w.Close()
+	// A second end record, appended, that claims a few entries of the same
+	// directory: the zip reader trusts it and counts only modulo 65536.
+	disguised := bytes.Clone(crowded.Bytes())
+	end := disguised[len(disguised)-zipEndSize:]
+	disguised = append(disguised, end...)
+	binary.LittleEndian.PutUint16(disguised[len(disguised)-12:], 10)
 	for name, tt := range map[string]struct {
 		data []byte
 		want string
@@ -249,6 +256,10 @@ func TestDamaged3MF(t *testing.T) {
 		"bad transform":       {archive3MF(t, map[string]string{"3D/3dmodel.model": model3MF("", `<resources><object id="1">`+tetrahedron+`</object></resources><build><item objectid="1" transform="1 0 0"/></build>`)}), "transform"},
 		"missing part":        {archive3MF(t, map[string]string{"3D/3dmodel.model": model3MF(production3MF, `<resources/><build><item objectid="1" p:path="/3D/gone.model"/></build>`)}), "gone.model"},
 		"too many entries":    {crowded.Bytes(), "entries"},
+		"two end records":     {disguised, "end records"},
+		"bad tex2coord": {archive3MF(t, map[string]string{"3D/3dmodel.model": model3MF(`xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`, `<resources>
+			<m:texture2dgroup id="7" texid="6"><m:tex2coord u="0" v="0"/><m:tex2coord u="wide" v="0"/><m:tex2coord u="0" v="1"/></m:texture2dgroup>
+			<object id="1">`+tetrahedron+`</object></resources><build><item objectid="1"/></build>`)}), "tex2coord"},
 	} {
 		if _, err := Decode3MF(tt.data, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: %v, want an error naming %q", name, err, tt.want)
@@ -575,6 +586,21 @@ func TestSummary3MF(t *testing.T) {
 	check(t, err)
 	if math.Abs(m.Summary.Area-tetraArea) > 1e-9 || m.Summary.Bounds.Min.Z != -1 {
 		t.Fatalf("mirrored: %+v", m.Summary)
+	}
+}
+
+// A non-finite vertex is refused even in a part that is not assembled,
+// whose summary would otherwise carry NaN into the build's.
+func TestNaN3MFVertex(t *testing.T) {
+	data := archive3MF(t, map[string]string{"3D/3dmodel.model": model3MF("", `<resources>
+		<object id="1"><mesh><vertices><vertex x="0" y="0" z="NaN"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>
+		 <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+		<object id="2"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>
+		 <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+		</resources><build><item objectid="1"/><item objectid="2"/></build>`)})
+	m, err := Decode3MF(data, &Options{Parts: []bool{false, true}})
+	if err == nil || !strings.Contains(err.Error(), "vertex") {
+		t.Fatalf("decoded with summary %+v, error %v", m.Summary, err)
 	}
 }
 

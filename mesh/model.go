@@ -112,6 +112,18 @@ func (o *Options) orient(m *Model) {
 		for j := range g.Lines {
 			g.Lines[j].Position = turn(g.Lines[j].Position)
 		}
+		for j := range g.Points {
+			g.Points[j].Position = turn(g.Points[j].Position)
+		}
+		for j := range g.Arrows {
+			g.Arrows[j].Start, g.Arrows[j].End = turn(g.Arrows[j].Start), turn(g.Arrows[j].End)
+		}
+		for j := range g.Boxes {
+			// The corner that turns to the new minimum is the old one at the top of z.
+			b := &g.Boxes[j]
+			b.Min = turn(b.Min.Add(nt3dmath.Vec3{Z: b.Size.Z}))
+			b.Size = nt3dmath.Vec3{X: b.Size.X, Y: b.Size.Z, Z: b.Size.Y}
+		}
 		g.Bounds = nt3d.GeometryBounds(*g)
 	}
 }

@@ -201,18 +201,25 @@ func TestDamagedPLY(t *testing.T) {
 		"ends early":      {header + "0 0 0\n1 0 0\n0 1 0\n3 0 1", "end of file"},
 		"empty":           {strings.Replace(strings.Replace(header, "element face 1", "element face 0", 1), "element vertex 3", "element vertex 0", 1), "no faces or vertices"},
 		"claims millions": {strings.Replace(header, "element vertex 3", "element vertex 900000000", 1), "more than the file holds"},
+		"empty elements":  {strings.Replace(header, "element vertex 3", "element padding 900000000\nelement vertex 3", 1) + "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n", "more than the file holds"},
 		"no xyz":          {strings.Replace(header, "property float z\n", "", 1) + "0 0\n1 0\n0 1\n3 0 1 2\n", "lack x, y, or z"},
 	} {
 		if _, err := DecodePLY([]byte(c.data), nil); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want an error naming %q", name, err, c.want)
 		}
 	}
+	// Only a line of its own ends the header, not a comment that says so.
+	m, err := DecodePLY([]byte(strings.Replace(header, "format ascii 1.0\n", "format ascii 1.0\ncomment end_header\n", 1)+"0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"), nil)
+	check(t, err)
+	if m.Triangles() != 1 {
+		t.Fatalf("%d triangles", m.Triangles())
+	}
 	// The binary length check applies to binary files too.
 	bin := cubePLY("binary_little_endian")
 	if _, err := DecodePLY(bin[:len(bin)-20], nil); err == nil {
 		t.Error("truncated binary accepted")
 	}
-	_, err := DecodePLY(cubePLY("ascii"), &Options{MaxTriangles: 11})
+	_, err = DecodePLY(cubePLY("ascii"), &Options{MaxTriangles: 11})
 	if !errors.Is(err, ErrTooManyTriangles) {
 		t.Errorf("limit: %v", err)
 	}
@@ -319,6 +326,11 @@ func TestConf(t *testing.T) {
 		if _, err := DecodeConf([]byte(bad), &Options{Open: opener(files)}); err == nil {
 			t.Fatalf("accepted %q", bad)
 		}
+	}
+	// A line too long to scan is an error, not the end of the file.
+	long := "bmesh a.ply 0 0 0 0 0 0 1\n# " + strings.Repeat("x", 70<<10) + "\nbmesh b.ply 0 0 0 0 0 0 1\n"
+	if _, err := DecodeConf([]byte(long), &Options{Open: opener(files)}); err == nil {
+		t.Fatal("stopped at a long line without an error")
 	}
 	if _, err := DecodeConf([]byte(conf), nil); err == nil {
 		t.Fatal("read scans without side-file access")

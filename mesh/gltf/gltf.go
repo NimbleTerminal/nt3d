@@ -40,6 +40,10 @@ const maxTextureSide = 8192
 // them. Tests lower it.
 var pieceTriangles = nt3d.MaxMeshTriangles
 
+// maxLineVertices is the most line ends a model may hold, as many as one
+// geometry may.
+const maxLineVertices = 2 * 512 * 512
+
 // budget counts faces against the model's limit.
 type budget struct{ used, limit int }
 
@@ -119,6 +123,11 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if len(d.m.Objects) == 0 {
 		return nil, errors.New("nt3dmesh: glTF scene holds no meshes")
 	}
+	for i := range d.m.Objects {
+		if err := d.m.Objects[i].Geometry.Validate(); err != nil {
+			return nil, fmt.Errorf("nt3dmesh: glTF %s: %w", d.m.Objects[i].Name, err)
+		}
+	}
 	return d.m, nil
 }
 
@@ -137,6 +146,8 @@ type gltfDecoder struct {
 	textures map[int]*nt3d.Texture // By texture index; nil when it failed.
 	warned   map[string]bool
 	visits   int
+	points   int // Across the model, within nt3d.MaxPoints.
+	lines    int // Line ends across the model, within maxLineVertices.
 }
 
 func (d *gltfDecoder) warn(format string, a ...any) {
@@ -544,6 +555,11 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 			d.warn("%s: unreadable normals are computed", name)
 			b.normals = nil
 		}
+		for _, n := range b.normals {
+			if !validCoordinate(n[0], n[1], n[2]) {
+				return fmt.Errorf("nt3dmesh: glTF %s has a non-finite normal", name)
+			}
+		}
 	}
 	if a, ok, err := attr(gltf.COLOR_0); err != nil {
 		return err
@@ -564,6 +580,11 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 		if !ok || err != nil || len(b.uv) != len(positions) {
 			d.warn("%s: its texture has no texture coordinates", name)
 			b.look.texture, b.uv = nil, nil
+		}
+		for _, uv := range b.uv {
+			if !validCoordinate(uv[0], uv[1]) {
+				return fmt.Errorf("nt3dmesh: glTF %s has a non-finite texture coordinate", name)
+			}
 		}
 	}
 	switch p.Mode {
@@ -776,6 +797,9 @@ func (b *gltfBuilder) face(tri [3]uint32, back bool) error {
 }
 
 func (b *gltfBuilder) points(v []uint32) error {
+	if b.d.points += len(v); b.d.points > nt3d.MaxPoints {
+		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooManyTriangles, nt3d.MaxPoints)
+	}
 	b.start()
 	g := &b.piece.Geometry
 	for _, i := range v {
@@ -791,6 +815,9 @@ func (b *gltfBuilder) points(v []uint32) error {
 }
 
 func (b *gltfBuilder) lines(v []uint32) error {
+	if b.d.lines += len(v); b.d.lines > maxLineVertices {
+		return fmt.Errorf("%w: glTF has more than %d line ends", nt3dmesh.ErrTooManyTriangles, maxLineVertices)
+	}
 	b.start()
 	g := &b.piece.Geometry
 	for _, i := range v {

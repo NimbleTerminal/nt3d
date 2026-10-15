@@ -185,7 +185,9 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 				least += plySize(p.kind)
 			}
 		}
-		if least > 0 && e.count > (len(data)-r.at)/least+1 {
+		// An element without properties still takes a byte, so that its
+		// count cannot run on while reading nothing.
+		if least = max(least, 1); e.count > (len(data)-r.at)/least+1 {
 			return nil, fmt.Errorf("nt3dmesh: PLY claims %d %s, more than the file holds", e.count, e.name)
 		}
 		switch e.name {
@@ -251,17 +253,22 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 // plyHeader reads the header: its elements, format, and comments, and where
 // the body starts.
 func plyHeader(data []byte) (elements []plyElement, format string, comments []string, body int, err error) {
-	end := bytes.Index(data[:min(len(data), maxPLYHeader)], []byte("end_header"))
+	// The header ends at a line of end_header alone, not at the words in a
+	// comment. Its line ends in \n, or \r\n from some writers.
+	end := -1
+	for at := 0; at < min(len(data), maxPLYHeader); {
+		line, next := data[at:], len(data)
+		if i := bytes.IndexByte(line, '\n'); i >= 0 {
+			line, next = line[:i], at+i+1
+		}
+		if string(bytes.TrimSpace(line)) == "end_header" {
+			end, body = at, next
+			break
+		}
+		at = next
+	}
 	if !bytes.HasPrefix(data, []byte("ply")) || end < 0 {
 		return nil, "", nil, 0, errors.New("nt3dmesh: not a PLY file, or its header is too long")
-	}
-	body = end + len("end_header")
-	// The header ends with its line: \n, or \r\n from some writers.
-	if body < len(data) && data[body] == '\r' {
-		body++
-	}
-	if body < len(data) && data[body] == '\n' {
-		body++
 	}
 	for n, line := range strings.Split(string(data[:end]), "\n") {
 		fields := strings.Fields(line)

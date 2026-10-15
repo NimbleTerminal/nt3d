@@ -37,9 +37,12 @@ const (
 
 // zipEntries is the number of entries an archive's end record claims, found
 // as the zip reader finds it. zip.NewReader records every entry before they
-// can be counted, and a small archive's directory can name millions.
-func zipEntries(data []byte) int {
+// can be counted, and a small archive's directory can name millions. A
+// second end record that disagrees on the directory is refused: the reader
+// trusts the last, and checks its count only modulo 65536.
+func zipEntries(data []byte) (int, error) {
 	tail := data[len(data)-min(len(data), zipEndSize+zipCommentMax):]
+	var found []byte
 	for i := len(tail) - zipEndSize; i >= 0; i-- {
 		if !bytes.Equal(tail[i:i+4], []byte("PK\x05\x06")) {
 			continue
@@ -47,12 +50,20 @@ func zipEntries(data []byte) int {
 		if comment := int(binary.LittleEndian.Uint16(tail[i+20:])); i+zipEndSize+comment > len(tail) {
 			continue
 		}
-		if count := int(binary.LittleEndian.Uint16(tail[i+10:])); count != 0xFFFF {
-			return count
+		// Entries, directory size, and directory offset.
+		if record := tail[i+10 : i+20]; found == nil {
+			found = record
+		} else if !bytes.Equal(record, found) {
+			return 0, errors.New("nt3dmesh: 3MF has end records that disagree")
 		}
-		return zipSixtyFour
 	}
-	return 0
+	if found == nil {
+		return 0, nil
+	}
+	if count := int(binary.LittleEndian.Uint16(found)); count != 0xFFFF {
+		return count, nil
+	}
+	return zipSixtyFour, nil
 }
 
 // package3MF reads parts of a 3MF archive as they are asked for, within a
@@ -65,7 +76,9 @@ type package3MF struct {
 }
 
 func open3MF(data []byte, limit int64) (*package3MF, error) {
-	if zipEntries(data) > max3MFEntries {
+	if entries, err := zipEntries(data); err != nil {
+		return nil, err
+	} else if entries > max3MFEntries {
 		return nil, fmt.Errorf("nt3dmesh: 3MF has more than %d entries", max3MFEntries)
 	}
 	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
@@ -703,9 +716,14 @@ func parsePart3MF(data []byte) (*part3MF, error) {
 				group = attribute(e, "id")
 				part.coords[group] = &texture3MF{texture: attribute(e, "texid")}
 			case "tex2coord":
+				// Triangles name coordinates by position: one dropped would
+				// shift the rest.
 				u, err1 := strconv.ParseFloat(attribute(e, "u"), 32)
 				v, err2 := strconv.ParseFloat(attribute(e, "v"), 32)
-				if coords := part.coords[group]; coords != nil && err1 == nil && err2 == nil && validCoordinate(float32(u), float32(v)) {
+				if err1 != nil || err2 != nil || !validCoordinate(float32(u), float32(v)) {
+					return nil, fmt.Errorf("tex2coord u=%q v=%q is not a usable coordinate", attribute(e, "u"), attribute(e, "v"))
+				}
+				if coords := part.coords[group]; coords != nil {
 					// 3MF counts v up from the bottom; nt3d counts down from the top.
 					coords.coords = append(coords.coords, nt3d.UV{U: float32(u), V: 1 - float32(v)})
 				}
@@ -728,7 +746,7 @@ func parsePart3MF(data []byte) (*part3MF, error) {
 				var v [3]float64
 				for i, axis := range []string{"x", "y", "z"} {
 					// Coordinates are kept to the precision they are drawn with.
-					if v[i], err = strconv.ParseFloat(attribute(e, axis), 32); err != nil {
+					if v[i], err = strconv.ParseFloat(attribute(e, axis), 32); err != nil || !nt3dmath.IsFinite(v[i]) {
 						return nil, fmt.Errorf("vertex %s=%q is not a usable number", axis, attribute(e, axis))
 					}
 				}

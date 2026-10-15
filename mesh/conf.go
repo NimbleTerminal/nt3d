@@ -105,6 +105,9 @@ func DecodeConf(data []byte, o *Options) (*Model, error) {
 			m.Warnings = append(m.Warnings, name+": "+w)
 		}
 	}
+	if err := lines.Err(); err != nil {
+		return nil, fmt.Errorf("nt3dmesh: .conf: %w", err)
+	}
 	if len(m.Objects) == 0 {
 		return nil, fmt.Errorf("nt3dmesh: .conf placed no scans (%d warnings)", len(m.Warnings))
 	}
