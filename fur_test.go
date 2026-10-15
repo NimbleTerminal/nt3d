@@ -4,6 +4,7 @@ package nt3d
 import (
 	"image"
 	"image/color"
+	"math"
 	"testing"
 
 	"nimbleterminal.dev/nt3d/math"
@@ -265,6 +266,103 @@ func TestFurShellsShareNothing(t *testing.T) {
 			if other.Indices[0] == 999 || len(other.UV) > 0 && other.UV[0] == (UV{U: 9, V: 9}) {
 				t.Fatalf("editing shell %d changed shell %d", k, k+1+j)
 			}
+		}
+	}
+}
+
+// A strand that reaches past its cell is drawn whole: every texel shows the
+// tallest strand there, its neighbors' included, and the texture's edges
+// meet as it repeats.
+func TestFurStrandsCrossCells(t *testing.T) {
+	coat, err := NewFur(Fur{Length: .1, Seed: 3})
+	check(t, err)
+	key := furLayers{density: 8}
+	tex, err := coat.strands(key)
+	check(t, err)
+	strands, size, _ := coat.furStrands(key)
+	for y := range size {
+		for x := range size {
+			height := 0.0
+			for _, s := range strands {
+				for _, oy := range []float64{-1, 0, 1} {
+					for _, ox := range []float64{-1, 0, 1} {
+						d := math.Hypot(float64(x)+.5-s.x-ox*float64(size), float64(y)+.5-s.y-oy*float64(size))
+						height = max(height, min(s.length, s.length*(1-d/s.radius)/.6))
+					}
+				}
+			}
+			if got, want := tex.pixels[(y*size+x)*4+3], uint8(math.Round(height*255)); got != want {
+				t.Fatalf("texel (%d, %d): alpha %d, want %d", x, y, got, want)
+			}
+		}
+	}
+	fins, err := coat.finTexture()
+	check(t, err)
+	finStrands, width, _ := coat.finStrands()
+	for y := range finRows {
+		h := 1 - (float64(y)+.5)/finRows
+		for x := range width {
+			in := false
+			for _, s := range finStrands {
+				for _, ox := range []float64{-1, 0, 1} {
+					in = in || h <= s.length && math.Abs(float64(x)+.5-s.x-ox*float64(width)) <= s.radius*(1-.6*h/s.length)
+				}
+			}
+			if got := fins.pixels[(y*width+x)*4+3] == 255; got != in {
+				t.Fatalf("fin texel (%d, %d): in a strand %v, want %v", x, y, got, in)
+			}
+		}
+	}
+}
+
+// Fins space their strands as the shells do: by the surface the UV square
+// covers, not the mesh's size.
+func TestFurFinsSpaceLikeShells(t *testing.T) {
+	plane := Geometry{Indices: []uint32{0, 1, 2, 0, 2, 3}, UV: []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}}
+	for _, p := range []nt3dmath.Vec3{{}, {X: 10}, {X: 10, Y: 2}, {Y: 2}} {
+		plane.Vertices = append(plane.Vertices, Vertex{Position: p, Normal: nt3dmath.Vec3{Z: 1}, Color: color.RGBA{255, 255, 255, 255}})
+	}
+	plane.Bounds = GeometryBounds(plane)
+	coat, err := NewFur(Fur{Length: .1, Density: 64})
+	check(t, err)
+	fins, err := coat.Fins(plane)
+	check(t, err)
+	// 64 strands span the UV square's √20 units; the fin texture holds 64,
+	// so the 10-unit side is 10/√20 textures long.
+	var long float32
+	for _, uv := range fins.UV {
+		long = max(long, uv.U)
+	}
+	if want := float32(math.Hypot(10, 2) / math.Sqrt(20)); math.Abs(float64(long-want)) > 1e-3 {
+		t.Fatalf("fins span %v textures along the diagonal, want %v", long, want)
+	}
+}
+
+// A textured base's fur shows its texture as the base does: the skin keeps
+// the base's whole material, and shells repeat and tint as it does.
+func TestFurKeepsTheCoat(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	for i := range img.Pix {
+		img.Pix[i] = 200
+	}
+	tex, err := NewTexture(img)
+	check(t, err)
+	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 16, Rings: 8, Color: color.RGBA{255, 128, 0, 255}, Material: &Material{Texture: tex, Repeat: true, Tint: true, Specular: .5, Transparent: true}})
+	check(t, err)
+	coat, err := NewFur(Fur{Length: .1, Shells: 4})
+	check(t, err)
+	shells, err := coat.Shells(sphere)
+	check(t, err)
+	skin := shells[0].Material
+	if skin == nil || skin.Texture != tex || !skin.Repeat || !skin.Tint || skin.Specular != .5 || skin.Transparent {
+		t.Fatalf("skin material %+v", skin)
+	}
+	if shells[0].Vertices[0].Color != sphere.Vertices[0].Color {
+		t.Fatal("the skin lost the colors that tint it")
+	}
+	for k, g := range shells[1:] {
+		if !g.Material.Repeat || !g.Material.Tint {
+			t.Fatalf("shell %d: repeat %v, tint %v", k+1, g.Material.Repeat, g.Material.Tint)
 		}
 	}
 }

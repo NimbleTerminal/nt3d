@@ -62,10 +62,11 @@ type FurCoat struct {
 }
 
 // furLayers names a strand texture: its strands, and the texture that colors
-// them, if any.
+// them, if any, and whether that one repeats.
 type furLayers struct {
 	density int
 	source  *Texture
+	repeat  bool
 }
 
 // NewFur checks a Fur and returns its coat. Strand textures are made by
@@ -102,6 +103,16 @@ func (c *FurCoat) density(base Geometry) int {
 	if c.fur.Spacing == 0 {
 		return c.fur.Density
 	}
+	span := uvSpan(base)
+	if span == 0 {
+		return 4
+	}
+	return int(min(furMaxDensity, max(4, math.Round(span/float64(c.fur.Spacing)))))
+}
+
+// uvSpan is the side of the surface a mesh's UV square covers: the square
+// root of its area over the area its UVs cover, or zero if they cover none.
+func uvSpan(base Geometry) float64 {
 	var surface, uv float64
 	for i := 0; i+2 < len(base.Indices); i += 3 {
 		a, b, d := base.Indices[i], base.Indices[i+1], base.Indices[i+2]
@@ -111,9 +122,9 @@ func (c *FurCoat) density(base Geometry) int {
 		uv += math.Abs(float64((q.U-p.U)*(r.V-p.V)-(q.V-p.V)*(r.U-p.U))) / 2
 	}
 	if uv == 0 {
-		return 4
+		return 0
 	}
-	return int(min(furMaxDensity, max(4, math.Round(math.Sqrt(surface/uv)/float64(c.fur.Spacing)))))
+	return math.Sqrt(surface / uv)
 }
 
 // cracks reports whether vertices at one position have different normals,
@@ -208,47 +219,34 @@ func (c *FurCoat) strands(key furLayers) (*Texture, error) {
 	if texture, ok := c.layers[key]; ok {
 		return texture, nil
 	}
-	f, density := c.fur, key.density
-	size := min(furMaxTexture, density*furTexelsPerStrand)
-	cell := float64(size) / float64(density)
-	// Each strand has a place in its cell, a length, a thickness, and a color.
-	type strand struct {
-		x, y, length, radius float64
-		root, tip            [3]float64
-	}
-	rng := rand.New(rand.NewPCG(f.Seed, 0x9e3779b97f4a7c15))
-	strands := make([]strand, density*density)
-	channels := func(c color.RGBA) [3]float64 { return [3]float64{float64(c.R), float64(c.G), float64(c.B)} }
-	for i := range strands {
-		cx, cy := float64(i%density), float64(i/density)
-		s := strand{
-			x:      (cx + .25 + .5*rng.Float64()) * cell,
-			y:      (cy + .25 + .5*rng.Float64()) * cell,
-			length: .55 + .45*rng.Float64(),
-			radius: (.36 + .14*rng.Float64()) * cell,
-			root:   channels(f.Root),
-			tip:    channels(f.Tip),
-		}
-		if key.source != nil {
-			// The texture's color where the strand grows, darker at its root.
-			t := key.source.sample(UV{U: float32(s.x / float64(size)), V: float32(s.y / float64(size))})
-			s.tip = [3]float64{float64(t.R), float64(t.G), float64(t.B)}
-			s.root = [3]float64{s.tip[0] * .55, s.tip[1] * .55, s.tip[2] * .55}
-		}
-		strands[i] = s
-	}
+	strands, size, cell := c.furStrands(key)
+	density := key.density
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	for y := range size {
 		for x := range size {
-			s := &strands[min(density-1, int(float64(y)/cell))*density+min(density-1, int(float64(x)/cell))]
-			// A strand's radius shrinks to 40% at its tip, so a texel at
-			// distance d stays inside it up to this height.
-			d := math.Hypot(float64(x)+.5-s.x, float64(y)+.5-s.y)
-			height := max(0, min(s.length, s.length*(1-d/s.radius)/.6))
+			// A strand reaches past its cell into its neighbors', so a texel
+			// shows the tallest of the strands of its cell and those around
+			// it. The texture repeats, so neighbors wrap around its edges.
+			px, py := float64(x)+.5, float64(y)+.5
+			cx, cy := min(density-1, int(px/cell)), min(density-1, int(py/cell))
+			s, height := &strands[cy*density+cx], 0.0
+			for dy := -1; dy <= 1; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					nx, ny := cx+dx, cy+dy
+					wx, wy := (nx+density)%density, (ny+density)%density
+					n := &strands[wy*density+wx]
+					// A strand's radius shrinks to 40% at its tip, so a
+					// texel at distance d stays inside it up to this height.
+					d := math.Hypot(px-n.x-float64(nx-wx)*cell, py-n.y-float64(ny-wy)*cell)
+					if h := max(0, min(n.length, n.length*(1-d/n.radius)/.6)); h > height {
+						s, height = n, h
+					}
+				}
+			}
 			// Color turns toward the tip early, as most of a strand that
 			// shows is its upper part; light reaches the outer fur. Texels
-			// outside strands keep their strand's color too, so filtering at
-			// strand edges does not darken them.
+			// outside strands keep their own cell's strand's color, so
+			// filtering at strand edges does not darken them.
 			along := height / s.length
 			shade, tip := .7+.3*height, math.Sqrt(along)
 			mix := func(c int) uint8 { return uint8((s.root[c] + (s.tip[c]-s.root[c])*tip) * shade) }
@@ -261,6 +259,45 @@ func (c *FurCoat) strands(key furLayers) (*Texture, error) {
 	}
 	c.layers[key] = texture
 	return texture, nil
+}
+
+// furStrand is one strand of a strand texture: where it grows, in texels,
+// its length as a fraction of the fur's, its radius at the root, in texels,
+// and its colors at the root and tip.
+type furStrand struct {
+	x, y, length, radius float64
+	root, tip            [3]float64
+}
+
+// furStrands places a strand texture's strands, one in each cell of a
+// density × density grid on a size × size texture, row by row. Each grows
+// somewhere in the middle half of its cell, and may reach past it.
+func (c *FurCoat) furStrands(key furLayers) (strands []furStrand, size int, cell float64) {
+	f, density := c.fur, key.density
+	size = min(furMaxTexture, density*furTexelsPerStrand)
+	cell = float64(size) / float64(density)
+	rng := rand.New(rand.NewPCG(f.Seed, 0x9e3779b97f4a7c15))
+	strands = make([]furStrand, density*density)
+	channels := func(c color.RGBA) [3]float64 { return [3]float64{float64(c.R), float64(c.G), float64(c.B)} }
+	for i := range strands {
+		cx, cy := float64(i%density), float64(i/density)
+		s := furStrand{
+			x:      (cx + .25 + .5*rng.Float64()) * cell,
+			y:      (cy + .25 + .5*rng.Float64()) * cell,
+			length: .55 + .45*rng.Float64(),
+			radius: (.36 + .14*rng.Float64()) * cell,
+			root:   channels(f.Root),
+			tip:    channels(f.Tip),
+		}
+		if key.source != nil {
+			// The texture's color where the strand grows, darker at its root.
+			t := key.source.sampleWrap(UV{U: float32(s.x / float64(size)), V: float32(s.y / float64(size))}, key.repeat)
+			s.tip = [3]float64{float64(t.R), float64(t.G), float64(t.B)}
+			s.root = [3]float64{s.tip[0] * .55, s.tip[1] * .55, s.tip[2] * .55}
+		}
+		strands[i] = s
+	}
+	return strands, size, cell
 }
 
 // Shells returns the fur on a base mesh: first an opaque skin, then one
@@ -305,7 +342,7 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	case projected:
 		key.density = furTile // Projected UVs count tiles already.
 	case textured(base):
-		key.source = base.Material.Texture
+		key.source, key.repeat = base.Material.Texture, base.Material.Repeat
 		key.density = min(density, furMaxTextured)
 	case c.fur.Spacing != 0:
 		su, sv := stretch(base)
@@ -328,7 +365,9 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	// Each shell has slices of its own: the caller may edit one.
 	skin := Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(base.UV)}
 	if key.source != nil {
-		skin.Material = &Material{Texture: key.source}
+		// The skin wears the base's material, as the coat it is, but opaque.
+		skin.Material = cloneMaterial(base.Material)
+		skin.Material.Transparent = false
 	} else {
 		shade := func(v uint8) uint8 { return uint8(float64(v) * .6) }
 		for i := range skin.Vertices {
@@ -346,7 +385,9 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	}
 	for k := 1; k < f.Shells; k++ {
 		h := f.height(k)
-		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(uv), Material: &Material{Texture: strands, Cutout: true, Threshold: h, Repeat: tiled}}
+		// Strands colored from a texture repeat, and are tinted by the
+		// vertices' colors, as that texture is on the base.
+		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(uv), Material: &Material{Texture: strands, Cutout: true, Threshold: h, Repeat: tiled || key.repeat, Tint: key.source != nil && base.Material.Tint}}
 		for i := range g.Vertices {
 			v := &g.Vertices[i]
 			v.Position = v.Position.Add(v.Normal.Normalize().Scale(f.Length * h))
@@ -382,21 +423,25 @@ func (c *FurCoat) finTexture() (*Texture, error) {
 	if c.fins != nil {
 		return c.fins, nil
 	}
-	width := furTile * furTexelsPerStrand
-	cell := float64(furTexelsPerStrand)
-	rng := rand.New(rand.NewPCG(c.fur.Seed^0x5f1e, 0x2545f4914f6cdd1d))
-	type strand struct{ x, length, radius float64 }
-	strands := make([]strand, furTile)
-	for i := range strands {
-		strands[i] = strand{x: (float64(i) + .25 + .5*rng.Float64()) * cell, length: .55 + .45*rng.Float64(), radius: (.36 + .14*rng.Float64()) * cell}
-	}
+	strands, width, cell := c.finStrands()
 	img := image.NewNRGBA(image.Rect(0, 0, width, finRows))
 	for y := range finRows {
 		h := 1 - (float64(y)+.5)/finRows // 0 at the root, 1 at the tip.
 		for x := range width {
-			s := strands[min(furTile-1, int(float64(x)/cell))]
-			along := h / s.length
-			if h > s.length || math.Abs(float64(x)+.5-s.x) > s.radius*(1-.6*along) {
+			// A strand reaches past its cell, so a texel is in the tallest
+			// of its cell's strand and its neighbors', wrapping around the
+			// texture's edges as it repeats.
+			px, cx := float64(x)+.5, min(furTile-1, int((float64(x)+.5)/cell))
+			along := -1.0
+			for dx := -1; dx <= 1; dx++ {
+				n := cx + dx
+				s := strands[(n+furTile)%furTile]
+				offset := float64(n-(n+furTile)%furTile) * cell
+				if a := h / s.length; h <= s.length && math.Abs(px-s.x-offset) <= s.radius*(1-.6*a) {
+					along = max(along, a)
+				}
+			}
+			if along < 0 {
 				continue
 			}
 			v := uint8(255 * (.55 + .45*math.Sqrt(along)) * (.7 + .3*h))
@@ -411,14 +456,47 @@ func (c *FurCoat) finTexture() (*Texture, error) {
 	return t, nil
 }
 
-// spacing is about how far apart strands grow, in the mesh's units.
+// finStrand is one strand of the fin texture: where it grows, in texels,
+// its length as a fraction of the fur's, and its radius at the root.
+type finStrand struct{ x, length, radius float64 }
+
+// finStrands places the fin texture's strands, one in each of furTile cells
+// across it, somewhere in the middle half of the cell.
+func (c *FurCoat) finStrands() (strands []finStrand, width int, cell float64) {
+	width, cell = furTile*furTexelsPerStrand, float64(furTexelsPerStrand)
+	rng := rand.New(rand.NewPCG(c.fur.Seed^0x5f1e, 0x2545f4914f6cdd1d))
+	strands = make([]finStrand, furTile)
+	for i := range strands {
+		strands[i] = finStrand{x: (float64(i) + .25 + .5*rng.Float64()) * cell, length: .55 + .45*rng.Float64(), radius: (.36 + .14*rng.Float64()) * cell}
+	}
+	return strands, width, cell
+}
+
+// spacing is about how far apart the shells' strands grow on a base, in the
+// mesh's units, so that fins space theirs alike: Spacing, unless a texture
+// caps how many strands it colors; for a mesh without UVs, as projected;
+// otherwise the strands across the UV square, over the surface it spans.
 func (c *FurCoat) spacing(base Geometry) float32 {
-	if c.fur.Spacing != 0 {
+	if c.fur.Spacing != 0 && !textured(base) {
 		return c.fur.Spacing
 	}
-	b := GeometryBounds(base)
-	size := b.Max.Sub(b.Min)
-	return max(size.X, size.Y, size.Z) / float32(c.fur.Density)
+	span := 0.0
+	if len(base.UV) == len(base.Vertices) {
+		span = uvSpan(base)
+	}
+	if span == 0 {
+		if c.fur.Spacing != 0 {
+			return c.fur.Spacing
+		}
+		b := GeometryBounds(base)
+		size := b.Max.Sub(b.Min)
+		return max(size.X, size.Y, size.Z) / float32(c.fur.Density)
+	}
+	strands := c.density(base)
+	if textured(base) {
+		strands = min(strands, furMaxTextured)
+	}
+	return float32(span / float64(strands))
 }
 
 // Fins returns the fur's fins on a base mesh: on every edge, a strip of
@@ -474,9 +552,15 @@ func (c *FurCoat) Fins(base Geometry) (Geometry, error) {
 				if source == nil {
 					return f.Root, f.Tip
 				}
-				t := source.sample(base.UV[i])
+				// As the base shows its texture: repeating, and tinted.
+				t := source.sampleWrap(base.UV[i], base.Material.Repeat)
 				tip = color.RGBA{t.R, t.G, t.B, 255}
-				return color.RGBA{uint8(float32(t.R) * .55), uint8(float32(t.G) * .55), uint8(float32(t.B) * .55), 255}, tip
+				if base.Material.Tint {
+					v := base.Vertices[i].Color
+					tint := func(a, b uint8) uint8 { return uint8(uint16(a) * uint16(b) / 255) }
+					tip = color.RGBA{tint(tip.R, v.R), tint(tip.G, v.G), tint(tip.B, v.B), 255}
+				}
+				return color.RGBA{uint8(float32(tip.R) * .55), uint8(float32(tip.G) * .55), uint8(float32(tip.B) * .55), 255}, tip
 			}
 			ra, ta := colors(ia)
 			rb, tb := colors(ib)
