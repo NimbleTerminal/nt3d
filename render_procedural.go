@@ -35,6 +35,7 @@ fn nt3d_decode(c: vec3<f32>) -> vec3<f32> {
 
 type proceduralTexture struct {
 	target     *ntgpuimage.Texture
+	aniso      int // The target's sampler's.
 	uniform    *wgpu.Buffer
 	bindLayout *wgpu.BindGroupLayout
 	bind       *wgpu.BindGroup
@@ -58,7 +59,7 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 	// used by the same frame retain independent targets and uniforms.
 	spare := make(map[*Texture]*proceduralTexture)
 	for src, t := range g.procedural {
-		if !used[src] {
+		if !used[src] || t.aniso != f.anisotropy() {
 			spare[src] = t
 			delete(g.procedural, src)
 		}
@@ -73,7 +74,7 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 			continue
 		}
 		for old, t := range spare {
-			if old.shader == src.shader && old.width == src.width && old.height == src.height {
+			if old.shader == src.shader && old.width == src.width && old.height == src.height && t.aniso == f.anisotropy() {
 				g.procedural[src] = t
 				delete(spare, old)
 				break
@@ -82,9 +83,9 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 		if g.procedural[src] != nil {
 			continue
 		}
-		t := &proceduralTexture{}
+		t := &proceduralTexture{aniso: f.anisotropy()}
 		var err error
-		t.target, err = g.r.NewTexture(src.width, src.height, ntgpuimage.TextureOptions{RenderTarget: true, SRGB: true})
+		t.target, err = g.r.NewTexture(src.width, src.height, ntgpuimage.TextureOptions{RenderTarget: true, SRGB: true, Anisotropy: uint16(t.aniso)})
 		if err != nil {
 			return err
 		}

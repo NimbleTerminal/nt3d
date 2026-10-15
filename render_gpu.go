@@ -426,7 +426,7 @@ func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuD
 	if t := g.procedural[src]; t != nil {
 		pass.SetBindGroup(1, t.target.BindGroup(), nil)
 	} else {
-		pass.SetBindGroup(1, g.textures[textureKey{src, f.Geometry[d.index].Material.Repeat}].BindGroup(), nil)
+		pass.SetBindGroup(1, g.textures[textureKey{src, f.Geometry[d.index].Material.Repeat, f.anisotropy()}].BindGroup(), nil)
 	}
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count})
 }

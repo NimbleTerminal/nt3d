@@ -10,8 +10,9 @@ move to Done with their commit; git history has the details.
   `Model.Summary` so far; a helper
   turning `RenderSoftware` depth into view distance, if its outlines need one.
 - [ ] **Release**:
-  - push `ntgpuimage` now: nt3d uses its unpushed sRGB, mipmap, and sampler
-    commits through `go.work`, and CI fails until it can check out `933755e`
+  - push `ntgpuimage` now: nt3d uses its unpushed sRGB, mipmap, sampler, and
+    anisotropy commits through `go.work`, and CI fails until it can check
+    out `e3c9828`
   - release `ntgpuimage`, bump nt3d's pin from `v0.2.0`, and drop CI's
     checkout of it
   - publish `ntpicture`
@@ -32,7 +33,7 @@ move to Done with their commit; git history has the details.
   instance today.
 - [ ] **Mipmap follow-ups**: procedural textures (needs `ntgpuimage`
   render-target mips); coverage-preserving alpha mips for cutouts (fur and
-  leaves sample full size today); anisotropic filtering for grazing floors.
+  leaves sample full size today).
 - [ ] **World-anchored labels and billboards** on every renderer; `CellText`
   is wireframe-only.
 - [ ] **Outline or toon edges** on the GPU and software renderers, for
@@ -78,7 +79,8 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
-- 3MF `Model.Summary`: bounds, area, and mesh counts past the triangle limit (for gloss)
+- anisotropic texture filtering (`Frame.Anisotropy`), both renderers; in the mipmaps demo
+- `1d860e7` 3MF `Model.Summary`: bounds, area, and mesh counts past the triangle limit (for gloss)
 - `6e4685a`, `cf8172c` forest demo of shared geometry; transforms check only
   the subtree they move (updating every node was quadratic: 3.3 s for 5,000)
 - `83f3da2`, `cd7488b` mipmaps and linear-light texture filtering, both

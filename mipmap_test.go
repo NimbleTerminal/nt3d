@@ -107,3 +107,24 @@ func TestTextureLevels(t *testing.T) {
 		t.Fatalf("lod %v, want 2", lod)
 	}
 }
+
+// Anisotropic filtering keeps a slanted floor's checks further toward the
+// horizon than mipmapping alone, which blurs them to gray, and still evens
+// out the farthest texels rather than shimmering.
+func TestAnisotropy(t *testing.T) {
+	f := checkerFloor(t, false)
+	f.Anisotropy = 1
+	mipped := softwareRender(f)
+	f.Anisotropy = 0 // MaxAnisotropy.
+	aniso := softwareRender(f)
+	_, flat := spread(band(mipped, .33, .38))
+	_, detail := spread(band(aniso, .33, .38))
+	_, horizon := spread(band(aniso, .28, .30))
+	if flat > 5 || detail < 20 || horizon > 15 {
+		t.Fatalf("checks' spread: mipmapped %.1f, anisotropic %.1f; anisotropic at the horizon %.1f", flat, detail, horizon)
+	}
+	f.Anisotropy = MaxAnisotropy + 1
+	if _, err := NewSoftwareRenderer().Render(f); err == nil {
+		t.Fatal("anisotropy 17 accepted")
+	}
+}

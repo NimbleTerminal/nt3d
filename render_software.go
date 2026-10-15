@@ -82,7 +82,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	}
 	// Surfaces are shaded in 0..255, in linear light or as encoded, as the
 	// frame works; pixels are 8-bit sRGB.
-	linear, ambient := f.Linear, ambientLight(&f)
+	linear, ambient, aniso := f.Linear, ambientLight(&f), f.anisotropy()
 	toPixel := func(v float32) uint8 {
 		if linear {
 			return encode8(v / 255)
@@ -181,11 +181,12 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 					// for how far their texels spread across a pixel, found
 					// from the coordinates a pixel right and a pixel down, as
 					// the GPU's derivatives find it.
-					lod := float32(0)
-					if !cutout {
-						lod = textureLOD(material.Texture, uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1))
+					var tex [4]float32
+					if cutout {
+						tex = material.Texture.sampleLinear(uv, material.Repeat, 0)
+					} else {
+						tex = material.Texture.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.Repeat, aniso)
 					}
-					tex := material.Texture.sampleLinear(uv, material.Repeat, lod)
 					if cutout && tex[3] < q0*a.cut+q1*b.cut+q2*c.cut {
 						continue // Cut out: neither color nor depth.
 					}

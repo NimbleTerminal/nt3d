@@ -689,3 +689,23 @@ func TestGPUMipmaps(t *testing.T) {
 		t.Fatalf("GPU and software differ by %.1f levels on average", mean)
 	}
 }
+
+// The GPU filters anisotropically too: a slanted floor keeps its checks
+// further out than with mipmapping alone, as software does.
+func TestGPUAnisotropy(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	f := checkerFloor(t, false)
+	f.Anisotropy = 1
+	img, err := r.Render(f)
+	check(t, err)
+	_, flat := spread(band(img, .33, .38))
+	f.Anisotropy = 0
+	img, err = r.Render(f)
+	check(t, err)
+	gm, detail := spread(band(img, .33, .38))
+	sm, sd := spread(band(softwareRender(f), .33, .38))
+	if flat > 5 || detail < 15 || math.Abs(gm-sm) > 10 {
+		t.Fatalf("GPU spread: mipmapped %.1f, anisotropic %.1f (mean %.0f); software %.1f (mean %.0f)", flat, detail, gm, sd, sm)
+	}
+}

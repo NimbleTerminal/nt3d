@@ -103,11 +103,28 @@ type Frame struct {
 	Linear bool
 	// Fog fades what is drawn toward a color with distance from the camera.
 	Fog Fog
+	// Anisotropy is the most samples a texture takes across a surface seen
+	// at a slant, where a pixel covers a long, thin run of texels: along the
+	// run, at the mip level its width calls for, so a floor keeps detail
+	// toward the horizon that mipmapping alone blurs. 1 is mipmapping alone;
+	// zero means MaxAnisotropy.
+	Anisotropy int
 	// Cull skips geometry wholly outside the view, which costs nothing to
 	// leave out. It trusts each Geometry's Bounds to contain it, as
 	// Scene.Frame's do, and Scene.Frame sets it; geometry without valid
 	// Bounds is always drawn. Changing Matrix afterward is fine.
 	Cull bool
+}
+
+// MaxAnisotropy is the most Frame.Anisotropy allows, and its default.
+const MaxAnisotropy = 16
+
+// anisotropy is the frame's anisotropy, its default filled in.
+func (f Frame) anisotropy() int {
+	if f.Anisotropy == 0 {
+		return MaxAnisotropy
+	}
+	return f.Anisotropy
 }
 
 // viewAt is the direction from a world point toward the viewer.
@@ -218,6 +235,9 @@ func validateFrame(f Frame) error {
 	}
 	if len(f.Shared) != 0 && len(f.Shared) != len(f.Geometry) {
 		return fmt.Errorf("nt3d: shared geometry count mismatch")
+	}
+	if f.Anisotropy < 0 || f.Anisotropy > MaxAnisotropy {
+		return fmt.Errorf("nt3d: anisotropy must be 0..%d", MaxAnisotropy)
 	}
 	if !validFog(f.Fog) {
 		return fmt.Errorf("nt3d: non-finite fog")

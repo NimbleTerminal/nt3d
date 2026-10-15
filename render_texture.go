@@ -50,10 +50,11 @@ func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGr
 }
 
 // textureKey is an uploaded texture: an image texture, by its sampler's
-// addressing, repeating or clamped.
+// addressing, repeating or clamped, and anisotropy.
 type textureKey struct {
 	src    *Texture
 	repeat bool
+	aniso  int
 }
 
 // prepareTextures runs outside GPU callbacks: ntgpuimage owns allocation,
@@ -73,7 +74,7 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 			sampledLayout = g.procedural[src].target.BindGroupLayout()
 			continue
 		}
-		key := textureKey{src, geom.Material.Repeat}
+		key := textureKey{src, geom.Material.Repeat, f.anisotropy()}
 		used[key] = true
 		t := g.textures[key]
 		if t == nil {
@@ -83,7 +84,7 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 			for _, level := range src.levels() {
 				levels = append(levels, level)
 			}
-			options := ntgpuimage.TextureOptions{SRGB: true}
+			options := ntgpuimage.TextureOptions{SRGB: true, Anisotropy: uint16(key.aniso)}
 			if key.repeat {
 				options.AddressModeU, options.AddressModeV = gputypes.AddressModeRepeat, gputypes.AddressModeRepeat
 			}

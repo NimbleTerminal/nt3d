@@ -150,6 +150,49 @@ func (t *Texture) sampleLinear(uv UV, repeat bool, lod float32) [4]float32 {
 	return c
 }
 
+// sampleFootprint samples the texels a pixel covers: those between uv and
+// dx, dy, where the coordinates fall a pixel right and down. A pixel seen
+// square-on takes one trilinear sample, as textureLOD chooses; one seen at a
+// slant covers a long, thin run of texels, and takes up to aniso samples
+// spread along it, at the mip level for its width, as GPUs filter
+// anisotropically.
+func (t *Texture) sampleFootprint(uv, dx, dy UV, repeat bool, aniso int) [4]float32 {
+	w, h := float64(t.width), float64(t.height)
+	ax, ay := float64(dx.U-uv.U), float64(dx.V-uv.V)
+	bx, by := float64(dy.U-uv.U), float64(dy.V-uv.V)
+	lx, ly := math.Hypot(ax*w, ay*h), math.Hypot(bx*w, by*h)
+	major, minor, mu, mv := lx, ly, ax, ay
+	if ly > lx {
+		major, minor, mu, mv = ly, lx, bx, by
+	}
+	n := 1
+	if aniso > 1 && major > 1 {
+		n = aniso
+		if minor > 0 {
+			n = min(aniso, int(math.Ceil(major/minor)))
+		}
+	}
+	lod := float32(0)
+	if step := major / float64(n); step > 1 {
+		lod = float32(math.Log2(step))
+	}
+	if n == 1 {
+		return t.sampleLinear(uv, repeat, lod)
+	}
+	var sum [4]float32
+	for i := range n {
+		f := (float64(i)+.5)/float64(n) - .5
+		c := t.sampleLinear(UV{uv.U + float32(mu*f), uv.V + float32(mv*f)}, repeat, lod)
+		for k := range sum {
+			sum[k] += c[k]
+		}
+	}
+	for k := range sum {
+		sum[k] /= float32(n)
+	}
+	return sum
+}
+
 // sampleLevel filters one level bilinearly in linear light.
 func sampleLevel(img *image.NRGBA, uv UV, repeat bool) [4]float32 {
 	w, h := img.Rect.Dx(), img.Rect.Dy()

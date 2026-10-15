@@ -356,7 +356,12 @@ between them, so a tiled floor running to the horizon settles into an even
 tone instead of shimmering. The level comes from how far texture coordinates
 move from one pixel to the next: the GPU's derivatives, and the same
 measure in software, which samples the same chain the GPU uploads.
-Procedural textures, drawn each frame, have no mipmaps yet. Cutouts sample
+`Frame.Anisotropy` (1 to 16; zero means 16) adds anisotropic filtering:
+where a pixel covers a long, thin run of texels, as on a floor seen at a
+slant, it samples along the run at the mip level its width calls for, so the
+floor keeps its detail toward the horizon instead of blurring to gray; the
+software renderer does the same. Procedural textures, drawn each frame, have
+no mipmaps yet. Cutouts sample
 full size, as averaged alpha would thin fur and leaves away in the distance.
 The mipmaps demo (`task mipmaps`) compares them. `Material.Transparent` blends a mesh's triangles
 over what lies behind, by the vertex colors' alpha times the texture's: after
