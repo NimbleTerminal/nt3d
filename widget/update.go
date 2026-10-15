@@ -102,11 +102,23 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		return m, m.SetRenderMode(Wireframe)
 	case tick:
-		if v.id != m.id || v.generation != m.wake || !m.camera.AutoRotate {
+		if v.id != m.id || v.generation != m.wake {
 			return m, nil
 		}
-		if time.Since(m.lastInput).Seconds() >= m.camera.ResumeAfter {
-			m.camera.Beta += 1
+		if !m.camera.AutoRotate {
+			m.lastTick = time.Time{}
+			return m, nil
+		}
+		// Ticks follow frames, so turn by the time since the last: a slow
+		// frame turns as far as the fast ones it took the place of. A long
+		// gap, as after rotation resumes, turns at most a second's worth.
+		elapsed := 1. / 30
+		if !m.lastTick.IsZero() {
+			elapsed = min(1, v.at.Sub(m.lastTick).Seconds())
+		}
+		m.lastTick = v.at
+		if idle := v.at.Sub(m.lastInput).Seconds(); idle >= m.camera.ResumeAfter {
+			m.camera = m.camera.Step(elapsed, idle)
 			return m, m.changed(false)
 		}
 		return m, m.timer()

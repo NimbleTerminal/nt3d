@@ -46,6 +46,7 @@ type rendered struct {
 
 type tick struct {
 	id, generation uint64
+	at             time.Time
 }
 
 // Software frames are drawn at full size while they are prompt, and smaller
@@ -198,5 +199,5 @@ func (m *Model) timer() tea.Cmd {
 	}
 	m.wake++
 	id, generation := m.id, m.wake
-	return tea.Tick(time.Second/30, func(time.Time) tea.Msg { return tick{id, generation} })
+	return tea.Tick(time.Second/30, func(at time.Time) tea.Msg { return tick{id, generation, at} })
 }

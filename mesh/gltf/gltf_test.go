@@ -364,6 +364,20 @@ func TestGLTFRefusals(t *testing.T) {
 	_, err = Decode([]byte("glTF garbage"), nil)
 	fails(t, err, "glTF")
 
+	// Faces a mask drops do not count against the limit.
+	clear, solid := [4]uint8{255, 255, 255, 0}, [4]uint8{255, 255, 255, 255}
+	masked := gltfDoc(prim{
+		positions: [][3]float32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {2, 0, 0}, {3, 0, 0}, {2, 1, 0}},
+		colors:    [][4]uint8{clear, clear, clear, solid, solid, solid},
+		material:  gltf.Index(0),
+	})
+	masked.Materials = []*gltf.Material{{AlphaMode: gltf.AlphaMask, AlphaCutoff: gltf.Float(.5)}}
+	m, err := Decode(glb(t, masked), &nt3dmesh.Options{MaxTriangles: 1})
+	check(t, err)
+	if m.Triangles() != 1 {
+		t.Fatalf("%d triangles kept", m.Triangles())
+	}
+
 	nan := float32(math.NaN())
 	_, err = Decode(glb(t, gltfDoc(prim{positions: upTriangle.positions, normals: [][3]float32{{0, 0, 1}, {nan, 0, 1}, {0, 0, 1}}})), nil)
 	fails(t, err, "non-finite normal")

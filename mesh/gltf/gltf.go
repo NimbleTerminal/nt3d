@@ -703,13 +703,6 @@ func (b *gltfBuilder) place(i uint32) (nt3dmath.Vec3, error) {
 }
 
 func (b *gltfBuilder) triangles(v []uint32) error {
-	faces := len(v) / 3
-	if b.look.double {
-		faces *= 2
-	}
-	if err := b.d.budget.take(faces); err != nil {
-		return err
-	}
 	b.material = b.nt3dMaterial()
 	first := len(b.d.m.Objects)
 	mirror := b.world.det() < 0 // Mirroring turns faces inside out; turn them back.
@@ -733,6 +726,10 @@ func (b *gltfBuilder) triangles(v []uint32) error {
 				if a < b.look.cutoff {
 					continue
 				}
+			}
+			// Faces count against the limit as they are kept.
+			if err := b.d.budget.take(1); err != nil {
+				return err
 			}
 			if err := b.face(tri, back); err != nil {
 				return err

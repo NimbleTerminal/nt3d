@@ -160,7 +160,7 @@ func rayTriangle(r nt3dmath.Ray, a, b, c nt3dmath.Vec3) (t, u, w float32, ok boo
 
 // cutAt reports whether a cutout material cuts out the point of triangle tri
 // with barycentric weights u and w toward its second and third corners: its
-// texel's alpha falls below the threshold, so renderers draw nothing there.
+// texture's alpha falls below the threshold, so renderers draw nothing there.
 func cutAt(g *Geometry, tri int, u, w float32) bool {
 	m := g.Material
 	if m == nil || !m.Cutout || m.Texture == nil {
@@ -173,7 +173,10 @@ func cutAt(g *Geometry, tri int, u, w float32) bool {
 		s := 1 - u - w
 		uv = UV{s*a.U + u*b.U + w*c.U, s*a.V + u*b.V + w*c.V}
 	}
-	return float32(m.Texture.sampleWrap(uv, m.Repeat).A) < m.threshold()*255
+	// Sampled and compared as the renderers sample a cutout: filtered at
+	// full size, against the threshold itself, so a click goes through
+	// where the picture does.
+	return m.Texture.sampleLinear(uv, m.Repeat, 0)[3] < m.threshold()
 }
 func rayBox(r nt3dmath.Ray, b Box) (float32, bool) {
 	lo, hi := float32(0), float32(math.Inf(1))

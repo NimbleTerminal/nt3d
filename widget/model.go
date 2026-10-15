@@ -56,6 +56,7 @@ type Model struct {
 	drag, moved                     bool
 	lastX, lastY                    int
 	lastInput                       time.Time
+	lastTick                        time.Time // The last auto-rotate tick, or zero.
 	err                             error
 	slow                            int
 	shrink                          float64

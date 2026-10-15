@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"strings"
@@ -279,5 +280,27 @@ func TestFrameRate(t *testing.T) {
 	m.shown = []time.Time{now.Add(-2 * time.Second)}
 	if m.FrameRate() != 0 {
 		t.Fatal("rate after a second without frames")
+	}
+}
+
+// Auto-rotation turns by the time between ticks: a slow frame turns as far
+// as the fast ones it stood for.
+func TestAutoRotateFollowsTime(t *testing.T) {
+	m := New(scene(t), 80, 24, WithRenderMode(Software))
+	defer m.Close()
+	m.camera.AutoRotate = true
+	start := time.Now()
+	m.lastInput = start.Add(-time.Hour)
+	turn := func(at time.Time) float64 {
+		before := m.camera.Beta
+		m.Update(tick{id: m.id, generation: m.wake, at: at})
+		return m.camera.Beta - before
+	}
+	turn(start)
+	if got := turn(start.Add(200 * time.Millisecond)); math.Abs(got-6) > 1e-9 {
+		t.Fatalf("a 200 ms frame turned %v°, want 6°", got)
+	}
+	if got := turn(start.Add(1200*time.Millisecond + time.Hour)); math.Abs(got-30) > 1e-9 {
+		t.Fatalf("a long gap turned %v°, want at most a second's 30°", got)
 	}
 }

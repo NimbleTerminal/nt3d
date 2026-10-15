@@ -325,7 +325,8 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 		return nil, err
 	}
 	f := c.fur
-	skin := Geometry{Vertices: slices.Clone(base.Vertices), Indices: base.Indices, UV: base.UV}
+	// Each shell has slices of its own: the caller may edit one.
+	skin := Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(base.UV)}
 	if key.source != nil {
 		skin.Material = &Material{Texture: key.source}
 	} else {
@@ -345,7 +346,7 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	}
 	for k := 1; k < f.Shells; k++ {
 		h := f.height(k)
-		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: base.Indices, UV: uv, Material: &Material{Texture: strands, Cutout: true, Threshold: h, Repeat: tiled}}
+		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(uv), Material: &Material{Texture: strands, Cutout: true, Threshold: h, Repeat: tiled}}
 		for i := range g.Vertices {
 			v := &g.Vertices[i]
 			v.Position = v.Position.Add(v.Normal.Normalize().Scale(f.Length * h))

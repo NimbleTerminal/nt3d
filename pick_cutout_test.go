@@ -84,3 +84,54 @@ func TestPickThroughCutout(t *testing.T) {
 		})
 	}
 }
+
+// Picks go through a cutout exactly where the picture does, near the
+// threshold too: both sample the texture filtered, at full size.
+func TestPickCutoutMatchesPixels(t *testing.T) {
+	// Alpha falls across three texels; the middle one is under the
+	// threshold, so filtering moves the cut from where texels change.
+	fade := image.NewNRGBA(image.Rect(0, 0, 3, 1))
+	for x, a := range []uint8{255, 100, 0} {
+		fade.SetNRGBA(x, 0, color.NRGBA{128, 128, 128, a})
+	}
+	tex, err := NewTexture(fade)
+	check(t, err)
+	red := color.RGBA{220, 30, 30, 255}
+	s := NewScene()
+	front, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -1.5, MaxX: 1.5, MinY: -1.5, MaxY: 1.5, Heights: make([]float32, 4), Material: &Material{Texture: tex, Cutout: true, Threshold: .4}})
+	check(t, err)
+	// Across the fade, a pick cuts where the renderers' sample does: the
+	// same filtered alpha against the same threshold, not rounded to 8 bits.
+	for i := range 3000 {
+		u := float32(i) / 3000
+		g := Geometry{Indices: []uint32{0, 1, 2}, UV: []UV{{U: u}, {U: u}, {U: u}}, Material: front.Material}
+		if cut, drawn := cutAt(&g, 0, 0, 0), tex.sampleLinear(UV{U: u}, false, 0)[3] >= .4; cut == drawn {
+			t.Fatalf("at u=%v the pick cuts %v, the renderers draw %v", u, cut, drawn)
+		}
+	}
+	back, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -3, MaxX: 3, MinY: -3, MaxY: 3, Heights: make([]float32, 4), Color: red})
+	check(t, err)
+	frontID, err := s.SetGeometry("front", front)
+	check(t, err)
+	check(t, s.SetTransform(frontID, nt3dmath.Translation(nt3dmath.Vec3{Z: .3})))
+	backID, err := s.SetGeometry("back", back)
+	check(t, err)
+	camera := DefaultCamera()
+	camera.Projection, camera.Alpha = Perspective, 89
+	f, err := s.Frame(camera, 120, 120)
+	check(t, err)
+	f.Light = Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: 1}
+	img := softwareRender(f)
+	for y := 20; y < 100; y += 2 {
+		for x := 20; x < 100; x++ {
+			hit := s.Pick(camera, f, float32(x)+.5, float32(y)+.5, 0)
+			shown := frontID
+			if at(img, x, y) == red {
+				shown = backID
+			}
+			if hit == nil || hit.Node != shown {
+				t.Fatalf("pixel (%d, %d) shows node %d; the pick hit %+v", x, y, shown, hit)
+			}
+		}
+	}
+}

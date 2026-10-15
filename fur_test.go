@@ -239,3 +239,32 @@ func TestFurFins(t *testing.T) {
 		t.Fatal("strips face one way")
 	}
 }
+
+// Shells share no slices with each other or the base: editing one returned
+// shell leaves the rest as they were.
+func TestFurShellsShareNothing(t *testing.T) {
+	coat, err := NewFur(Fur{Length: .2, Shells: 4, Density: 16})
+	check(t, err)
+	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 16, Rings: 8})
+	check(t, err)
+	if len(sphere.UV) == 0 {
+		t.Fatal("fixture has no UVs")
+	}
+	shells, err := coat.Shells(sphere)
+	check(t, err)
+	before := sphere.Indices[0]
+	for k, g := range shells {
+		g.Indices[0] = 999
+		if len(g.UV) > 0 {
+			g.UV[0] = UV{U: 9, V: 9}
+		}
+		if sphere.Indices[0] != before || sphere.UV[0] == (UV{U: 9, V: 9}) {
+			t.Fatalf("editing shell %d changed the base", k)
+		}
+		for j, other := range shells[k+1:] {
+			if other.Indices[0] == 999 || len(other.UV) > 0 && other.UV[0] == (UV{U: 9, V: 9}) {
+				t.Fatalf("editing shell %d changed shell %d", k, k+1+j)
+			}
+		}
+	}
+}
