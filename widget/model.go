@@ -62,6 +62,7 @@ type Model struct {
 	shrink                          float64
 	gpuFailure                      GPUFailure
 	failed                          error // A reported GPU failure; rendering waits for a change.
+	renderErr                       error // The last frame's, until a frame draws without one.
 	supersample                     int
 	postProcess                     func(*image.RGBA)
 	shown                           []time.Time   // When frames were shown, over the last second.
@@ -168,7 +169,16 @@ func New(scene *nt3d.Scene, width, height int, opts ...Option) *Model {
 func (m *Model) Scene() *nt3d.Scene  { return m.scene }
 func (m *Model) Camera() nt3d.Camera { return m.camera }
 func (m *Model) ID() uint64          { return m.id }
-func (m *Model) Err() error          { return m.err }
+
+// Err is the last frame's render error, until a frame draws without one, or
+// else the picture error that changed how frames are shown. A GPU failure
+// that software drew the frame for is not an error: RenderMode shows it.
+func (m *Model) Err() error {
+	if m.renderErr != nil {
+		return m.renderErr
+	}
+	return m.err
+}
 
 // Supersample is the GPU supersampling factor; see WithSupersample.
 func (m *Model) Supersample() int { return max(1, m.supersample) }

@@ -31,7 +31,7 @@ func (m *Model) retry() tea.Cmd {
 	if m.failed == nil {
 		return nil
 	}
-	m.failed, m.err = nil, nil
+	m.failed, m.renderErr, m.err = nil, nil, nil
 	return m.pic.SetVisible(m.renderMode != Wireframe)
 }
 
@@ -42,6 +42,7 @@ type rendered struct {
 	renderMode RenderMode
 	err        error
 	elapsed    time.Duration
+	fellBack   bool // The GPU failed and software drew the frame instead.
 }
 
 type tick struct {
@@ -147,7 +148,7 @@ func (m *Model) schedule() tea.Cmd {
 		start := time.Now()
 		var img image.Image
 		var err error
-		wire := ""
+		wire, fellBack := "", false
 		if renderMode == WebGPU {
 			if r == nil {
 				err = fmt.Errorf("nt3dwidget: %w", nt3d.ErrGPUUnavailable)
@@ -158,16 +159,13 @@ func (m *Model) schedule() tea.Cmd {
 				return rendered{id: id, seq: seq, renderMode: WebGPU, err: err, elapsed: time.Since(start)}
 			}
 			if err != nil {
-				renderMode = Software
+				// Software draws the frame: its error, if any, is the frame's.
+				renderMode, fellBack, err = Software, true, nil
 			}
 		}
 		if renderMode == Software {
-			var renderErr error
 			f.Supersample = 0 // Software pacing trades resolution for speed instead.
-			img, renderErr = nt3d.NewSoftwareRenderer().Render(f)
-			if renderErr != nil {
-				err = renderErr
-			}
+			img, err = nt3d.NewSoftwareRenderer().Render(f)
 		}
 		if renderMode == Wireframe {
 			var renderErr error
@@ -176,7 +174,7 @@ func (m *Model) schedule() tea.Cmd {
 				err = renderErr
 			}
 		}
-		return rendered{id, seq, postProcessed(img, post), wire, renderMode, err, time.Since(start)}
+		return rendered{id: id, seq: seq, frame: postProcessed(img, post), wire: wire, renderMode: renderMode, err: err, elapsed: time.Since(start), fellBack: fellBack}
 	})
 }
 

@@ -187,6 +187,27 @@ func TestGPUFailureCanFallBack(t *testing.T) {
 	if m.Failed() != nil || m.RenderMode() != Software || !r.closed {
 		t.Fatal("fallback state")
 	}
+	// Software drew the frame: the GPU's failure is not the frame's error.
+	if m.Err() != nil {
+		t.Fatalf("error after a good fallback frame: %v", m.Err())
+	}
+}
+
+// A frame's render error stands until a frame draws without one.
+func TestRenderErrorClearsOnAGoodFrame(t *testing.T) {
+	m := New(scene(t), 30, 10, WithRenderMode(Software))
+	defer m.Close()
+	m.started = true
+	broken := errors.New("broken frame")
+	m.Update(rendered{id: m.id, seq: m.seq, renderMode: Software, err: broken})
+	if !errors.Is(m.Err(), broken) {
+		t.Fatalf("error %v, want the frame's", m.Err())
+	}
+	m.busy, m.dirty = false, true
+	m.Update(m.schedule()().(rendered))
+	if m.Err() != nil {
+		t.Fatalf("error %v after a good frame", m.Err())
+	}
 }
 
 func TestFitShowsTheScene(t *testing.T) {

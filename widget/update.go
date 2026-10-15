@@ -45,17 +45,17 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		if v.err != nil && v.renderMode == WebGPU {
 			// Reported, not fallen back: keep the renderer for a smaller scene.
-			m.err, m.failed = v.err, v.err
+			m.renderErr, m.failed = v.err, v.err
 			id, err := m.id, v.err
 			failed := func() tea.Msg { return RenderFailedMsg{ID: id, Err: err} }
 			return m, tea.Batch(m.pic.SetVisible(false), failed)
 		}
-		if v.err != nil {
-			m.err = v.err
-			if m.renderer != nil {
-				_ = m.renderer.Close()
-				m.renderer = nil
-			}
+		// A frame's error stands until a frame draws without one. The GPU
+		// that software stood in for is let go: falling back is for good.
+		m.renderErr = v.err
+		if (v.fellBack || v.err != nil) && m.renderer != nil {
+			_ = m.renderer.Close()
+			m.renderer = nil
 		}
 
 		m.renderMode = v.renderMode
