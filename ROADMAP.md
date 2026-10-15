@@ -12,7 +12,7 @@ move to Done with their commit; git history has the details.
 - [ ] **Release**:
   - push `ntgpuimage` now: nt3d uses its unpushed sRGB, mipmap, sampler, and
     anisotropy commits through `go.work`, and CI fails until it can check
-    out `e3c9828`
+    out `e3c9828`. nt3d needs nothing more from it for this release.
   - release `ntgpuimage`, bump nt3d's pin from `v0.2.0`, and drop CI's
     checkout of it
   - publish `ntpicture`
@@ -79,7 +79,7 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
-- anisotropic texture filtering (`Frame.Anisotropy`), both renderers; in the mipmaps demo
+- `e1f3f0a`, `c30c9b4` anisotropic texture filtering (`Frame.Anisotropy`), both renderers; in the mipmaps demo
 - `1d860e7` 3MF `Model.Summary`: bounds, area, and mesh counts past the triangle limit (for gloss)
 - `6e4685a`, `cf8172c` forest demo of shared geometry; transforms check only
   the subtree they move (updating every node was quadratic: 3.3 s for 5,000)
