@@ -85,6 +85,12 @@ func open3MF(data []byte, limit int64) (*package3MF, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nt3dmesh: 3MF: %w", err)
 	}
+	// The end record's count is checked first, to refuse most crowded
+	// archives before their directory is read, but it may understate:
+	// the reader checks it only modulo 65536. What was read is the truth.
+	if len(archive.File) > max3MFEntries {
+		return nil, fmt.Errorf("nt3dmesh: 3MF has more than %d entries", max3MFEntries)
+	}
 	p := &package3MF{files: map[string]*zip.File{}, budget: limit, limit: limit, parts: map[string]*part3MF{}}
 	for _, f := range archive.File {
 		p.files[strings.ToLower(f.Name)] = f

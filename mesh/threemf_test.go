@@ -611,3 +611,38 @@ func TestLarge3MFSummary(t *testing.T) {
 		t.Fatalf("err %v, summary %+v", err, m.Summary)
 	}
 }
+
+// One end record that understates the entries is no way past the cap: the
+// zip reader checks its count only modulo 65536, so the files it read are
+// counted too.
+func TestUnderstated3MFEntries(t *testing.T) {
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	for i := range 65536 + 10 {
+		if _, err := w.CreateHeader(&zip.FileHeader{Name: fmt.Sprint(i), Method: zip.Store}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check(t, w.Close())
+	// So many entries make a zip64 archive: its directory's size and
+	// offset are in the zip64 end record. Keep the directory, and end it
+	// with a plain record that claims 10 entries, 65546 modulo 65536.
+	data := b.Bytes()
+	end64 := bytes.LastIndex(data, []byte("PK\x06\x06"))
+	size := binary.LittleEndian.Uint64(data[end64+40:])
+	offset := binary.LittleEndian.Uint64(data[end64+48:])
+	lying := bytes.Clone(data[:offset+size])
+	record := make([]byte, zipEndSize)
+	copy(record, "PK\x05\x06")
+	binary.LittleEndian.PutUint16(record[8:], 10)
+	binary.LittleEndian.PutUint16(record[10:], 10)
+	binary.LittleEndian.PutUint32(record[12:], uint32(size))
+	binary.LittleEndian.PutUint32(record[16:], uint32(offset))
+	lying = append(lying, record...)
+	if n, err := zipEntries(lying); n != 10 || err != nil {
+		t.Fatalf("fixture's end record claims %d entries: %v", n, err)
+	}
+	if _, err := Decode3MF(lying, nil); err == nil || !strings.Contains(err.Error(), "entries") {
+		t.Fatalf("%v, want an error naming the entries", err)
+	}
+}
