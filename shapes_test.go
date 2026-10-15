@@ -217,3 +217,66 @@ func TestNormals(t *testing.T) {
 		t.Fatal("UVs lost")
 	}
 }
+
+// textureFrame is the directions a triangle's texture runs on the surface:
+// right (u increasing) and down (v increasing), and its outward normal.
+func textureFrame(g Geometry, tri int) (right, down, normal nt3dmath.Vec3, ok bool) {
+	a, b, c := g.Indices[tri], g.Indices[tri+1], g.Indices[tri+2]
+	e1, e2 := g.Vertices[b].Position.Sub(g.Vertices[a].Position), g.Vertices[c].Position.Sub(g.Vertices[a].Position)
+	u1, v1 := g.UV[b].U-g.UV[a].U, g.UV[b].V-g.UV[a].V
+	u2, v2 := g.UV[c].U-g.UV[a].U, g.UV[c].V-g.UV[a].V
+	det := u1*v2 - u2*v1
+	normal = e1.Cross(e2)
+	if det == 0 || normal.Dot(normal) == 0 {
+		return right, down, normal, false
+	}
+	right = e1.Scale(v2 / det).Sub(e2.Scale(v1 / det))
+	down = e2.Scale(u1 / det).Sub(e1.Scale(u2 / det))
+	return right, down, normal.Normalize(), true
+}
+
+// Textures read as an image would from outside each shape: never mirrored,
+// upright on the sides, and with their top toward +Y on flat faces that look
+// up or down, as the camera sees them coming over the shape from the front.
+// (Near a sphere's or torus's top, a texture's top points around it.)
+func TestShapeTexturesFaceOutward(t *testing.T) {
+	sphere, err := BuildSphere(Sphere{Radius: 1})
+	check(t, err)
+	cylinder, err := BuildCylinder(Cylinder{BottomRadius: 1, TopRadius: 1, Height: 2})
+	check(t, err)
+	cone, err := BuildCylinder(Cylinder{BottomRadius: 1, Height: 2})
+	check(t, err)
+	torus, err := BuildTorus(Torus{MajorRadius: 1, MinorRadius: .3})
+	check(t, err)
+	cuboid, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 2, Z: 3}})
+	check(t, err)
+	for name, g := range map[string]Geometry{"sphere": sphere, "cylinder": cylinder, "cone": cone, "torus": torus, "cuboid": cuboid} {
+	faces:
+		for i := 0; i+2 < len(g.Indices); i += 3 {
+			right, down, n, ok := textureFrame(g, i)
+			if !ok {
+				continue
+			}
+			// Seen from outside, right then up turns counterclockwise.
+			if right.Cross(down.Scale(-1)).Dot(n) <= 0 {
+				t.Errorf("%s: triangle %d is mirrored", name, i/3)
+				break faces
+			}
+			// The torus's inside is necessarily upside down; its outside is not.
+			inside := name == "torus" && g.Vertices[g.Indices[i]].Position.Sub(nt3dmath.Vec3{Z: g.Vertices[g.Indices[i]].Position.Z}).Dot(n) < 0
+			switch {
+			case inside:
+			case abs(n.Z) > .99 && name != "sphere" && name != "torus":
+				if down.Y >= 0 {
+					t.Errorf("%s: triangle %d, facing %v, has its top toward %v", name, i/3, n, down.Scale(-1))
+					break faces
+				}
+			case abs(n.Z) < .5:
+				if down.Z >= 0 {
+					t.Errorf("%s: triangle %d, facing %v, has its top toward %v", name, i/3, n, down.Scale(-1))
+					break faces
+				}
+			}
+		}
+	}
+}

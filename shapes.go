@@ -190,7 +190,10 @@ func BuildCylinder(c Cylinder) (Geometry, error) {
 			theta := 2 * math.Pi * float64(j) / float64(segments)
 			cos, sin := float32(math.Cos(theta)), float32(math.Sin(theta))
 			g.Vertices = append(g.Vertices, Vertex{nt3dmath.Vec3{X: r * cos, Y: r * sin, Z: z}, n, shade})
-			g.UV = append(g.UV, UV{.5 + .5*cos, .5 - .5*sin*n.Z})
+			// Seen from outside, from over the side at -Y, a cap's
+			// texture has its top toward +Y: the bottom's runs the
+			// other way in X.
+			g.UV = append(g.UV, UV{.5 + .5*cos*n.Z, .5 - .5*sin})
 		}
 		for j := range uint32(segments) {
 			a, b := center+1+j, center+1+(j+1)%uint32(segments)
@@ -219,15 +222,16 @@ func BuildTorus(t Torus) (Geometry, error) {
 		return Geometry{}, err
 	}
 	l := newLattice(Geometry{}, sides, segments, func(i, _ int, theta, _ float64) (p, n nt3dmath.Vec3) {
-		phi := 2 * math.Pi * float64(i%sides) / float64(sides)
+		// Rows run down the outside, as on a sphere, so the texture is not
+		// mirrored there or inside.
+		phi := -2 * math.Pi * float64(i%sides) / float64(sides)
 		ring := float64(t.MajorRadius) + float64(t.MinorRadius)*math.Cos(phi)
 		n = nt3dmath.Vec3{X: float32(math.Cos(phi) * math.Cos(theta)), Y: float32(math.Cos(phi) * math.Sin(theta)), Z: float32(math.Sin(phi))}
 		return nt3dmath.Vec3{X: float32(ring * math.Cos(theta)), Y: float32(ring * math.Sin(theta)), Z: t.MinorRadius * n.Z}, n
 	}, shapeColor(t.Color))
 	for i := range sides {
 		for j := range segments {
-			// Rows advance around the tube, upward on the outside.
-			l.quad(i, j, true, false, false)
+			l.quad(i, j, false, false, false)
 		}
 	}
 	return finishShape(l.g, t.Material)
@@ -240,13 +244,23 @@ func BuildCuboid(c Cuboid) (Geometry, error) {
 	}
 	box := boxVertices(Box{Min: c.Size.Scale(-.5), Size: c.Size, Color: shapeColor(c.Color)})
 	g := Geometry{}
-	corners := []UV{{0, 1}, {1, 1}, {1, 0}, {0, 0}}
+	// Each face's texture is upright seen from outside: its top toward +Z
+	// on the sides, and toward +Y on the top and bottom, as seen coming over
+	// the box from -Y. Its right is then up × outward.
+	extent := func(axis nt3dmath.Vec3) float32 { return abs(axis.Dot(c.Size)) }
 	// boxVertices emits each face as corners 0,1,2,0,2,3.
 	for f := 0; f < len(box); f += 6 {
 		base := uint32(len(g.Vertices))
-		for k, i := range []int{0, 1, 2, 5} {
+		n := box[f].Normal
+		up := nt3dmath.Vec3{Z: 1}
+		if abs(n.Z) > .5 {
+			up = nt3dmath.Vec3{Y: 1}
+		}
+		right := up.Cross(n)
+		for _, i := range []int{0, 1, 2, 5} {
+			p := box[f+i].Position
 			g.Vertices = append(g.Vertices, box[f+i])
-			g.UV = append(g.UV, corners[k])
+			g.UV = append(g.UV, UV{.5 + p.Dot(right)/extent(right), .5 - p.Dot(up)/extent(up)})
 		}
 		g.Indices = append(g.Indices, base, base+1, base+2, base, base+2, base+3)
 	}
