@@ -140,4 +140,14 @@ func TestSharedGeometryPicking(t *testing.T) {
 			t.Fatal("a node indexed shared geometry for itself")
 		}
 	}
+	// One node opting out leaves the index to the others; the scene-wide
+	// switch drops it.
+	check(t, s.SetNodePickIndexing(ids[0], false))
+	if sg.pick == nil {
+		t.Fatal("one node opting out dropped the shared index")
+	}
+	s.SetPickIndexing(false)
+	if sg.pick != nil {
+		t.Fatal("shared index kept after turning indexing off")
+	}
 }

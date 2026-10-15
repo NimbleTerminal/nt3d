@@ -191,12 +191,16 @@ func rayBox(r nt3dmath.Ray, b Box) (float32, bool) {
 // 28 bytes a triangle (40 MB for 1.5M triangles), repaid when a mesh is
 // picked often, as on hover. Turn it off where picks are rare; they then test every
 // triangle, which takes milliseconds. Turning it off drops indexes already
-// built; a build under way finishes and is discarded.
+// built, shared geometry's included; a build under way finishes and is
+// discarded.
 func (s *Scene) SetPickIndexing(on bool) {
 	s.noPickIndex = !on
 	if !on {
 		for _, n := range s.nodes {
 			n.pickIndex = nil
+			if n.shared != nil {
+				n.shared.pick = nil
+			}
 		}
 	}
 }
@@ -206,7 +210,8 @@ func (s *Scene) SetPickIndexing(on bool) {
 // allow it. The choice belongs to the node and outlasts its geometry, so a
 // large mesh that is never picked, such as terrain or a backdrop, need not
 // pay for an index while the models around it are indexed. Turning it off
-// drops the node's index.
+// drops the node's own index, but not shared geometry's, which other nodes
+// may still use.
 func (s *Scene) SetNodePickIndexing(id NodeID, on bool) error {
 	n, ok := s.nodes[id]
 	if !ok {
