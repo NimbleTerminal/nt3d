@@ -56,40 +56,48 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 			continue
 		}
 		localRay := nt3dmath.Ray{Origin: inv.Point(ray.Origin), Direction: inv.Direction(ray.Direction)}
-		set := func(kind Primitive, index, datum int, p nt3dmath.Vec3) {
+		// set keeps a hit at local point p if it is in front of the best,
+		// as renderers keep what they draw: depth biased as the primitive is,
+		// and a tie going to the later draw. The pixel is in view, so only
+		// depth clips: a point's center may lie off screen.
+		set := func(kind Primitive, index, datum int, p nt3dmath.Vec3, bias float32) {
 			world := inst.World.Point(p)
-			_, _, depth, visible := f.Matrix.Project(world, f.Width, f.Height)
-			if !visible || depth >= best {
+			_, _, z, w := f.Matrix.Transform(world)
+			if w <= 0 || z < 0 || z > w || z/w+bias > best {
 				return
 			}
-			best = depth
-			hit = &Hit{inst.Node, inst.Name, kind, index, datum, world, depth}
+			best = z/w + bias
+			hit = &Hit{inst.Node, inst.Name, kind, index, datum, world, z / w}
 		}
 		for j, p := range g.Points {
-			px, py, _, ok := f.Matrix.Project(inst.World.Point(p.Position), f.Width, f.Height)
-			r := max(tolerance, p.Radius)
-			if ok && (px-x)*(px-x)+(py-y)*(py-y) <= r*r {
-				set(PointPrimitive, j, p.Datum, p.Position)
+			cx, cy, cz, cw := f.Matrix.Transform(inst.World.Point(p.Position))
+			if cw <= 0 || cz < 0 || cz > cw {
+				continue
+			}
+			px, py := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5
+			if r := max(tolerance, p.Radius); (px-x)*(px-x)+(py-y)*(py-y) <= r*r {
+				set(PointPrimitive, j, p.Datum, p.Position, 0)
 			}
 		}
 		if index := s.pickIndex(f, i); index != nil {
 			if tri, t, ok := index.nearest(&g, localRay, func(tri int, u, w float32) bool { return cutAt(&g, tri, u, w) }); ok {
-				set(TrianglePrimitive, tri, tri, localRay.Origin.Add(localRay.Direction.Scale(t)))
+				set(TrianglePrimitive, tri, tri, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 			}
 		} else {
 			for j := 0; j+2 < len(g.Indices); j += 3 {
 				a, b, c := g.Vertices[g.Indices[j]].Position, g.Vertices[g.Indices[j+1]].Position, g.Vertices[g.Indices[j+2]].Position
 				if t, u, w, ok := rayTriangle(localRay, a, b, c); ok && !cutAt(&g, j/3, u, w) {
-					set(TrianglePrimitive, j/3, j/3, localRay.Origin.Add(localRay.Direction.Scale(t)))
+					set(TrianglePrimitive, j/3, j/3, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 				}
 			}
 		}
 		for j, b := range g.Boxes {
 			if t, ok := rayBox(localRay, b); ok {
-				set(BoxPrimitive, j, b.Datum, localRay.Origin.Add(localRay.Direction.Scale(t)))
+				set(BoxPrimitive, j, b.Datum, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 			}
 		}
-		stroke := func(kind Primitive, index, datum int, a, b nt3dmath.Vec3, width, head float32) {
+		// Strokes end square at their ends, as they are drawn.
+		stroke := func(kind Primitive, index, datum int, a, b nt3dmath.Vec3, width, head, bias float32) {
 			projected, ok := projectStroke(f, inst.World.Point(a), inst.World.Point(b))
 			if !ok {
 				return
@@ -102,7 +110,11 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 			if hl > 0 && along > projected.length-hl && along <= projected.length {
 				limit = max(limit, hw*(projected.length-along)/hl)
 			}
-			if along < -limit || along > projected.length+limit || side > limit {
+			if projected.length < 1e-5 {
+				if abs(rx) > limit || abs(ry) > limit {
+					return
+				}
+			} else if along < 0 || along > projected.length || side > limit {
 				return
 			}
 			t := float32(0)
@@ -110,13 +122,13 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 				t = max(0, min(1, along/projected.length))
 			}
 			t = projected.worldT(t)
-			set(kind, index, datum, a.Scale(1-t).Add(b.Scale(t)))
+			set(kind, index, datum, a.Scale(1-t).Add(b.Scale(t)), bias)
 		}
 		for j := 0; j+1 < len(g.Lines); j += 2 {
-			stroke(LinePrimitive, j/2, j/2, g.Lines[j].Position, g.Lines[j+1].Position, g.LineWidth, 0)
+			stroke(LinePrimitive, j/2, j/2, g.Lines[j].Position, g.Lines[j+1].Position, g.LineWidth, 0, lineBias)
 		}
 		for j, a := range g.Arrows {
-			stroke(ArrowPrimitive, j, a.Datum, a.Start, a.End, a.Width, a.HeadSize)
+			stroke(ArrowPrimitive, j, a.Datum, a.Start, a.End, a.Width, a.HeadSize, 0)
 		}
 	}
 	return hit

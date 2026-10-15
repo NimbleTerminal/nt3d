@@ -9,6 +9,10 @@ import (
 	"nimbleterminal.dev/nt3d/math"
 )
 
+// lineBias draws lines forward in depth, so a line on a surface shows: as
+// vs_line does, and as Pick finds it.
+const lineBias = -.00001
+
 type strokePoint struct{ x, y, z, w float32 }
 type screenStroke struct {
 	a, b           strokePoint
@@ -85,6 +89,16 @@ func (s screenStroke) worldT(t float32) float32 {
 	return s.t0*(1-q) + s.t1*q
 }
 
+// mixStroke is a stroke's color a fraction t from a to b: mixed in linear
+// light when the frame works in it, as the GPU mixes, and encoded again.
+func mixStroke(linear bool, a, b color.RGBA, t float32) color.RGBA {
+	if !linear {
+		return lerpRGBA(a, b, float64(t))
+	}
+	mix := func(x, y uint8) uint8 { return encode8(srgbDecode[x]*(1-t) + srgbDecode[y]*t) }
+	return color.RGBA{mix(a.R, b.R), mix(a.G, b.G), mix(a.B, b.B), lerpRGBA(a, b, float64(t)).A}
+}
+
 // fog, when given, fogs a color at a world-space fraction of the way from a
 // to b.
 func rasterStroke(f Frame, a, b Vertex, width, headSize, bias float32, put func(int, int, float32, color.RGBA), fog func(color.RGBA, float32) color.RGBA) {
@@ -122,7 +136,7 @@ func rasterStroke(f Frame, a, b Vertex, width, headSize, bias float32, put func(
 				t = along / s.length
 			}
 			wt := s.worldT(t)
-			c := lerpRGBA(a.Color, b.Color, float64(wt))
+			c := mixStroke(f.Linear, a.Color, b.Color, wt)
 			if fog != nil {
 				c = fog(c, wt)
 			}

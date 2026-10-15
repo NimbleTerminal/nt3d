@@ -77,7 +77,9 @@ fn clipStroke(a:vec4<f32>,b:vec4<f32>)->StrokeClip {
  }
  return s;
 }
-// Strokes carry their world points, wa to wb, for fog.
+// Strokes carry their world points, wa to wb, for fog. Their colors mix in
+// the frame's working space, linear light or encoded, as the rasterizer
+// mixes between vertices.
 fn strokeOutput(vi:u32,a:vec4<f32>,b:vec4<f32>,ca:vec4<f32>,cb:vec4<f32>,width:f32,head:f32,bias:f32,wa:vec3<f32>,wb:vec3<f32>)->Out {
  let s=clipStroke(a,b);
  var o:Out;o.uv=vec2<f32>(0.0);o.point=0.0;o.color=ca;
@@ -111,7 +113,7 @@ fn strokeOutput(vi:u32,a:vec4<f32>,b:vec4<f32>,ca:vec4<f32>,cb:vec4<f32>,width:f
  let position=mix(pa,pb,fraction)+offset;
  let depth=mix(s.a.z/s.a.w,s.b.z/s.b.w,fraction)+bias;
  o.clip=vec4<f32>(position*2.0/u.viewport.xy*w,depth*w,w);
- o.color=vec4<f32>(decode(mix(ca.rgb,cb.rgb,param)),1.0);o.world=mix(wa,wb,param);
+ o.color=vec4<f32>(mix(decode(ca.rgb),decode(cb.rgb),param),1.0);o.world=mix(wa,wb,param);
  return o;
 }
 fn lineOutput(vi:u32,ii:u32,bias:f32)->Out {

@@ -4,7 +4,9 @@ package nt3d
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"github.com/gogpu/wgpu"
 	"image"
 	"image/color"
 	"image/draw"
@@ -12,19 +14,6 @@ import (
 	"nimbleterminal.dev/nt3d/math"
 	"testing"
 )
-
-func coloredPixels(img image.Image, want color.RGBA) int {
-	n := 0
-	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
-		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
-			c := color.RGBAModel.Convert(img.At(x, y)).(color.RGBA)
-			if c == want {
-				n++
-			}
-		}
-	}
-	return n
-}
 
 // Hardware tests are explicit: failure to initialize a GPU fails this test,
 // rather than silently validating only the software fallback.
@@ -708,4 +697,100 @@ func TestGPUAnisotropy(t *testing.T) {
 	if flat > 5 || detail < 15 || math.Abs(gm-sm) > 10 {
 		t.Fatalf("GPU spread: mipmapped %.1f, anisotropic %.1f (mean %.0f); software %.1f (mean %.0f)", flat, detail, gm, sd, sm)
 	}
+}
+
+// Points are discs of their full radius on the GPU as in software, drawn
+// where they hang into view.
+func TestGPUPointsMatchSoftware(t *testing.T) {
+	red := color.RGBA{255, 0, 0, 255}
+	r := &gpuRenderer{}
+	defer r.Close()
+	for i, c := range []struct{ x, radius float32 }{{0, 4.9}, {0, 32}, {1 + 3./64, 8}} {
+		f := flatFrame(128, 128, Geometry{Points: []Point{{Position: nt3dmath.Vec3{X: c.x, Z: .5}, Radius: c.radius, Color: red}}})
+		f.Revision = uint64(i + 1) // Manual frames are cached by revision.
+		gpu, err := r.Render(f)
+		check(t, err)
+		if g, s := coloredPixels(gpu, red), coloredPixels(softwareRender(f), red); g != s || g == 0 {
+			t.Errorf("point at x=%v, radius %v: GPU %d pixels, software %d", c.x, c.radius, g, s)
+		}
+	}
+}
+
+// Gradient strokes mix in linear light on the GPU as in software, whole or
+// clipped at the far plane.
+func TestGPUStrokeGradientMatchesSoftware(t *testing.T) {
+	red, black := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 0, 0, 255}
+	r := &gpuRenderer{}
+	defer r.Close()
+	for i, far := range []float32{.5, 1.5} {
+		f := flatFrame(64, 8, Geometry{Lines: []Vertex{{Position: nt3dmath.Vec3{X: -1, Z: .5}, Color: red}, {Position: nt3dmath.Vec3{X: 1, Z: far}, Color: black}}, LineWidth: 2})
+		f.Revision = uint64(i + 1)
+		f.Background = color.RGBA{0, 0, 255, 255}
+		gpu, err := r.Render(f)
+		check(t, err)
+		software := softwareRender(f)
+		for x := range 64 {
+			g, s := at(gpu, x, 4), at(software, x, 4)
+			if (g.B == 255) != (s.B == 255) {
+				continue // One draws the clipped end a pixel further.
+			}
+			if !closeRGB(g, s, 2) {
+				t.Fatalf("far end at z=%v, pixel %d: GPU %v, software %v", far, x, g, s)
+			}
+		}
+	}
+}
+
+// A transparent quad's shared diagonal is blended once on the GPU, and so
+// matches software.
+func TestGPUSharedEdgeMatchesSoftware(t *testing.T) {
+	f := flatFrame(8, 8, quad(1, .5, color.RGBA{255, 255, 255, 128}, glass, false))
+	r := &gpuRenderer{}
+	defer r.Close()
+	gpu, err := r.Render(f)
+	check(t, err)
+	software := softwareRender(f)
+	for y := range 8 {
+		for x := range 8 {
+			if g, s := at(gpu, x, y), at(software, x, y); !closeRGB(g, s, 1) {
+				t.Fatalf("pixel (%d, %d): GPU %v, software %v", x, y, g, s)
+			}
+		}
+	}
+}
+
+// An instance set that cannot be made is left empty, to be made again the
+// next frame, not drawn from half made.
+func TestGPUInstanceSetFailureRetries(t *testing.T) {
+	s := NewScene()
+	_, err := s.SetGeometry("point", pointGeometry())
+	check(t, err)
+	f := frame(t, s)
+	r := &gpuRenderer{}
+	defer r.Close()
+	_, err = r.Render(f)
+	check(t, err)
+	var node *gpuGeometry
+	for _, n := range r.geometries {
+		node = n
+	}
+	// Failures are returned, not raised here: Fatal would leave the
+	// device held.
+	check(t, r.r.Do(func(dev *wgpu.Device) error {
+		node.used = 0
+		if _, err := r.instanceSet(dev, node, 1<<40); err == nil {
+			return errors.New("a set past the device's limits was made")
+		}
+		if set := node.sets[0]; set.capacity != 0 || set.transform != nil || set.binds != [8]*wgpu.BindGroup{} {
+			return fmt.Errorf("a failed set kept capacity %d", set.capacity)
+		}
+		node.used = 0
+		set, err := r.instanceSet(dev, node, 1)
+		if err != nil || set.capacity < 1 || set.transform == nil {
+			return fmt.Errorf("set not remade: %v", err)
+		}
+		return nil
+	}))
+	_, err = r.Render(f)
+	check(t, err)
 }

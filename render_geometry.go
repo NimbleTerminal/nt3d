@@ -186,21 +186,28 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 	if s.capacity >= n {
 		return s, nil
 	}
+	// The set is empty until its buffer and every bind group exist: one
+	// that fails is tried again next frame, not drawn from half made.
+	capacity := max(n, 2*s.capacity)
 	s.release()
-	*s = instanceSet{capacity: max(n, 2*s.capacity)}
-	size := uint64(s.capacity) * 128
+	*s = instanceSet{}
+	next := instanceSet{}
+	size := uint64(capacity) * 128
 	var err error
-	if s.transform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: size, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
+	if next.transform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: size, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
 		return nil, err
 	}
 	for kind, b := range node.batches {
 		if b.buffer == nil {
 			continue
 		}
-		if s.binds[kind], err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: s.transform, Size: size}}}); err != nil {
+		if next.binds[kind], err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: next.transform, Size: size}}}); err != nil {
+			next.release()
 			return nil, err
 		}
 	}
+	next.capacity = capacity
+	*s = next
 	return s, nil
 }
 

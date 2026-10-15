@@ -152,17 +152,33 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		if side == backFaces && area <= .000001 || side != backFaces && area >= -.000001 {
 			return
 		} // CCW faces become clockwise with screen Y down
+		// A pixel center on an edge belongs to one triangle, by the top-left
+		// rule the GPU follows, so a transparent shared edge blends once.
+		// Each edge runs as it would around the triangle wound clockwise on
+		// screen (positive area): a top edge runs right along a row, a left
+		// edge up.
+		sign := float32(1)
+		if area < 0 {
+			sign = -1
+		}
+		owns := func(xa, ya, xb, yb float32) bool {
+			dx, dy := (xb-xa)*sign, (yb-ya)*sign
+			return dy < 0 || dy == 0 && dx > 0
+		}
+		own0, own1, own2 := owns(x1, y1, x2, y2), owns(x2, y2, x0, y0), owns(x0, y0, x1, y1)
 		loX, hiX := max(0, int(math.Floor(float64(min(x0, x1, x2))))), min(f.Width-1, int(math.Ceil(float64(max(x0, x1, x2)))))
 		loY, hiY := max(0, int(math.Floor(float64(min(y0, y1, y2))))), min(f.Height-1, int(math.Ceil(float64(max(y0, y1, y2)))))
 		for y := loY; y <= hiY; y++ {
 			for x := loX; x <= hiX; x++ {
 				px, py := float32(x)+.5, float32(y)+.5
-				u := ((x1-px)*(y2-py) - (y1-py)*(x2-px)) / area
-				v := ((x2-px)*(y0-py) - (y2-py)*(x0-px)) / area
-				t := 1 - u - v
-				if min(u, v, t) < 0 {
+				e0 := edge(x1, y1, x2, y2, px, py) * sign
+				e1 := edge(x2, y2, x0, y0, px, py) * sign
+				e2 := edge(x0, y0, x1, y1, px, py) * sign
+				if e0 < 0 || e1 < 0 || e2 < 0 || e0 == 0 && !own0 || e1 == 0 && !own1 || e2 == 0 && !own2 {
 					continue
 				}
+				u, v := e0*sign/area, e1*sign/area
+				t := 1 - u - v
 				mix := func(k int) float32 { return u*a.shade[k] + v*b.shade[k] + t*c.shade[k] }
 				rgb := [3]float32{mix(0), mix(1), mix(2)}
 				var opacity float32
@@ -317,17 +333,23 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		normals := inverse.Transpose()
 		step := sampled(len(g.Points), 10000)
 		for i := 0; i < len(g.Points); i += step {
+			// A disc of the point's radius covers the pixels whose centers
+			// it holds, as the GPU's quad does: one whose center is off
+			// screen may still hang into view. Only depth clips it.
 			p := g.Points[i]
-			x, y, z, ok := local.Matrix.Project(p.Position, f.Width, f.Height)
-			if !ok {
+			cx, cy, cz, cw := local.Matrix.Transform(p.Position)
+			if cw <= 0 || cz < 0 || cz > cw {
 				continue
 			}
-			radius := max(1, min(8, int(p.Radius))) * scale
+			x, y, z := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5, cz/cw
+			radius := p.Radius * px
 			c := fogColor(p.Color, f.eyeDistance(inst.World.Point(p.Position)))
-			for dy := -radius; dy <= radius; dy++ {
-				for dx := -radius; dx <= radius; dx++ {
-					if dx*dx+dy*dy <= radius*radius {
-						put(int(x)+dx, int(y)+dy, z, c)
+			loX, hiX := max(0, int(math.Floor(float64(x-radius)))), min(f.Width-1, int(math.Ceil(float64(x+radius))))
+			loY, hiY := max(0, int(math.Floor(float64(y-radius)))), min(f.Height-1, int(math.Ceil(float64(y+radius))))
+			for sy := loY; sy <= hiY; sy++ {
+				for sx := loX; sx <= hiX; sx++ {
+					if dx, dy := float32(sx)+.5-x, float32(sy)+.5-y; dx*dx+dy*dy <= radius*radius {
+						put(sx, sy, z, c)
 					}
 				}
 			}
@@ -345,7 +367,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
 		for i := 0; i+1 < len(g.Lines); i += lineStep {
-			rasterStroke(local, g.Lines[i], g.Lines[i+1], lineWidth(g.LineWidth)*px, 0, -.00001, put, strokeFog(inst.World.Point(g.Lines[i].Position), inst.World.Point(g.Lines[i+1].Position)))
+			rasterStroke(local, g.Lines[i], g.Lines[i+1], lineWidth(g.LineWidth)*px, 0, lineBias, put, strokeFog(inst.World.Point(g.Lines[i].Position), inst.World.Point(g.Lines[i+1].Position)))
 		}
 		arrowStep := sampled(len(g.Arrows), 10000)
 		for i := 0; i < len(g.Arrows); i += arrowStep {
@@ -367,6 +389,14 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	}
 	drawOverlays(img, f)
 	return img, depth
+}
+
+// edge is twice the signed area of the triangle a, b, p: zero on the line
+// through a and b. Each product is rounded before subtracting, so the
+// compiler cannot fuse them: the edge from b to a is then exactly the
+// negative, and triangles sharing it agree which side a pixel is on.
+func edge(xa, ya, xb, yb, px, py float32) float32 {
+	return float32((xa-px)*(yb-py)) - float32((ya-py)*(xb-px))
 }
 
 // uvAt is a triangle's perspective-correct texture coordinate at a screen
