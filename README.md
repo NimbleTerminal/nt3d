@@ -527,11 +527,20 @@ The gallery links to the terrain explorer at `/terrain/`, procedural plasma
 at `/procedural/`, a dynamic scene at `/dynamic/`, shape builders at
 `/shapes/`, mesh files at `/models/`, a dense mesh at `/large/`, fur at
 `/fur/`, mipmaps at `/mipmaps/`, and a forest at `/forest/`, with
-rendered previews, controls, and source links. Each demo
+recorded previews, controls, and source links. Each demo
 runs inside go-booba and supports GPU, software, and wireframe rendering.
 
 The static site sources live in `web/`; the complete generated site is
 `dist/web/`. It can be served under a subdirectory without changing asset paths.
+
+The gallery's previews are poster frames of the terminal demos, Kitty
+graphics and all, recorded by [ntrecord](https://github.com/NimbleTerminal/ntrecord)
+from the tapes in `tapes/`. `task tapes` records every demo, or
+`task tapes -- fur forest` some. Each tape records a GIF to share and a few
+poster candidates into `dist/tapes/`; `tapes/finish.sh` copies the first
+candidate that shows the scene to `web/assets/`, and trims and compresses the
+GIF. Only the posters are committed. It needs ntrecord, ffmpeg, and gifsicle,
+and a GPU for the WebGPU frames.
 
 ### Mesh demos
 

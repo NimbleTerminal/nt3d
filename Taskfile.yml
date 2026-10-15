@@ -134,6 +134,20 @@ tasks:
     deps: [build]
     cmds:
       - bin/nt3d-meshes {{.CLI_ARGS}}
+  tapes:
+    desc: Record the demos with ntrecord, as GIFs and the gallery's poster frames (task tapes -- fur forest for some)
+    deps: [build]
+    preconditions:
+      - sh: command -v ntrecord
+        msg: ntrecord is needed to record Kitty graphics; see https://github.com/NimbleTerminal/ntrecord
+      - sh: command -v ffmpeg && command -v gifsicle
+        msg: tapes/finish.sh needs ffmpeg and gifsicle (brew install ffmpeg gifsicle)
+    cmds:
+      - mkdir -p dist/tapes
+      - |
+        for name in {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}terrain procedural dynamic shapes meshes models large fur mipmaps forest{{end}}; do
+          ntrecord tapes/$name.tape && tapes/finish.sh $name || exit 1
+        done
   serve:
     desc: Serve the browser gallery after task build-web
     cmds:
