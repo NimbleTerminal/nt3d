@@ -111,7 +111,7 @@ tasks:
     cmds:
       - bin/nt3d-large {{.CLI_ARGS}}
   fur:
-    desc: Show shell fur on a torus, swaying in the wind
+    desc: Show shell fur on Spot the cow, swaying in the wind
     deps: [build]
     cmds:
       - bin/nt3d-fur {{.CLI_ARGS}}
@@ -148,6 +148,17 @@ tasks:
         for name in {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}terrain procedural dynamic shapes meshes models large fur mipmaps forest{{end}}; do
           ntrecord tapes/$name.tape && tapes/finish.sh $name || exit 1
         done
+  docs:hugo:serve:
+    desc: Serve the guide while editing it (needs hugo, extended, and the theme submodule)
+    dir: docs/hugo
+    cmds: [hugo serve]
+  docs:hugo:build:
+    desc: Build the guide into docs/hugo/public (pass hugo flags after --)
+    dir: docs/hugo
+    cmds: ['hugo --minify {{.CLI_ARGS}}']
+  docs:clean:
+    desc: Remove what the docs tasks generate
+    cmds: [rm -rf docs/hugo/public docs/hugo/resources]
   serve:
     desc: Serve the browser gallery after task build-web
     cmds:
