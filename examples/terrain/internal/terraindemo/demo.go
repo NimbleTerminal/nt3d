@@ -164,7 +164,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.lastPhase = time.Now()
 		case "m":
 			if d.mipmaps != nil {
-				err = d.toggleMipmaps()
+				err = d.cycleFiltering()
 				break
 			}
 			if d.dynamic == nil {
@@ -319,6 +319,9 @@ func (d *demo) rendering() string {
 // decorate fogs frames, when fog is on, from just behind the camera's target
 // to well past it, so the far side of the scene fades whatever the zoom.
 func (d *demo) decorate(f *nt3d.Frame) {
+	if d.mipmaps != nil && d.mipmaps.mode == mipOnly {
+		f.Anisotropy = 1
+	}
 	if d.fog {
 		r := float32(d.view.Camera().Distance)
 		f.Fog = nt3d.Fog{Near: r * .9, Far: r * 1.8}

@@ -16,8 +16,17 @@ func MipmapsMain() { mainDemo(true, sceneMipmaps) }
 type mipScene struct {
 	textures []*nt3d.Texture // One per mipPatterns entry.
 	pattern  int
-	full     bool // Sampled full size, as without mipmaps.
+	mode     int // Index into mipModes.
 }
+
+// mipModes are how the floor is filtered, best first.
+var mipModes = []string{"anisotropic", "mipmaps", "full size"}
+
+const (
+	mipAnisotropic = iota
+	mipOnly
+	mipFull // Sampled full size, as without mipmaps.
+)
 
 // mipPatterns are textures that shimmer when sampled full size far off.
 var mipPatterns = []struct {
@@ -104,7 +113,7 @@ func (d *demo) setupMipmaps() error {
 // mipFloor lays the floor: 80 units across, its texture tiled 160 times.
 func (d *demo) mipFloor() error {
 	m := &nt3d.Material{Texture: d.mipmaps.textures[d.mipmaps.pattern], Repeat: true}
-	if d.mipmaps.full {
+	if d.mipmaps.mode == mipFull {
 		// A cutout that cuts nothing samples full size, as every texture
 		// did before mipmaps.
 		m.Cutout, m.Threshold = true, .01
@@ -118,8 +127,8 @@ func (d *demo) mipFloor() error {
 	return err
 }
 
-func (d *demo) toggleMipmaps() error {
-	d.mipmaps.full = !d.mipmaps.full
+func (d *demo) cycleFiltering() error {
+	d.mipmaps.mode = (d.mipmaps.mode + 1) % len(mipModes)
 	return d.mipFloor()
 }
 
@@ -129,10 +138,7 @@ func (d *demo) cyclePattern() error {
 }
 
 func (d *demo) mipmapsView(content string) string {
-	mode := "mipmaps"
-	if d.mipmaps.full {
-		mode = "full size"
-	}
-	return fmt.Sprintf("nt3d mipmaps · m mipmaps · t texture · x supersample · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %s · supersample %d× · drag orbit · wheel zoom · r rotate · %s",
+	mode := mipModes[d.mipmaps.mode]
+	return fmt.Sprintf("nt3d mipmaps · m filtering · t texture · x supersample · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %s · supersample %d× · drag orbit · wheel zoom · r rotate · %s",
 		content, d.rendering(), mode, mipPatterns[d.mipmaps.pattern].name, d.view.Supersample(), d.status)
 }

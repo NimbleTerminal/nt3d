@@ -505,7 +505,7 @@ task shapes               # Shape builders and normal styles.
 task models               # Sample STL, OBJ, and 3MF files; [ and ] change model.
 task large                # A 735,000-triangle asteroid: picking and outlines.
 task fur                  # Shell fur on Spot; x supersamples, e post effects.
-task mipmaps              # A tiled floor to the horizon; m toggles mipmaps.
+task mipmaps              # A tiled floor to the horizon; m cycles filtering.
 task forest               # Thousands of instanced trees; i toggles instancing.
 task meshes -- model.stl  # Your own mesh files (--up y for Y-up OBJ).
 task terrain -- --render-mode software
