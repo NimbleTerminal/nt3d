@@ -38,7 +38,7 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	nimbleterminal.dev/ntcanvas v0.1.0 // indirect
-	nimbleterminal.dev/ntgpuimage v0.2.0 // indirect
+	nimbleterminal.dev/ntgpuimage v0.3.0 // indirect
 )
 
 replace nimbleterminal.dev/nt3d => ../..

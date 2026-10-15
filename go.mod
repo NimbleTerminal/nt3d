@@ -12,7 +12,7 @@ require (
 	github.com/qmuntal/gltf v0.29.0
 	golang.org/x/image v0.47.0
 	nimbleterminal.dev/ntcanvas v0.1.0
-	nimbleterminal.dev/ntgpuimage v0.2.0
+	nimbleterminal.dev/ntgpuimage v0.3.0
 	nimbleterminal.dev/ntpicture v0.0.0-20261014022756-acfa6954d2d0
 )
 

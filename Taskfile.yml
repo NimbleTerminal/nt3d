@@ -8,10 +8,9 @@ tasks:
   default:
     cmds: [{task: build}]
   workspace:
-    desc: Use the sibling ntpicture and ntgpuimage checkouts while their releases are prepared
+    desc: Use the sibling ntpicture checkout while its release is prepared
     preconditions:
       - test -d ../ntpicture
-      - test -d ../ntgpuimage
     cmds:
       - cp go.work.example go.work
   fmt:
