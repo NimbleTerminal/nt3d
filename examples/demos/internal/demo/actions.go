@@ -43,6 +43,8 @@ func (k keys) FullHelp() [][]key.Binding {
 // sceneKeys are the keys the current scene answers to.
 func (d *demo) sceneKeys() (string, keys) {
 	switch {
+	case d.particles != nil:
+		return "particles", keys{[]key.Binding{bind("b", "b", "blend"), bind("s", "s", "shape"), bind("n", "n", "count"), bind("a", "a", "pause")}}
 	case d.lights != nil:
 		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("f", "f", "falloff"), bind("e", "e", "highlights"), bind("a", "a", "pause")}}
 	case d.forest != nil:

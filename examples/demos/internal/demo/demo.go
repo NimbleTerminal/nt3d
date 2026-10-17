@@ -46,6 +46,7 @@ type demo struct {
 	mipmaps           *mipScene
 	forest            *forestScene
 	lights            *lightScene
+	particles         *particleScene
 }
 
 type sceneMode int
@@ -60,11 +61,12 @@ const (
 	sceneMipmaps
 	sceneForest
 	sceneLights
+	sceneParticles
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil
+	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil
 }
 
 type quitMsg struct{}
@@ -116,7 +118,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(v)
 		elapsed := now.Sub(d.lastPhase).Seconds()
 		d.lastPhase = now
-		if !d.animate || (!d.procedural && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil) {
+		if !d.animate || (!d.procedural && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil) {
 			return d, phaseTick()
 		}
 		d.phase = math.Mod(d.phase+elapsed, 2*math.Pi)
@@ -134,6 +136,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.stepForest()
 		case d.lights != nil:
 			err = d.stepLights()
+		case d.particles != nil:
+			err = d.stepParticles()
 		default:
 			err = d.updatePlasma()
 		}
@@ -192,6 +196,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.fog = !d.fog
 			return d, d.view.Refresh()
 		case "b", "x":
+			if v.String() == "b" && d.particles != nil {
+				err = d.cycleParticleBlend()
+				break
+			}
 			if v.String() == "x" && (d.fur != nil || d.mipmaps != nil) {
 				return d, d.cycleSupersample()
 			}
@@ -270,6 +278,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.growFur()
 			case d.meshes != nil:
 				err = d.cycleNormals()
+			case d.particles != nil:
+				err = d.toggleParticleShape()
 			default:
 				return d, nil
 			}
@@ -292,6 +302,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			d.toggleIndexing()
 		case "n":
+			if d.particles != nil {
+				err = d.cycleParticleCount()
+				break
+			}
 			if d.forest != nil {
 				err = d.cycleForest()
 				break
@@ -339,6 +353,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	if d.lights != nil {
 		d.decorateLights(f)
 	}
+	if d.particles != nil {
+		f.Background = color.RGBA{16, 14, 20, 255} // Night, so the fire glows.
+	}
 	if d.mipmaps != nil && d.mipmaps.mode == mipOnly {
 		f.Anisotropy = 1
 	}
@@ -380,6 +397,11 @@ func (d *demo) View() tea.View {
 	}
 	if d.lights != nil {
 		v.Content = d.zones.Scan(d.lightsView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.particles != nil {
+		v.Content = d.zones.Scan(d.particlesView(v.Content))
 		v.AltScreen = true
 		return v
 	}
@@ -516,6 +538,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupLights(); err != nil {
 			return err
 		}
+	case sceneParticles:
+		if err = d.setupParticles(); err != nil {
+			return err
+		}
 	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
@@ -546,6 +572,9 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Alpha, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
 	case sceneLights:
 		camera.Alpha, camera.Distance, camera.Projection = 30, 5.5, nt3d.Perspective
+	case sceneParticles:
+		camera.Alpha, camera.Distance, camera.Projection = 14, 4.6, nt3d.Perspective
+		camera.Target = nt3dmath.Vec3{Z: .9}
 	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))

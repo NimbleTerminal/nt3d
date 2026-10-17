@@ -83,6 +83,12 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 `task lights`. A sphere, a torus, a column, and a cube on a floor of two triangles, under presets of [lighting](../rendering/#how-it-looks): the default key light, a turning sun under a sky-to-ground ambient, three colored lamps orbiting, one lamp at night, and eight at once. Light is found per pixel, so a lamp's bright spot crosses the floor where no vertex is. `l` changes the preset, `f` the point lights' falloff, `e` turns highlights off, and `a` pauses the lamps.
 
+## Particles
+
+<img class="poster" src="../../posters/particles.png" alt="A fire of glowing points rising into gray smoke over a dark floor">
+
+`task particles`. A fire of soft points sized in world units, glowing [additively](../rendering/#how-it-looks), rises into smoke blended by alpha, sorted back to front every frame, while dust drifts through in pixel-sized points. Every point moves every frame, set anew with `SetNodeGeometry`. `b` changes the blending, `s` makes the points hard or soft, `n` changes the count (1,000, 10,000, or 100,000), and `a` pauses them.
+
 ## In a browser
 
 The [gallery](https://nimbleterminal.github.io/nt3d/) is online. To build and serve it yourself:

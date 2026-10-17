@@ -6,7 +6,7 @@ env:
 
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
-  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles
 
 tasks:
   default:
@@ -67,7 +67,7 @@ tasks:
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles
       - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
       - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -78,6 +78,7 @@ tasks:
       - go -C examples/demos build -mod=readonly -o ../../dist/web/mipmaps/app.wasm ./cmd/mipmaps
       - go -C examples/demos build -mod=readonly -o ../../dist/web/forest/app.wasm ./cmd/forest
       - go -C examples/demos build -mod=readonly -o ../../dist/web/lights/app.wasm ./cmd/lights
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/particles/app.wasm ./cmd/particles
   web-assets:
     cmds:
       - go -C examples/demos tool booba-assets ../../dist/web/terrain/
@@ -90,6 +91,7 @@ tasks:
       - go -C examples/demos tool booba-assets ../../dist/web/mipmaps/
       - go -C examples/demos tool booba-assets ../../dist/web/forest/
       - go -C examples/demos tool booba-assets ../../dist/web/lights/
+      - go -C examples/demos tool booba-assets ../../dist/web/particles/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -151,6 +153,11 @@ tasks:
     deps: [{task: build:demo, vars: {NAME: lights}}]
     cmds:
       - bin/nt3d-lights {{.CLI_ARGS}}
+  particles:
+    desc: Show a fire, smoke, and dust of points moved every frame
+    deps: [{task: build:demo, vars: {NAME: particles}}]
+    cmds:
+      - bin/nt3d-particles {{.CLI_ARGS}}
   models-generate:
     desc: Regenerate the sample models the models demo embeds
     cmds:
