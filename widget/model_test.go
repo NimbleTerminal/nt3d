@@ -161,9 +161,15 @@ func TestGPUFailureIsReported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Refresh()
-	if m.Failed() != nil || m.Err() != nil || !m.Busy() {
+	retry := m.Refresh()
+	if m.Failed() != nil || m.Err() != nil || retry == nil {
 		t.Fatal("scene change did not retry")
+	}
+	for _, msg := range messages(retry) {
+		m.Update(msg)
+	}
+	if !m.Busy() {
+		t.Fatal("the retry did not render")
 	}
 	// Choosing a mode also clears it.
 	m.failed = errors.New("again")

@@ -32,7 +32,7 @@ A click sends your program a `PickMsg` saying what was hit; see [Picking](../pic
 ## Working with it
 
 - **Forward everything.** Pass terminal events, including size and cell-size changes, on to the widget, even while it shows wireframe, and run every command it returns.
-- **After editing the scene**, call `Refresh()` and run its command, so the widget renders again.
+- **After editing the scene**, call `Refresh()` and run its command, so the widget renders again. Setters (`SetCamera`, `SetLighting`, and the rest) work the same way. A command dropped by mistake doesn't stall the widget; it only delays the frame until the widget's next message.
 - **Mouse zones.** When the widget is part of a larger view, share one zone manager with it (`WithZoneManager`) and have your program scan the complete view.
 - **Status.** `FrameRate()` is how many frames the widget showed over the last second, and `RenderTime()` how long the last one took to render. `PictureStatus()` tells you about the image on screen.
 

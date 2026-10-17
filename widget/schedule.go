@@ -15,16 +15,29 @@ import (
 	picture "nimbleterminal.dev/ntpicture"
 )
 
+// changed marks the view for a new frame. It starts no render: its command,
+// when a render could start, wakes the view, whose Update starts one. A
+// caller that drops the command only delays the frame to the view's next
+// message, where a render started here, busy until its command ran, would
+// stall the view for good.
 func (m *Model) changed(data bool) tea.Cmd {
 	m.seq++
 	m.dirty = true
-	var retry tea.Cmd
+	var retry, w tea.Cmd
 	if data {
 		m.sceneRevision = m.scene.Revision()
 		retry = m.retry()
 	}
-	return tea.Batch(retry, m.schedule())
+	if m.ready() {
+		w = wake
+	}
+	return tea.Batch(retry, w)
 }
+
+// wakeMsg brings a changed view to Update, which draws it.
+type wakeMsg struct{}
+
+func wake() tea.Msg { return wakeMsg{} }
 
 // retry clears a reported GPU failure when the scene has changed.
 func (m *Model) retry() tea.Cmd {
@@ -134,8 +147,14 @@ func (m *Model) frame() Frame {
 	return f
 }
 
+// ready reports whether a render can start: the view is started and open,
+// has changed, and is neither drawing nor presenting a frame nor failed.
+func (m *Model) ready() bool {
+	return m.started && !m.closed && !m.busy && m.dirty && m.failed == nil && (m.renderMode == Wireframe || !m.pic.Status().Busy)
+}
+
 func (m *Model) schedule() tea.Cmd {
-	if !m.started || m.closed || m.busy || !m.dirty || m.failed != nil || (m.renderMode != Wireframe && m.pic.Status().Busy) {
+	if !m.ready() {
 		return nil
 	}
 	m.busy = true
