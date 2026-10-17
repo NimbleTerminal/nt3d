@@ -39,7 +39,7 @@ A click sends your program a `PickMsg` saying what was hit; see [Picking](../pic
 ## Options
 
 - `WithRenderMode` chooses WebGPU, software, or wireframe; `SetRenderMode` changes it.
-- `WithCamera`, `WithBackground`, `SetLight`, and `SetFog` set up the look.
+- `WithCamera`, `WithBackground`, `SetLighting`, and `SetFog` set up the look.
 - `WithSupersample(n)` smooths GPU frames. Software frames aren't supersampled, since they're already trading resolution for speed.
 - `WithPostProcess(fn)` runs `fn(*image.RGBA)` on every frame before it's shown: blur, vignettes, color grading, or dithering are ordinary Go. It runs on the render goroutine, one frame at a time, and may change pixels in place. The [fur demo](../demos/#fur) shows supersampling and post effects (`x`, `e`).
 - `WithFrameDecorator(fn)` adds [decorations](../rendering/#decorations) to each frame.

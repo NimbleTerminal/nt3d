@@ -46,13 +46,3 @@ func encodeSRGB(v float64) float64 {
 func encode8(v float32) uint8 {
 	return srgbEncode[int(max(0, min(1, v))*encodeSteps+.5)]
 }
-
-// ambientLight is a light's ambient level in the frame's color space. In
-// linear light it is decoded as a color is, so a surface turned from the
-// light keeps the brightness it has without linear light.
-func ambientLight(f *Frame) float32 {
-	if !f.Linear {
-		return f.Light.Ambient
-	}
-	return float32(decodeSRGB(float64(max(0, min(1, f.Light.Ambient)))))
-}

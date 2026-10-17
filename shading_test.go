@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	overhead = &Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: .3}
-	gray     = color.RGBA{128, 128, 128, 255}
-	shiny    = &Material{Specular: 1, Shininess: 32}
+	overheadLight = oldLight(nt3dmath.Vec3{Z: 1}, .3, true)
+	overhead      = &overheadLight
+	gray          = color.RGBA{128, 128, 128, 255}
+	shiny         = &Material{Specular: 1, Shininess: 32}
 )
 
 // A shiny sphere lit and seen from above is white where it mirrors the

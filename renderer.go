@@ -28,13 +28,6 @@ func (m RenderMode) String() string {
 	}
 }
 
-type Light struct {
-	Direction nt3dmath.Vec3
-	Ambient   float32
-}
-
-func DefaultLight() Light { return Light{nt3dmath.Vec3{X: 1, Y: -1, Z: 2}.Normalize(), .3} }
-
 // Instance associates local geometry with a world transform and picking identity.
 type Instance struct {
 	Node    NodeID
@@ -80,7 +73,7 @@ type Frame struct {
 	Overlays     []OverlayRect
 	CellText     []CellText
 	Background   color.RGBA
-	Light        Light
+	Lighting     Lighting
 	Complete     bool // Disable interactive software sampling for full snapshots.
 	// Supersample renders at this multiple of Width and Height, 1..4, and
 	// averages each block back to one pixel, smoothing edges, thin strands,
@@ -97,8 +90,8 @@ type Frame struct {
 	// Linear lights, interpolates, blends, and averages colors in linear
 	// light, decoding sRGB colors and textures and encoding the result, as
 	// light adds physically: lit surfaces turn from the light more gradually,
-	// and blends and supersampled edges keep their brightness. Light.Ambient
-	// is decoded too, so surfaces facing away keep their brightness.
+	// and blends and supersampled edges keep their brightness. Lighting's
+	// colors are decoded too.
 	// Scene.Frame sets it; without it, colors are mixed as encoded.
 	Linear bool
 	// Fog fades what is drawn toward a color with distance from the camera.
@@ -140,7 +133,7 @@ const MaxFramePixels = 4096 * 2160
 // Frame creates a scene snapshot. The caller owns its header and decoration
 // slices; its geometry and materials must not be mutated. Scene edits preserve it.
 func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
-	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Background: color.RGBA{235, 238, 242, 255}, Light: DefaultLight(), Cull: true, Linear: true}
+	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Cull: true, Linear: true}
 	if width < 1 || height < 1 || width > MaxFramePixels || height > MaxFramePixels/width {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)
 	}
@@ -254,8 +247,11 @@ func validateFrame(f Frame) error {
 			seen[v.Node] = true
 		}
 	}
-	if !validFloat(f.Matrix[:]...) || !finiteVec(f.Light.Direction) || !validFloat(f.Light.Ambient) {
+	if !validFloat(f.Matrix[:]...) {
 		return fmt.Errorf("nt3d: non-finite frame")
+	}
+	if !validLighting(f.Lighting) {
+		return fmt.Errorf("nt3d: lighting needs at most %d lights of known kinds, finite, with nonnegative intensity and range, and directional lights a direction", MaxLights)
 	}
 	if len(f.DynamicLines)%2 != 0 {
 		return fmt.Errorf("nt3d: incomplete dynamic line")

@@ -23,7 +23,8 @@ func TestSRGBRoundTrip(t *testing.T) {
 func litPane(t *testing.T, cos float64, linear bool) color.RGBA {
 	t.Helper()
 	gray := color.RGBA{200, 200, 200, 255}
-	f := blendScene(t, &Light{Direction: nt3dmath.Vec3{X: float32(math.Sqrt(1 - cos*cos)), Z: float32(cos)}, Ambient: .3}, quad(1, .3, gray, nil, false))
+	l := oldLight(nt3dmath.Vec3{X: float32(math.Sqrt(1 - cos*cos)), Z: float32(cos)}, .3, linear)
+	f := blendScene(t, &l, quad(1, .3, gray, nil, false))
 	f.Linear = linear
 	return at(softwareRender(f), 40, 40)
 }

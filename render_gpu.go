@@ -20,9 +20,16 @@ import (
 //go:embed scene.wgsl
 var sceneShader string
 
-// uniformSize is the scene uniform's bytes: matrix, viewport, light, eye,
-// forward, fog, fog color.
-const uniformSize = 160
+// sceneShaderSource is the scene shader with the constants it shares with
+// Go declared ahead of it: maxLights sizes its lights.
+func sceneShaderSource() string {
+	return fmt.Sprintf("const maxLights: u32 = %du;\n", MaxLights) + sceneShader
+}
+
+// uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
+// and light count, eye, forward, fog, fog color, ground ambient, and
+// MaxLights lights of two vec4s each.
+const uniformSize = 160 + 16 + MaxLights*32
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -71,7 +78,7 @@ func (g *gpuRenderer) setup() (err error) {
 		return gpuimage.ErrNoAdapter
 	}
 	return g.r.Do(func(dev *wgpu.Device) error {
-		g.shader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d", WGSL: sceneShader})
+		g.shader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d", WGSL: sceneShaderSource()})
 		if err != nil {
 			return err
 		}
@@ -199,8 +206,10 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		linear = 1
 	}
 	// The viewport's third component says whether to work in linear light,
-	// and the ambient level is in that space.
-	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), linear, 0, f.Light.Direction.X, f.Light.Direction.Y, f.Light.Direction.Z, ambientLight(&f),
+	// and the lighting is in that space: the sky's ambient color, carrying
+	// the number of lights, here; the ground's and the lights after fog.
+	rig := newRig(&f)
+	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), linear, 0, rig.sky[0], rig.sky[1], rig.sky[2], float32(len(rig.lights)),
 		f.Eye.X, f.Eye.Y, f.Eye.Z, perspective, f.Forward.X, f.Forward.Y, f.Forward.Z, 0)...)
 	// Fog's near and far distances (equal when there is none) and color, in
 	// the frame's color space.
@@ -215,6 +224,14 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		}
 	}
 	ub = append(ub, floats(fog[:]...)...)
+	// Each light: its direction toward it or its position, and its kind;
+	// its color times intensity, and its range. Unused lights are zero.
+	var lights [MaxLights * 8]float32
+	for i, l := range rig.lights {
+		copy(lights[i*8:], []float32{l.v.X, l.v.Y, l.v.Z, float32(l.kind), l.color[0], l.color[1], l.color[2], l.rng})
+	}
+	ub = append(ub, floats(rig.ground[0], rig.ground[1], rig.ground[2], 0)...)
+	ub = append(ub, floats(lights[:]...)...)
 	drawn := f.drawn(1)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {

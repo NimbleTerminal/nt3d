@@ -10,14 +10,6 @@ import (
 	"nimbleterminal.dev/nt3d/math"
 )
 
-func shade(c color.RGBA, n nt3dmath.Vec3, l Light) color.RGBA {
-	if n.Dot(n) == 0 {
-		return c
-	}
-	v := l.Ambient + (1-l.Ambient)*max(0, n.Normalize().Dot(l.Direction.Normalize()))
-	return color.RGBA{uint8(float32(c.R) * v), uint8(float32(c.G) * v), uint8(float32(c.B) * v), 255}
-}
-
 // softwareRender draws a frame, at its supersampling factor if it has one:
 // the scene at that multiple of its size, averaged back down, with overlays
 // drawn after, at the frame's own size.
@@ -82,7 +74,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	}
 	// Surfaces are shaded in 0..255, in linear light or as encoded, as the
 	// frame works; pixels are 8-bit sRGB.
-	linear, ambient, aniso := f.Linear, ambientLight(&f), f.anisotropy()
+	linear, rig, aniso := f.Linear, newRig(&f), f.anisotropy()
 	toPixel := func(v float32) uint8 {
 		if linear {
 			return encode8(v / 255)
@@ -145,6 +137,11 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		cutout := textured && material.Cutout
 		blended := side != opaqueFaces
 		specular := material != nil && material.Specular > 0 && !material.Unlit
+		// A triangle with normals is lit; unlit ones have none.
+		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
+		// Whether pixels need the world point, and so perspective weights.
+		located := fogged || lit && (specular || rig.points)
+		perspective := blended || textured || lit || fogged
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
@@ -181,17 +178,19 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 				t := 1 - u - v
 				mix := func(k int) float32 { return u*a.shade[k] + v*b.shade[k] + t*c.shade[k] }
 				rgb := [3]float32{mix(0), mix(1), mix(2)}
+				// Perspective-correct weights, for what varies other than
+				// linearly across the screen.
+				var q0, q1, q2 float32
+				if perspective {
+					q0, q1, q2 = u/a.w, v/b.w, t/c.w
+					sum := q0 + q1 + q2
+					q0, q1, q2 = q0/sum, q1/sum, q2/sum
+				}
 				var opacity float32
 				if blended {
-					q0, q1, q2 := u/a.w, v/b.w, t/c.w
-					opacity = (q0*a.cut + q1*b.cut + q2*c.cut) / (q0 + q1 + q2)
+					opacity = q0*a.cut + q1*b.cut + q2*c.cut
 				}
 				if textured {
-					q0, q1, q2 := u/a.w, v/b.w, t/c.w
-					sum := q0 + q1 + q2
-					q0 /= sum
-					q1 /= sum
-					q2 /= sum
 					uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
 					// Cutouts sample full size; other textures the mip level
 					// for how far their texels spread across a pixel, found
@@ -206,29 +205,34 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 					if cutout && tex[3] < q0*a.cut+q1*b.cut+q2*c.cut {
 						continue // Cut out: neither color nor depth.
 					}
-					// Lit white, or the tint, times the texture, in the
-					// working space: linear light, or encoded.
-					lit := func(k int) float32 { return (q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]) / 255 }
+					// White, or the tint, times the texture, in the working
+					// space: linear light, or encoded.
+					tint := func(k int) float32 { return (q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]) / 255 }
 					work := func(v float32) float32 {
 						if linear {
 							return v * 255
 						}
 						return float32(encodeSRGB(float64(v))) * 255
 					}
-					rgb = [3]float32{work(tex[0]) * lit(0), work(tex[1]) * lit(1), work(tex[2]) * lit(2)}
+					rgb = [3]float32{work(tex[0]) * tint(0), work(tex[1]) * tint(1), work(tex[2]) * tint(2)}
 					opacity *= tex[3]
 				}
-				if specular || fogged {
-					q0, q1, q2 := u/a.w, v/b.w, t/c.w
-					sum := q0 + q1 + q2
-					q0, q1, q2 = q0/sum, q1/sum, q2/sum
+				if lit || fogged {
 					// The world point, exact under perspective: distance from
-					// the camera is not affine, so it is found here.
-					p := a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
-					if specular {
-						n := a.normal.Scale(q0).Add(b.normal.Scale(q1)).Add(c.normal.Scale(q2))
-						if s := f.highlight(material, n, p) * 255; s > 0 {
-							rgb[0], rgb[1], rgb[2] = rgb[0]+s, rgb[1]+s, rgb[2]+s
+					// the camera and from point lights is not affine, so it
+					// is found here, when something needs it.
+					var p nt3dmath.Vec3
+					if located {
+						p = a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
+					}
+					if n := a.normal.Scale(q0).Add(b.normal.Scale(q1)).Add(c.normal.Scale(q2)); lit && n.Dot(n) != 0 {
+						n = n.Scale(1 / float32(math.Sqrt(float64(n.Dot(n)))))
+						rig.light(&rgb, n, p)
+						if specular {
+							s := rig.highlight(material, n, p, f.viewAt(p))
+							for k := range rgb {
+								rgb[k] += s[k] * 255
+							}
 						}
 					}
 					if fogged {
@@ -285,16 +289,13 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			if textured && !material.Tint {
 				c = color.RGBA{255, 255, 255, 255}
 			}
+			// The surface's own color, in the working space; it is lit
+			// per pixel.
 			if linear {
-				level, dir := float32(1), normals.Direction(n)
-				if dir.Dot(dir) != 0 {
-					level = ambient + (1-ambient)*max(0, dir.Normalize().Dot(f.Light.Direction.Normalize()))
-				}
-				corners[k].shade = [3]float32{srgbDecode[c.R] * 255 * level, srgbDecode[c.G] * 255 * level, srgbDecode[c.B] * 255 * level}
-				continue
+				corners[k].shade = [3]float32{srgbDecode[c.R] * 255, srgbDecode[c.G] * 255, srgbDecode[c.B] * 255}
+			} else {
+				corners[k].shade = [3]float32{float32(c.R), float32(c.G), float32(c.B)}
 			}
-			lit := shade(c, normals.Direction(n), f.Light)
-			corners[k].shade = [3]float32{float32(lit.R), float32(lit.G), float32(lit.B)}
 		}
 		if whole {
 			raster(&corners[0], &corners[1], &corners[2], material, side)

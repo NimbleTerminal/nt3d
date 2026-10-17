@@ -458,7 +458,8 @@ func TestGPUTransparentMatchesSoftware(t *testing.T) {
 	check(t, err)
 	textured := quad(1, .3, color.RGBA{255, 255, 255, 255}, &Material{Texture: tex, Transparent: true}, false)
 	textured.UV = make([]UV, 4)
-	light := &Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: .2}
+	l := oldLight(nt3dmath.Vec3{Z: 1}, .2, true)
+	light := &l
 	r := &gpuRenderer{}
 	defer r.Close()
 	for name, f := range map[string]Frame{
@@ -484,7 +485,8 @@ func TestGPULinearLighting(t *testing.T) {
 	gray := color.RGBA{200, 200, 200, 255}
 	for _, linear := range []bool{true, false} {
 		for _, cos := range []float64{1, .5, .2, 0} {
-			f := blendScene(t, &Light{Direction: nt3dmath.Vec3{X: float32(math.Sqrt(1 - cos*cos)), Z: float32(cos)}, Ambient: .3}, quad(1, .3, gray, nil, false))
+			l := oldLight(nt3dmath.Vec3{X: float32(math.Sqrt(1 - cos*cos)), Z: float32(cos)}, .3, linear)
+			f := blendScene(t, &l, quad(1, .3, gray, nil, false))
 			f.Linear = linear
 			img, err := r.Render(f)
 			check(t, err)
@@ -793,4 +795,60 @@ func TestGPUInstanceSetFailureRetries(t *testing.T) {
 	}))
 	_, err = r.Render(f)
 	check(t, err)
+}
+
+// Lighting matches software across whole pictures, in linear light and
+// encoded: a point light's hotspot, a full rig on a shiny sphere, all eight
+// lights at once, glass lit from behind by a point light, no lighting at
+// all, and a point light on a surface.
+func TestGPULightingMatchesSoftware(t *testing.T) {
+	ball, err := BuildSphere(Sphere{Radius: .6, Color: gray, Material: shiny})
+	check(t, err)
+	glassBall, err := BuildSphere(Sphere{Radius: .6, Color: color.RGBA{240, 240, 240, 128}, Material: &Material{Transparent: true, Specular: .8, Shininess: 64}})
+	check(t, err)
+	rig := Lighting{
+		Ambient: Ambient{Sky: color.RGBA{90, 110, 160, 255}, Ground: color.RGBA{70, 50, 30, 255}, Intensity: .8},
+		Lights: []Light{
+			{Direction: nt3dmath.Vec3{X: 1, Y: -1, Z: 2}, Color: color.RGBA{255, 230, 200, 255}, Intensity: .7},
+			{Kind: PointLight, Position: nt3dmath.Vec3{X: -.8, Y: .3, Z: .9}, Color: color.RGBA{80, 160, 255, 255}, Intensity: 2, Range: 3},
+		},
+	}
+	var eight Lighting
+	for i := range MaxLights {
+		angle := float64(i) * math.Pi / 4
+		eight.Lights = append(eight.Lights, Light{Kind: LightKind(i % 2), Direction: nt3dmath.Vec3{X: float32(math.Cos(angle)), Y: float32(math.Sin(angle)), Z: 1}, Position: nt3dmath.Vec3{X: float32(math.Cos(angle)), Y: float32(math.Sin(angle)), Z: .8}, Intensity: .2, Range: 2.5})
+	}
+	behind := Lighting{Ambient: Ambient{Sky: white, Ground: white, Intensity: .2}, Lights: []Light{{Kind: PointLight, Position: nt3dmath.Vec3{Z: -.3}, Color: color.RGBA{255, 120, 0, 255}}}}
+	// A point light in the plane of a shiny quad, at its middle: it lights
+	// nothing there (and its own point is no NaN), leaving the ambient.
+	onSurface := Lighting{Ambient: Ambient{Sky: white, Ground: white, Intensity: .3}, Lights: []Light{{Kind: PointLight, Position: nt3dmath.Vec3{Z: .3}}}}
+	scenes := map[string]Frame{
+		"point hotspot":             pointQuad(t, 0, .1),
+		"rig on a shiny sphere":     blendScene(t, &rig, ball),
+		"eight lights":              blendScene(t, &eight, ball),
+		"glass under a point light": blendScene(t, &behind, glassBall),
+		"no lighting":               blendScene(t, &Lighting{}, quad(.3, .3, white, &Material{Unlit: true}, false), quad(1.2, .2, white, nil, false)),
+		"light on the surface":      blendScene(t, &onSurface, quad(1.2, .3, white, shiny, false)),
+	}
+	r := &gpuRenderer{}
+	defer r.Close()
+	for name, f := range scenes {
+		for _, linear := range []bool{true, false} {
+			f.Linear = linear
+			img, err := r.Render(f)
+			check(t, err)
+			sw := softwareRender(f)
+			off := 0
+			for y := range f.Height {
+				for x := range f.Width {
+					if !closeRGB(at(img, x, y), at(sw, x, y), 6) {
+						off++
+					}
+				}
+			}
+			if off > f.Width*f.Height/50 {
+				t.Errorf("%s, linear %v: %d of %d pixels differ; center GPU %v, software %v", name, linear, off, f.Width*f.Height, at(img, 40, 40), at(sw, 40, 40))
+			}
+		}
+	}
 }

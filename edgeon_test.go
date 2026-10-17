@@ -35,7 +35,7 @@ func materialScene(t *testing.T, m Material, normal nt3dmath.Vec3, c color.RGBA)
 	camera.Projection, camera.Alpha = Perspective, 89
 	f, err := s.Frame(camera, 120, 120)
 	check(t, err)
-	f.Light = Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: 1} // Even light: color is the texture's.
+	f.Lighting = even // Even light: color is the texture's.
 	return f
 }
 

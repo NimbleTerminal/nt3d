@@ -47,7 +47,7 @@ func TestOrthoDistanceAndCellAspect(t *testing.T) {
 func TestSoftwareTriangle(t *testing.T) {
 	c := DefaultCamera()
 	g := Geometry{Vertices: []Vertex{{nt3dmath.Vec3{X: -1, Y: -1, Z: 0}, nt3dmath.Vec3{Z: 1}, color.RGBA{255, 0, 0, 255}}, {nt3dmath.Vec3{X: 1, Y: -1, Z: 0}, nt3dmath.Vec3{Z: 1}, color.RGBA{255, 0, 0, 255}}, {nt3dmath.Vec3{X: 0, Y: 1, Z: 0}, nt3dmath.Vec3{Z: 1}, color.RGBA{255, 0, 0, 255}}}, Indices: []uint32{0, 1, 2}}
-	img := softwareRender(Frame{Width: 100, Height: 100, Matrix: c.Matrix(1), Geometry: []Geometry{g}, Light: Light{nt3dmath.Vec3{Z: 1}, .3}})
+	img := softwareRender(Frame{Width: 100, Height: 100, Matrix: c.Matrix(1), Geometry: []Geometry{g}, Lighting: oldLight(nt3dmath.Vec3{Z: 1}, .3, false)})
 	n := 0
 	for y := 0; y < 100; y++ {
 		for x := 0; x < 100; x++ {

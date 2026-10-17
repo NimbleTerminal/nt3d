@@ -44,7 +44,7 @@ func TestPickThroughCutout(t *testing.T) {
 			camera.Projection, camera.Alpha = Perspective, 89
 			f, err := s.Frame(camera, 120, 120)
 			check(t, err)
-			f.Light = Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: 1}
+			f.Lighting = even
 			if n > 2 {
 				s.Pick(camera, f, 60, 60, 1) // Starts the index; wait for it.
 				<-s.nodes[frontID].pickIndex.done
@@ -120,7 +120,7 @@ func TestPickCutoutMatchesPixels(t *testing.T) {
 	camera.Projection, camera.Alpha = Perspective, 89
 	f, err := s.Frame(camera, 120, 120)
 	check(t, err)
-	f.Light = Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: 1}
+	f.Lighting = even
 	img := softwareRender(f)
 	for y := 20; y < 100; y += 2 {
 		for x := 20; x < 100; x++ {

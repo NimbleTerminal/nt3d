@@ -14,7 +14,7 @@ import (
 // flatFrame shows geometry with clip space as the world: x and y from -1
 // to 1 across the frame, at the depth z gives, evenly lit.
 func flatFrame(w, h int, geometry ...Geometry) Frame {
-	f := Frame{Width: w, Height: h, Matrix: nt3dmath.Identity(), Linear: true, Background: color.RGBA{0, 0, 0, 255}, Light: Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: 1}}
+	f := Frame{Width: w, Height: h, Matrix: nt3dmath.Identity(), Linear: true, Background: color.RGBA{0, 0, 0, 255}, Lighting: even}
 	for _, g := range geometry {
 		g.Bounds = GeometryBounds(g)
 		f.Geometry = append(f.Geometry, g)

@@ -20,8 +20,6 @@ move to Done with their commit; git history has the details.
 
 ## Rendering
 
-- [ ] **More lights**: point lights and a fill light; today there is one
-  directional light plus ambient.
 - [ ] **Shared points, lines, and boxes**, only if something needs them:
   charts keep all their markers in one geometry, already one upload and
   draw, and sharing them means instancing shaders that index primitives by
@@ -74,6 +72,8 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
+- lighting rig: hemisphere ambient, up to eight directional and
+  point lights, per-pixel diffuse, both renderers
 - adopted `ntgpuimage` `v0.3.0` (sRGB, mipmaps, samplers, anisotropy); no more sibling checkout
 - `e1f3f0a`, `c30c9b4` anisotropic texture filtering (`Frame.Anisotropy`), both renderers; in the mipmaps demo
 - `1d860e7` 3MF `Model.Summary`: bounds, area, and mesh counts past the triangle limit (for gloss)

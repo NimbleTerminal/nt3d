@@ -24,8 +24,8 @@ func quad(s, z float32, c color.RGBA, m *Material, flipped bool) Geometry {
 }
 
 // blendScene draws geometries over an opaque blue floor (at z = -1), seen from straight
-// above, evenly lit unless light is given.
-func blendScene(t *testing.T, light *Light, geometries ...Geometry) Frame {
+// above, evenly lit unless lighting is given.
+func blendScene(t *testing.T, light *Lighting, geometries ...Geometry) Frame {
 	t.Helper()
 	s := NewScene()
 	_, err := s.SetGeometry("floor", quad(3, -1, blue, nil, false))
@@ -38,11 +38,30 @@ func blendScene(t *testing.T, light *Light, geometries ...Geometry) Frame {
 	camera.Projection, camera.Alpha = Perspective, 89
 	f, err := s.Frame(camera, 80, 80)
 	check(t, err)
-	f.Light = Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: 1}
+	f.Lighting = even
 	if light != nil {
-		f.Light = *light
+		f.Lighting = *light
 	}
 	return f
+}
+
+// even lights every surface fully, whichever way it faces.
+var even = Lighting{Ambient: Ambient{Sky: color.RGBA{255, 255, 255, 255}, Ground: color.RGBA{255, 255, 255, 255}}}
+
+// oldLight is the single light before the lighting rig: ambient a (0 < a
+// <= 1, in the frame's color space as it was, so decoded when linear), the
+// rest of the light from dir.
+func oldLight(dir nt3dmath.Vec3, a float32, linear bool) Lighting {
+	k := a
+	if linear {
+		k = float32(decodeSRGB(float64(a)))
+	}
+	l := even
+	l.Ambient.Intensity = k
+	if k < 1 {
+		l.Lights = []Light{{Direction: dir, Intensity: 1 - k}}
+	}
+	return l
 }
 
 var (
@@ -109,7 +128,8 @@ func TestTransparentSphere(t *testing.T) {
 // Back faces are lit as seen from behind: a pane facing away from the
 // camera, lit from the camera's side, is as bright as one facing it.
 func TestTransparentBackFacesLit(t *testing.T) {
-	light := &Light{Direction: nt3dmath.Vec3{Z: 1}, Ambient: .2}
+	l := oldLight(nt3dmath.Vec3{Z: 1}, .2, true)
+	light := &l
 	white := color.RGBA{240, 240, 240, 128}
 	toward := at(softwareRender(blendScene(t, light, quad(1, .3, white, glass, false))), 40, 40)
 	away := at(softwareRender(blendScene(t, light, quad(1, .3, white, glass, true))), 40, 40)

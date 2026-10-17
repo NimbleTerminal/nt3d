@@ -12,6 +12,7 @@ import (
 	"image/draw"
 	"nimbleterminal.dev/nt3d"
 	picture "nimbleterminal.dev/ntpicture"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -33,7 +34,7 @@ type Model struct {
 	scene                           *nt3d.Scene
 	sceneRevision                   uint64
 	camera                          nt3d.Camera
-	light                           nt3d.Light
+	lighting                        nt3d.Lighting
 	fog                             nt3d.Fog
 	background                      color.RGBA
 	renderer                        nt3d.Renderer
@@ -148,7 +149,7 @@ func New(scene *nt3d.Scene, width, height int, opts ...Option) *Model {
 	if scene == nil {
 		scene = nt3d.NewScene()
 	}
-	m := &Model{scene: scene, sceneRevision: scene.Revision(), camera: nt3d.DefaultCamera(), light: nt3d.DefaultLight(), background: color.RGBA{235, 238, 242, 255}, renderer: nt3d.NewGPURenderer(), id: nextID.Add(1), dirty: true, kittyFormat: picture.KittyFormatZlib}
+	m := &Model{scene: scene, sceneRevision: scene.Revision(), camera: nt3d.DefaultCamera(), lighting: nt3d.DefaultLighting(), background: color.RGBA{235, 238, 242, 255}, renderer: nt3d.NewGPURenderer(), id: nextID.Add(1), dirty: true, kittyFormat: picture.KittyFormatZlib}
 	for _, o := range opts {
 		o(m)
 	}
@@ -308,7 +309,7 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	if err != nil {
 		return nil, m.requestedRenderMode, err
 	}
-	f.Background, f.Light, f.Fog = m.background, m.light, m.fog
+	f.Background, f.Lighting, f.Fog = m.background, m.lighting, m.fog
 	if m.decorate != nil {
 		m.decorate(&f)
 	}
@@ -403,7 +404,15 @@ func (m *Model) SetBackground(c color.Color) tea.Cmd {
 	m.background.A = 255
 	return m.changed(false)
 }
-func (m *Model) SetLight(l nt3d.Light) tea.Cmd { m.light = l; return m.changed(false) }
+
+// SetLighting sets how the scene is lit: ambient light and up to
+// nt3d.MaxLights directional or point lights. The lights are copied, so the
+// caller may change its own while frames render.
+func (m *Model) SetLighting(l nt3d.Lighting) tea.Cmd {
+	m.lighting = l
+	m.lighting.Lights = slices.Clone(l.Lights)
+	return m.changed(false)
+}
 
 // SetFog fades the scene toward a color with distance from the camera; the
 // zero Fog is none. Distances are in world units, so a fog that should keep

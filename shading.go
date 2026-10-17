@@ -56,22 +56,3 @@ func (m *Material) shininess() float32 {
 	}
 	return m.Shininess
 }
-
-// highlight is the Blinn-Phong specular light at a world point with world
-// normal n, seen from the frame's camera: Specular times the cosine between
-// the normal and the half vector, raised to Shininess, where the light falls
-// on the surface's side.
-func (f *Frame) highlight(m *Material, n, p nt3dmath.Vec3) float32 {
-	if m == nil || m.Specular == 0 || m.Unlit || n.Dot(n) == 0 {
-		return 0
-	}
-	n, l := n.Normalize(), f.Light.Direction.Normalize()
-	if n.Dot(l) <= 0 {
-		return 0
-	}
-	h := l.Add(f.viewAt(p))
-	if h.Dot(h) == 0 {
-		return 0
-	}
-	return m.Specular * float32(math.Pow(float64(max(0, n.Dot(h.Normalize()))), float64(m.shininess())))
-}

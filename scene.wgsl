@@ -1,4 +1,5 @@
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, light: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32> };
+struct Light { a: vec4<f32>, b: vec4<f32> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
@@ -28,24 +29,48 @@ fn eyeDistance(world:vec3<f32>)->f32 {
 }
 fn worldPosition(pos:vec3<f32>,index:f32)->vec3<f32> {return (instances[u32(index)].world*vec4<f32>(pos,1.0)).xyz;}
 fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
- var o: Out; o.clip=clipPosition(pos,color.w); var light=1.0;
+ var o: Out; o.clip=clipPosition(pos,color.w);
  let inst=instances[u32(color.w)];
  o.world=worldPosition(pos,color.w);
  if dot(normal,normal)>0.0 {
   o.normal=normalize((inst.normal*vec4<f32>(normal,0.0)).xyz);o.spec=inst.normal[3].xy;
-  light=u.light.w+(1.0-u.light.w)*max(0.0,dot(o.normal,normalize(u.light.xyz)));
  }
- o.color=vec4<f32>(decode(color.rgb)*light,1.0);o.uv=vec2<f32>(0.0);o.point=0.0;return o;
+ o.color=vec4<f32>(decode(color.rgb),1.0);o.uv=vec2<f32>(0.0);o.point=0.0;return o;
 }
-// finish adds the specular highlight and fades into the fog.
+// toward is the unit direction from world point p toward a light (xyz) and
+// how much of its light reaches p (w): all of a directional light's; a
+// point light's fading to nothing at its range, or as 1/(1+d²) without one,
+// and none from a light at p.
+fn toward(l:Light,p:vec3<f32>)->vec4<f32> {
+ if l.a.w<0.5 {return vec4<f32>(l.a.xyz,1.0);}
+ let v=l.a.xyz-p;let d2=dot(v,v);
+ if d2==0.0 {return vec4<f32>(0.0);}
+ var fade=1.0/(1.0+d2);
+ if l.b.w>0.0 {let k=max(0.0,1.0-d2/(l.b.w*l.b.w));fade=k*k;}
+ return vec4<f32>(v*inverseSqrt(d2),fade);
+}
+// illuminate is the light reaching a surface with unit normal n at p:
+// ambient, from ground to sky as n turns up, and each light's diffuse.
+fn illuminate(n:vec3<f32>,p:vec3<f32>)->vec3<f32> {
+ var c=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
+ for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz)));}
+ return c;
+}
+// finish lights a surface, adds each light's specular highlight, and fades
+// into the fog. Fragments without a normal are unlit.
 fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {
  var c=rgb;
- if o.spec.x>0.0 && dot(o.normal,o.normal)>0.0 {
-  let n=normalize(o.normal);let l=normalize(u.light.xyz);
-  var view=-u.forward.xyz;
-  if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
-  let h=l+view;
-  if dot(n,l)>0.0 && dot(h,h)>0.0 {c+=vec3<f32>(o.spec.x*pow(max(0.0,dot(n,normalize(h))),o.spec.y));}
+ if dot(o.normal,o.normal)>0.0 {
+  let n=normalize(o.normal);
+  c*=illuminate(n,o.world);
+  if o.spec.x>0.0 {
+   var view=-u.forward.xyz;
+   if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
+   for(var i=0u;i<u32(u.sky.w);i=i+1u) {
+    let l=u.lights[i];let t=toward(l,o.world);let h=t.xyz+view;
+    if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {c+=l.b.rgb*(t.w*o.spec.x*pow(max(0.0,dot(n,normalize(h))),o.spec.y));}
+   }
+  }
  }
  if u.fog.y>u.fog.x {c=mix(c,u.fogColor.rgb,clamp((eyeDistance(o.world)-u.fog.x)/(u.fog.y-u.fog.x),0.0,1.0));}
  return c;
