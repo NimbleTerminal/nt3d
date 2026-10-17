@@ -30,7 +30,7 @@ To run the demos yourself:
 
 ```sh
 task workspace   # needs ../ntpicture checked out beside nt3d, until it's published
-task fur         # or terrain, shapes, models, large, mipmaps, forest, dynamic, procedural
+task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, dynamic, procedural
 task build-web && task serve   # all of them in a browser, at http://localhost:8768
 ```
 

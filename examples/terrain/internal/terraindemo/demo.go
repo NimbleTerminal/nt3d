@@ -45,6 +45,7 @@ type demo struct {
 	fur               *furScene
 	mipmaps           *mipScene
 	forest            *forestScene
+	lights            *lightScene
 }
 
 type sceneMode int
@@ -58,11 +59,12 @@ const (
 	sceneFur
 	sceneMipmaps
 	sceneForest
+	sceneLights
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil
+	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil
 }
 
 type quitMsg struct{}
@@ -114,7 +116,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(v)
 		elapsed := now.Sub(d.lastPhase).Seconds()
 		d.lastPhase = now
-		if !d.animate || (!d.procedural && d.dynamic == nil && d.fur == nil && d.forest == nil) {
+		if !d.animate || (!d.procedural && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil) {
 			return d, phaseTick()
 		}
 		d.phase = math.Mod(d.phase+elapsed, 2*math.Pi)
@@ -130,6 +132,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.stepFur()
 		case d.forest != nil:
 			err = d.stepForest()
+		case d.lights != nil:
+			err = d.stepLights()
 		default:
 			err = d.updatePlasma()
 		}
@@ -172,6 +176,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			d.dynamic.deform = !d.dynamic.deform
 		case "e":
+			if d.lights != nil {
+				err = d.toggleLightShine()
+				break
+			}
 			if d.meshes != nil && d.models == nil {
 				err = d.toggleShine()
 				break
@@ -226,6 +234,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "f":
+			if d.lights != nil {
+				err = d.toggleFalloff()
+				break
+			}
 			if d.fur != nil {
 				d.fur.noFins = !d.fur.noFins
 				err = d.growFur()
@@ -237,6 +249,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.flat = !d.flat
 			err = d.terrain()
 		case "l":
+			if d.lights != nil {
+				err = d.cycleLightPreset()
+				break
+			}
 			if d.fur != nil {
 				d.fur.length = (d.fur.length + 1) % len(furLengths)
 				err = d.growFur()
@@ -316,9 +332,13 @@ func (d *demo) rendering() string {
 	return s
 }
 
-// decorate fogs frames, when fog is on, from just behind the camera's target
-// to well past it, so the far side of the scene fades whatever the zoom.
+// decorate lights frames in the lights demo, and fogs them, when fog is on,
+// from just behind the camera's target to well past it, so the far side of
+// the scene fades whatever the zoom.
 func (d *demo) decorate(f *nt3d.Frame) {
+	if d.lights != nil {
+		d.decorateLights(f)
+	}
 	if d.mipmaps != nil && d.mipmaps.mode == mipOnly {
 		f.Anisotropy = 1
 	}
@@ -355,6 +375,11 @@ func (d *demo) View() tea.View {
 	}
 	if d.forest != nil {
 		v.Content = d.zones.Scan(d.forestView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.lights != nil {
+		v.Content = d.zones.Scan(d.lightsView(v.Content))
 		v.AltScreen = true
 		return v
 	}
@@ -487,6 +512,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupForest(); err != nil {
 			return err
 		}
+	case sceneLights:
+		if err = d.setupLights(); err != nil {
+			return err
+		}
 	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
@@ -515,6 +544,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Alpha, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
 	case sceneForest:
 		camera.Alpha, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
+	case sceneLights:
+		camera.Alpha, camera.Distance, camera.Projection = 30, 5.5, nt3d.Perspective
 	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))

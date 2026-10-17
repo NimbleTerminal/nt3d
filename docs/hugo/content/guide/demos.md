@@ -77,6 +77,12 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 `task forest`. Thousands of trees from three [shared meshes](../scenes/#sharing-geometry), each uploaded once and drawn in one instanced call, swaying in the wind. `i` switches them to separate copies to compare, `n` changes how many trees grow, `a` stills the wind, and `d` fades them into fog.
 
+## Lights
+
+<img class="poster" src="../../posters/lights.png" alt="A sphere, torus, column, and cube on a floor lit by eight colored point lights in a ring">
+
+`task lights`. A sphere, a torus, a column, and a cube on a floor of two triangles, under presets of [lighting](../rendering/#how-it-looks): the default key light, a turning sun under a sky-to-ground ambient, three colored lamps orbiting, one lamp at night, and eight at once. Light is found per pixel, so a lamp's bright spot crosses the floor where no vertex is. `l` changes the preset, `f` the point lights' falloff, `e` turns highlights off, and `a` pauses the lamps.
+
 ## In a browser
 
 The [gallery](https://nimbleterminal.github.io/nt3d/) is online. To build and serve it yourself:

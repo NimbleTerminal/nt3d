@@ -48,13 +48,14 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-fur ./cmd/fur
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-mipmaps ./cmd/mipmaps
       - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-forest ./cmd/forest
+      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-lights ./cmd/lights
   build-wasm:
     env:
       GOOS: js
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/terrain/app.wasm .
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -64,6 +65,7 @@ tasks:
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/fur/app.wasm ./cmd/fur
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/mipmaps/app.wasm ./cmd/mipmaps
       - go -C examples/terrain build -mod=readonly -o ../../dist/web/forest/app.wasm ./cmd/forest
+      - go -C examples/terrain build -mod=readonly -o ../../dist/web/lights/app.wasm ./cmd/lights
   web-assets:
     cmds:
       - go -C examples/terrain tool booba-assets ../../dist/web/terrain/
@@ -75,6 +77,7 @@ tasks:
       - go -C examples/terrain tool booba-assets ../../dist/web/fur/
       - go -C examples/terrain tool booba-assets ../../dist/web/mipmaps/
       - go -C examples/terrain tool booba-assets ../../dist/web/forest/
+      - go -C examples/terrain tool booba-assets ../../dist/web/lights/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -131,6 +134,11 @@ tasks:
     deps: [build]
     cmds:
       - bin/nt3d-forest {{.CLI_ARGS}}
+  lights:
+    desc: Show presets of ambient, directional, and orbiting point lights
+    deps: [build]
+    cmds:
+      - bin/nt3d-lights {{.CLI_ARGS}}
   models-generate:
     desc: Regenerate the sample models the models demo embeds
     cmds:
@@ -151,7 +159,7 @@ tasks:
     cmds:
       - mkdir -p dist/tapes
       - |
-        for name in {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}terrain procedural dynamic shapes meshes models large fur mipmaps forest{{end}}; do
+        for name in {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}terrain procedural dynamic shapes meshes models large fur mipmaps forest lights{{end}}; do
           ntrecord tapes/$name.tape && tapes/finish.sh $name || exit 1
         done
   docs:hugo:serve:

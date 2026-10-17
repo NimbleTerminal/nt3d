@@ -73,7 +73,7 @@ move to Done with their commit; git history has the details.
 Recent milestones, newest first:
 
 - lighting rig: hemisphere ambient, up to eight directional and
-  point lights, per-pixel diffuse, both renderers
+  point lights, per-pixel diffuse, both renderers; the lights demo
 - adopted `ntgpuimage` `v0.3.0` (sRGB, mipmaps, samplers, anisotropy); no more sibling checkout
 - `e1f3f0a`, `c30c9b4` anisotropic texture filtering (`Frame.Anisotropy`), both renderers; in the mipmaps demo
 - `1d860e7` 3MF `Model.Summary`: bounds, area, and mesh counts past the triangle limit (for gloss)
