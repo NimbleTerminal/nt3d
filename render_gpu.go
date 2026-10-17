@@ -334,7 +334,12 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 				// Then blend them, farthest first, back faces before front.
 				for _, index := range f.blendOrder(drawn) {
 					d := g.draws[g.blendDraw[index]]
+					// A blended draw's triangles blend only if they are
+					// transparent; opaque ones drew with everything opaque.
 					for side := range 2 {
+						if !transparent(&f.Geometry[index]) {
+							break
+						}
 						if b := d.geom.batches[1]; b.count > 0 {
 							pass.SetPipeline(g.blendPipelines[side])
 							pass.SetBindGroup(0, d.set.binds[1], nil)
@@ -355,7 +360,7 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 			}
 			if i == 2 {
 				for _, d := range g.draws {
-					if d.blended || d.geom.batches[7].count == 0 {
+					if transparent(&f.Geometry[d.index]) || d.geom.batches[7].count == 0 {
 						continue
 					}
 					if f.Geometry[d.index].Material.Cutout {
@@ -373,7 +378,7 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 			for _, d := range g.draws {
 				b := d.geom.batches[i]
 				switch {
-				case b.count == 0 || i == 1 && d.blended || i == 0 && blendedPoints(&f.Geometry[d.index]):
+				case b.count == 0 || i == 1 && transparent(&f.Geometry[d.index]) || i == 0 && blendedPoints(&f.Geometry[d.index]):
 				case i == 1:
 					pass.SetPipeline(g.pipelines[1])
 					pass.SetBindGroup(0, d.set.binds[1], nil)

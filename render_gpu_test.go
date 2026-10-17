@@ -877,6 +877,10 @@ func TestGPUPointStylesMatchSoftware(t *testing.T) {
 	pane := quad(1, .3, color.RGBA{0, 0, 220, 128}, glass, false)
 	pane.PointStyle, pane.Points = PointStyle{Shape: SoftPoint, Blend: AlphaBlend}, []Point{{Position: nt3dmath.Vec3{Z: .5}, Radius: 10, Color: red}}
 	frames["pane and points"] = blendScene(t, nil, pane)
+	// An opaque mesh with blended points stays opaque, hiding the points behind it.
+	wall := quad(.5, .5, color.RGBA{0, 200, 0, 255}, nil, false)
+	wall.PointStyle, wall.Points = PointStyle{Blend: AlphaBlend}, []Point{{Radius: 10, Color: color.RGBA{255, 0, 0, 200}}}
+	frames["opaque mesh and points"] = blendScene(t, nil, wall)
 	for name, f := range frames {
 		gpu, err := r.Render(f)
 		check(t, err)

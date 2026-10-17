@@ -79,7 +79,7 @@ type gpuDraw struct {
 	set     *instanceSet
 	count   uint32
 	index   int  // The frame geometry of its first instance: material and texture.
-	blended bool // One transparent instance, drawn in blending order.
+	blended bool // One instance with transparent triangles or blended points, drawn in blending order.
 }
 
 func frameGeometryKey(f Frame, i int) geometryKey {
