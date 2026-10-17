@@ -297,9 +297,24 @@ func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, tr
 }
 
 func geometryData(geom Geometry) (data [8][]byte) {
+	// Each record is twelve floats; each kind is sized once, so encoding
+	// allocates per kind rather than per record.
+	const record = 12 * 4
+	var records [8]int
+	records[0], records[2], records[3], records[6] = len(geom.Points), len(geom.Boxes), len(geom.Lines), len(geom.Arrows)
+	if textured(geom) {
+		records[7] = len(geom.Indices)
+	} else {
+		records[1] = len(geom.Indices)
+	}
+	for kind, n := range records {
+		if n > 0 {
+			data[kind] = make([]byte, 0, n*record)
+		}
+	}
 	// Each node binds one transform; records always reference its slot zero.
 	vertex := func(kind int, v Vertex, radius float32) {
-		data[kind] = append(data[kind], floats(v.Position.X, v.Position.Y, v.Position.Z, radius, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, 0)...)
+		data[kind] = appendFloats(data[kind], v.Position.X, v.Position.Y, v.Position.Z, radius, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, 0)
 	}
 	for _, p := range geom.Points {
 		vertex(0, Vertex{Position: p.Position, Color: p.Color}, p.Radius)
@@ -339,7 +354,7 @@ func geometryData(geom Geometry) (data [8][]byte) {
 			}
 			rgb := float32(int(v.Color.R)<<16 | int(v.Color.G)<<8 | int(v.Color.B))
 			uv := geom.UV[index]
-			data[7] = append(data[7], floats(v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, 0)...)
+			data[7] = appendFloats(data[7], v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, 0)
 		} else {
 			vertex(1, v, opacity)
 		}
@@ -351,7 +366,7 @@ func geometryData(geom Geometry) (data [8][]byte) {
 		vertex(3, v, lineWidth(geom.LineWidth))
 	}
 	for _, a := range geom.Arrows {
-		data[6] = append(data[6], floats(a.Start.X, a.Start.Y, a.Start.Z, lineWidth(a.Width), a.End.X, a.End.Y, a.End.Z, a.HeadSize, float32(a.Color.R)/255, float32(a.Color.G)/255, float32(a.Color.B)/255, 0)...)
+		data[6] = appendFloats(data[6], a.Start.X, a.Start.Y, a.Start.Z, lineWidth(a.Width), a.End.X, a.End.Y, a.End.Z, a.HeadSize, float32(a.Color.R)/255, float32(a.Color.G)/255, float32(a.Color.B)/255, 0)
 	}
 	return
 }

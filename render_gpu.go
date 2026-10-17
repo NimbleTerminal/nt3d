@@ -123,12 +123,14 @@ func (g *gpuRenderer) setup() (err error) {
 	})
 }
 
-func floats(values ...float32) []byte {
-	out := make([]byte, len(values)*4)
-	for i, v := range values {
-		binary.LittleEndian.PutUint32(out[i*4:], math.Float32bits(v))
+func floats(values ...float32) []byte { return appendFloats(make([]byte, 0, len(values)*4), values...) }
+
+// appendFloats appends values to dst, little-endian.
+func appendFloats(dst []byte, values ...float32) []byte {
+	for _, v := range values {
+		dst = binary.LittleEndian.AppendUint32(dst, math.Float32bits(v))
 	}
-	return out
+	return dst
 }
 
 func (g *gpuRenderer) uploadUI(dev *wgpu.Device, f Frame) error {

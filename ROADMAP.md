@@ -15,9 +15,15 @@ move to Done with their commit; git history has the details.
 
 ## Rendering
 
-- [ ] **Shared points, lines, and boxes**, only if something needs them:
-  charts keep all their markers in one geometry, already one upload and
-  draw, and sharing them means instancing shaders that index primitives by
+- [ ] **Particles**:
+  - a cheap per-frame update of one geometry's points (no full
+    validate, copy, and bounds pass per frame)
+  - sprite points: textured or soft-edged, with additive or alpha
+    blending, on the GPU and software renderers
+- [ ] **Shared points, lines, and boxes**, only if something needs them
+  (particles don't: they are many positions, not many copies): charts
+  keep all their markers in one geometry, already one upload and draw,
+  and sharing them means instancing shaders that index primitives by
   instance today.
 - [ ] **Mipmap follow-ups**: procedural textures (needs `ntgpuimage`
   render-target mips); coverage-preserving alpha mips for cutouts (fur and
