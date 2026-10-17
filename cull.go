@@ -10,8 +10,12 @@ func overhang(g *Geometry) float32 {
 	if len(g.Lines) > 0 {
 		r = lineWidth(g.LineWidth)
 	}
-	for _, p := range g.Points {
-		r = max(r, p.Radius)
+	if g.PointStyle.Units == WorldUnits && len(g.Points) > 0 {
+		r = max(r, MaxPointPixels) // As far as a world radius reaches on screen.
+	} else {
+		for _, p := range g.Points {
+			r = max(r, p.Radius)
+		}
 	}
 	for _, a := range g.Arrows {
 		r = max(r, lineWidth(a.Width), a.HeadSize)

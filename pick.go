@@ -75,7 +75,7 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 				continue
 			}
 			px, py := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5
-			if r := max(tolerance, p.Radius); (px-x)*(px-x)+(py-y)*(py-y) <= r*r {
+			if r := max(tolerance, f.pointRadius(g.PointStyle, p.Radius, cw, 1)); (px-x)*(px-x)+(py-y)*(py-y) <= r*r {
 				set(PointPrimitive, j, p.Datum, p.Position, 0)
 			}
 		}
