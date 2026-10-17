@@ -58,6 +58,9 @@ tasks:
     requires: {vars: [NAME]}
     cmds:
       - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-{{.NAME}} ./cmd/{{.NAME}}
+  clean:
+    desc: Remove the demo binaries that build puts in bin
+    cmds: [rm -rf bin]
   build-wasm:
     env:
       GOOS: js
