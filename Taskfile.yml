@@ -4,6 +4,10 @@ version: '3'
 env:
   GOTOOLCHAIN: go1.26.8
 
+vars:
+  # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights
+
 tasks:
   default:
     cmds: [{task: build}]
@@ -36,19 +40,24 @@ tasks:
       - go vet -mod=readonly ./...
       - go -C examples/demos vet -mod=readonly ./...
   build:
+    desc: Build the library and every demo; Go's cache rebuilds only what changed
+    deps:
+      - build:lib
+      - for: {var: DEMOS}
+        task: build:demo
+        vars: {NAME: '{{.ITEM}}'}
+  build:lib:
+    internal: true
     cmds:
       - go build -mod=readonly ./...
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-terrain ./cmd/terrain
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-procedural ./cmd/procedural
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-dynamic ./cmd/dynamic
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-meshes ./cmd/meshes
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-shapes ./cmd/shapes
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-models ./cmd/models
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-large ./cmd/large
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-fur ./cmd/fur
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-mipmaps ./cmd/mipmaps
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-forest ./cmd/forest
-      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-lights ./cmd/lights
+  # build:demo builds one demo. Each demo's task needs only its own binary;
+  # build runs them all at once.
+  build:demo:
+    internal: true
+    label: 'build:{{.NAME}}'
+    requires: {vars: [NAME]}
+    cmds:
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-{{.NAME}} ./cmd/{{.NAME}}
   build-wasm:
     env:
       GOOS: js
@@ -91,52 +100,52 @@ tasks:
       - task: docs:hugo:build
         vars: {CLI_ARGS: --destination ../../dist/web/docs}
   terrain:
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: terrain}}]
     cmds:
       - bin/nt3d-terrain {{.CLI_ARGS}}
   procedural:
     desc: Run the procedural plasma scene (GPU shader with software fallback)
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: procedural}}]
     cmds:
       - bin/nt3d-procedural {{.CLI_ARGS}}
   dynamic:
     desc: Run independently moving nodes and a deforming mesh
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: dynamic}}]
     cmds:
       - bin/nt3d-dynamic {{.CLI_ARGS}}
   shapes:
     desc: Show the shape builders and normal styles
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: shapes}}]
     cmds:
       - bin/nt3d-shapes {{.CLI_ARGS}}
   models:
     desc: Show sample STL, OBJ, and 3MF files
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: models}}]
     cmds:
       - bin/nt3d-models {{.CLI_ARGS}}
   large:
     desc: Show a dense 735,000-triangle mesh with picking
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: large}}]
     cmds:
       - bin/nt3d-large {{.CLI_ARGS}}
   fur:
     desc: Show shell fur on Spot the cow, swaying in the wind
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: fur}}]
     cmds:
       - bin/nt3d-fur {{.CLI_ARGS}}
   mipmaps:
     desc: Show textures tiled to the horizon, with mipmaps or without
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: mipmaps}}]
     cmds:
       - bin/nt3d-mipmaps {{.CLI_ARGS}}
   forest:
     desc: Show thousands of trees drawn instanced from three shared meshes
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: forest}}]
     cmds:
       - bin/nt3d-forest {{.CLI_ARGS}}
   lights:
     desc: Show presets of ambient, directional, and orbiting point lights
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: lights}}]
     cmds:
       - bin/nt3d-lights {{.CLI_ARGS}}
   models-generate:
@@ -145,21 +154,25 @@ tasks:
       - go -C examples/demos generate ./internal/demo/models
   meshes:
     desc: Show the shape builders, or mesh files given after --
-    deps: [build]
+    deps: [{task: build:demo, vars: {NAME: meshes}}]
     cmds:
       - bin/nt3d-meshes {{.CLI_ARGS}}
   tapes:
     desc: Record the demos with ntrecord, as GIFs and the gallery's poster frames (task tapes -- fur forest for some)
-    deps: [build]
+    vars:
+      NAMES: '{{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}{{.DEMOS}}{{end}}'
     preconditions:
       - sh: command -v ntrecord
         msg: ntrecord is needed to record Kitty graphics; see https://github.com/NimbleTerminal/ntrecord
       - sh: command -v ffmpeg && command -v gifsicle
         msg: tapes/finish.sh needs ffmpeg and gifsicle (brew install ffmpeg gifsicle)
     cmds:
+      - for: {var: NAMES}
+        task: build:demo
+        vars: {NAME: '{{.ITEM}}'}
       - mkdir -p dist/tapes
       - |
-        for name in {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}terrain procedural dynamic shapes meshes models large fur mipmaps forest lights{{end}}; do
+        for name in {{.NAMES}}; do
           ntrecord tapes/$name.tape && tapes/finish.sh $name || exit 1
         done
   docs:hugo:serve:
