@@ -19,7 +19,7 @@ task ci
 
 CI checks out ntpicture at the revision `go.mod` pins, so that revision must be pushed before CI can fetch it.
 
-The library is one module. The demos in `examples/terrain` are a second module, so that go-booba and the Bubble Tea fork the browser needs never become requirements of the library.
+The library is one module. The demos in `examples/demos` are a second module, so that go-booba and the Bubble Tea fork the browser needs never become requirements of the library.
 
 ## Tasks
 

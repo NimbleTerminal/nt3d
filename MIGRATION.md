@@ -19,8 +19,9 @@ Generic point, box, triangle, line, and arrow geometry belongs to the engine.
 
 The widget uses nimbleterminal.dev/ntpicture for presentation and the wireframe
 renderer uses nimbleterminal.dev/ntcanvas surfaces. Neither imports ntcharts3d
-or ntcharts/v2. The terrain example uses go-booba without adding it to the library
-module. The old chart gallery and transport diagnostic remain where they are.
+or ntcharts/v2. The demos, in examples/demos, use go-booba without adding it
+to the library module. The old chart gallery and transport diagnostic remain
+where they are.
 
 ## Proposed chart changes (not implemented here)
 

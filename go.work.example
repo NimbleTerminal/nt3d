@@ -2,7 +2,7 @@ go 1.26.8
 
 use (
  .
- ./examples/terrain
+ ./examples/demos
 )
 
 replace nimbleterminal.dev/ntpicture => ../ntpicture

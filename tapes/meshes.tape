@@ -3,7 +3,7 @@
 Output dist/tapes/meshes.gif
 Source tapes/common.tape
 Hide
-Type "bin/nt3d-meshes --up y examples/terrain/internal/terraindemo/models/spot_triangulated.obj"
+Type "bin/nt3d-meshes --up y examples/demos/internal/demo/models/spot_triangulated.obj"
 Enter
 Wait+Screen@60s /fps/
 Sleep 1s

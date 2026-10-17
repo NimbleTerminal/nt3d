@@ -5,7 +5,7 @@ weight: 100
 
 # Demos
 
-The demos are complete programs in [`examples/terrain`](https://github.com/NimbleTerminal/nt3d/tree/main/examples/terrain), and the quickest way to see what nt3d does. Each runs in a terminal with `task <name>`, and in a browser from the gallery.
+The demos are complete programs in [`examples/demos`](https://github.com/NimbleTerminal/nt3d/tree/main/examples/demos), and the quickest way to see what nt3d does. Each runs in a terminal with `task <name>`, and in a browser from the gallery.
 
 They all share the widget's [controls](../widget/#controls) (drag to orbit, wheel to zoom, `c` to fit, `r` to rotate) and a few keys of their own: `1`, `2`, and `3` switch between GPU, software, and wireframe, and `q` quits. Each demo lists its other keys along the top of the screen.
 

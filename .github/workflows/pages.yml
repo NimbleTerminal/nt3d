@@ -36,7 +36,7 @@ jobs:
           go-version-file: nt3d/go.mod
           cache-dependency-path: |
             nt3d/go.sum
-            nt3d/examples/terrain/go.sum
+            nt3d/examples/demos/go.sum
       - uses: go-task/setup-task@v2
         with:
           version: '3.x'

@@ -15,18 +15,18 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go examples/terrain/internal/terraindemo/models/*.go examples/terrain/internal/terraindemo/models/generate/*.go
+      - gofmt -w *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/terrain/*.go examples/terrain/cmd/*/*.go examples/terrain/internal/terraindemo/*.go examples/terrain/internal/terraindemo/models/*.go examples/terrain/internal/terraindemo/models/generate/*.go)"
+      - test -z "$(gofmt -l *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...
-      - go -C examples/terrain test -mod=readonly ./...
+      - go -C examples/demos test -mod=readonly ./...
   test-race:
     cmds:
       - go test -mod=readonly -race ./...
-      - go -C examples/terrain test -mod=readonly -race ./...
+      - go -C examples/demos test -mod=readonly -race ./...
   test-gpu:
     desc: Explicit hardware GPU tests (fail if no GPU is available)
     cmds:
@@ -34,21 +34,21 @@ tasks:
   vet:
     cmds:
       - go vet -mod=readonly ./...
-      - go -C examples/terrain vet -mod=readonly ./...
+      - go -C examples/demos vet -mod=readonly ./...
   build:
     cmds:
       - go build -mod=readonly ./...
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-terrain .
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-procedural ./cmd/procedural
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-dynamic ./cmd/dynamic
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-meshes ./cmd/meshes
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-shapes ./cmd/shapes
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-models ./cmd/models
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-large ./cmd/large
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-fur ./cmd/fur
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-mipmaps ./cmd/mipmaps
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-forest ./cmd/forest
-      - go -C examples/terrain build -mod=readonly -o ../../bin/nt3d-lights ./cmd/lights
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-terrain ./cmd/terrain
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-procedural ./cmd/procedural
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-dynamic ./cmd/dynamic
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-meshes ./cmd/meshes
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-shapes ./cmd/shapes
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-models ./cmd/models
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-large ./cmd/large
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-fur ./cmd/fur
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-mipmaps ./cmd/mipmaps
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-forest ./cmd/forest
+      - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-lights ./cmd/lights
   build-wasm:
     env:
       GOOS: js
@@ -56,28 +56,28 @@ tasks:
       CGO_ENABLED: '0'
     cmds:
       - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/terrain/app.wasm .
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/shapes/app.wasm ./cmd/shapes
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/models/app.wasm ./cmd/models
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/large/app.wasm ./cmd/large
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/fur/app.wasm ./cmd/fur
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/mipmaps/app.wasm ./cmd/mipmaps
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/forest/app.wasm ./cmd/forest
-      - go -C examples/terrain build -mod=readonly -o ../../dist/web/lights/app.wasm ./cmd/lights
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/shapes/app.wasm ./cmd/shapes
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/models/app.wasm ./cmd/models
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/large/app.wasm ./cmd/large
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/fur/app.wasm ./cmd/fur
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/mipmaps/app.wasm ./cmd/mipmaps
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/forest/app.wasm ./cmd/forest
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/lights/app.wasm ./cmd/lights
   web-assets:
     cmds:
-      - go -C examples/terrain tool booba-assets ../../dist/web/terrain/
-      - go -C examples/terrain tool booba-assets ../../dist/web/procedural/
-      - go -C examples/terrain tool booba-assets ../../dist/web/dynamic/
-      - go -C examples/terrain tool booba-assets ../../dist/web/shapes/
-      - go -C examples/terrain tool booba-assets ../../dist/web/models/
-      - go -C examples/terrain tool booba-assets ../../dist/web/large/
-      - go -C examples/terrain tool booba-assets ../../dist/web/fur/
-      - go -C examples/terrain tool booba-assets ../../dist/web/mipmaps/
-      - go -C examples/terrain tool booba-assets ../../dist/web/forest/
-      - go -C examples/terrain tool booba-assets ../../dist/web/lights/
+      - go -C examples/demos tool booba-assets ../../dist/web/terrain/
+      - go -C examples/demos tool booba-assets ../../dist/web/procedural/
+      - go -C examples/demos tool booba-assets ../../dist/web/dynamic/
+      - go -C examples/demos tool booba-assets ../../dist/web/shapes/
+      - go -C examples/demos tool booba-assets ../../dist/web/models/
+      - go -C examples/demos tool booba-assets ../../dist/web/large/
+      - go -C examples/demos tool booba-assets ../../dist/web/fur/
+      - go -C examples/demos tool booba-assets ../../dist/web/mipmaps/
+      - go -C examples/demos tool booba-assets ../../dist/web/forest/
+      - go -C examples/demos tool booba-assets ../../dist/web/lights/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -142,7 +142,7 @@ tasks:
   models-generate:
     desc: Regenerate the sample models the models demo embeds
     cmds:
-      - go -C examples/terrain generate ./internal/terraindemo/models
+      - go -C examples/demos generate ./internal/demo/models
   meshes:
     desc: Show the shape builders, or mesh files given after --
     deps: [build]
