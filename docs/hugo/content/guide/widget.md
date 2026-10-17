@@ -55,7 +55,7 @@ When a working GPU fails on a frame, perhaps running out of memory on a huge mod
 There are two ways to quit:
 
 - **Clean up.** Run `Dispose()`'s command before quitting, `tea.Sequence(view.Dispose(), tea.Quit)`, to remove the widget's images, then call `Close()` after the program returns to release the GPU.
-- **Leave the picture.** For a viewer that quits leaving its last frame on screen, run `tea.Sequence(view.Keep(), tea.Quit)` instead, then `Close()`. `Keep` stops rotation and pending renders, so nothing newer appears. The image stays only on the main screen, since the alternate screen is cleared on exit.
+- **Leave the picture.** For a viewer that quits leaving its last frame on screen, run `tea.Sequence(view.Keep(), tea.Quit)` instead, then `Close()`. `Keep` stops rotation and pending renders, so nothing newer appears. The alternate screen is cleared on exit, so a program on it uses `view.KeepOnMainScreen()` instead, with its View's `AltScreen` set to false: the frame is sent again after the switch.
 
 Keep forwarding messages to a disposed widget while it's still in the event loop.
 

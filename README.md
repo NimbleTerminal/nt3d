@@ -29,12 +29,11 @@ The **[guide](https://nimbleterminal.github.io/nt3d/docs/)** covers it all, from
 To run the demos yourself:
 
 ```sh
-task workspace   # needs ../ntpicture checked out beside nt3d, until it's published
 task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, dynamic, procedural
 task build-web && task serve   # all of them in a browser, at http://localhost:8768
 ```
 
-nt3d hasn't had its first release yet: until ntpicture is published, `go get` won't work, and you'll want a workspace as above. See [Development](docs/hugo/content/guide/development.md) and the [roadmap](ROADMAP.md).
+nt3d hasn't had its first release yet. See [Development](docs/hugo/content/guide/development.md) and the [roadmap](ROADMAP.md).
 
 ## License and attribution
 

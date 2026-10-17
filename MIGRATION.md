@@ -67,12 +67,9 @@ verify the existing gallery on native Kitty, browser WebGPU, software, and wiref
 
 ## Release coordination
 
-Keep Go 1.26.8 and the MIT copyright notices. ntcanvas v0.1.0 and ntgpuimage
-v0.2.0 resolve upstream. ntpicture is pinned to commit acfa6954d2d0 and CI uses
-a clean sibling checkout until its vanity module resolves. Publish that commit
-to the ntpicture remote before running CI (the remote advertised no refs during
-this migration). No uncommitted
-ntpicture changes are required.
+Keep Go 1.26.8 and the MIT copyright notices. ntcanvas v0.1.0, ntgpuimage
+v0.3.0, and ntpicture resolve upstream; ntpicture is pinned to a pseudo-version
+of its main branch until it tags v0.1.0.
 
 ## Widget presentation migration
 
@@ -90,9 +87,16 @@ options, and scene APIs remain available.
 - Execute commands from `SetSize`, `SetRenderMode`, `Update`, and `Dispose`.
   `Dispose` cancels preparation and returns placement deletion commands; run it
   before quitting. `Close` releases GPU resources after the event loop exits.
+- `Keep` leaves the last frame on screen as the program quits;
+  `KeepOnMainScreen` does the same for a program leaving the alternate screen.
 - Render sizing now comes from ntpicture `RasterGeometry`; adaptive Kitty
-  resolution uses `SetResolution`. Projection retains physical display aspect
-  even when glyph pixels or rounded output dimensions have a different ratio.
+  resolution uses `SetResolution`, and `Config.MaxRasterPixels` holds Kitty
+  frames to `nt3d.MaxFramePixels`. A frame drawn for a raster that has since
+  changed is drawn again rather than stretched. Projection retains physical
+  display aspect even when glyph pixels or rounded output dimensions have a
+  different ratio.
+- The picture follows the session's Kitty capability (`AutoMode`); forcing
+  glyphs, or falling back to them after a Kitty error, overrides it.
 - `PictureStatus()` reports the presentation generation, busy/error state, and
   encoding/transport choice. ntpicture presentation events identify ordered
   output completion, not a terminal display acknowledgement.

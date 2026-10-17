@@ -7,17 +7,15 @@ weight: 110
 
 ## Setting up
 
-nt3d's own dependencies, ntcanvas and ntgpuimage, are published and come through Go modules. ntpicture isn't published yet, so for now nt3d is developed beside a checkout of it, joined by a Go workspace:
+nt3d's dependencies, ntcanvas, ntgpuimage, and ntpicture among them, all come through Go modules:
 
 ```sh
 git clone https://github.com/NimbleTerminal/nt3d
-git clone https://github.com/NimbleTerminal/ntpicture
 cd nt3d
-task workspace   # copies go.work.example to go.work, which git ignores
 task ci
 ```
 
-CI checks out ntpicture at the revision `go.mod` pins, so that revision must be pushed before CI can fetch it.
+To change ntpicture alongside nt3d, clone it beside nt3d and run `task workspace`, which copies `go.work.example` to `go.work` (git ignores it) so the build uses your checkout instead of the published module.
 
 The library is one module. The demos in `examples/demos` are a second module, so that go-booba and the Bubble Tea fork the browser needs never become requirements of the library.
 

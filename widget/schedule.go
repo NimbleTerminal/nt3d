@@ -51,6 +51,7 @@ func (m *Model) retry() tea.Cmd {
 type rendered struct {
 	id, seq    uint64
 	frame      image.Image
+	geometry   picture.RasterGeometry // The raster frame was drawn for.
 	wire       string
 	renderMode RenderMode
 	err        error
@@ -111,26 +112,15 @@ func (m *Model) paced(elapsed time.Duration) bool {
 	return false
 }
 
-// resolution applies nt3d's quality policy; ntpicture owns target rounding and
-// encoding dimensions. Run its command even when a new frame is also scheduled.
+// resolution applies nt3d's quality policy; ntpicture owns target rounding,
+// encoding dimensions, and the framebuffer budget (Config.MaxRasterPixels).
+// Run its command even when a new frame is also scheduled.
 func (m *Model) resolution() tea.Cmd {
 	factor := 1.0
 	if m.renderMode == Software {
 		factor = m.softwareScale()
 	}
-	cw, ch := m.pic.CellPixelSize()
-	area := float64(m.width) * float64(cw) * float64(m.height) * float64(ch)
-	if area > float64(nt3d.MaxFramePixels) {
-		factor = math.Min(factor, math.Sqrt(float64(nt3d.MaxFramePixels)/area))
-	}
-	cmd := m.pic.SetResolution(factor)
-	// Whole-image rounding can put the target just above the framebuffer budget.
-	// Leave a small margin in that rare case and retain all lifecycle commands.
-	for g := m.pic.RasterGeometry(); g.Mode == picture.PictureKitty && g.Pixels.X > nt3d.MaxFramePixels/max(1, g.Pixels.Y); g = m.pic.RasterGeometry() {
-		factor *= .99
-		cmd = tea.Batch(cmd, m.pic.SetResolution(factor))
-	}
-	return cmd
+	return m.pic.SetResolution(factor)
 }
 
 // frame uses the exact encoding target but projects with physical display
@@ -161,6 +151,7 @@ func (m *Model) schedule() tea.Cmd {
 	m.dirty = false
 	resolutionCmd := m.resolution()
 	f := m.frame()
+	geometry := m.pic.RasterGeometry()
 	id, seq, renderMode, r, cols, rows, fallBack, post := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height, m.gpuFailure == FallBackOnGPUFailure, m.postProcess
 	f.Supersample = m.supersample
 	return tea.Batch(resolutionCmd, func() tea.Msg {
@@ -193,7 +184,7 @@ func (m *Model) schedule() tea.Cmd {
 				err = renderErr
 			}
 		}
-		return rendered{id: id, seq: seq, frame: postProcessed(img, post), wire: wire, renderMode: renderMode, err: err, elapsed: time.Since(start), fellBack: fellBack}
+		return rendered{id: id, seq: seq, frame: postProcessed(img, post), geometry: geometry, wire: wire, renderMode: renderMode, err: err, elapsed: time.Since(start), fellBack: fellBack}
 	})
 }
 

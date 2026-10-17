@@ -156,6 +156,31 @@ func TestPictureSubmissionFailureFallsBackToGlyph(t *testing.T) {
 	}
 }
 
+func TestGlyphChoiceOutlastsSessionUpdates(t *testing.T) {
+	session := picture.NewTerminalSession(picture.TerminalOptions{Kitty: picture.KittyCapabilitySupported, SharedMemory: picture.KittyCapabilityUnsupported})
+	defer session.Close()
+	m := New(scene(t), 20, 8, WithRenderMode(Software), WithTerminalSession(session))
+	defer m.Close()
+	notify := picture.TerminalSessionMsg{Session: session, State: session.Snapshot()}
+	if m.PictureMode() != picture.PictureKitty {
+		t.Fatal("Kitty not chosen from the session")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'g', Text: "g"})
+	m.Update(notify)
+	if m.PictureMode() != picture.PictureGlyph {
+		t.Fatal("session update undid forced glyphs")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'g', Text: "g"})
+	if m.PictureMode() != picture.PictureKitty {
+		t.Fatal("Kitty not restored")
+	}
+	m.Update(picture.ErrorMsg{Owner: m.pic, Generation: m.pic.Status().Generation, Err: errors.New("kitty")})
+	m.Update(notify)
+	if m.PictureMode() != picture.PictureGlyph {
+		t.Fatal("session update undid the fallback from a Kitty error")
+	}
+}
+
 func TestDisposeClosesOwnedSession(t *testing.T) {
 	m := New(scene(t), 20, 8)
 	defer m.Close()

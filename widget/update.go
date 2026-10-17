@@ -18,9 +18,6 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	if m.closed {
 		return m, nil
 	}
-	if !m.forceGlyph && m.pic.Mode() == picture.PictureGlyph && m.session.Snapshot().Kitty == picture.KittyCapabilitySupported {
-		pictureCmd = tea.Batch(pictureCmd, m.pic.SetMode(picture.PictureKitty))
-	}
 	if before != m.pic.RasterGeometry() {
 		m.seq++
 		m.dirty = true
@@ -83,8 +80,17 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		if m.renderMode == Wireframe {
 			return m, m.schedule()
 		}
-		// Renderers return independently owned pixels, safe for immutable submission.
-		return m, m.pic.SetImageImmutable(v.frame)
+		// Renderers return independently owned pixels, safe for immutable
+		// submission. A frame for a raster the picture has since left is
+		// dropped, and StaleFrameMsg says so.
+		return m, m.pic.SetImageImmutableFor(v.frame, v.geometry)
+	case picture.StaleFrameMsg:
+		if v.Owner != m.pic {
+			return m, nil
+		}
+		// Drawn again for the current raster, not stretched.
+		m.dirty = true
+		return m, m.schedule()
 	case picture.PresentedMsg:
 		if v.Owner != m.pic || v.Generation != m.pic.Status().Generation {
 			return m, nil

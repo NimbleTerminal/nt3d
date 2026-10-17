@@ -10,11 +10,8 @@ move to Done with their commit; git history has the details.
   `Model.Summary` so far; a helper
   turning `RenderSoftware` depth into view distance, if its outlines need one.
 - [ ] **Release**:
-  - publish `ntpicture`
-  - update nt3d's pinned version of it (`go get` fails until then, because
-    the pin is an unpublished revision; dependencies are added to `go.mod`
-    and `go.sum` by hand)
-  - tidy both modules
+  - move nt3d's ntpicture pin from its main-branch pseudo-version to
+    `v0.1.0` once that is tagged, in both modules
   - register the `nimbleterminal.dev/nt3d` import path
   - tag a version
 

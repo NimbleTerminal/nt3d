@@ -78,10 +78,12 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 	m.lastInput = time.Now()
 	return m.changed(false)
 }
+
+// togglePicture forces glyphs, or lets the picture follow the session's
+// Kitty capability, as it does from the start.
 func (m *Model) togglePicture() tea.Cmd {
-	mode := picture.PictureKitty
-	if m.forceGlyph || m.session.Snapshot().Kitty != picture.KittyCapabilitySupported {
-		mode = picture.PictureGlyph
+	if m.forceGlyph {
+		return m.pic.SetMode(picture.PictureGlyph)
 	}
-	return m.pic.SetMode(mode)
+	return m.pic.SetMode(picture.PictureAuto)
 }

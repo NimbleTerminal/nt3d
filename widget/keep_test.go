@@ -155,3 +155,24 @@ func TestKeepLeavesOwnedSessionToClose(t *testing.T) {
 		t.Fatal("close left the owned session open")
 	}
 }
+
+// KeepOnMainScreen sends even a direct frame again, so it survives leaving
+// the alternate screen, and stops the widget as Keep does.
+func TestKeepOnMainScreenResendsDirectFrame(t *testing.T) {
+	m, _, _ := presented(t, picture.KittyMediumDirect)
+	defer m.Close()
+	view := m.View().Content
+	pending := m.Refresh()
+	if kept := rawOutput(drain(t, m, m.KeepOnMainScreen())); !strings.Contains(kept, "a=T") || strings.Contains(kept, "a=d") {
+		t.Fatalf("keep on main screen must resend the frame without deleting it: %q", kept)
+	}
+	if out := rawOutput(drain(t, m, pending)); out != "" {
+		t.Fatalf("a late render sent %q", out)
+	}
+	if m.View().Content != view {
+		t.Fatal("keep on main screen changed the view")
+	}
+	if m.KeepOnMainScreen() != nil || m.Keep() != nil || m.Dispose() != nil {
+		t.Fatal("a second keep or dispose did something")
+	}
+}

@@ -162,7 +162,7 @@ func New(scene *nt3d.Scene, width, height int, opts ...Option) *Model {
 		m.ownZones = true
 	}
 	m.zoneID = m.zones.NewPrefix() + "nt3d"
-	m.pic = picture.New(picture.Options{Session: m.session, NextID: m.nextImageID, StableID: true, Render: picture.Config{KittyZ: -1, Fit: picture.FitFill, Background: m.background, KittyMedium: m.medium, KittyFormat: m.kittyFormat}})
+	m.pic = picture.New(picture.Options{Session: m.session, NextID: m.nextImageID, StableID: true, AutoMode: true, Render: picture.Config{KittyZ: -1, Fit: picture.FitFill, Background: m.background, KittyMedium: m.medium, KittyFormat: m.kittyFormat, MaxRasterPixels: nt3d.MaxFramePixels}})
 	_ = m.pic.SetVisible(m.renderMode != Wireframe)
 	m.SetSize(width, height)
 	return m
@@ -337,8 +337,18 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 // after Keep, do nothing, and Keep with nothing yet presented keeps an empty
 // view. To remove the widget's images instead, use Dispose. An image outlasts
 // the program only on the main screen: the alternate screen is cleared on
-// exit.
-func (m *Model) Keep() tea.Cmd {
+// exit, so a program on it uses KeepOnMainScreen instead.
+func (m *Model) Keep() tea.Cmd { return m.keep(m.pic.Keep) }
+
+// KeepOnMainScreen is Keep for a program leaving the alternate screen: its
+// command sends the last frame again, after the switch, so it stays on the
+// main screen. Set the View's AltScreen to false, with the widget's view
+// still in its content, and quit after the command:
+//
+//	return m, tea.Sequence(view.KeepOnMainScreen(), tea.Quit)
+func (m *Model) KeepOnMainScreen() tea.Cmd { return m.keep(m.pic.KeepOnMainScreen) }
+
+func (m *Model) keep(pictureKeep func() tea.Cmd) tea.Cmd {
 	if m.closed {
 		return nil
 	}
@@ -346,7 +356,7 @@ func (m *Model) Keep() tea.Cmd {
 	m.wake++ // Pending auto-rotation ticks are stale.
 	m.seq++  // So are renders in flight.
 	m.dirty, m.busy = false, false
-	return m.pic.Keep()
+	return pictureKeep()
 }
 
 // Dispose clears terminal resources while the event loop is still running.

@@ -12,7 +12,7 @@ tasks:
   default:
     cmds: [{task: build}]
   workspace:
-    desc: Use the sibling ntpicture checkout while its release is prepared
+    desc: Develop against a sibling ntpicture checkout instead of the published module
     preconditions:
       - test -d ../ntpicture
     cmds:

@@ -9,9 +9,6 @@ weight: 10
 
 nt3d is a Go module, `nimbleterminal.dev/nt3d`, and needs Go 1.26.8 or later.
 
-> [!WARNING]
-> nt3d has not had its first release yet: it pins an unpublished revision of `ntpicture`, so `go get` does not work until that is published. To try it today, clone it beside a checkout of [ntpicture](https://github.com/NimbleTerminal/ntpicture) and use a Go workspace; see [Development](../development/).
-
 ## The packages
 
 You import only what you use. The core package reads no files; `nt3dmesh` reads the common formats, and the others register themselves when imported, so a program that reads no glTF carries no glTF.

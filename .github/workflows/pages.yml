@@ -23,14 +23,6 @@ jobs:
           path: nt3d
           persist-credentials: false
           submodules: true # the hugo-book theme for the guide
-      # Bootstrap ntpicture at its go.mod pin until its vanity version resolves,
-      # as go.yml does; keep the two refs together.
-      - uses: actions/checkout@v7
-        with:
-          repository: NimbleTerminal/ntpicture
-          ref: acfa6954d2d0bcef277f65317528b9a7cdc85017
-          path: ntpicture
-          persist-credentials: false
       - uses: actions/setup-go@v7
         with:
           go-version-file: nt3d/go.mod
@@ -44,7 +36,6 @@ jobs:
         with:
           hugo-version: '0.167.0'
           extended: true
-      - run: task workspace
       # The gallery, with the guide at its /docs/.
       - run: task build-site
       - uses: actions/upload-pages-artifact@v5
