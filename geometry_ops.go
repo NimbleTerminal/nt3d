@@ -59,14 +59,14 @@ func sameMaterial(a, b *Material) bool {
 }
 
 // MergeGeometry concatenates geometries into one, offsetting triangle indices.
-// Meshes must share a material and a line width. UVs are kept only when every
-// mesh has them. WireGrid survives only when a single geometry is given.
+// Meshes must share a material and a line width, and points a style. UVs are
+// kept only when every mesh has them. WireGrid survives only when a single geometry is given.
 func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	var out Geometry
 	if len(gs) == 1 {
 		out.WireGrid = gs[0].WireGrid
 	}
-	var mesh *Geometry
+	var mesh, points *Geometry
 	uv := true
 	for i := range gs {
 		g := &gs[i]
@@ -85,12 +85,23 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 			}
 			out.LineWidth = lineWidth(g.LineWidth)
 		}
+		if len(g.Points) != 0 {
+			if points != nil && g.PointStyle != points.PointStyle {
+				return Geometry{}, errors.New("nt3d: cannot merge points of different styles")
+			}
+			if points == nil {
+				points = g
+			}
+		}
 		if len(out.Indices)+len(g.Indices) > MaxMeshIndices || len(out.Vertices)+len(g.Vertices) > MaxMeshIndices {
 			return Geometry{}, fmt.Errorf("nt3d: merged mesh exceeds %d triangles", MaxMeshTriangles)
 		}
 	}
 	if mesh != nil {
 		out.Material = cloneMaterial(mesh.Material)
+	}
+	if points != nil {
+		out.PointStyle = points.PointStyle
 	}
 	for _, g := range gs {
 		base := uint32(len(out.Vertices))

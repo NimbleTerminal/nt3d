@@ -35,16 +35,19 @@ type Geometry struct {
 	// BuildHeightfield sets this automatically; clear it if changing mesh topology.
 	WireGrid [2]int
 
-	UV        []UV      // One per vertex when textured.
-	Material  *Material // Applies to indexed triangles only.
-	Points    []Point
-	Vertices  []Vertex
-	Indices   []uint32
-	Boxes     []Box
-	Lines     []Vertex
-	LineWidth float32 // Render pixels for Lines; zero defaults to 1.
-	Arrows    []Arrow
-	Bounds    nt3dmath.AABB
+	UV       []UV      // One per vertex when textured.
+	Material *Material // Applies to indexed triangles only.
+	Points   []Point
+	// PointStyle is how Points are drawn: their shape, the units of their
+	// radii, and how they blend.
+	PointStyle PointStyle
+	Vertices   []Vertex
+	Indices    []uint32
+	Boxes      []Box
+	Lines      []Vertex
+	LineWidth  float32 // Render pixels for Lines; zero defaults to 1.
+	Arrows     []Arrow
+	Bounds     nt3dmath.AABB
 }
 
 // MaxMeshIndices is the most indices one geometry's mesh may have, three to a
@@ -98,8 +101,11 @@ func validateGeometry(g Geometry) error {
 		}
 	}
 
+	if err := validPointStyle(g.PointStyle); err != nil {
+		return err
+	}
 	for _, p := range g.Points {
-		if !validFloat(p.Position.X, p.Position.Y, p.Position.Z, p.Radius) || p.Radius < 1 || p.Radius > 32 {
+		if !validFloat(p.Position.X, p.Position.Y, p.Position.Z) || !validPointRadius(g.PointStyle.Units, p.Radius) {
 			return fmt.Errorf("nt3d: invalid point geometry")
 		}
 	}
