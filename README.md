@@ -6,6 +6,10 @@ Build a scene of meshes, points, lines, and textures, point a camera at it, and 
 
 <img src="web/assets/fur.png" alt="Spot the cow covered in black-and-white fur" width="480">
 
+```sh
+go get nimbleterminal.dev/nt3d@latest
+```
+
 ```go
 scene := nt3d.NewScene()
 ball, _ := nt3d.BuildSphere(nt3d.Sphere{Radius: .6, Color: orange})
@@ -33,7 +37,7 @@ task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, p
 task build-web && task serve   # all of them in a browser, at http://localhost:8768
 ```
 
-nt3d hasn't had its first release yet. See [Development](docs/hugo/content/guide/development.md) and the [roadmap](ROADMAP.md).
+To work on nt3d itself, see [Development](docs/hugo/content/guide/development.md) and the [roadmap](ROADMAP.md).
 
 ## License and attribution
 

@@ -7,7 +7,11 @@ weight: 10
 
 ## Install
 
-nt3d is a Go module, `nimbleterminal.dev/nt3d`, and needs Go 1.26.8 or later.
+nt3d is a Go module, `nimbleterminal.dev/nt3d`, and needs Go 1.26.8 or later:
+
+```sh
+go get nimbleterminal.dev/nt3d@latest
+```
 
 ## The packages
 

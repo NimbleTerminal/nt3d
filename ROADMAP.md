@@ -9,9 +9,6 @@ move to Done with their commit; git history has the details.
   supports it as needed: `Model.Keep`, `RenderSoftware`, and the 3MF
   `Model.Summary` so far; a helper
   turning `RenderSoftware` depth into view distance, if its outlines need one.
-- [ ] **Release**:
-  - register the `nimbleterminal.dev/nt3d` import path
-  - tag a version
 
 ## Rendering
 
@@ -72,6 +69,7 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
+- `v0.1.0`: the first release, at `nimbleterminal.dev/nt3d`
 - `749834b`…`d5a711f` sprite points: soft, sized in world units, alpha and additive blending, both renderers, 20-byte GPU records; the particles demo
 - adopted `ntpicture` `v0.1.0` (stale-frame reporting, `KeepOnMainScreen`); no more sibling checkout
 - lighting rig: hemisphere ambient, up to eight directional and
