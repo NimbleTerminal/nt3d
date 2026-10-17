@@ -128,6 +128,20 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			}
 		}
 	}
+	// add adds a fragment's color, times alpha, to the pixel, if no surface
+	// hides it, leaving the depth for what lies behind, as blend does.
+	add := func(x, y int, z float32, rgb [3]float32, alpha float32) {
+		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
+			return
+		}
+		i := y*f.Width + x
+		if z <= depth[i]+.00001 {
+			off := i * 4
+			for k, v := range rgb {
+				img.Pix[off+k] = toPixel(fromPixel(img.Pix[off+k]) + v*alpha)
+			}
+		}
+	}
 	// raster fills a clip-space triangle that lies past the near plane, if
 	// it shows the side drawn: front faces, or for transparent geometry's
 	// first pass, back faces. A transparent material's corners carry their
@@ -321,6 +335,69 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		}
 		return max(1, (n+limit-1)/limit)
 	}
+	// drawPoints draws a geometry's points, m taking them to clip space:
+	// discs of their radius on screen, covering the pixels whose centers
+	// they hold, as the GPU's quads do. One whose center is off screen may
+	// still hang into view; only depth clips it. Opaque points draw with the
+	// opaque pass; blended ones after it, alpha points farthest first.
+	// Interactive frames draw every step-th point, and a blended one stands
+	// for step of them, its alpha multiplied (to 1), so a sampled cloud
+	// keeps about its brightness.
+	drawPoints := func(g *Geometry, inst Instance, m *nt3dmath.Mat4) {
+		style := g.PointStyle
+		step := sampled(len(g.Points), 10000)
+		var order []uint32
+		if style.Blend == AlphaBlend {
+			order = new(pointSorter).sort(g.Points, m)
+		}
+		for k := 0; k < len(g.Points); k += step {
+			i := k
+			if order != nil {
+				i = int(order[k])
+			}
+			p := g.Points[i]
+			cx, cy, cz, cw := m.Transform(p.Position)
+			if cw <= 0 || cz < 0 || cz > cw {
+				continue
+			}
+			x, y, z := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5, cz/cw
+			radius := f.pointRadius(style, p.Radius, cw, px)
+			distance := f.eyeDistance(inst.World.Point(p.Position))
+			c := p.Color
+			rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
+			alpha := min(1, float32(c.A)/255*float32(step))
+			switch style.Blend {
+			case OpaqueBlend:
+				c = fogColor(c, distance)
+			case AlphaBlend:
+				if fogged {
+					fogRGB(&rgb, distance)
+				}
+			case AdditiveBlend:
+				// Fog fades an additive point out, rather than toward its color.
+				alpha *= 1 - f.Fog.amount(distance)
+			}
+			loX, hiX := max(0, int(math.Floor(float64(x-radius)))), min(f.Width-1, int(math.Ceil(float64(x+radius))))
+			loY, hiY := max(0, int(math.Floor(float64(y-radius)))), min(f.Height-1, int(math.Ceil(float64(y+radius))))
+			for sy := loY; sy <= hiY; sy++ {
+				for sx := loX; sx <= hiX; sx++ {
+					dx, dy := float32(sx)+.5-x, float32(sy)+.5-y
+					d2 := dx*dx + dy*dy
+					if d2 > radius*radius {
+						continue
+					}
+					switch style.Blend {
+					case OpaqueBlend:
+						put(sx, sy, z, c)
+					case AlphaBlend:
+						blend(sx, sy, z, rgb, alpha*softness(style.Shape, d2/(radius*radius)))
+					default:
+						add(sx, sy, z, rgb, alpha*softness(style.Shape, d2/(radius*radius)))
+					}
+				}
+			}
+		}
+	}
 	drawn := f.drawn(px)
 	for gi, g := range f.Geometry {
 		if !drawn[gi] {
@@ -332,28 +409,8 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		local.Matrix = f.Matrix.Mul(inst.World)
 		inverse, _ := inst.World.InverseAffine()
 		normals := inverse.Transpose()
-		step := sampled(len(g.Points), 10000)
-		for i := 0; i < len(g.Points); i += step {
-			// A disc of the point's radius covers the pixels whose centers
-			// it holds, as the GPU's quad does: one whose center is off
-			// screen may still hang into view. Only depth clips it.
-			p := g.Points[i]
-			cx, cy, cz, cw := local.Matrix.Transform(p.Position)
-			if cw <= 0 || cz < 0 || cz > cw {
-				continue
-			}
-			x, y, z := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5, cz/cw
-			radius := p.Radius * px
-			c := fogColor(p.Color, f.eyeDistance(inst.World.Point(p.Position)))
-			loX, hiX := max(0, int(math.Floor(float64(x-radius)))), min(f.Width-1, int(math.Ceil(float64(x+radius))))
-			loY, hiY := max(0, int(math.Floor(float64(y-radius)))), min(f.Height-1, int(math.Ceil(float64(y+radius))))
-			for sy := loY; sy <= hiY; sy++ {
-				for sx := loX; sx <= hiX; sx++ {
-					if dx, dy := float32(sx)+.5-x, float32(sy)+.5-y; dx*dx+dy*dy <= radius*radius {
-						put(sx, sy, z, c)
-					}
-				}
-			}
+		if !blendedPoints(&f.Geometry[gi]) {
+			drawPoints(&f.Geometry[gi], inst, &local.Matrix)
 		}
 		if !transparent(&f.Geometry[gi]) {
 			for i := 0; i+2 < len(g.Indices); i += 3 {
@@ -376,16 +433,22 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put, strokeFog(inst.World.Point(a.Start), inst.World.Point(a.End)))
 		}
 	}
-	// Transparent triangles blend over everything opaque, farthest first.
+	// Transparent triangles and blended points blend over everything
+	// opaque, farthest geometry first: its triangles, then its points.
 	for _, gi := range f.blendOrder(drawn) {
 		g, inst := &f.Geometry[gi], instance(f, gi)
 		m := f.Matrix.Mul(inst.World)
-		inverse, _ := inst.World.InverseAffine()
-		normals := inverse.Transpose()
-		for _, side := range []int{backFaces, frontFaces} {
-			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, side)
+		if transparent(g) {
+			inverse, _ := inst.World.InverseAffine()
+			normals := inverse.Transpose()
+			for _, side := range []int{backFaces, frontFaces} {
+				for i := 0; i+2 < len(g.Indices); i += 3 {
+					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, side)
+				}
 			}
+		}
+		if blendedPoints(g) {
+			drawPoints(g, inst, &m)
 		}
 	}
 	drawOverlays(img, f)

@@ -11,8 +11,8 @@ const (
 	frontFaces
 )
 
-// blendOrder lists the drawn geometries with transparent triangles in the
-// order they are blended: farthest first, by the clip-space depth of their
+// blendOrder lists the drawn geometries with transparent triangles or
+// blended points in the order they are blended: farthest first, by the clip-space depth of their
 // bounds' centers, which grows away from the viewer in both projections.
 // Ties keep the frame's order.
 func (f Frame) blendOrder(drawn []bool) []int {
@@ -23,7 +23,7 @@ func (f Frame) blendOrder(drawn []bool) []int {
 	var entries []entry
 	for i := range f.Geometry {
 		g := &f.Geometry[i]
-		if !drawn[i] || !transparent(g) {
+		if !drawn[i] || !transparent(g) && !blendedPoints(g) {
 			continue
 		}
 		b := g.Bounds

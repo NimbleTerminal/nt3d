@@ -181,6 +181,9 @@ func TestCullKeepsWorldUnitPoint(t *testing.T) {
 	if !f.drawn(1)[0] {
 		t.Fatal("culled a point that hangs into view")
 	}
+	if coloredPixels(softwareRender(f), red) == 0 {
+		t.Fatal("the point does not show")
+	}
 }
 
 // Picking a world-unit point hits within its radius on screen, not past it.
