@@ -18,8 +18,7 @@ move to Done with their commit; git history has the details.
 - [ ] **Particles**:
   - a cheap per-frame update of one geometry's points (no full
     validate, copy, and bounds pass per frame)
-  - sprite points: textured or soft-edged, with additive or alpha
-    blending, on the GPU and software renderers
+  - textured sprites and atlas frames, building on sprite points
 - [ ] **Shared points, lines, and boxes**, only if something needs them
   (particles don't: they are many positions, not many copies): charts
   keep all their markers in one geometry, already one upload and draw,
@@ -73,6 +72,7 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
+- sprite points: soft, sized in world units, alpha and additive blending, both renderers, 20-byte GPU records; the particles demo
 - adopted `ntpicture` `v0.1.0` (stale-frame reporting, `KeepOnMainScreen`); no more sibling checkout
 - lighting rig: hemisphere ambient, up to eight directional and
   point lights, per-pixel diffuse, both renderers; the lights demo
