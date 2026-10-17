@@ -852,3 +852,61 @@ func TestGPULightingMatchesSoftware(t *testing.T) {
 		}
 	}
 }
+
+// Styled points draw on the GPU as in software: each blend, shape, and
+// unit, two overlapping points (the nearer given first) over the floor;
+// and a pane and alpha points in one geometry.
+func TestGPUPointStylesMatchSoftware(t *testing.T) {
+	red, green := color.RGBA{255, 0, 0, 128}, color.RGBA{0, 255, 0, 160}
+	r := &gpuRenderer{}
+	defer r.Close()
+	frames := map[string]Frame{}
+	for _, blend := range []PointBlend{OpaqueBlend, AlphaBlend, AdditiveBlend} {
+		for _, shape := range []PointShape{HardPoint, SoftPoint} {
+			for _, units := range []PointUnits{PixelUnits, WorldUnits} {
+				style := PointStyle{shape, units, blend}
+				radius := float32(10)
+				if units == WorldUnits {
+					radius = .25
+				}
+				frames[fmt.Sprintf("%+v", style)] = blendScene(t, nil, Geometry{PointStyle: style, Points: []Point{
+					{Position: nt3dmath.Vec3{X: .1, Z: .3}, Radius: radius, Color: green}, {Radius: radius, Color: red}}})
+			}
+		}
+	}
+	pane := quad(1, .3, color.RGBA{0, 0, 220, 128}, glass, false)
+	pane.PointStyle, pane.Points = PointStyle{Shape: SoftPoint, Blend: AlphaBlend}, []Point{{Position: nt3dmath.Vec3{Z: .5}, Radius: 10, Color: red}}
+	frames["pane and points"] = blendScene(t, nil, pane)
+	for name, f := range frames {
+		gpu, err := r.Render(f)
+		check(t, err)
+		software := softwareRender(f)
+		for _, x := range []int{40, 43, 46, 30, 10} {
+			if g, s := at(gpu, x, 40), at(software, x, 40); !closeRGB(g, s, 4) {
+				t.Errorf("%s at x=%d: GPU %v, software %v", name, x, g, s)
+			}
+		}
+	}
+}
+
+// Fog fades additive points out on the GPU as in software, and turns alpha
+// points toward its color; a world-unit point behind the camera draws
+// nothing.
+func TestGPUPointFogMatchesSoftware(t *testing.T) {
+	white := color.RGBA{255, 255, 255, 255}
+	r := &gpuRenderer{}
+	defer r.Close()
+	for _, blend := range []PointBlend{AlphaBlend, AdditiveBlend} {
+		f := blendScene(t, nil, Geometry{PointStyle: PointStyle{Shape: SoftPoint, Units: WorldUnits, Blend: blend}, Points: []Point{
+			{Radius: .3, Color: white}, {Position: nt3dmath.Vec3{Z: 9}, Radius: 1, Color: white}}})
+		f.Fog = Fog{Near: 0, Far: 3.6, Color: color.RGBA{255, 0, 0, 255}}
+		gpu, err := r.Render(f)
+		check(t, err)
+		software := softwareRender(f)
+		for _, p := range [][2]int{{40, 40}, {42, 40}, {10, 10}, {70, 70}} {
+			if g, s := at(gpu, p[0], p[1]), at(software, p[0], p[1]); !closeRGB(g, s, 4) {
+				t.Errorf("blend %d at %v: GPU %v, software %v", blend, p, g, s)
+			}
+		}
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"math"
 	"nimbleterminal.dev/nt3d/math"
 	gpuimage "nimbleterminal.dev/ntgpuimage"
+	"slices"
 	"sync"
 )
 
@@ -21,9 +22,10 @@ import (
 var sceneShader string
 
 // sceneShaderSource is the scene shader with the constants it shares with
-// Go declared ahead of it: maxLights sizes its lights.
+// Go declared ahead of it: maxLights sizes its lights, and maxPointPixels
+// clamps points in world units.
 func sceneShaderSource() string {
-	return fmt.Sprintf("const maxLights: u32 = %du;\n", MaxLights) + sceneShader
+	return fmt.Sprintf("const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\n", MaxLights, MaxPointPixels) + sceneShader
 }
 
 // uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
@@ -45,26 +47,36 @@ type gpuRenderer struct {
 	// Transparent meshes' back faces, then front faces: untextured and textured.
 	blendPipelines [2]*wgpu.RenderPipeline
 	textureBlends  [2]*wgpu.RenderPipeline
-	textures       map[textureKey]*gpuimage.Texture // Image textures, by addressing.
-	procedural     map[*Texture]*proceduralTexture
-	geometries     map[geometryKey]*gpuGeometry
-	nodes          []*gpuGeometry // By frame geometry index.
-	draws          []gpuDraw      // The frame's draws of geometry.
-	blendDraw      map[int]int    // A transparent frame geometry's draw.
-	textureUploads uint64
-	mu             sync.Mutex
-	closed         bool
-	initErr        error
-	r              *gpuimage.Renderer
-	shader         *wgpu.ShaderModule
-	bindLayout     *wgpu.BindGroupLayout
-	layout         *wgpu.PipelineLayout
-	uniform        *wgpu.Buffer
-	transforms     *wgpu.Buffer
-	pipelines      [7]*wgpu.RenderPipeline
-	batches        [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
-	uploads        uint64
-	target         sceneTarget
+	// Points bind their records and order in place of items: opaque points
+	// through pipelines[0], blended ones through pointBlends, alpha then
+	// additive, hard then soft. zeros stands in for unsorted points' order
+	// and fills binding 1 (see setup).
+	pointBindLayout *wgpu.BindGroupLayout
+	pointLayout     *wgpu.PipelineLayout
+	pointBlends     [2][2]*wgpu.RenderPipeline
+	zeros           *wgpu.Buffer
+	sorter          pointSorter
+	orderBytes      []byte
+	textures        map[textureKey]*gpuimage.Texture // Image textures, by addressing.
+	procedural      map[*Texture]*proceduralTexture
+	geometries      map[geometryKey]*gpuGeometry
+	nodes           []*gpuGeometry // By frame geometry index.
+	draws           []gpuDraw      // The frame's draws of geometry.
+	blendDraw       map[int]int    // A transparent frame geometry's draw.
+	textureUploads  uint64
+	mu              sync.Mutex
+	closed          bool
+	initErr         error
+	r               *gpuimage.Renderer
+	shader          *wgpu.ShaderModule
+	bindLayout      *wgpu.BindGroupLayout
+	layout          *wgpu.PipelineLayout
+	uniform         *wgpu.Buffer
+	transforms      *wgpu.Buffer
+	pipelines       [7]*wgpu.RenderPipeline
+	batches         [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
+	uploads         uint64
+	target          sceneTarget
 }
 
 func (g *gpuRenderer) setup() (err error) {
@@ -90,6 +102,23 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
+		// Metal binds a group's buffers to consecutive slots, while the
+		// translated shader reads binding n from slot n, so the bindings run
+		// 0 to 4 without a gap. The shader also reads array lengths, for its
+		// bounds checks, from its first unused slot, 1 in the point entry
+		// points; zeros there leave them unchecked, as an unbound slot
+		// leaves the other entry points.
+		storage := func(binding uint32) gputypes.BindGroupLayoutEntry {
+			return gputypes.BindGroupLayoutEntry{Binding: binding, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}
+		}
+		g.pointBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, storage(1), storage(2), storage(3), storage(4)}})
+		if err != nil {
+			return err
+		}
+		g.pointLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.pointBindLayout}})
+		if err != nil {
+			return err
+		}
 		for i, entry := range []string{"vs_point", "vs_mesh", "vs_box", "vs_line", "vs_ui", "vs_dynamic", "vs_arrow"} {
 			primitive := gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}
 			if i == 0 {
@@ -105,7 +134,11 @@ func (g *gpuRenderer) setup() (err error) {
 			if i == 4 {
 				fragment = "fs_overlay" // Overlays: no highlight or fog.
 			}
-			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: g.layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
+			layout := g.layout
+			if i == 0 {
+				layout = g.pointLayout
+			}
+			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
 			if err != nil {
 				return err
 			}
@@ -114,6 +147,16 @@ func (g *gpuRenderer) setup() (err error) {
 			if g.blendPipelines[i], err = blendPipeline(dev, g.layout, g.shader, entry, "fs_main", i); err != nil {
 				return err
 			}
+		}
+		for blend, vertex := range [2]string{"vs_point_sorted", "vs_point"} {
+			for shape, fragment := range [2][2]string{{"fs_point_alpha", "fs_point_alpha_soft"}, {"fs_point_add", "fs_point_add_soft"}}[blend] {
+				if g.pointBlends[blend][shape], err = pointPipeline(dev, g.pointLayout, g.shader, vertex, fragment, blend == 1); err != nil {
+					return err
+				}
+			}
+		}
+		if g.zeros, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 48, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
+			return err
 		}
 		g.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
 		if err != nil {
@@ -302,6 +345,12 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 							g.drawTextured(pass, f, d)
 						}
 					}
+					// Then its blended points, after its triangles.
+					if geom := &f.Geometry[index]; blendedPoints(geom) && d.geom.batches[0].count > 0 {
+						pass.SetPipeline(g.pointBlends[geom.PointStyle.Blend-AlphaBlend][geom.PointStyle.Shape])
+						pass.SetBindGroup(0, d.set.binds[0], nil)
+						pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
+					}
 				}
 			}
 			if i == 2 {
@@ -324,7 +373,7 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 			for _, d := range g.draws {
 				b := d.geom.batches[i]
 				switch {
-				case b.count == 0 || i == 1 && d.blended:
+				case b.count == 0 || i == 1 && d.blended || i == 0 && blendedPoints(&f.Geometry[d.index]):
 				case i == 1:
 					pass.SetPipeline(g.pipelines[1])
 					pass.SetBindGroup(0, d.set.binds[1], nil)
@@ -347,6 +396,17 @@ func blendPipeline(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.S
 	}
 	blend := gputypes.BlendStateAlpha()
 	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "transparent " + vertex, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: cull}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
+}
+
+// pointPipeline draws blended points, depth tested without writing depth:
+// over what is behind by alpha, or added to it.
+func pointPipeline(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.ShaderModule, vertex, fragment string, additive bool) (*wgpu.RenderPipeline, error) {
+	blend := gputypes.BlendStateAlpha()
+	if additive {
+		blend.Color = gputypes.BlendComponent{SrcFactor: gputypes.BlendFactorSrcAlpha, DstFactor: gputypes.BlendFactorOne, Operation: gputypes.BlendOperationAdd}
+		blend.Alpha = gputypes.BlendComponent{SrcFactor: gputypes.BlendFactorZero, DstFactor: gputypes.BlendFactorOne, Operation: gputypes.BlendOperationAdd}
+	}
+	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: fragment, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
 }
 
 func (g *gpuRenderer) Close() error {
@@ -376,7 +436,7 @@ func (g *gpuRenderer) Close() error {
 		if g.texturePipeline != nil {
 			g.texturePipeline.Release()
 		}
-		for _, p := range append(g.blendPipelines[:], g.textureBlends[:]...) {
+		for _, p := range slices.Concat(g.blendPipelines[:], g.textureBlends[:], g.pointBlends[0][:], g.pointBlends[1][:]) {
 			if p != nil {
 				p.Release()
 			}
@@ -402,6 +462,15 @@ func (g *gpuRenderer) Close() error {
 		}
 		if g.uniform != nil {
 			g.uniform.Release()
+		}
+		if g.zeros != nil {
+			g.zeros.Release()
+		}
+		if g.pointLayout != nil {
+			g.pointLayout.Release()
+		}
+		if g.pointBindLayout != nil {
+			g.pointBindLayout.Release()
 		}
 		if g.layout != nil {
 			g.layout.Release()

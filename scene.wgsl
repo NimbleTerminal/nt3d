@@ -5,6 +5,12 @@ struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(1) var<storage, read> items: array<Item>;
 struct Instance { world:mat4x4<f32>, normal:mat4x4<f32> };
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
+// Points have records of their own, five words each: position, radius
+// (negative in world units), and color as RGBA8. Alpha points are drawn in
+// order, farthest first; the order of others is a placeholder.
+struct PointRecord { x:f32, y:f32, z:f32, radius:f32, color:u32 };
+@group(0) @binding(3) var<storage,read> points:array<PointRecord>;
+@group(0) @binding(4) var<storage,read> order:array<u32>;
 // decode turns sRGB-encoded color into linear light, when the frame works in
 // linear light (viewport.z); the resolve pass encodes the result.
 fn decode(c:vec3<f32>)->vec3<f32> {
@@ -56,6 +62,11 @@ fn illuminate(n:vec3<f32>,p:vec3<f32>)->vec3<f32> {
  for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz)));}
  return c;
 }
+// fogAmount is how far toward the fog's color a world point fades.
+fn fogAmount(world:vec3<f32>)->f32 {
+ if u.fog.y<=u.fog.x {return 0.0;}
+ return clamp((eyeDistance(world)-u.fog.x)/(u.fog.y-u.fog.x),0.0,1.0);
+}
 // finish lights a surface, adds each light's specular highlight, and fades
 // into the fog. Fragments without a normal are unlit.
 fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {
@@ -72,14 +83,27 @@ fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {
    }
   }
  }
- if u.fog.y>u.fog.x {c=mix(c,u.fogColor.rgb,clamp((eyeDistance(o.world)-u.fog.x)/(u.fog.y-u.fog.x),0.0,1.0));}
+ c=mix(c,u.fogColor.rgb,fogAmount(o.world));
  return c;
 }
-@vertex fn vs_point(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
+// A point is a quad about its center, of its radius on screen: a pixel
+// radius as it is, a world radius by the projection's vertical scale at the
+// point's depth (the matrix's clip-y row over w), clamped to half a pixel
+// and maxPointPixels. Blended points carry their alpha in cut.
+fn pointOutput(vi:u32,index:u32)->Out {
  var corners=array<vec2<f32>,6>(vec2<f32>(-1.,-1.),vec2<f32>(1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,1.));
- let p=items[ii];let corner=corners[vi];var o=output(p.a.xyz,vec3<f32>(0.0),p.color);
- o.clip=vec4<f32>(o.clip.xy+corner*p.a.w*2.0/u.viewport.xy*o.clip.w,o.clip.zw);o.uv=corner;o.point=1.0;return o;
+ let p=points[index];let corner=corners[vi];
+ let c=vec4<f32>(f32(p.color&255u),f32((p.color>>8u)&255u),f32((p.color>>16u)&255u),f32(p.color>>24u))/255.0;
+ var o=output(vec3<f32>(p.x,p.y,p.z),vec3<f32>(0.0),vec4<f32>(c.rgb,0.0));
+ var r=p.radius;
+ if r<0.0 {
+  let row=vec3<f32>(u.matrix[0][1],u.matrix[1][1],u.matrix[2][1]);
+  r=clamp(-r*length(row)*u.viewport.y*0.5/o.clip.w,0.5,maxPointPixels);
+ }
+ o.clip=vec4<f32>(o.clip.xy+corner*r*2.0/u.viewport.xy*o.clip.w,o.clip.zw);o.uv=corner;o.point=1.0;o.cut=c.a;return o;
 }
+@vertex fn vs_point(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,ii);}
+@vertex fn vs_point_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,order[ii]);}
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
 // Meshes are drawn instanced: each instance's transform is its own.
@@ -159,6 +183,14 @@ let p=items[ii];var o=output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color)
 // Overlays are flat screen rectangles: no highlight, no fog.
 @fragment fn fs_overlay(o:Out)->@location(0) vec4<f32> {return o.color;}
 @fragment fn fs_main(o:Out)->@location(0) vec4<f32> {if o.point>0.0 && dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(finish(o,o.color.rgb),o.color.a);}
+// Blended points: alpha (cut) times, for soft points, (1-r²)², r the
+// distance from the center over the radius. Alpha points fog as surfaces
+// do; additive ones fade out with fog instead, adding less.
+fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
+@fragment fn fs_point_alpha(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(finish(o,o.color.rgb),o.cut);}
+@fragment fn fs_point_alpha_soft(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(finish(o,o.color.rgb),o.cut*softness(o));}
+@fragment fn fs_point_add(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(o.color.rgb,o.cut*(1.0-fogAmount(o.world)));}
+@fragment fn fs_point_add_soft(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(o.color.rgb,o.cut*softness(o)*(1.0-fogAmount(o.world)));}
 
 @group(1) @binding(0) var mapTexture: texture_2d<f32>;
 @group(1) @binding(1) var mapSampler: sampler;

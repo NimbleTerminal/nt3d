@@ -2,7 +2,9 @@
 package nt3d
 
 import (
+	"encoding/binary"
 	"image/color"
+	"math"
 	"testing"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
@@ -30,5 +32,25 @@ func BenchmarkGeometryData(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		geometryData(g)
+	}
+}
+
+// Points have compact records: position, radius (negative in world units),
+// and color as RGBA8, 20 bytes each.
+func TestGeometryDataPointRecords(t *testing.T) {
+	for _, units := range []PointUnits{PixelUnits, WorldUnits} {
+		g := Geometry{PointStyle: PointStyle{Units: units}, Points: []Point{{Position: nt3dmath.Vec3{X: 1, Y: 2, Z: 3}, Radius: 4, Color: color.RGBA{10, 20, 30, 40}}, {Radius: 2}}}
+		data := geometryData(g)[0]
+		if len(data) != 2*pointRecord || pointRecord != 20 {
+			t.Fatalf("%d bytes for two points", len(data))
+		}
+		word := func(i int) uint32 { return binary.LittleEndian.Uint32(data[4*i:]) }
+		radius := float32(4)
+		if units == WorldUnits {
+			radius = -4
+		}
+		if math.Float32frombits(word(0)) != 1 || math.Float32frombits(word(2)) != 3 || math.Float32frombits(word(3)) != radius || word(4) != 10|20<<8|30<<16|40<<24 {
+			t.Fatalf("units %d: record % x", units, data[:20])
+		}
 	}
 }

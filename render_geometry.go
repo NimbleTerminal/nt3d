@@ -2,6 +2,7 @@
 package nt3d
 
 import (
+	"encoding/binary"
 	"slices"
 
 	"github.com/gogpu/wgpu"
@@ -25,7 +26,10 @@ type geometryKey struct {
 type gpuGeometry struct {
 	batches [8]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles.
 	sets    []*instanceSet
-	used    int // Sets drawn from this frame.
+	used    int           // Sets drawn from this frame.
+	order   *wgpu.Buffer  // Alpha points' order, farthest first, as last sorted.
+	view    nt3dmath.Mat4 // The matrix it was sorted under.
+	sorted  bool
 }
 
 func (n *gpuGeometry) release() {
@@ -34,6 +38,9 @@ func (n *gpuGeometry) release() {
 	}
 	for _, s := range n.sets {
 		s.release()
+	}
+	if n.order != nil {
+		n.order.Release()
 	}
 }
 
@@ -123,7 +130,18 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		if node == nil {
 			node = &gpuGeometry{}
 			for kind, data := range geometryData(geom) {
-				if err := g.uploadData(dev, &node.batches[kind], data); err != nil {
+				record := 48
+				if kind == 0 {
+					record = pointRecord
+				}
+				if err := g.uploadData(dev, &node.batches[kind], data, record); err != nil {
+					node.release()
+					return err
+				}
+			}
+			if geom.PointStyle.Blend == AlphaBlend && len(geom.Points) > 0 {
+				var err error
+				if node.order, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 4 * uint64(len(geom.Points)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
 					node.release()
 					return err
 				}
@@ -135,7 +153,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		if !drawn[i] {
 			continue
 		}
-		if transparent(&f.Geometry[i]) {
+		if transparent(&f.Geometry[i]) || blendedPoints(&f.Geometry[i]) {
 			groups = append(groups, &group{keys[i], []int{i}, true})
 			continue
 		}
@@ -162,6 +180,9 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		}
 		if grp.blended {
 			g.blendDraw[grp.members[0]] = len(g.draws)
+			if err := g.sortPoints(dev, node, f, grp.members[0]); err != nil {
+				return err
+			}
 		}
 		g.draws = append(g.draws, gpuDraw{node, set, uint32(len(grp.members)), grp.members[0], grp.blended})
 	}
@@ -201,7 +222,15 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 		if b.buffer == nil {
 			continue
 		}
-		if next.binds[kind], err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: next.transform, Size: size}}}); err != nil {
+		layout, entries := g.bindLayout, []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: next.transform, Size: size}}
+		if kind == 0 {
+			order, orderSize := g.zeros, uint64(4)
+			if node.order != nil {
+				order, orderSize = node.order, 4*uint64(b.count)
+			}
+			layout, entries = g.pointBindLayout, []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: g.zeros, Size: 48}, {Binding: 2, Buffer: next.transform, Size: size}, {Binding: 3, Buffer: b.buffer, Size: b.size}, {Binding: 4, Buffer: order, Size: orderSize}}
+		}
+		if next.binds[kind], err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries}); err != nil {
 			next.release()
 			return nil, err
 		}
@@ -259,8 +288,29 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Materi
 	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, false, v.Visible))
 }
 
+// sortPoints orders a geometry's alpha points farthest first for the view
+// they are drawn in, when that changed since they were last sorted.
+func (g *gpuRenderer) sortPoints(dev *wgpu.Device, node *gpuGeometry, f Frame, i int) error {
+	if node.order == nil {
+		return nil
+	}
+	m := f.Matrix.Mul(instance(f, i).World)
+	if node.sorted && node.view == m {
+		return nil
+	}
+	g.orderBytes = g.orderBytes[:0]
+	for _, k := range g.sorter.sort(f.Geometry[i].Points, &m) {
+		g.orderBytes = binary.LittleEndian.AppendUint32(g.orderBytes, k)
+	}
+	if err := dev.Queue().WriteBuffer(node.order, 0, g.orderBytes); err != nil {
+		return err
+	}
+	node.view, node.sorted = m, true
+	return nil
+}
+
 // uploadData uploads a geometry batch's records, to be bound per instance set.
-func (g *gpuRenderer) uploadData(dev *wgpu.Device, b *gpuBatch, data []byte) error {
+func (g *gpuRenderer) uploadData(dev *wgpu.Device, b *gpuBatch, data []byte, record int) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -272,7 +322,7 @@ func (g *gpuRenderer) uploadData(dev *wgpu.Device, b *gpuBatch, data []byte) err
 	if err = dev.Queue().WriteBuffer(b.buffer, 0, data); err != nil {
 		return err
 	}
-	b.count, b.size = uint32(len(data)/48), uint64(len(data))
+	b.count, b.size = uint32(len(data)/record), uint64(len(data))
 	return nil
 }
 
@@ -309,15 +359,25 @@ func geometryData(geom Geometry) (data [8][]byte) {
 	}
 	for kind, n := range records {
 		if n > 0 {
-			data[kind] = make([]byte, 0, n*record)
+			size := record
+			if kind == 0 {
+				size = pointRecord
+			}
+			data[kind] = make([]byte, 0, n*size)
 		}
 	}
 	// Each node binds one transform; records always reference its slot zero.
 	vertex := func(kind int, v Vertex, radius float32) {
 		data[kind] = appendFloats(data[kind], v.Position.X, v.Position.Y, v.Position.Z, radius, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, 0)
 	}
+	// Points' radii are negative in world units.
+	sign := float32(1)
+	if geom.PointStyle.Units == WorldUnits {
+		sign = -1
+	}
 	for _, p := range geom.Points {
-		vertex(0, Vertex{Position: p.Position, Color: p.Color}, p.Radius)
+		data[0] = appendFloats(data[0], p.Position.X, p.Position.Y, p.Position.Z, sign*p.Radius)
+		data[0] = binary.LittleEndian.AppendUint32(data[0], uint32(p.Color.R)|uint32(p.Color.G)<<8|uint32(p.Color.B)<<16|uint32(p.Color.A)<<24)
 	}
 	blended := transparent(&geom)
 	for _, index := range geom.Indices {
@@ -370,3 +430,7 @@ func geometryData(geom Geometry) (data [8][]byte) {
 	}
 	return
 }
+
+// pointRecord is the bytes of a point's record: position and radius, four
+// floats, and its color as RGBA8. Other records are twelve floats.
+const pointRecord = 20
