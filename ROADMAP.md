@@ -10,8 +10,6 @@ move to Done with their commit; git history has the details.
   `Model.Summary` so far; a helper
   turning `RenderSoftware` depth into view distance, if its outlines need one.
 - [ ] **Release**:
-  - move nt3d's ntpicture pin from its main-branch pseudo-version to
-    `v0.1.0` once that is tagged, in both modules
   - register the `nimbleterminal.dev/nt3d` import path
   - tag a version
 
@@ -69,6 +67,7 @@ move to Done with their commit; git history has the details.
 
 Recent milestones, newest first:
 
+- adopted `ntpicture` `v0.1.0` (stale-frame reporting, `KeepOnMainScreen`); no more sibling checkout
 - lighting rig: hemisphere ambient, up to eight directional and
   point lights, per-pixel diffuse, both renderers; the lights demo
 - adopted `ntgpuimage` `v0.3.0` (sRGB, mipmaps, samplers, anisotropy); no more sibling checkout

@@ -9,7 +9,7 @@ require (
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	github.com/spf13/pflag v1.0.10
 	nimbleterminal.dev/nt3d v0.0.0
-	nimbleterminal.dev/ntpicture v0.0.0-20261017143652-094079b7255e
+	nimbleterminal.dev/ntpicture v0.1.0
 )
 
 require (

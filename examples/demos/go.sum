@@ -66,5 +66,5 @@ nimbleterminal.dev/ntcanvas v0.1.0 h1:a3Ic7siZlAAO8rb2AQjNx/r9FNr/wP1816ZSF/HCmB
 nimbleterminal.dev/ntcanvas v0.1.0/go.mod h1:WMTAXxNeQsxN/seXUyVlWXA+WDYEhgeRW6ukJEPjZsk=
 nimbleterminal.dev/ntgpuimage v0.3.0 h1:x3/wbnS6xHFsMbKg+vXTbbEv2pDfnJTbGpKiUoSnAjM=
 nimbleterminal.dev/ntgpuimage v0.3.0/go.mod h1:bTKgAsy2rTnjnaKkmd8YbHdGjifNucZN4nHZD+Idb9k=
-nimbleterminal.dev/ntpicture v0.0.0-20261017143652-094079b7255e h1:WTvtJmZXtWzn1d2EYoU8yUJaVf8vGLSNutPKegrwz1g=
-nimbleterminal.dev/ntpicture v0.0.0-20261017143652-094079b7255e/go.mod h1:87798EJw9zvJoD1sdT6wzbGBpY+Vwco9U4NVf5Cv0tw=
+nimbleterminal.dev/ntpicture v0.1.0 h1:CsE+wzMxdG81vxkm31viZ/RiT4pafVajoOoX1DG9BnQ=
+nimbleterminal.dev/ntpicture v0.1.0/go.mod h1:87798EJw9zvJoD1sdT6wzbGBpY+Vwco9U4NVf5Cv0tw=

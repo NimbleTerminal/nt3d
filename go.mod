@@ -13,7 +13,7 @@ require (
 	golang.org/x/image v0.47.0
 	nimbleterminal.dev/ntcanvas v0.1.0
 	nimbleterminal.dev/ntgpuimage v0.3.0
-	nimbleterminal.dev/ntpicture v0.0.0-20261017143652-094079b7255e
+	nimbleterminal.dev/ntpicture v0.1.0
 )
 
 require (

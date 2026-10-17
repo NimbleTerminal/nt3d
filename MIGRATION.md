@@ -68,8 +68,7 @@ verify the existing gallery on native Kitty, browser WebGPU, software, and wiref
 ## Release coordination
 
 Keep Go 1.26.8 and the MIT copyright notices. ntcanvas v0.1.0, ntgpuimage
-v0.3.0, and ntpicture resolve upstream; ntpicture is pinned to a pseudo-version
-of its main branch until it tags v0.1.0.
+v0.3.0, and ntpicture v0.1.0 resolve upstream.
 
 ## Widget presentation migration
 
