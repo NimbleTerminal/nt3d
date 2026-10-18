@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestGPUKhronosSamples(t *testing.T) {
+func TestGPUAnimatedSamples(t *testing.T) {
 	d := newAnimateDemo(t)
 	renderer := nt3d.NewGPURenderer()
 	defer renderer.Close()
@@ -63,5 +63,23 @@ func TestGPUGobkitCharacters(t *testing.T) {
 				assertAnimatedSampleVisible(t, img, f.Background)
 			}
 		}
+	}
+}
+
+func TestGPUAssemblyCameras(t *testing.T) {
+	d := newAnimateDemo(t)
+	renderer := nt3d.NewGPURenderer()
+	defer renderer.Close()
+	for i := 0; i < 3; i++ {
+		f, err := d.scene.Frame(d.view.Camera(), 160, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := renderer.Render(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertAnimatedSampleVisible(t, img, f.Background)
+		d.cycleSampleCamera()
 	}
 }

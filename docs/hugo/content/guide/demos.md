@@ -108,21 +108,23 @@ The gallery links to every demo, each running inside [go-booba](https://github.c
 
 `task animation`. An original generated CC0 glTF ribbon bends on two joints, changes shape through a morph target, and plays translation, quaternion rotation, and scale tracks. `a` pauses; `1`, `2`, and `3` switch between GPU, software, and wireframe. The demo loads through glTF and drives the [generic animation API](../animation/).
 
-## Khronos animations
+## glTF animation lab
 
-<img class="poster" src="../../posters/animate.png" alt="The Khronos Animated Morph Cube">
+<img class="poster" src="../../posters/animate.png" alt="An articulated assembly with textured tiles">
 
-`task animate` cycles through three self-contained samples from [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets):
+`task animate` opens an original generated assembly, followed by three self-contained [Khronos glTF samples](https://github.com/KhronosGroup/glTF-Sample-Assets):
+
+- **Assembly lab** (6 KB GLB): nested turntable, shoulder, and tool pivots; authored perspective and orthographic cameras; reference and transformed texture tiles. The tool combines transformed color UVs with independent relief normal-map UVs. Press `k` to cycle the orbit and authored cameras. Camera navigation restores the saved orbit view. GPU and software show the textures; wireframe shows the articulated structure.
 
 - **AnimatedMorphCube** (GLB): two morph targets turn a cube into a thin slab and a ramp.
 - **SimpleSkin** (glTF plus binary buffers): two joints bend a strip through blended vertex weights and inverse bind matrices.
 - **AnimatedTriangle** (glTF plus binary buffers): quaternion keyframes rotate a triangle.
 
-`[` and `]` change models, `a` toggles play/pause, and `,` and `.` switch clips when a model has more than one. The bundled samples each have one clip. `1`, `2`, and `3` select GPU, software, and wireframe. Playback uses the generic animation API, and changing clips starts from a fresh instance so untracked channels return to the bind pose.
+`[` and `]` change models, `a` toggles play/pause, Enter restarts, and `,` and `.` switch clips when a model has more than one. The bundled samples each have one clip. `1`, `2`, and `3` select GPU, software, and wireframe. Playback uses the generic animation API, and changing clips starts from a fresh instance so untracked channels return to the bind pose.
 
-The model assets are **CC0**, by Microsoft (AnimatedMorphCube) and Marco Hutter (SimpleSkin and AnimatedTriangle). Upstream metadata is **CC-BY-4.0**. Original READMEs and licenses accompany every sample, with a pinned source revision in `examples/demos/internal/demo/gltf/SOURCES.md`. All sample files together, including provenance, occupy about 19 KB.
+The original assembly is **CC0** and can be regenerated with `go -C examples/demos generate ./internal/demo/gltf`. The Khronos model assets are **CC0**, by Microsoft (AnimatedMorphCube) and Marco Hutter (SimpleSkin and AnimatedTriangle). Upstream metadata is **CC-BY-4.0**. Original READMEs and licenses accompany every sample, with a pinned source revision in `examples/demos/internal/demo/gltf/SOURCES.md`. All sample files together, including provenance, occupy less than 30 KB.
 
-Only `cmd/animate` imports the Khronos embed package and assigns its `Files` to `demo.SampleFiles`. Relative `.bin` files are read through the mesh loader's `Options.Open`. Other demo binaries do not embed these samples, and the separate `examples/demos` module keeps them out of the main library's distribution. The generated `animation` demo and general-purpose `meshes` viewer and Gobkit character demo also opt into glTF decoding; other demos do not import that decoder.
+Only `cmd/animate` imports the glTF sample embed package and assigns its `Files` to `demo.SampleFiles`. Relative `.bin` files are read through the mesh loader's `Options.Open`. Other demo binaries do not embed these samples, and the separate `examples/demos` module keeps them out of the main library's distribution. The generated `animation` demo and general-purpose `meshes` viewer and Gobkit character demo also opt into glTF decoding; other demos do not import that decoder.
 
 ## Gobkit characters
 
@@ -136,7 +138,7 @@ All three have named `idle`, `attack`, and `dead` clips; the animals also have `
 `[` / `]` change characters, `,` / `.` change clips, `a` toggles playback, and
 **Enter** restarts the current clip (remaining paused if paused). Clips loop.
 `1` / `2` / `3` select GPU, software, and wireframe. The status line names the
-character, clip, and source. The existing `task animate` Khronos gallery remains available.
+character, clip, and source. The existing `task animate` glTF gallery remains available.
 
 The original GLBs total **399,144 bytes** and are **CC0 1.0** (public domain,
 no attribution required). License, download URLs, and SHA-256 checksums accompany

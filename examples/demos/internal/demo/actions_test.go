@@ -2,6 +2,7 @@
 package demo
 
 import (
+	"nimbleterminal.dev/nt3d"
 	"testing"
 
 	"github.com/NimbleMarkets/go-booba/actions/bubblehelp"
@@ -12,7 +13,7 @@ import (
 func TestSceneActions(t *testing.T) {
 	for _, d := range []*demo{
 		{}, {dynamic: &dynamicScene{}}, {meshes: &meshScene{}}, {models: &modelScene{}, meshes: &meshScene{}},
-		{animatedSamples: &animateScene{}}, {large: &largeScene{}}, {fur: &furScene{}}, {mipmaps: &mipScene{}}, {forest: &forestScene{}}, {lights: &lightScene{}}, {particles: &particleScene{}},
+		{animatedSamples: &animateScene{}}, {animatedSamples: &animateScene{cameras: []nt3d.NodeID{1, 2}}}, {large: &largeScene{}}, {fur: &furScene{}}, {mipmaps: &mipScene{}}, {forest: &forestScene{}}, {lights: &lightScene{}}, {particles: &particleScene{}},
 	} {
 		context, k := d.sceneKeys()
 		snapshot, diagnostics, err := bubblehelp.Snapshot(k, "nt3d-"+context, context, 1, bubblehelp.Options{})
@@ -39,4 +40,15 @@ func TestShadowActions(t *testing.T) {
 			t.Fatalf("%s has no shadow action", context)
 		}
 	}
+}
+
+func TestParticleSpriteAction(t *testing.T) {
+	d := &demo{particles: &particleScene{}}
+	_, k := d.sceneKeys()
+	for _, binding := range k.scene {
+		if binding.Help().Key == "t" && binding.Help().Desc == "sprites" {
+			return
+		}
+	}
+	t.Fatal("particles have no sprite touch action")
 }

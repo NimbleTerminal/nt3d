@@ -37,18 +37,31 @@ func (k keys) ShortHelp() []key.Binding {
 
 // FullHelp adds the camera's controls.
 func (k keys) FullHelp() [][]key.Binding {
-	return [][]key.Binding{append(append([]key.Binding{}, k.scene...), fitKey, fogKey), backendKeys, viewKeys}
+	view := viewKeys
+	for _, binding := range k.scene {
+		if binding.Help().Key == "k" {
+			// Authored camera selection already provides both projections. Keep the
+			// touch message within its 2048-byte limit; the o key still works.
+			view = viewKeys[:len(viewKeys)-1]
+			break
+		}
+	}
+	return [][]key.Binding{append(append([]key.Binding{}, k.scene...), fitKey, fogKey), backendKeys, view}
 }
 
 // sceneKeys are the keys the current scene answers to.
 func (d *demo) sceneKeys() (string, keys) {
 	switch {
 	case d.animatedSamples != nil:
-		return "animate", keys{[]key.Binding{bind("[", "[", "previous model"), bind("]", "]", "next model"), bind(",", ",", "previous clip"), bind(".", ".", "next clip"), bind("a", "a", "play/pause"), bind("enter", "enter", "restart"), bind("b", "b", "outlines")}}
+		controls := []key.Binding{bind("[", "[", "previous model"), bind("]", "]", "next model"), bind(",", ",", "previous clip"), bind(".", ".", "next clip"), bind("a", "a", "play/pause"), bind("enter", "enter", "restart"), bind("b", "b", "outlines")}
+		if len(d.animatedSamples.cameras) > 0 {
+			controls = append(controls, bind("k", "k", "camera"))
+		}
+		return "animate", keys{controls}
 	case d.animation != nil:
 		return "animation", keys{[]key.Binding{bind("a", "a", "pause")}}
 	case d.particles != nil:
-		return "particles", keys{[]key.Binding{bind("b", "b", "blend"), bind("s", "s", "shape"), bind("n", "n", "count"), bind("a", "a", "pause")}}
+		return "particles", keys{[]key.Binding{bind("b", "b", "blend"), bind("s", "s", "shape"), bind("t", "t", "sprites"), bind("n", "n", "count"), bind("a", "a", "pause")}}
 	case d.lights != nil:
 		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("f", "f", "falloff"), bind("e", "e", "highlights"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("a", "a", "pause")}}
 	case d.forest != nil:

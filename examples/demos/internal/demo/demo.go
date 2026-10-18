@@ -155,6 +155,23 @@ func (d *demo) Init() tea.Cmd {
 	return cmd
 }
 func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if state := d.animatedSamples; state != nil && state.camera > 0 {
+		detach := false
+		switch v := msg.(type) {
+		case tea.MouseClickMsg, tea.MouseWheelMsg:
+			detach = true
+		case tea.KeyPressMsg:
+			switch v.String() {
+			case "c", "r", "o", "+", "-", "_", "=", "left", "right", "up", "down", "h", "j", "l":
+				detach = true
+			}
+		}
+		if detach {
+			state.camera = 0
+			// Replay the gesture after restoring the editable orbit view.
+			return d, tea.Sequence(d.view.SetCamera(state.orbit), func() tea.Msg { return msg })
+		}
+	}
 	switch v := msg.(type) {
 	case phaseMsg:
 		if d.closed {
@@ -194,7 +211,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.animate = false
 			return d, phaseTick()
 		}
-		return d, tea.Batch(d.view.Refresh(), phaseTick())
+		return d, tea.Batch(d.followSampleCamera(), d.view.Refresh(), phaseTick())
 	case quitMsg:
 		d.closed = true
 		return d, tea.Sequence(d.view.Dispose(), tea.Quit)
@@ -398,6 +415,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			d.angle += math.Pi / 12
 			err = d.scene.SetTransform(d.group, nt3dmath.RotationZ(d.angle))
+		case "k":
+			if d.animatedSamples != nil && len(d.animatedSamples.cameras) > 0 {
+				return d, d.cycleSampleCamera()
+			}
+			_, cmd := d.view.Update(msg)
+			return d, cmd
 		case "v":
 			d.hidden = !d.hidden
 			err = d.scene.SetVisible(d.group, !d.hidden)

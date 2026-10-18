@@ -14,16 +14,21 @@ import (
 	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
 
-// AnimateMain plays the Khronos glTF samples supplied by cmd/animate in SampleFiles.
+// AnimateMain plays Khronos samples and the generated assembly supplied in SampleFiles.
 func AnimateMain() { mainDemo(false, sceneAnimate) }
 
 var animatedSamples = []sample{
+	{file: "Assembly/assembly.glb", title: "Assembly lab", about: "parent → shoulder → tool · reference / transformed UV tiles · independent relief normals", beta: -55},
 	{file: "AnimatedMorphCube/glTF-Binary/AnimatedMorphCube.glb", title: "Animated Morph Cube", about: "two morph targets: thin cube and ramp", beta: 40},
 	{file: "SimpleSkin/glTF/SimpleSkin.gltf", title: "Simple Skin", about: "two joints bending a strip with blended vertex weights", beta: -90},
 	{file: "AnimatedTriangle/glTF/AnimatedTriangle.gltf", title: "Animated Triangle", about: "quaternion rotation of a triangle", beta: -90},
 }
 
 type animateScene struct {
+	cameras       []nt3d.NodeID
+	camera        int // Zero is the interactive orbit camera; authored cameras are one-based.
+	cameraScale   float64
+	orbit         nt3d.Camera
 	outlined      bool
 	samples       []sample
 	title, credit string
@@ -93,7 +98,7 @@ func (d *demo) loadAnimatedSample(index, clip int) error {
 			return err
 		}
 	}
-	fit, _, _ := model.Bounds().Normalization()
+	fit, _, scale := model.Bounds().Normalization()
 	if err = d.scene.SetTransform(root, fit); err != nil {
 		return err
 	}
@@ -112,6 +117,14 @@ func (d *demo) loadAnimatedSample(index, clip int) error {
 			return err
 		}
 	}
+	if index != state.index {
+		state.camera = 0
+	}
+	state.cameras = d.scene.Cameras(root)
+	if state.camera > len(state.cameras) {
+		state.camera = 0
+	}
+	state.cameraScale = float64(scale)
 	state.index, state.clip, state.group, state.model, state.clips = index, clip, root, model, clips
 	d.animation, d.animationTime = player, 0
 	d.lastPhase = time.Now()
@@ -138,17 +151,19 @@ func (d *demo) stepAnimationClip(step int) tea.Cmd {
 	if err := d.loadAnimatedSample(state.index, state.clip+step); err != nil {
 		d.status = err.Error()
 	}
-	return d.view.Refresh()
+	return tea.Batch(d.followSampleCamera(), d.view.Refresh())
 }
 func (d *demo) frameAnimatedSample() tea.Cmd {
-	camera := d.view.Camera()
+	camera := nt3d.DefaultCamera()
 	camera.Beta = d.animatedSamples.samples[d.animatedSamples.index].beta
 	camera.Alpha = 15
 	first := d.view.SetCamera(camera)
 	fit := d.view.Fit()
 	camera = d.view.Camera()
 	camera.Distance *= 1.6 // Room for the animated pose.
-	return tea.Batch(first, fit, d.view.SetCamera(camera))
+	state := d.animatedSamples
+	state.orbit = camera
+	return tea.Batch(first, fit, d.view.SetCamera(camera), d.followSampleCamera())
 }
 func (d *demo) animateView(content string) string {
 	state := d.animatedSamples
@@ -160,12 +175,25 @@ func (d *demo) animateView(content string) string {
 	if !d.animate {
 		play = "paused"
 	}
+	credit := state.credit
+	if state.samples[state.index].file == "Assembly/assembly.glb" {
+		credit = "nt3d original · CC0"
+	}
+	cameraLabel := "orbit camera"
+	cameraKeys := ""
+	if len(state.cameras) > 0 {
+		cameraKeys = " · k camera"
+		if state.camera > 0 {
+			node, _ := d.scene.Node(state.cameras[state.camera-1])
+			cameraLabel = node.Name[strings.LastIndex(node.Name, ":")+1:]
+		}
+	}
 	name := state.clips[state.clip].Name
 	if name == "" {
 		name = fmt.Sprintf("clip %d", state.clip+1)
 	}
-	return fmt.Sprintf("nt3d %s · %s (%d/%d) · [ ] model · , . clip · a play/pause · enter restart · b outlines · 1/2/3 backend · q quit\n%s\n%s · %s · %s (%d/%d) · %s · %s · %s",
-		state.title, state.samples[state.index].title, state.index+1, len(state.samples), content, d.rendering(), play, name, state.clip+1, len(state.clips), outlines, state.credit, d.status)
+	return fmt.Sprintf("nt3d %s · %s (%d/%d) · [ ] model · , . clip · a play/pause · enter restart · b outlines%s · 1/2/3 backend · q quit\n%s\n%s · %s · %s (%d/%d) · %s · %s · %s",
+		state.title, state.samples[state.index].title, state.index+1, len(state.samples), cameraKeys, content, d.rendering(), play, name, state.clip+1, len(state.clips), outlines, credit, cameraLabel+" · "+d.status)
 }
 
 var animatedOutline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}}
@@ -188,5 +216,38 @@ func (d *demo) restartAnimation() tea.Cmd {
 	if err := d.loadAnimatedSample(state.index, state.clip); err != nil {
 		d.status = err.Error()
 	}
-	return d.view.Refresh()
+	return tea.Batch(d.followSampleCamera(), d.view.Refresh())
+}
+
+// Lens lengths scale with the demo's normalization, matching the camera's
+// normalized position. NodeCamera itself correctly ignores authored node scale.
+func (d *demo) followSampleCamera() tea.Cmd {
+	state := d.animatedSamples
+	if state == nil || state.camera == 0 || d.view == nil {
+		return nil
+	}
+	camera, err := d.scene.NodeCamera(state.cameras[state.camera-1])
+	if err != nil {
+		d.status = err.Error()
+		return nil
+	}
+	camera.Near *= state.cameraScale
+	camera.Far *= state.cameraScale
+	camera.Xmag *= state.cameraScale
+	camera.Ymag *= state.cameraScale
+	return d.view.SetCamera(camera)
+}
+func (d *demo) cycleSampleCamera() tea.Cmd {
+	state := d.animatedSamples
+	if state == nil || len(state.cameras) == 0 {
+		return nil
+	}
+	if state.camera == 0 {
+		state.orbit = d.view.Camera()
+	}
+	state.camera = (state.camera + 1) % (len(state.cameras) + 1)
+	if state.camera == 0 {
+		return d.view.SetCamera(state.orbit)
+	}
+	return d.followSampleCamera()
 }

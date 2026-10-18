@@ -38,7 +38,7 @@ func newAnimateDemo(t *testing.T) *demo {
 	d.frameAnimatedSample()
 	return d
 }
-func TestKhronosSamplesPlay(t *testing.T) {
+func TestAnimatedSamplesPlay(t *testing.T) {
 	d := newAnimateDemo(t)
 	for i, sample := range animatedSamples {
 		if err := d.loadAnimatedSample(i, 0); err != nil {
@@ -194,7 +194,7 @@ func TestEmbeddedAnimationAssetsAreSmall(t *testing.T) {
 	if total >= 100*1024 {
 		t.Fatalf("sample files total %d bytes", total)
 	}
-	for _, name := range []string{"AnimatedMorphCube", "SimpleSkin", "AnimatedTriangle"} {
+	for _, name := range []string{"Assembly", "AnimatedMorphCube", "SimpleSkin", "AnimatedTriangle"} {
 		for _, file := range []string{"README.md", "LICENSE.md"} {
 			if _, err := fs.ReadFile(gltfsamples.Files, name+"/"+file); err != nil {
 				t.Fatal(err)
@@ -230,5 +230,49 @@ func assertAnimatedSampleVisible(t *testing.T, img image.Image, background color
 	}
 	if count < 25 {
 		t.Fatalf("animated sample has only %d visible pixels", count)
+	}
+}
+
+func TestAssemblyCameraControls(t *testing.T) {
+	d := newAnimateDemo(t)
+	if len(d.animatedSamples.cameras) != 2 {
+		t.Fatal("assembly must expose both authored cameras")
+	}
+	orbit := d.view.Camera()
+	for _, projection := range []nt3d.Projection{nt3d.Perspective, nt3d.Orthographic} {
+		d.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+		if d.view.Camera().Projection != projection {
+			t.Fatal("wrong authored projection")
+		}
+		f, err := d.scene.Frame(d.view.Camera(), 160, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := nt3d.NewSoftwareRenderer().Render(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertAnimatedSampleVisible(t, img, f.Background)
+		if _, err = nt3d.RenderWireframe(f, 40, 20); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.restartAnimation()
+	if d.animatedSamples.camera != 2 {
+		t.Fatal("restart lost camera selection")
+	}
+	d.cycleSampleCamera()
+	if d.view.Camera() != orbit {
+		t.Fatal("orbit camera was not restored")
+	}
+	d.cycleSampleCamera()
+	d.Update(tea.KeyPressMsg{Code: '+', Text: "+"})
+	if d.animatedSamples.camera != 0 || d.view.Camera() != orbit {
+		t.Fatal("navigation did not restore orbit camera")
+	}
+	d.cycleSampleCamera()
+	d.stepAnimatedSample(1)
+	if d.animatedSamples.camera != 0 || d.view.Camera().Pose != nt3d.DefaultCamera().Pose {
+		t.Fatal("changing model retained authored camera")
 	}
 }
