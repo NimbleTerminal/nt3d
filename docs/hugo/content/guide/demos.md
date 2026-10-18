@@ -120,4 +120,22 @@ The gallery links to every demo, each running inside [go-booba](https://github.c
 
 The model assets are **CC0**, by Microsoft (AnimatedMorphCube) and Marco Hutter (SimpleSkin and AnimatedTriangle). Upstream metadata is **CC-BY-4.0**. Original READMEs and licenses accompany every sample, with a pinned source revision in `examples/demos/internal/demo/gltf/SOURCES.md`. All sample files together, including provenance, occupy about 19 KB.
 
-Only `cmd/animate` imports the Khronos embed package and assigns its `Files` to `demo.SampleFiles`. Relative `.bin` files are read through the mesh loader's `Options.Open`. Other demo binaries do not embed these samples, and the separate `examples/demos` module keeps them out of the main library's distribution. The generated `animation` demo and general-purpose `meshes` viewer also opt into glTF decoding; other demos do not import that decoder.
+Only `cmd/animate` imports the Khronos embed package and assigns its `Files` to `demo.SampleFiles`. Relative `.bin` files are read through the mesh loader's `Options.Open`. Other demo binaries do not embed these samples, and the separate `examples/demos` module keeps them out of the main library's distribution. The generated `animation` demo and general-purpose `meshes` viewer and Gobkit character demo also opt into glTF decoding; other demos do not import that decoder.
+
+## Gobkit characters
+
+<img class="poster" src="../../posters/characters.png" alt="An animated Gobkit minion">
+
+`task characters` plays **Minion A-1**, **Corgi**, and **Duck** from [Gobkit](https://gobkit.com).
+All three have named `idle`, `attack`, and `dead` clips; the animals also have `walk`.
+`[` / `]` change characters, `,` / `.` change clips, `a` toggles playback, and
+**Enter** restarts the current clip (remaining paused if paused). Clips loop.
+`1` / `2` / `3` select GPU, software, and wireframe. The status line names the
+character, clip, and source. The existing `task animate` Khronos gallery remains available.
+
+The original GLBs total **399,144 bytes** and are **CC0 1.0** (public domain,
+no attribution required). License, download URLs, and SHA-256 checksums accompany
+the assets in `examples/demos/internal/demo/gobkit`. Only `cmd/characters` imports
+that embed package and supplies `demo.SampleFiles`; the files stay in the separate
+demos module and are absent from library builds and other demo binaries.
+Playback uses the same generic animation API and sample player as the Khronos gallery.

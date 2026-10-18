@@ -24,15 +24,17 @@ var animatedSamples = []sample{
 }
 
 type animateScene struct {
-	index, clip int
-	group       nt3d.NodeID
-	model       *nt3dmesh.Model
-	clips       []nt3d.AnimationClip
-	serial      int
+	samples       []sample
+	title, credit string
+	index, clip   int
+	group         nt3d.NodeID
+	model         *nt3dmesh.Model
+	clips         []nt3d.AnimationClip
+	serial        int
 }
 
 func (d *demo) setupAnimate() error {
-	d.animatedSamples = &animateScene{}
+	d.animatedSamples = &animateScene{samples: animatedSamples, title: "animate", credit: "Khronos samples, CC0"}
 	return d.loadAnimatedSample(0, 0)
 }
 
@@ -65,8 +67,8 @@ func embeddedModel(files fs.FS, name string) (*nt3dmesh.Model, error) {
 // Keep the previous instance alive until the replacement is ready.
 func (d *demo) loadAnimatedSample(index, clip int) error {
 	state := d.animatedSamples
-	index = (index%len(animatedSamples) + len(animatedSamples)) % len(animatedSamples)
-	sample := animatedSamples[index]
+	index = (index%len(state.samples) + len(state.samples)) % len(state.samples)
+	sample := state.samples[index]
 	model, err := embeddedModel(SampleFiles, sample.file)
 	if err != nil {
 		return fmt.Errorf("%s: %w", sample.title, err)
@@ -134,7 +136,7 @@ func (d *demo) stepAnimationClip(step int) tea.Cmd {
 }
 func (d *demo) frameAnimatedSample() tea.Cmd {
 	camera := d.view.Camera()
-	camera.Beta = animatedSamples[d.animatedSamples.index].beta
+	camera.Beta = d.animatedSamples.samples[d.animatedSamples.index].beta
 	camera.Alpha = 15
 	first := d.view.SetCamera(camera)
 	fit := d.view.Fit()
@@ -152,6 +154,14 @@ func (d *demo) animateView(content string) string {
 	if name == "" {
 		name = fmt.Sprintf("clip %d", state.clip+1)
 	}
-	return fmt.Sprintf("nt3d animate · %s (%d/%d) · [ ] model · , . clip · a play/pause · 1/2/3 backend · q quit\n%s\n%s · %s · %s (%d/%d) · Khronos samples, CC0 · %s",
-		animatedSamples[state.index].title, state.index+1, len(animatedSamples), content, d.rendering(), play, name, state.clip+1, len(state.clips), d.status)
+	return fmt.Sprintf("nt3d %s · %s (%d/%d) · [ ] model · , . clip · a play/pause · enter restart · 1/2/3 backend · q quit\n%s\n%s · %s · %s (%d/%d) · %s · %s",
+		state.title, state.samples[state.index].title, state.index+1, len(state.samples), content, d.rendering(), play, name, state.clip+1, len(state.clips), state.credit, d.status)
+}
+
+func (d *demo) restartAnimation() tea.Cmd {
+	state := d.animatedSamples
+	if err := d.loadAnimatedSample(state.index, state.clip); err != nil {
+		d.status = err.Error()
+	}
+	return d.view.Refresh()
 }

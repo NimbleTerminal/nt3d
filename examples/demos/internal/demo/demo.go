@@ -103,6 +103,7 @@ const (
 	sceneParticles
 	sceneAnimation
 	sceneAnimate
+	sceneCharacters
 )
 
 // terrainScene reports whether the terrain controls apply.
@@ -214,6 +215,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			d.closed = true
 			return d, tea.Sequence(d.view.Dispose(), tea.Quit)
+		case "enter":
+			if d.animatedSamples != nil {
+				return d, d.restartAnimation()
+			}
 		case "a":
 			d.animate = !d.animate
 			d.lastPhase = time.Now()
@@ -583,6 +588,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		return err
 	}
 	switch kind {
+	case sceneCharacters:
+		if err = d.setupCharacters(); err != nil {
+			return err
+		}
 	case sceneAnimate:
 		if err = d.setupAnimate(); err != nil {
 			return err
@@ -684,7 +693,7 @@ func run(proceduralDefault bool, kind sceneMode) error {
 				d.view.SetPostProcess(e.apply)
 			}
 		}
-	case sceneAnimate:
+	case sceneAnimate, sceneCharacters:
 		d.frameAnimatedSample()
 	case sceneModels:
 		d.frameSample()

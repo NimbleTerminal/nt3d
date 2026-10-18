@@ -44,7 +44,7 @@ func (k keys) FullHelp() [][]key.Binding {
 func (d *demo) sceneKeys() (string, keys) {
 	switch {
 	case d.animatedSamples != nil:
-		return "animate", keys{[]key.Binding{bind("[", "[", "previous model"), bind("]", "]", "next model"), bind(",", ",", "previous clip"), bind(".", ".", "next clip"), bind("a", "a", "play/pause")}}
+		return "animate", keys{[]key.Binding{bind("[", "[", "previous model"), bind("]", "]", "next model"), bind(",", ",", "previous clip"), bind(".", ".", "next clip"), bind("a", "a", "play/pause"), bind("enter", "enter", "restart")}}
 	case d.animation != nil:
 		return "animation", keys{[]key.Binding{bind("a", "a", "pause")}}
 	case d.particles != nil:
