@@ -27,6 +27,18 @@ type Box struct {
 	Datum     int
 }
 
+// DropShadow lays a soft dark disc under a geometry, on the plane at the
+// bottom of its world bounds, centered under them: as if lit from
+// straight above by nothing in particular. It needs no light. Strength is
+// how dark the disc's center is, 0..1; zero means no drop shadow. Radius
+// is the disc's radius in world units; zero means the bounds' larger
+// horizontal half extent. Every instance of a shared geometry gets one.
+// Wireframe and picking ignore it.
+type DropShadow struct {
+	Strength float32
+	Radius   float32
+}
+
 // Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
 // Scene setters copy geometry; frame consumers must treat snapshots as read-only.
 type Geometry struct {
@@ -48,6 +60,7 @@ type Geometry struct {
 	LineWidth  float32 // Render pixels for Lines; zero defaults to 1.
 	Arrows     []Arrow
 	Bounds     nt3dmath.AABB
+	DropShadow DropShadow
 }
 
 // MaxMeshIndices is the most indices one geometry's mesh may have, three to a
@@ -61,6 +74,9 @@ const (
 )
 
 func validateGeometry(g Geometry) error {
+	if !validFloat(g.DropShadow.Strength, g.DropShadow.Radius) || g.DropShadow.Strength < 0 || g.DropShadow.Strength > 1 || g.DropShadow.Radius < 0 {
+		return fmt.Errorf("nt3d: invalid drop shadow")
+	}
 	if g.WireGrid != ([2]int{}) {
 		nx, ny := g.WireGrid[0], g.WireGrid[1]
 		if nx < 2 || ny < 2 || nx > len(g.Vertices) || ny > len(g.Vertices)/nx || nx*ny != len(g.Vertices) {

@@ -61,6 +61,7 @@ func sameMaterial(a, b *Material) bool {
 // MergeGeometry concatenates geometries into one, offsetting triangle indices.
 // Meshes must share a material and a line width, and points a style. UVs are
 // kept only when every mesh has them. WireGrid survives only when a single geometry is given.
+// The first geometry with a positive drop shadow strength supplies the drop shadow.
 func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	var out Geometry
 	if len(gs) == 1 {
@@ -70,6 +71,9 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	uv := true
 	for i := range gs {
 		g := &gs[i]
+		if out.DropShadow.Strength == 0 && g.DropShadow.Strength > 0 {
+			out.DropShadow = g.DropShadow
+		}
 		if len(g.Vertices) != 0 {
 			if mesh != nil && !sameMaterial(mesh.Material, g.Material) {
 				return Geometry{}, errors.New("nt3d: cannot merge meshes with different materials")
