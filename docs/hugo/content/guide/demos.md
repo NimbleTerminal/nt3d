@@ -83,7 +83,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 `task lights`. A sphere, a torus, a column, and a cube on a floor of two triangles, under presets of [lighting](../rendering/#how-it-looks): the default key light, a turning sun under a sky-to-ground ambient, three colored lamps orbiting, one lamp at night, and eight at once. Light is found per pixel, so a lamp's bright spot crosses the floor where no vertex is. `l` changes the preset, `f` the point lights' falloff, `e` turns highlights off, `a` pauses the lamps, and `s` cycles through no shadows, drop shadows, and shadow maps. Shadow maps need a directional light, so the point-light presets cast none.
 
-The first three presets demonstrate [environment skies and diffuse image-based lighting](../environment/): a gradient sky with a key light, the sky alone, and an original generated warm/cool panorama. `l` cycles through them and the direct-light presets. Sky orientation follows the camera in all three renderers.
+The first three presets demonstrate [environment skies and diffuse image-based lighting](../environment/): a gradient sky with a key light, the sky alone, and an original generated warm/cool panorama. `l` cycles through them and the direct-light presets. Sky orientation follows the camera in all three renderers. Press `n` to compare the generated relief normal map with smooth surfaces; both GPU and software perturb the lighting, while wireframe keeps the geometric silhouette.
 
 ## Particles
 

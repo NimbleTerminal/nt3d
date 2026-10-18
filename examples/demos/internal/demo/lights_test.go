@@ -212,3 +212,33 @@ func TestShadowKeysRender(t *testing.T) {
 		session.Close()
 	}
 }
+
+func TestNormalMapToggle(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	for _, enabled := range []bool{true, false, true} {
+		if d.lights.normal != enabled {
+			if err := d.toggleNormalMap(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		f, err := d.scene.Frame(nt3d.DefaultCamera(), 80, 60)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, inst := range f.Instances {
+			if inst.Name == "sphere" {
+				m := f.Geometry[i].Material
+				if (m != nil && m.NormalMap != nil) != enabled {
+					t.Fatal("toggle did not reach sphere")
+				}
+			}
+		}
+		d.decorateLights(&f)
+		if _, err := nt3d.NewSoftwareRenderer().Render(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

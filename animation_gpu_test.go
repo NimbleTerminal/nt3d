@@ -11,22 +11,32 @@ import (
 
 func TestGPUSkinMatchesCPU(t *testing.T) {
 	for _, texture := range []bool{false, true} {
-		t.Run(fmt.Sprint("textured=", texture), func(t *testing.T) { testGPUSkinMatchesCPU(t, texture) })
+		for _, normal := range []bool{false, true} {
+			t.Run(fmt.Sprintf("textured=%v/normal=%v", texture, normal), func(t *testing.T) { testGPUSkinMatchesCPU(t, texture, normal) })
+		}
 	}
 }
-func testGPUSkinMatchesCPU(t *testing.T, texture bool) {
+func testGPUSkinMatchesCPU(t *testing.T, texture, normal bool) {
 	s, id, joint := animationSkinScene(t)
 	// Color the bind mesh before rebinding deformation.
 	n := s.nodes[id]
 	for i := range n.deformation.base.Vertices {
 		n.deformation.base.Vertices[i].Color = color.RGBA{220, 80, 40, 255}
 	}
-	if texture {
-		tex := testTexture(t, color.RGBA{40, 200, 130, 255})
+	if texture || normal {
 		n.deformation.base.UV = []UV{{0, 0}, {1, 0}, {0, 1}}
-		n.deformation.base.Material = &Material{Texture: tex}
-		n.geometry.Material = n.deformation.base.Material
+		m := &Material{}
+		if texture {
+			m.Texture = testTexture(t, color.RGBA{40, 200, 130, 255})
+		}
+		if normal {
+			m.NormalMap = testNormalMap(t, color.NRGBA{218, 128, 218, 255})
+			m.NormalStrength = 1
+		}
+		n.deformation.base.Material = m
+		n.geometry.Material = m
 	}
+
 	n.deformation.weights = nil
 	check(t, s.SetMorphWeights(id, []float32{.25}))
 	check(t, s.SetTransform(joint, nt3dmath.Translation(nt3dmath.Vec3{X: -.5, Y: -.5}).Mul(nt3dmath.RotationZ(.4))))

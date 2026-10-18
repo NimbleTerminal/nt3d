@@ -164,12 +164,18 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		textured := material != nil && material.Texture != nil
 		cutout := textured && material.Cutout
 		blended := side != opaqueFaces
+		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && !material.Unlit
+		var tangent, bitangent nt3dmath.Vec3
+		if normalMapped {
+			tangent, bitangent = normalBasis(a, b, c)
+		}
 		specular := material != nil && material.Specular > 0 && !material.Unlit
 		// A triangle with normals is lit; unlit ones have none.
 		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
 		// Whether pixels need the world point, and so perspective weights.
 		located := fogged || lit && (specular || rig.points || rig.shadow != nil)
-		perspective := blended || textured || lit || fogged
+		hasNormal := material != nil && material.NormalMap != nil
+		perspective := blended || textured || lit || fogged || hasNormal
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
@@ -214,6 +220,11 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 					sum := q0 + q1 + q2
 					q0, q1, q2 = q0/sum, q1/sum, q2/sum
 				}
+				if hasNormal && !textured {
+					for k := range rgb {
+						rgb[k] = q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]
+					}
+				}
 				var opacity float32
 				if blended {
 					opacity = q0*a.cut + q1*b.cut + q2*c.cut
@@ -255,9 +266,15 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 					}
 					if n := a.normal.Scale(q0).Add(b.normal.Scale(q1)).Add(c.normal.Scale(q2)); lit && n.Dot(n) != 0 {
 						n = n.Scale(1 / float32(math.Sqrt(float64(n.Dot(n)))))
-						rig.light(&rgb, n, p)
+						geometric := n
+						if normalMapped {
+							uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
+							sample := material.NormalMap.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.NormalRepeat, aniso)
+							n = perturbNormal(n, tangent, bitangent, sample, material.NormalStrength)
+						}
+						rig.lightNormal(&rgb, n, p, geometric)
 						if specular {
-							s := rig.highlight(material, n, p, f.viewAt(p))
+							s := rig.highlightNormal(material, n, p, f.viewAt(p), geometric)
 							for k := range rgb {
 								rgb[k] += s[k] * 255
 							}

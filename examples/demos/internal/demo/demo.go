@@ -372,6 +372,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			d.toggleIndexing()
 		case "n":
+			if d.lights != nil {
+				err = d.toggleNormalMap()
+				break
+			}
 			if d.particles != nil {
 				err = d.cycleParticleCount()
 				break

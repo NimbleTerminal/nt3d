@@ -38,6 +38,13 @@ The [mipmaps demo](../demos/#mipmaps) lets you turn them off to compare. Shader 
 
 Other materials ignore alpha.
 
+## Normal maps
+
+`NewNormalMap(img)` creates a linear-data normal texture. Assign it to
+`Material.NormalMap`, set `NormalStrength: 1`, and provide `Geometry.UV`.
+GPU and software perturb diffuse, specular, and environment lighting. See
+[normal maps](../normal-maps/) for sampling, animation, glTF mapping, and tangent-basis limits.
+
 ## Highlights
 
 `Material.Specular` (0 to 1) adds a white highlight where the surface reflects the light toward the camera, and `Shininess` (1 to 1024, default 32) sets how tight it is. It's worked out per pixel, so highlights stay round even on coarse meshes. Boxes, unlit materials, and wireframe have none.

@@ -102,8 +102,16 @@ func validateGeometry(g Geometry) error {
 	if len(g.UV) != 0 && len(g.UV) != len(g.Vertices) {
 		return fmt.Errorf("nt3d: UV length mismatch")
 	}
-	if textured(g) && (!g.Material.Texture.valid() || len(g.UV) != len(g.Vertices)) {
+	if textured(g) && (!g.Material.Texture.valid() || g.Material.Texture.data || len(g.UV) != len(g.Vertices)) {
 		return fmt.Errorf("nt3d: invalid texture or missing UVs")
+	}
+	if m := g.Material; m != nil {
+		if !validFloat(m.NormalStrength) {
+			return fmt.Errorf("nt3d: non-finite normal strength")
+		}
+		if m.NormalMap != nil && (!m.NormalMap.valid() || !m.NormalMap.data || len(g.UV) != len(g.Vertices)) {
+			return fmt.Errorf("nt3d: normal map requires NewNormalMap and vertex UVs")
+		}
 	}
 	if g.Material != nil && (!validFloat(g.Material.Threshold) || g.Material.Threshold < 0 || g.Material.Threshold > 1) {
 		return fmt.Errorf("nt3d: cutout threshold must be 0..1")

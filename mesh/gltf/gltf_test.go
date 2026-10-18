@@ -434,3 +434,107 @@ func TestGLTFSplit(t *testing.T) {
 		check(t, o.Geometry.Validate())
 	}
 }
+
+// A normal map coexists with base color and preserves authored normals.
+// Missing vertex normals still get the flat fallback.
+func TestGLTFNormalMaps(t *testing.T) {
+	for _, authored := range []bool{false, true} {
+		p := upTriangle
+		p.material = gltf.Index(0)
+		p.uv = [][2]float32{{0, 0}, {1, 0}, {0, 1}}
+		if authored {
+			p.normals = [][3]float32{{.6, 0, .8}, {.6, 0, .8}, {.6, 0, .8}}
+		}
+		doc := gltfDoc(p, p)
+		base, err := modeler.WriteImage(doc, "base", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{200, 100, 50, 255})))
+		check(t, err)
+		normal, err := modeler.WriteImage(doc, "normal", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{128, 128, 255, 255})))
+		check(t, err)
+		doc.Textures = []*gltf.Texture{{Source: gltf.Index(base)}, {Source: gltf.Index(normal)}}
+		doc.Materials = []*gltf.Material{{NormalTexture: &gltf.NormalTexture{Index: gltf.Index(1), Scale: gltf.Float(.5)}, PBRMetallicRoughness: &gltf.PBRMetallicRoughness{BaseColorTexture: &gltf.TextureInfo{Index: 0}}}}
+		m, err := Decode(glb(t, doc), nil)
+		check(t, err)
+		if len(m.Warnings) != 0 {
+			t.Fatalf("unexpected normal-map warnings: %v", m.Warnings)
+		}
+		want := nt3dmath.Vec3{Y: -1}
+		if authored {
+			want = nt3dmath.Vec3{X: .6, Y: -.8}
+		}
+		for _, obj := range m.Objects {
+			g := obj.Geometry
+			for _, v := range g.Vertices {
+				if !near(v.Normal, want) {
+					t.Fatalf("authored=%v: normal %v, want %v", authored, v.Normal, want)
+				}
+			}
+			if g.Material == nil || g.Material.Texture == nil || g.Material.NormalMap == nil || g.Material.NormalStrength != .5 {
+				t.Fatal("base texture or normal map lost")
+			}
+			if c := g.Material.Texture.At(0, 0).(color.RGBA); c != (color.RGBA{200, 100, 50, 255}) {
+				t.Fatalf("base texture replaced: %v", c)
+			}
+		}
+	}
+}
+
+func TestGLTFNormalMapOptions(t *testing.T) {
+	for _, kind := range []string{"normal only", "zero scale", "shared image", "missing UV", "different UV", "transform", "authored tangent"} {
+		t.Run(kind, func(t *testing.T) {
+			p := upTriangle
+			p.material = gltf.Index(0)
+			p.uv = [][2]float32{{0, 0}, {1, 0}, {0, 1}}
+			doc := gltfDoc(p)
+			img, err := modeler.WriteImage(doc, "normal", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{180, 128, 230, 255})))
+			check(t, err)
+			doc.Textures = []*gltf.Texture{{Source: gltf.Index(img)}}
+			normal := &gltf.NormalTexture{Index: gltf.Index(0)}
+			material := &gltf.Material{NormalTexture: normal}
+			doc.Materials = []*gltf.Material{material}
+			wantWarning := ""
+			switch kind {
+			case "zero scale":
+				normal.Scale = gltf.Float(0)
+			case "shared image":
+				material.PBRMetallicRoughness = &gltf.PBRMetallicRoughness{BaseColorTexture: &gltf.TextureInfo{Index: 0}}
+			case "missing UV":
+				delete(doc.Meshes[0].Primitives[0].Attributes, gltf.TEXCOORD_0)
+				wantWarning = "no texture coordinates"
+			case "different UV":
+				normal.TexCoord = 1
+				material.PBRMetallicRoughness = &gltf.PBRMetallicRoughness{BaseColorTexture: &gltf.TextureInfo{Index: 0}}
+				wantWarning = "different UV"
+			case "transform":
+				normal.Extensions = gltf.Extensions{"KHR_texture_transform": map[string]any{"offset": []float64{.2, 0}}}
+				wantWarning = "texture transforms"
+			case "authored tangent":
+				doc.Meshes[0].Primitives[0].Attributes[gltf.TANGENT] = modeler.WriteTangent(doc, [][4]float32{{1, 0, 0, 1}, {1, 0, 0, 1}, {1, 0, 0, 1}})
+				wantWarning = "authored tangents"
+			}
+			m, err := Decode(glb(t, doc), nil)
+			check(t, err)
+			g := m.Objects[0].Geometry
+			check(t, g.Validate())
+			if wantWarning != "" && !strings.Contains(strings.Join(m.Warnings, ";"), wantWarning) {
+				t.Fatalf("warnings %v lack %q", m.Warnings, wantWarning)
+			}
+			if wantWarning == "" || kind == "authored tangent" {
+				if g.Material == nil || g.Material.NormalMap == nil {
+					t.Fatal("normal map missing")
+				}
+				strength := float32(1)
+				if kind == "zero scale" {
+					strength = 0
+				}
+				if g.Material.NormalStrength != strength {
+					t.Fatal("normal scale lost")
+				}
+				if kind == "shared image" && g.Material.Texture == g.Material.NormalMap {
+					t.Fatal("color and vector textures share gamma interpretation")
+				}
+			} else if g.Material != nil && g.Material.NormalMap != nil {
+				t.Fatal("unsupported map was silently sampled")
+			}
+		})
+	}
+}

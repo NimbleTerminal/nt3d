@@ -318,7 +318,7 @@ func (s *Scene) SetTexture(name string, t *Texture) error {
 		return fmt.Errorf("nt3d: unknown node %q", name)
 	}
 	n := s.nodes[id]
-	if !t.valid() || n.geometry == nil || !textured(*n.geometry) {
+	if !t.valid() || t.data || n.geometry == nil || !textured(*n.geometry) {
 		return errors.New("nt3d: texture replacement requires a valid texture and textured geometry")
 	}
 	if n.geometry.Material.Texture == t {

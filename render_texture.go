@@ -19,7 +19,7 @@ func releaseBatch(b gpuBatch) {
 }
 
 func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGroupLayout) (err error) {
-	g.textureLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout, sampledLayout}})
+	g.textureLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout, sampledLayout, sampledLayout}})
 	if err != nil {
 		return err
 	}
@@ -69,36 +69,41 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 	used := make(map[textureKey]bool)
 	var sampledLayout *wgpu.BindGroupLayout
 	for _, geom := range f.Geometry {
-		if !textured(geom) || len(geom.Indices) == 0 {
+		if !mapped(geom) || len(geom.Indices) == 0 {
 			continue
 		}
-		src := geom.Material.Texture
-		if src.shader != "" {
-			sampledLayout = g.procedural[src].target.BindGroupLayout()
-			continue
+		for _, binding := range []struct {
+			src    *Texture
+			repeat bool
+		}{{baseMap(geom.Material), geom.Material.Repeat}, {normalMap(geom.Material), geom.Material.NormalRepeat}} {
+			src := binding.src
+			if src.shader != "" {
+				sampledLayout = g.procedural[src].target.BindGroupLayout()
+				continue
+			}
+			key := textureKey{src, binding.repeat, f.anisotropy()}
+			used[key] = true
+			t := g.textures[key]
+			if t == nil {
+				// Color textures decode sRGB; normal maps keep linear vector data.
+				// Both use the software renderer's mip chain and hardware repeat.
+				var levels []image.Image
+				for _, level := range src.levels() {
+					levels = append(levels, level)
+				}
+				options := ntgpuimage.TextureOptions{SRGB: !src.data, Anisotropy: uint16(key.aniso)}
+				if key.repeat {
+					options.AddressModeU, options.AddressModeV = gputypes.AddressModeRepeat, gputypes.AddressModeRepeat
+				}
+				var err error
+				if t, err = g.r.UploadTextureLevels(levels, options); err != nil {
+					return err
+				}
+				g.textures[key] = t
+				g.textureUploads++
+			}
+			sampledLayout = t.BindGroupLayout()
 		}
-		key := textureKey{src, geom.Material.Repeat, f.anisotropy()}
-		used[key] = true
-		t := g.textures[key]
-		if t == nil {
-			// sRGB, so sampling filters in linear light, with the mip chain
-			// the software renderer samples too, and hardware repeat.
-			var levels []image.Image
-			for _, level := range src.levels() {
-				levels = append(levels, level)
-			}
-			options := ntgpuimage.TextureOptions{SRGB: true, Anisotropy: uint16(key.aniso)}
-			if key.repeat {
-				options.AddressModeU, options.AddressModeV = gputypes.AddressModeRepeat, gputypes.AddressModeRepeat
-			}
-			var err error
-			if t, err = g.r.UploadTextureLevels(levels, options); err != nil {
-				return err
-			}
-			g.textures[key] = t
-			g.textureUploads++
-		}
-		sampledLayout = t.BindGroupLayout()
 	}
 	for key, t := range g.textures {
 		if !used[key] {

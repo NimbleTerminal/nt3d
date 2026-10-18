@@ -12,6 +12,10 @@ move to Done with their commit; git history has the details.
 
 ## Rendering
 
+- [ ] **Normal-map follow-ups** — authored tangent frames and MikkTSpace-compatible
+  generation, separate UV sets and texture transforms. The initial renderer uses
+  a per-triangle basis from deformed positions and UVs.
+
 - [ ] **Particles**:
   - a cheap per-frame update of one geometry's points (no full
     validate, copy, and bounds pass per frame)
@@ -65,6 +69,10 @@ move to Done with their commit; git history has the details.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- [x] **Normal-map rendering** — linear-data textures, matching GPU/software
+  diffuse/specular/environment shading, morph/skin support through generated
+  triangle bases, glTF material mapping, and the lights gallery's `n` toggle.
 
 - [x] **Environment sky and diffuse IBL** — gradient or equirectangular image,
   shared GPU/software lighting, terminal sky fallback, and lighting gallery presets.

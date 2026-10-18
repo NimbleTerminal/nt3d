@@ -27,7 +27,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
 // position (whose distance from the camera, not affine, is found per
 // fragment) and normal, and the instance's specular strength and exponent
 // (its normal matrix's spare column).
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32> };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32 };
 // eyeDistance is a world point's distance from the camera, as fog measures
 // it: straight, or along the view for orthographic cameras.
 fn eyeDistance(world:vec3<f32>)->f32 {
@@ -73,10 +73,10 @@ fn lightVisibility(i:u32,p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
 }
 // illuminate is the light reaching a surface with unit normal n at p:
 // ambient, from ground to sky as n turns up, and each light's diffuse.
-fn illuminate(n:vec3<f32>,p:vec3<f32>)->vec3<f32> {
+fn illuminate(n:vec3<f32>,p:vec3<f32>,geometric:vec3<f32>)->vec3<f32> {
  var c=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
  c+=max(vec3<f32>(0.0),u.environment[0].rgb+u.environment[1].rgb*n.x+u.environment[2].rgb*n.y+u.environment[3].rgb*n.z);
- for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz))*lightVisibility(i,p,n,t.xyz));}
+ for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz))*lightVisibility(i,p,geometric,t.xyz));}
  return c;
 }
 // fogAmount is how far toward the fog's color a world point fades.
@@ -86,17 +86,18 @@ fn fogAmount(world:vec3<f32>)->f32 {
 }
 // finish lights a surface, adds each light's specular highlight, and fades
 // into the fog. Fragments without a normal are unlit.
-fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {
+fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {return finishNormal(o,rgb,o.normal);}
+fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
  var c=rgb;
  if dot(o.normal,o.normal)>0.0 {
-  let n=normalize(o.normal);
-  c*=illuminate(n,o.world);
+  let n=normalize(shadeNormal);
+  c*=illuminate(n,o.world,normalize(o.normal));
   if o.spec.x>0.0 {
    var view=-u.forward.xyz;
    if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
    for(var i=0u;i<u32(u.sky.w);i=i+1u) {
     let l=u.lights[i];let t=toward(l,o.world);let h=t.xyz+view;
-    if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {c+=l.b.rgb*(lightVisibility(i,o.world,n,t.xyz)*t.w*o.spec.x*pow(max(0.0,dot(n,normalize(h))),o.spec.y));}
+    if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {c+=l.b.rgb*(lightVisibility(i,o.world,normalize(o.normal),t.xyz)*t.w*o.spec.x*pow(max(0.0,dot(n,normalize(h))),o.spec.y));}
    }
   }
  }
@@ -219,7 +220,7 @@ fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
 fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
- var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;
+ var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;o.normalStrength=p.color.w;
  // Image textures repeat through their samplers; procedural ones (flagged in
  // the instance record) are drawn each frame, clamped, and wrapped by hand.
  o.repeat=select(0.0,1.0,(flags&1u)!=0u && instances[ii].normal[3].z>0.5);
@@ -258,22 +259,43 @@ fn mapColor(c:vec3<f32>)->vec3<f32> {
  let v=clamp(c,vec3<f32>(0.0),vec3<f32>(1.0));
  return select(1.055*pow(v,vec3<f32>(1.0/2.4))-0.055,v*12.92,v<=vec3<f32>(0.0031308));
 }
+@group(3) @binding(0) var normalTexture: texture_2d<f32>;
+@group(3) @binding(1) var normalSampler: sampler;
+fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec3<f32> {
+ if o.normalStrength==0.0 || dot(o.normal,o.normal)==0.0 {return o.normal;}
+ let det=gx.x*gy.y-gx.y*gy.x;
+ if abs(det)<=1e-8*max(max(abs(gx.x*gy.y),abs(gx.y*gy.x)),1e-30) {return o.normal;}
+ let n=normalize(o.normal);
+ let raw=(px*gy.y-py*gx.y)/det;
+ let b=(py*gx.x-px*gy.x)/det;
+ let projected=raw-n*dot(n,raw);
+ if dot(projected,projected)<1e-12 || dot(b,b)<1e-12 {return o.normal;}
+ let tangent=normalize(projected);var bitangent=cross(n,tangent);
+ if dot(bitangent,b)<0.0 {bitangent=-bitangent;}
+ let sample=textureSampleGrad(normalTexture,normalSampler,o.uv,gx,gy).rgb*2.0-1.0;
+ let result=tangent*sample.x*o.normalStrength+bitangent*sample.y*o.normalStrength+n*sample.z;
+ if dot(result,result)<1e-12 {return o.normal;}
+ return normalize(result);
+}
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
- return vec4<f32>(finish(o,mapColor(sampleMap(o.uv,gx,gy,o.repeat).rgb)*o.color.rgb),1.0);
+ let n=surfaceNormal(o,gx,gy,dpdx(o.world),dpdy(o.world));
+ return vec4<f32>(finishNormal(o,mapColor(sampleMap(o.uv,gx,gy,o.repeat).rgb)*o.color.rgb,n),1.0);
 }
 // Transparent materials blend by the texture's alpha times the vertex's.
 @fragment fn fs_blend_texture(o:Out)->@location(0) vec4<f32> {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
  let t=sampleMap(o.uv,gx,gy,o.repeat);
- return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),t.a*o.cut);
+ let n=surfaceNormal(o,gx,gy,dpdx(o.world),dpdy(o.world));
+ return vec4<f32>(finishNormal(o,mapColor(t.rgb)*o.color.rgb,n),t.a*o.cut);
 }
 // Cutout materials skip texels under their threshold, sampled full size so
 // distance does not average the cut away; what remains is opaque.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
+ let n=surfaceNormal(o,dpdx(o.uv),dpdy(o.uv),dpdx(o.world),dpdy(o.world));
  let t=sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat);
  if t.a<o.cut {discard;}
- return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),1.0);
+ return vec4<f32>(finishNormal(o,mapColor(t.rgb)*o.color.rgb,n),1.0);
 }
 
 @vertex fn vs_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return boxOutput(vi,ii);}

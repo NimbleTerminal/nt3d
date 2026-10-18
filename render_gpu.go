@@ -627,12 +627,14 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 // drawTextured draws a run's textured triangles with the pipeline set.
 func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
 	pass.SetBindGroup(0, d.set.binds[7], nil)
-	src := f.Geometry[d.index].Material.Texture
+	src := baseMap(f.Geometry[d.index].Material)
 	if t := g.procedural[src]; t != nil {
 		pass.SetBindGroup(2, t.target.BindGroup(), nil)
 	} else {
 		pass.SetBindGroup(2, g.textures[textureKey{src, f.Geometry[d.index].Material.Repeat, f.anisotropy()}].BindGroup(), nil)
 	}
+	m := f.Geometry[d.index].Material
+	pass.SetBindGroup(3, g.textures[textureKey{normalMap(m), m.NormalRepeat, f.anisotropy()}].BindGroup(), nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count})
 }
 

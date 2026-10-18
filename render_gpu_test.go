@@ -128,8 +128,8 @@ func TestGPUProceduralTexture(t *testing.T) {
 	for range 2 {
 		img, err := r.Render(f)
 		check(t, err)
-		if coloredPixels(img, green) < 100 || r.textureUploads != 0 {
-			t.Fatal("shader output missing or fallback uploaded")
+		if coloredPixels(img, green) < 100 || r.textureUploads != 1 {
+			t.Fatal("shader output missing or unexpected upload (one neutral normal binding expected)")
 		}
 	}
 	sw := NewSoftwareRenderer()

@@ -88,7 +88,8 @@ const GLTF nt3dmesh.Format = "gltf"
 // Options.MaxBytes. Files that require an extension nt3d cannot honor, such
 // as Draco or meshopt compression, are refused. Animation, skins and morphs
 // populate Model.Asset; AddTo instantiates its hierarchy and generic clips.
-// Cameras, normal and emissive maps, and texture transforms are
+// Normal maps use a per-triangle UV basis; authored tangents are approximated.
+// Cameras, emissive maps, and texture transforms are
 // passed over, with a warning for those that change how the model looks.
 func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if int64(len(data)) > o.ByteLimit() {
@@ -139,20 +140,21 @@ var supportedExtensions = []string{"KHR_materials_unlit"}
 var ignoredExtensions = []string{"KHR_lights_punctual", "KHR_materials_emissive_strength", "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat", "KHR_materials_sheen", "KHR_materials_volume", "KHR_materials_transmission", "KHR_materials_variants"}
 
 type gltfDecoder struct {
-	decodedLeft *int64
-	depth       int
-	capture     bool
-	sources     [][]vertexOrigin
-	doc         *gltf.Document
-	o           *nt3dmesh.Options
-	m           *nt3dmesh.Model
-	budget      budget
-	files       sideFiles
-	textures    map[int]*nt3d.Texture // By texture index; nil when it failed.
-	warned      map[string]bool
-	visits      int
-	points      int // Across the model, within nt3d.MaxPoints.
-	lines       int // Line ends across the model, within maxLineVertices.
+	decodedLeft    *int64
+	depth          int
+	capture        bool
+	sources        [][]vertexOrigin
+	doc            *gltf.Document
+	o              *nt3dmesh.Options
+	m              *nt3dmesh.Model
+	budget         budget
+	files          sideFiles
+	normalTextures map[int]*nt3d.Texture
+	textures       map[int]*nt3d.Texture // By texture index; nil when it failed.
+	warned         map[string]bool
+	visits         int
+	points         int // Across the model, within nt3d.MaxPoints.
+	lines          int // Line ends across the model, within maxLineVertices.
 }
 
 func (d *gltfDecoder) warn(format string, a ...any) {
@@ -389,18 +391,21 @@ func (d *gltfDecoder) accessor(index int, what string) (*gltf.Accessor, error) {
 
 // gltfLook is what a primitive's material says, as nt3d draws it.
 type gltfLook struct {
-	name     string
-	factor   [4]float64 // Linear base color and alpha.
-	texture  *nt3d.Texture
-	texCoord int
-	repeat   bool
-	alpha    gltf.AlphaMode
-	cutoff   float64
-	double   bool
-	unlit    bool
-	specular float32
-	shiny    float32
-	plain    bool // No material: Options.Color paints it.
+	normal         *nt3d.Texture
+	normalStrength float32
+	normalRepeat   bool
+	name           string
+	factor         [4]float64 // Linear base color and alpha.
+	texture        *nt3d.Texture
+	texCoord       int
+	repeat         bool
+	alpha          gltf.AlphaMode
+	cutoff         float64
+	double         bool
+	unlit          bool
+	specular       float32
+	shiny          float32
+	plain          bool // No material: Options.Color paints it.
 }
 
 func (d *gltfDecoder) look(index *int) gltfLook {
@@ -415,9 +420,6 @@ func (d *gltfDecoder) look(index *int) gltfLook {
 	m := d.doc.Materials[*index]
 	l.name, l.alpha, l.cutoff, l.double = m.Name, m.AlphaMode, m.AlphaCutoffOrDefault(), m.DoubleSided
 	_, l.unlit = m.Extensions["KHR_materials_unlit"]
-	if m.NormalTexture != nil {
-		d.warn("normal maps are not drawn")
-	}
 	if m.EmissiveTexture != nil || m.EmissiveFactor != ([3]float64{}) {
 		d.warn("emission is not drawn")
 	}
@@ -438,11 +440,33 @@ func (d *gltfDecoder) look(index *int) gltfLook {
 			}
 		}
 	}
+	if n := m.NormalTexture; n != nil && n.Index != nil && !l.unlit {
+		_, transformed := n.Extensions["KHR_texture_transform"]
+		if transformed {
+			d.warn("normal map texture transforms are unsupported; normal map skipped")
+		} else if l.texture != nil && n.TexCoord != l.texCoord {
+			d.warn("normal map uses different UV coordinates from base color; normal map skipped")
+		} else {
+			l.normal, l.normalRepeat = d.textureKind(*n.Index, true)
+			l.normalStrength = float32(n.ScaleOrDefault())
+			if l.texture == nil {
+				l.texCoord = n.TexCoord
+			}
+		}
+	}
 	return l
 }
 
 // texture loads a texture by index, once, and whether it repeats.
-func (d *gltfDecoder) texture(index int) (*nt3d.Texture, bool) {
+func (d *gltfDecoder) texture(index int) (*nt3d.Texture, bool) { return d.textureKind(index, false) }
+func (d *gltfDecoder) textureKind(index int, normal bool) (*nt3d.Texture, bool) {
+	cache := d.textures
+	if normal {
+		if d.normalTextures == nil {
+			d.normalTextures = map[int]*nt3d.Texture{}
+		}
+		cache = d.normalTextures
+	}
 	repeat := true
 	if index >= 0 && index < len(d.doc.Textures) {
 		if s := d.doc.Textures[index].Sampler; s != nil && *s >= 0 && *s < len(d.doc.Samplers) {
@@ -453,18 +477,18 @@ func (d *gltfDecoder) texture(index int) (*nt3d.Texture, bool) {
 			}
 		}
 	}
-	if t, ok := d.textures[index]; ok {
+	if t, ok := cache[index]; ok {
 		return t, repeat
 	}
-	t, err := d.loadTexture(index)
+	t, err := d.loadTextureKind(index, normal)
 	if err != nil {
 		d.warn("texture %d: %v", index, err)
 	}
-	d.textures[index] = t
+	cache[index] = t
 	return t, repeat
 }
 
-func (d *gltfDecoder) loadTexture(index int) (*nt3d.Texture, error) {
+func (d *gltfDecoder) loadTextureKind(index int, normal bool) (*nt3d.Texture, error) {
 	if index < 0 || index >= len(d.doc.Textures) {
 		return nil, errors.New("does not exist")
 	}
@@ -503,6 +527,9 @@ func (d *gltfDecoder) loadTexture(index int) (*nt3d.Texture, error) {
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
+	}
+	if normal {
+		return nt3d.NewNormalMap(img)
 	}
 	return nt3d.NewTexture(img)
 }
@@ -583,7 +610,12 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 			b.colors = nil
 		}
 	}
-	if l.texture != nil {
+	if l.normal != nil {
+		if _, ok := p.Attributes[gltf.TANGENT]; ok {
+			d.warn("authored tangents are replaced by a per-triangle UV basis for normal mapping")
+		}
+	}
+	if l.texture != nil || l.normal != nil {
 		a, ok, err := attr(fmt.Sprintf("TEXCOORD_%d", l.texCoord))
 		if err != nil {
 			return err
@@ -593,7 +625,7 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 		}
 		if !ok || err != nil || len(b.uv) != len(positions) {
 			d.warn("%s: its texture has no texture coordinates", name)
-			b.look.texture, b.uv = nil, nil
+			b.look.texture, b.look.normal, b.uv = nil, nil, nil
 		}
 		for _, uv := range b.uv {
 			if !validCoordinate(uv[0], uv[1]) {
@@ -682,7 +714,7 @@ func (b *gltfBuilder) color(i uint32) (color.RGBA, bool) {
 // nt3dMaterial is the primitive's nt3d material, or nil when plain will do.
 func (b *gltfBuilder) nt3dMaterial() *nt3d.Material {
 	l := b.look
-	m := nt3d.Material{Texture: l.texture, Repeat: l.repeat && l.texture != nil, Unlit: l.unlit, Specular: l.specular, Shininess: l.shiny}
+	m := nt3d.Material{NormalMap: l.normal, NormalStrength: l.normalStrength, NormalRepeat: l.normalRepeat, Texture: l.texture, Repeat: l.repeat && l.texture != nil, Unlit: l.unlit, Specular: l.specular, Shininess: l.shiny}
 	switch l.alpha {
 	case gltf.AlphaMask:
 		if l.texture != nil {

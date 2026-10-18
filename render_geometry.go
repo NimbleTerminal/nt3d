@@ -121,6 +121,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 	type groupKey struct {
 		geometry geometryKey
 		texture  *Texture
+		normal   *Texture
 	}
 	type group struct {
 		key     geometryKey
@@ -163,8 +164,9 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			continue
 		}
 		k := groupKey{geometry: keys[i]}
-		if textured(geom) {
-			k.texture = geom.Material.Texture
+		if mapped(geom) {
+			k.texture = baseMap(geom.Material)
+			k.normal = normalMap(geom.Material)
 		}
 		if grp := byKey[k]; grp != nil {
 			grp.members = append(grp.members, i)
@@ -253,8 +255,8 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 		if m := f.Geometry[i].Material; m != nil && m.Specular > 0 && !m.Unlit {
 			states[k].specular, states[k].shininess = m.Specular, m.shininess()
 		}
-		if textured(f.Geometry[i]) {
-			states[k].procedural = f.Geometry[i].Material.Texture.shader != ""
+		if mapped(f.Geometry[i]) {
+			states[k].procedural = baseMap(f.Geometry[i].Material).shader != ""
 		}
 	}
 	if slices.Equal(states, s.last) {
@@ -357,7 +359,7 @@ func geometryData(geom Geometry) (data [9][]byte) {
 	const record = 12 * 4
 	var records [9]int
 	records[0], records[2], records[3], records[6] = len(geom.Points), len(geom.Boxes), len(geom.Lines), len(geom.Arrows)
-	if textured(geom) {
+	if mapped(geom) {
 		records[7] = len(geom.Indices)
 	} else {
 		records[1] = len(geom.Indices)
@@ -403,7 +405,7 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			v.Normal.Y = 0
 			v.Normal.Z = 0
 		}
-		if textured(geom) {
+		if mapped(geom) {
 			// The texture gives color, so the color slot carries the cutout
 			// threshold (or a transparent vertex's opacity), flags (1 repeat,
 			// 2 edge-on, 4 tint), and, for a tint, the vertex color as a
@@ -415,15 +417,19 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			if m.Repeat {
 				flags |= 1
 			}
-			if m.EdgeOn {
+			if m.EdgeOn && m.Texture != nil {
 				flags |= 2
 			}
-			if m.Tint {
+			if m.Tint || m.Texture == nil {
 				flags |= 4
 			}
 			rgb := float32(int(v.Color.R)<<16 | int(v.Color.G)<<8 | int(v.Color.B))
+			strength := float32(0)
+			if m.NormalMap != nil {
+				strength = m.NormalStrength
+			}
 			uv := geom.UV[index]
-			data[7] = appendFloats(data[7], v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, 0)
+			data[7] = appendFloats(data[7], v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, strength)
 		} else {
 			vertex(1, v, opacity)
 		}

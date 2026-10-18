@@ -55,16 +55,22 @@ type UV struct{ U, V float32 }
 // stay round on coarse meshes. It needs the frame's camera (Frame.Eye),
 // which Scene.Frame supplies; unlit materials and wireframe have none.
 type Material struct {
-	Texture     *Texture
-	Unlit       bool
-	Cutout      bool
-	Threshold   float32
-	Repeat      bool
-	Tint        bool
-	EdgeOn      bool
-	Transparent bool
-	Specular    float32
-	Shininess   float32
+	// NormalMap is created with NewNormalMap and uses Geometry.UV. NormalStrength
+	// scales tangent X/Y; set 1 for normal detail, 0 to disable. NormalRepeat
+	// controls its sampler independently of the base-color texture.
+	NormalMap      *Texture
+	NormalStrength float32
+	NormalRepeat   bool
+	Texture        *Texture
+	Unlit          bool
+	Cutout         bool
+	Threshold      float32
+	Repeat         bool
+	Tint           bool
+	EdgeOn         bool
+	Transparent    bool
+	Specular       float32
+	Shininess      float32
 }
 
 // transparent reports whether a geometry's triangles are blended.
@@ -101,6 +107,7 @@ func (m *Material) threshold() float32 {
 // (non-premultiplied) alpha that only Cutout materials use. The zero value is invalid.
 // GPU resources are owned by each renderer, not by Texture.
 type Texture struct {
+	data          bool // Linear vector data, not sRGB color.
 	width, height int
 	pixels        []byte
 	shader        string
@@ -120,7 +127,7 @@ func (t *Texture) levels() []*image.NRGBA {
 		if t.shader != "" {
 			return
 		}
-		chain, err := ntgpuimage.MipChain(base, ntgpuimage.MipOptions{SRGB: true, AlphaWeighted: true})
+		chain, err := ntgpuimage.MipChain(base, ntgpuimage.MipOptions{SRGB: !t.data, AlphaWeighted: !t.data})
 		if err != nil {
 			return
 		}
@@ -140,9 +147,9 @@ func (t *Texture) sampleLinear(uv UV, repeat bool, lod float32) [4]float32 {
 	levels := t.levels()
 	lod = max(0, min(lod, float32(len(levels)-1)))
 	l0 := int(lod)
-	c := sampleLevel(levels[l0], uv, repeat)
+	c := sampleLevelData(levels[l0], uv, repeat, t.data)
 	if f := lod - float32(l0); f > 0 && l0+1 < len(levels) {
-		d := sampleLevel(levels[l0+1], uv, repeat)
+		d := sampleLevelData(levels[l0+1], uv, repeat, t.data)
 		for i := range c {
 			c[i] += (d[i] - c[i]) * f
 		}
@@ -195,6 +202,9 @@ func (t *Texture) sampleFootprint(uv, dx, dy UV, repeat bool, aniso int) [4]floa
 
 // sampleLevel filters one level bilinearly in linear light.
 func sampleLevel(img *image.NRGBA, uv UV, repeat bool) [4]float32 {
+	return sampleLevelData(img, uv, repeat, false)
+}
+func sampleLevelData(img *image.NRGBA, uv UV, repeat, data bool) [4]float32 {
 	w, h := img.Rect.Dx(), img.Rect.Dy()
 	u, v := float64(uv.U), float64(uv.V)
 	if !repeat {
@@ -214,9 +224,13 @@ func sampleLevel(img *image.NRGBA, uv UV, repeat bool) [4]float32 {
 	for k, p := range [4][2]int{{x0, y0}, {x0 + 1, y0}, {x0, y0 + 1}, {x0 + 1, y0 + 1}} {
 		weight := [4]float32{(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy}[k]
 		px := img.Pix[at(p[1], h)*img.Stride+at(p[0], w)*4:]
-		c[0] += weight * srgbDecode[px[0]]
-		c[1] += weight * srgbDecode[px[1]]
-		c[2] += weight * srgbDecode[px[2]]
+		for j := range 3 {
+			v := srgbDecode[px[j]]
+			if data {
+				v = float32(px[j]) / 255
+			}
+			c[j] += weight * v
+		}
 		c[3] += weight * float32(px[3]) / 255
 	}
 	return c

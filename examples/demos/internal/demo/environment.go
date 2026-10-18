@@ -31,3 +31,19 @@ var imageEnvironment = sync.OnceValue(func() *nt3d.Environment {
 	e, _ := nt3d.NewEnvironment(img)
 	return e
 })
+
+// Encoded tangent vectors for a periodic relief pattern, with no image assets.
+var reliefNormalMap = sync.OnceValue(func() *nt3d.Texture {
+	img := image.NewNRGBA(image.Rect(0, 0, 128, 128))
+	for y := 0; y < 128; y++ {
+		for x := 0; x < 128; x++ {
+			u, v := (float64(x)+.5)/128*8*math.Pi, (float64(y)+.5)/128*8*math.Pi
+			nx, ny := -.65*math.Cos(u)*math.Sin(v), -.65*math.Sin(u)*math.Cos(v)
+			length := math.Sqrt(nx*nx + ny*ny + 1)
+			enc := func(v float64) uint8 { return uint8((v*.5+.5)*255 + .5) }
+			img.SetNRGBA(x, y, color.NRGBA{enc(nx / length), enc(ny / length), enc(1 / length), 255})
+		}
+	}
+	tex, _ := nt3d.NewNormalMap(img)
+	return tex
+})

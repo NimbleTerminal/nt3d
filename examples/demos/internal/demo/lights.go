@@ -15,6 +15,7 @@ import (
 func LightsMain() { mainDemo(true, sceneLights) }
 
 type lightScene struct {
+	normal    bool
 	shadows   shadowMode
 	preset    int  // Index into lightPresets.
 	ranged    bool // Point lights fade to nothing at their range, rather than with distance alone.
@@ -103,7 +104,7 @@ var lightShapes = []struct {
 }
 
 func (d *demo) setupLights() error {
-	d.lights = &lightScene{ranged: true}
+	d.lights = &lightScene{ranged: true, normal: true}
 	// The floor is two triangles: a point light's bright spot on it is
 	// found per pixel, where no vertex is.
 	const s = 3
@@ -133,7 +134,12 @@ func (d *demo) setupLights() error {
 func (d *demo) buildLightShapes() error {
 	m := &nt3d.Material{Specular: .5, Shininess: 48}
 	if d.lights.dull {
-		m = nil
+		m = &nt3d.Material{}
+	}
+	if d.lights.normal {
+		m.NormalMap = reliefNormalMap()
+		m.NormalStrength = .65
+		m.NormalRepeat = true
 	}
 	for _, shape := range lightShapes {
 		g, err := shape.build(m)
@@ -273,6 +279,11 @@ func (d *demo) lightsView(content string) string {
 	if d.lights.dull {
 		shine = "dull"
 	}
-	return fmt.Sprintf("nt3d lights · l preset · f falloff · e highlights · s shadows · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
-		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, shine+" · "+d.lights.shadows.String(), d.status)
+	return fmt.Sprintf("nt3d lights · l preset · f falloff · e highlights · n normal map · s shadows · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
+		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, fmt.Sprintf("%s · normal map %t · %s", shine, d.lights.normal, d.lights.shadows.String()), d.status)
+}
+
+func (d *demo) toggleNormalMap() error {
+	d.lights.normal = !d.lights.normal
+	return d.buildLightShapes()
 }

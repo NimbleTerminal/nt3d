@@ -178,7 +178,8 @@ func (l *rigLight) toward(p nt3dmath.Vec3) (nt3dmath.Vec3, float32) {
 // the surface at world point p with unit world normal n: ambient, from
 // ground to sky as n turns up, plus each light's diffuse light. It works
 // in place, as it runs for every lit pixel.
-func (r *lightRig) light(rgb *[3]float32, n, p nt3dmath.Vec3) {
+func (r *lightRig) light(rgb *[3]float32, n, p nt3dmath.Vec3) { r.lightNormal(rgb, n, p, n) }
+func (r *lightRig) lightNormal(rgb *[3]float32, n, p, geometric nt3dmath.Vec3) {
 	t := n.Z*.5 + .5
 	c0, c1, c2 := r.ground[0]+(r.sky[0]-r.ground[0])*t, r.ground[1]+(r.sky[1]-r.ground[1])*t, r.ground[2]+(r.sky[2]-r.ground[2])*t
 	c0 += max(0, r.environment[0][0]+r.environment[1][0]*n.X+r.environment[2][0]*n.Y+r.environment[3][0]*n.Z)
@@ -194,7 +195,7 @@ func (r *lightRig) light(rgb *[3]float32, n, p nt3dmath.Vec3) {
 			s = n.Dot(dir) * fade
 		}
 		if i == r.shadowLight && r.shadow != nil {
-			s *= r.shadow.visibility(p, n, l.v)
+			s *= r.shadow.visibility(p, geometric, l.v)
 		}
 		if s > 0 {
 			c0 += l.color[0] * s
@@ -213,6 +214,9 @@ func (r *lightRig) light(rgb *[3]float32, n, p nt3dmath.Vec3) {
 // normal and the half vector raised to Shininess, tinted by the light and
 // faded as its diffuse light is. Callers check the material shines.
 func (r *lightRig) highlight(m *Material, n, p, view nt3dmath.Vec3) [3]float32 {
+	return r.highlightNormal(m, n, p, view, n)
+}
+func (r *lightRig) highlightNormal(m *Material, n, p, view, geometric nt3dmath.Vec3) [3]float32 {
 	var c [3]float32
 	for i := range r.lights {
 		l := &r.lights[i]
@@ -226,7 +230,7 @@ func (r *lightRig) highlight(m *Material, n, p, view nt3dmath.Vec3) [3]float32 {
 		}
 		s := m.Specular * float32(math.Pow(float64(max(0, n.Dot(h.Normalize()))), float64(m.shininess()))) * fade
 		if i == r.shadowLight && r.shadow != nil {
-			s *= r.shadow.visibility(p, n, dir)
+			s *= r.shadow.visibility(p, geometric, dir)
 		}
 		for k := range c {
 			c[k] += l.color[k] * s

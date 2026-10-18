@@ -84,7 +84,7 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 			return err
 		}
 		slot := 1
-		if textured(geom) {
+		if mapped(geom) {
 			slot = 7
 		}
 		if node.skin == nil {
