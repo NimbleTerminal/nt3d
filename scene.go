@@ -4,6 +4,7 @@ package nt3d
 import (
 	"errors"
 	"fmt"
+	"math"
 	"nimbleterminal.dev/nt3d/math"
 	"slices"
 	"sync/atomic"
@@ -355,7 +356,26 @@ func (s *Scene) Bounds() (b nt3dmath.AABB) {
 		if n.geometry == nil || !s.visible(id) {
 			continue
 		}
-		box := n.geometry.Bounds.Transformed(s.world(id))
+		world := s.world(id)
+		box := n.geometry.Bounds.Transformed(world)
+		if style := n.geometry.Billboard; style != nil {
+			anchor := world.Point(nt3dmath.Vec3{})
+			if style.Pixels {
+				// Pixel extents have no camera-independent world size.
+				box = nt3dmath.AABB{}
+				box.Include(anchor)
+			} else if !style.Fixed {
+				// A camera-facing quad can turn in every direction about its anchor.
+				radius := float32(0)
+				for _, v := range n.geometry.Vertices {
+					radius = max(radius, float32(math.Sqrt(float64(v.Position.Dot(v.Position)))))
+				}
+				extent := nt3dmath.Vec3{X: radius, Y: radius, Z: radius}
+				box = nt3dmath.AABB{}
+				box.Include(anchor.Sub(extent))
+				box.Include(anchor.Add(extent))
+			}
+		}
 		if box.IsValid() {
 			b.Include(box.Min)
 			b.Include(box.Max)

@@ -152,7 +152,13 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 			shared = n.shared.id
 		}
 		f.Shared = append(f.Shared, shared)
-		f.Instances = append(f.Instances, Instance{id, n.Name, s.world(id), s.visible(id)})
+		world, visible := s.world(id), s.visible(id)
+		if b := n.geometry.Billboard; b != nil {
+			var inDepth bool
+			world, inDepth = billboardWorld(f, camera, world, b)
+			visible = visible && inDepth
+		}
+		f.Instances = append(f.Instances, Instance{id, n.Name, world, visible})
 	}
 	return f, nil
 }

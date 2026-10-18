@@ -135,7 +135,10 @@ func (d *demo) terrain() error {
 	if err != nil {
 		return err
 	}
-	return d.scene.Reparent(id, d.group)
+	if err := d.scene.Reparent(id, d.group); err != nil {
+		return err
+	}
+	return d.terrainLabels(id)
 }
 func (d *demo) Init() tea.Cmd {
 	d.lastPhase = time.Now()

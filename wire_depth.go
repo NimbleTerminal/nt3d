@@ -51,7 +51,7 @@ func newWireDepth(f Frame, cols, rows int) *wireDepth {
 		d.depth[i], d.owner[i] = inf, -1
 	}
 	for gi, g := range f.Geometry {
-		if !d.drawn[gi] || edgeOn(g) {
+		if !d.drawn[gi] || edgeOn(g) || g.Billboard != nil && (g.Billboard.Text != "" || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue // Edge-on geometry depends on a view wireframe does not draw.
 		}
 		inst := instance(f, gi)

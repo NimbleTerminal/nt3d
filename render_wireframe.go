@@ -3,7 +3,9 @@
 package nt3d
 
 import (
+	"github.com/rivo/uniseg"
 	"image/color"
+	"strings"
 
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/ntcanvas"
@@ -65,7 +67,7 @@ func wireRender(f Frame, cols, rows int) string {
 		drawLine(cellFrame, f.DynamicLines[i].Position, f.DynamicLines[i+1].Position, f.DynamicLines[i].Color, false)
 	}
 	for gi, g := range f.Geometry {
-		if !depth.drawn[gi] || edgeOn(g) {
+		if !depth.drawn[gi] || edgeOn(g) || g.Billboard != nil && (g.Billboard.Text != "" || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue
 		}
 		inst := instance(f, gi)
@@ -137,6 +139,51 @@ func wireRender(f Frame, cols, rows int) string {
 				x, y := s.b.x-s.dx*hl, s.b.y-s.dy*hl
 				draw(s.b.x, s.b.y, x-s.dy*hw, y+s.dx*hw)
 				draw(s.b.x, s.b.y, x+s.dy*hw, y-s.dx*hw)
+			}
+		}
+	}
+	// Text uses terminal graphemes, depth-tested per occupied cell. Its own
+	// textured quad is omitted from wire depth: transparent glyph gaps must
+	// not become a solid rectangular occluder in this fallback.
+	for gi, g := range f.Geometry {
+		b := g.Billboard
+		if b == nil || b.Text == "" || !depth.drawn[gi] || len(g.Vertices) == 0 || g.Vertices[0].Color.A == 0 {
+			continue
+		}
+		m := f.Matrix.Mul(instance(f, gi).World)
+		local := f
+		local.Matrix = m
+		if len(g.Indices) >= 3 && !frontFacing(local, g.Vertices[g.Indices[0]].Position, g.Vertices[g.Indices[1]].Position, g.Vertices[g.Indices[2]].Position) {
+			continue
+		}
+		x, y, z, w := m.Transform(nt3dmath.Vec3{})
+		if w <= 0 || z < 0 || z > w {
+			continue
+		}
+		cx, cy := int((x/w+1)*float32(cols)/2), int((1-y/w)*float32(rows)/2)
+		at := z / w
+		if depth.projective {
+			at = w
+		}
+		lines := strings.Split(b.Text, "\n")
+		for row, line := range lines {
+			xx, yy := cx-uniseg.StringWidth(line)/2, cy-len(lines)/2+row
+			clusters := uniseg.NewGraphemes(line)
+			for clusters.Next() {
+				width := clusters.Width()
+				visible := yy >= 0 && yy < rows && xx >= 0 && xx+width <= cols
+				for dx := 0; dx < width; dx++ {
+					if depth.hidden(xx+dx, yy, at) {
+						visible = false
+					}
+				}
+				if visible {
+					c.SetGrapheme(ntcanvas.Point{X: xx, Y: yy}, clusters.Str(), styleFor(b.Color))
+					for dx := 0; dx < width; dx++ {
+						depth.far[yy*cols+xx+dx] = at
+					}
+				}
+				xx += width
 			}
 		}
 	}

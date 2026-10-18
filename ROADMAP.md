@@ -24,8 +24,6 @@ move to Done with their commit; git history has the details.
 - [ ] **Mipmap follow-ups**: procedural textures (needs `ntgpuimage`
   render-target mips); coverage-preserving alpha mips for cutouts (fur and
   leaves sample full size today).
-- [ ] **World-anchored labels and billboards** on every renderer; `CellText`
-  is wireframe-only.
 - [ ] **Outline or toon edges** on the GPU and software renderers, for
   readability at terminal sizes.
 - [ ] **Point-light shadows**.
@@ -67,6 +65,10 @@ move to Done with their commit; git history has the details.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- [x] **World-anchored labels and billboards** — textured, depth-tested scene
+  geometry with pixel/world sizes, fixed or camera-facing orientation, shared
+  instances, picking, and terminal text fallback. Terrain gallery annotations.
 
 Recent milestones, newest first:
 

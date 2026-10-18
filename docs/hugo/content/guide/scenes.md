@@ -62,6 +62,12 @@ Shared geometry can't change, and holds only triangles; points, boxes, lines, an
 
 The [forest demo](../demos/#forest) grows thousands of trees from three shared meshes, and switches them to copies so you can compare.
 
+## Labels
+
+[`SetLabel` and `NewBillboard`](../labels/) add world-anchored text and images.
+They use ordinary geometry nodes, so parenting, visibility, shared instances,
+and picking work the same way.
+
 ## Threads
 
 Edit the scene and make frames from one goroutine. Rendering a frame can happen on another, since a frame is a read-only snapshot of the scene.
