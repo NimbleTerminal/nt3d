@@ -1,0 +1,4 @@
+baseline.hashes: 648 frames; SHA-256 d76ae417c8c53f1d23af58ecd8119a4d63f27c2a35868bff542f0e879fc4851c
+sampling.hashes: 648 frames; SHA-256 d76ae417c8c53f1d23af58ecd8119a4d63f27c2a35868bff542f0e879fc4851c
+final.hashes: 648 frames; SHA-256 d76ae417c8c53f1d23af58ecd8119a4d63f27c2a35868bff542f0e879fc4851c
+All three files are byte-identical.

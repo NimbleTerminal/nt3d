@@ -1,0 +1,33 @@
+package main
+
+import (
+ "crypto/sha256"
+ "fmt"
+ "image"
+ "image/draw"
+ "os"
+ "strings"
+ "testing"
+ chart "github.com/NimbleMarkets/ntcharts3d"
+)
+
+// Exact consumer path, three complete rotations per filtering mode.
+func TestConsumerPixelOracle(t *testing.T) {
+ var hashes strings.Builder
+ for _,anisotropy:=range []int{1,4,16} {
+  img:=benchmarkMapImage(512)
+  texture,err:=chart.NewTexture(img);if err!=nil {t.Fatal(err)}
+  c:=chart.New(80,21,chart.WithRenderMode(chart.Software),chart.WithAnisotropy(anisotropy),chart.WithAxes(chart.Axes{X:chart.Axis{Hidden:true},Y:chart.Axis{Hidden:true},Z:chart.Axis{Hidden:true}}))
+  c.SetColorLegendVisible(false);c.SetCamera(initialCamera());c.SetSurface("map",mapSurface(texture,img.Bounds()))
+  if c.Err()!=nil {t.Fatal(c.Err())}
+  if _,_,err:=c.Snapshot(640,320);err!=nil {t.Fatal(err)}
+  for i:=0;i<216;i++ {
+   camera:=initialCamera();camera.Beta+=float64(i%72)*5;c.SetCamera(camera)
+   frame,_,err:=c.Snapshot(640,320);if err!=nil {t.Fatal(err)}
+   pixels:=image.NewRGBA(frame.Bounds());draw.Draw(pixels,pixels.Bounds(),frame,frame.Bounds().Min,draw.Src)
+   fmt.Fprintf(&hashes,"%d %d %x\n",anisotropy,i,sha256.Sum256(pixels.Pix))
+  }
+  c.Close()
+ }
+ if err:=os.WriteFile(os.Getenv("NT3D_PIXEL_HASHES"),[]byte(hashes.String()),0600);err!=nil {t.Fatal(err)}
+}

@@ -1,0 +1,33 @@
+File: mapview3d.test
+Type: cpu
+Time: 2026-10-18 13:30:41 EDT
+Duration: 2.82s, Total samples = 2.13s (75.42%)
+Showing nodes accounting for 2.02s, 94.84% of 2.13s total
+Dropped 45 nodes (cum <= 0.01s)
+Showing top 25 nodes out of 74
+      flat  flat%   sum%        cum   cum%
+     0.51s 23.94% 23.94%      0.52s 24.41%  nimbleterminal.dev/nt3d.sampleLevelData
+     0.25s 11.74% 35.68%      1.70s 79.81%  nimbleterminal.dev/nt3d.softwareDraw.func9
+     0.21s  9.86% 45.54%      0.25s 11.74%  math.log
+     0.11s  5.16% 50.70%      0.90s 42.25%  nimbleterminal.dev/nt3d.(*Texture).sampleFootprint
+     0.11s  5.16% 55.87%      0.11s  5.16%  runtime.madvise
+     0.10s  4.69% 60.56%      0.10s  4.69%  runtime.pthread_cond_signal
+     0.09s  4.23% 64.79%      0.67s 31.46%  nimbleterminal.dev/nt3d.(*Texture).sampleLinear
+     0.09s  4.23% 69.01%      0.09s  4.23%  runtime.kevent
+     0.08s  3.76% 72.77%      0.08s  3.76%  nimbleterminal.dev/nt3d.softwareDraw.func1
+     0.06s  2.82% 75.59%      0.06s  2.82%  math.archExp
+     0.06s  2.82% 78.40%      0.34s 15.96%  math.pow
+     0.05s  2.35% 80.75%      0.05s  2.35%  math.IsInf (inline)
+     0.05s  2.35% 83.10%      0.05s  2.35%  nimbleterminal.dev/nt3d.uvAt
+     0.04s  1.88% 84.98%      0.06s  2.82%  nimbleterminal.dev/nt3d.(*Texture).levels
+     0.03s  1.41% 86.38%      0.09s  4.23%  math.log2
+     0.03s  1.41% 87.79%      0.03s  1.41%  nimbleterminal.dev/nt3d.edge (inline)
+     0.03s  1.41% 89.20%      0.03s  1.41%  runtime.pthread_cond_timedwait_relative_np
+     0.02s  0.94% 90.14%      0.02s  0.94%  math.IsNaN (inline)
+     0.02s  0.94% 91.08%      0.02s  0.94%  math.ldexp
+     0.02s  0.94% 92.02%      0.36s 16.90%  nimbleterminal.dev/nt3d.softwareDraw.func9.4 (inline)
+     0.02s  0.94% 92.96%      0.02s  0.94%  runtime.pthread_cond_wait
+     0.01s  0.47% 93.43%      0.03s  1.41%  math.hypot
+     0.01s  0.47% 93.90%      1.73s 81.22%  nimbleterminal.dev/nt3d.softwareDraw
+     0.01s  0.47% 94.37%      0.11s  5.16%  runtime.semawakeup
+     0.01s  0.47% 94.84%      0.02s  0.94%  sync.(*Once).Do (inline)

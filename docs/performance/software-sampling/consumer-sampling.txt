@@ -1,0 +1,27 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/NimbleMarkets/ntcharts-osm/examples/mapview3d
+cpu: Apple M5 Max
+BenchmarkMap3DCamera/320x160/aniso1-18 	     144	   1562642 ns/op	  410082 B/op	       8 allocs/op
+BenchmarkMap3DCamera/320x160/aniso1-18 	     144	   1547056 ns/op	  410081 B/op	       8 allocs/op
+BenchmarkMap3DCamera/320x160/aniso1-18 	     144	   1531385 ns/op	  410082 B/op	       8 allocs/op
+BenchmarkMap3DCamera/320x160/aniso4-18 	     144	   1909532 ns/op	  410083 B/op	       8 allocs/op
+BenchmarkMap3DCamera/320x160/aniso4-18 	     144	   1910877 ns/op	  410081 B/op	       8 allocs/op
+BenchmarkMap3DCamera/320x160/aniso4-18 	     144	   1903519 ns/op	  410081 B/op	       8 allocs/op
+BenchmarkMap3DCamera/640x320/aniso1-18 	     144	   5986130 ns/op	 1638885 B/op	       8 allocs/op
+BenchmarkMap3DCamera/640x320/aniso1-18 	     144	   6139789 ns/op	 1638887 B/op	       8 allocs/op
+BenchmarkMap3DCamera/640x320/aniso1-18 	     144	   6274193 ns/op	 1638884 B/op	       8 allocs/op
+BenchmarkMap3DCamera/640x320/aniso4-18 	     144	   7795013 ns/op	 1638924 B/op	       8 allocs/op
+BenchmarkMap3DCamera/640x320/aniso4-18 	     144	   7781660 ns/op	 1638886 B/op	       8 allocs/op
+BenchmarkMap3DCamera/640x320/aniso4-18 	     144	   7812241 ns/op	 1638885 B/op	       8 allocs/op
+BenchmarkMap3DCamera/1280x640/aniso1-18         	     144	  24058648 ns/op	 6554100 B/op	       8 allocs/op
+BenchmarkMap3DCamera/1280x640/aniso1-18         	     144	  24017706 ns/op	 6554090 B/op	       8 allocs/op
+BenchmarkMap3DCamera/1280x640/aniso1-18         	     144	  24119628 ns/op	 6554089 B/op	       8 allocs/op
+BenchmarkMap3DCamera/1280x640/aniso4-18         	     144	  24673970 ns/op	 6554099 B/op	       8 allocs/op
+BenchmarkMap3DCamera/1280x640/aniso4-18         	     144	  24614799 ns/op	 6554089 B/op	       8 allocs/op
+BenchmarkMap3DCamera/1280x640/aniso4-18         	     144	  24510709 ns/op	 6554092 B/op	       8 allocs/op
+BenchmarkMap3DTextureReplacement-18             	     144	  13715168 ns/op	 4087290 B/op	      39 allocs/op
+BenchmarkMap3DTextureReplacement-18             	     144	  13710706 ns/op	 4087293 B/op	      39 allocs/op
+BenchmarkMap3DTextureReplacement-18             	     144	  13729293 ns/op	 4087295 B/op	      39 allocs/op
+PASS
+ok  	github.com/NimbleMarkets/ntcharts-osm/examples/mapview3d	35.588s

@@ -1,0 +1,12 @@
+goos: darwin
+goarch: arm64
+pkg: nimbleterminal.dev/nt3d
+cpu: Apple M5 Max
+BenchmarkOpaqueEncoding/reference-18         	 1000000	        18.17 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOpaqueEncoding/reference-18         	 1000000	        15.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOpaqueEncoding/reference-18         	 1000000	        14.17 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOpaqueEncoding/corrected_lookup-18  	 1000000	         1.228 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOpaqueEncoding/corrected_lookup-18  	 1000000	         1.229 ns/op	       0 B/op	       0 allocs/op
+BenchmarkOpaqueEncoding/corrected_lookup-18  	 1000000	         1.229 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	nimbleterminal.dev/nt3d	0.145s

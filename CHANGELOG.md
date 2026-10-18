@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Speed up software texture sampling while preserving interpolation results.
+- Avoid expensive color conversion for eligible unlit textured pixels, with byte-identical output.
+
 ## v0.2.0
 
 - Add reusable animation clips, playback and blending, morph targets, and CPU/GPU skinning, with glTF support. [Animation demo](https://nimbleterminal.github.io/nt3d/animation/).

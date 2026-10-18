@@ -1,0 +1,42 @@
+goos: darwin
+goarch: arm64
+pkg: nimbleterminal.dev/nt3d
+cpu: Apple M5 Max
+BenchmarkSampling/data=false/repeat=false/aniso1-18         	 1000000	        63.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=false/aniso1-18         	 1000000	        55.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=false/aniso1-18         	 1000000	        54.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=false/aniso4-18         	 1000000	       186.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=false/aniso4-18         	 1000000	       192.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=false/aniso4-18         	 1000000	       185.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=false/aniso16-18        	 1000000	       384.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=false/aniso16-18        	 1000000	       386.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=false/aniso16-18        	 1000000	       387.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso1-18          	 1000000	        57.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso1-18          	 1000000	        57.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso1-18          	 1000000	        57.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso4-18          	 1000000	       209.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso4-18          	 1000000	       208.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso4-18          	 1000000	       208.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso16-18         	 1000000	       453.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso16-18         	 1000000	       440.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=false/repeat=true/aniso16-18         	 1000000	       448.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso1-18          	 1000000	        54.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso1-18          	 1000000	        54.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso1-18          	 1000000	        54.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso4-18          	 1000000	       196.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso4-18          	 1000000	       197.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso4-18          	 1000000	       197.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso16-18         	 1000000	       424.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso16-18         	 1000000	       419.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=false/aniso16-18         	 1000000	       425.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso1-18           	 1000000	        60.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso1-18           	 1000000	        63.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso1-18           	 1000000	        63.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso4-18           	 1000000	       233.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso4-18           	 1000000	       231.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso4-18           	 1000000	       232.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso16-18          	 1000000	       502.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso16-18          	 1000000	       498.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSampling/data=true/repeat=true/aniso16-18          	 1000000	       499.4 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	nimbleterminal.dev/nt3d	9.150s

@@ -1,0 +1,33 @@
+File: mapview3d.test
+Type: cpu
+Time: 2026-10-18 13:22:08 EDT
+Duration: 4.04s, Total samples = 3.30s (81.76%)
+Showing nodes accounting for 3.26s, 98.79% of 3.30s total
+Dropped 5 nodes (cum <= 0.02s)
+Showing top 25 nodes out of 66
+      flat  flat%   sum%        cum   cum%
+     1.12s 33.94% 33.94%      1.28s 38.79%  nimbleterminal.dev/nt3d.sampleLevelData
+     0.38s 11.52% 45.45%      2.92s 88.48%  nimbleterminal.dev/nt3d.softwareDraw.func9
+     0.27s  8.18% 53.64%      0.27s  8.18%  runtime.madvise
+     0.19s  5.76% 59.39%      0.30s  9.09%  math.log
+     0.16s  4.85% 64.24%      1.66s 50.30%  nimbleterminal.dev/nt3d.(*Texture).sampleFootprint
+     0.16s  4.85% 69.09%      0.16s  4.85%  nimbleterminal.dev/nt3d.sampleLevelData.func1 (inline)
+     0.12s  3.64% 72.73%      0.55s 16.67%  math.pow
+     0.12s  3.64% 76.36%      0.12s  3.64%  nimbleterminal.dev/nt3d.softwareDraw.func1
+     0.10s  3.03% 79.39%      1.43s 43.33%  nimbleterminal.dev/nt3d.(*Texture).sampleLinear
+     0.08s  2.42% 81.82%      0.08s  2.42%  math.archExp
+     0.07s  2.12% 83.94%      0.07s  2.12%  nimbleterminal.dev/nt3d.uvAt
+     0.07s  2.12% 86.06%      0.07s  2.12%  runtime.pthread_cond_signal
+     0.06s  1.82% 87.88%      0.06s  1.82%  math.Float64frombits (inline)
+     0.06s  1.82% 89.70%      0.06s  1.82%  math.normalize (inline)
+     0.05s  1.52% 91.21%      0.05s  1.52%  math.IsInf (inline)
+     0.05s  1.52% 92.73%      0.05s  1.52%  nimbleterminal.dev/nt3d.edge (inline)
+     0.04s  1.21% 93.94%      0.04s  1.21%  nimbleterminal.dev/nt3d.softwareDraw.func9.3 (inline)
+     0.03s  0.91% 94.85%      0.03s  0.91%  math.IsNaN (inline)
+     0.02s  0.61% 95.45%      2.94s 89.09%  nimbleterminal.dev/nt3d.softwareDraw
+     0.02s  0.61% 96.06%      0.02s  0.61%  nimbleterminal.dev/nt3d.softwareDraw.func2
+     0.02s  0.61% 96.67%      0.57s 17.27%  nimbleterminal.dev/nt3d.softwareDraw.func9.4 (inline)
+     0.02s  0.61% 97.27%      0.02s  0.61%  nimbleterminal.dev/ntgpuimage.downsampleMip
+     0.02s  0.61% 97.88%      0.02s  0.61%  runtime.kevent
+     0.02s  0.61% 98.48%      0.04s  1.21%  sync.(*Once).Do (inline)
+     0.01s   0.3% 98.79%      0.09s  2.73%  math.Exp (inline)
