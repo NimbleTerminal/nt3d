@@ -44,7 +44,7 @@ func (k keys) FullHelp() [][]key.Binding {
 func (d *demo) sceneKeys() (string, keys) {
 	switch {
 	case d.animatedSamples != nil:
-		return "animate", keys{[]key.Binding{bind("[", "[", "previous model"), bind("]", "]", "next model"), bind(",", ",", "previous clip"), bind(".", ".", "next clip"), bind("a", "a", "play/pause"), bind("enter", "enter", "restart")}}
+		return "animate", keys{[]key.Binding{bind("[", "[", "previous model"), bind("]", "]", "next model"), bind(",", ",", "previous clip"), bind(".", ".", "next clip"), bind("a", "a", "play/pause"), bind("enter", "enter", "restart"), bind("b", "b", "outlines")}}
 	case d.animation != nil:
 		return "animation", keys{[]key.Binding{bind("a", "a", "pause")}}
 	case d.particles != nil:
@@ -62,7 +62,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.models != nil:
 		return "models", keys{[]key.Binding{bind("[", "[", "previous"), bind("]", "]", "next"), bind("s", "s", "normals"), bind("n", "n", "turn")}}
 	case d.meshes != nil:
-		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("e", "e", "highlights"), bind("n", "n", "turn")}}
+		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("e", "e", "highlights"), bind("b", "b", "outlines"), bind("n", "n", "turn")}}
 	case d.dynamic != nil:
 		return "dynamic", keys{[]key.Binding{bind("a", "a", "pause"), bind("m", "m", "deform"), bind("b", "b", "add"), bind("x", "x", "remove"), bind("v", "v", "visibility")}}
 	}

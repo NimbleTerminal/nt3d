@@ -18,6 +18,7 @@ type meshScene struct {
 	nodes     []nt3d.NodeID
 	sources   []nt3d.Geometry // As built or read, per node.
 	normals   int             // Index into meshNormals.
+	outlined  bool            // Expanded back-face contours.
 	glass     bool            // Shapes drawn transparent.
 	shiny     bool            // Shapes with specular highlights.
 	triangles int
@@ -136,6 +137,11 @@ func (d *demo) toggleShine() error {
 	return d.rebuildMeshes()
 }
 
+func (d *demo) toggleOutlines() error {
+	d.meshes.outlined = !d.meshes.outlined
+	return d.rebuildMeshes()
+}
+
 // glassAlpha is the glass shapes' opacity.
 const glassAlpha = 110
 
@@ -145,6 +151,9 @@ const glassAlpha = 110
 func (d *demo) rebuildMeshes() error {
 	for i, id := range d.meshes.nodes {
 		g, err := d.meshes.sources[i], error(nil)
+		if d.meshes.outlined {
+			g.Outline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}}
+		}
 		switch d.meshes.normals {
 		case 1:
 			g, err = nt3d.FlatNormals(g)
@@ -179,13 +188,16 @@ func (d *demo) rebuildMeshes() error {
 }
 
 func (d *demo) meshesView(content string) string {
-	glass, shine := "opaque", "dull"
+	glass, shine, outlines := "opaque", "dull", "outlines off"
+	if d.meshes.outlined {
+		outlines = "outlines on"
+	}
 	if d.meshes.glass {
 		glass = "glass"
 	}
 	if d.meshes.shiny {
 		shine = "highlights"
 	}
-	return fmt.Sprintf("nt3d meshes · %s · s normals · t glass · e highlights · d fog · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
-		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], glass, shine, d.status)
+	return fmt.Sprintf("nt3d meshes · %s · s normals · t glass · e highlights · b outlines · d fog · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · %s · %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
+		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], glass, shine, outlines, d.status)
 }

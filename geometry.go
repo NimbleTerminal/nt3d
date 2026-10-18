@@ -64,6 +64,7 @@ type Geometry struct {
 	Arrows     []Arrow
 	Bounds     nt3dmath.AABB
 	DropShadow DropShadow
+	Outline    OutlineStyle
 }
 
 // MaxMeshIndices is the most indices one geometry's mesh may have, three to a
@@ -77,6 +78,9 @@ const (
 )
 
 func validateGeometry(g Geometry) error {
+	if err := g.Outline.validate(); err != nil {
+		return err
+	}
 	if !validFloat(g.DropShadow.Strength, g.DropShadow.Radius) || g.DropShadow.Strength < 0 || g.DropShadow.Strength > 1 || g.DropShadow.Radius < 0 {
 		return fmt.Errorf("nt3d: invalid drop shadow")
 	}

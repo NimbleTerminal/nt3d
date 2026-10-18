@@ -24,6 +24,7 @@ var animatedSamples = []sample{
 }
 
 type animateScene struct {
+	outlined      bool
 	samples       []sample
 	title, credit string
 	index, clip   int
@@ -87,6 +88,11 @@ func (d *demo) loadAnimatedSample(index, clip int) error {
 			_ = d.scene.Remove(root)
 		}
 	}()
+	if state.outlined {
+		if err = d.scene.SetOutline(root, animatedOutline); err != nil {
+			return err
+		}
+	}
 	fit, _, _ := model.Bounds().Normalization()
 	if err = d.scene.SetTransform(root, fit); err != nil {
 		return err
@@ -147,6 +153,10 @@ func (d *demo) frameAnimatedSample() tea.Cmd {
 func (d *demo) animateView(content string) string {
 	state := d.animatedSamples
 	play := "playing"
+	outlines := "outlines off"
+	if state.outlined {
+		outlines = "outlines on"
+	}
 	if !d.animate {
 		play = "paused"
 	}
@@ -154,8 +164,23 @@ func (d *demo) animateView(content string) string {
 	if name == "" {
 		name = fmt.Sprintf("clip %d", state.clip+1)
 	}
-	return fmt.Sprintf("nt3d %s · %s (%d/%d) · [ ] model · , . clip · a play/pause · enter restart · 1/2/3 backend · q quit\n%s\n%s · %s · %s (%d/%d) · %s · %s",
-		state.title, state.samples[state.index].title, state.index+1, len(state.samples), content, d.rendering(), play, name, state.clip+1, len(state.clips), state.credit, d.status)
+	return fmt.Sprintf("nt3d %s · %s (%d/%d) · [ ] model · , . clip · a play/pause · enter restart · b outlines · 1/2/3 backend · q quit\n%s\n%s · %s · %s (%d/%d) · %s · %s · %s",
+		state.title, state.samples[state.index].title, state.index+1, len(state.samples), content, d.rendering(), play, name, state.clip+1, len(state.clips), outlines, state.credit, d.status)
+}
+
+var animatedOutline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}}
+
+func (d *demo) toggleAnimatedOutlines() error {
+	state := d.animatedSamples
+	style := animatedOutline
+	if state.outlined {
+		style = nt3d.OutlineStyle{}
+	}
+	if err := d.scene.SetOutline(state.group, style); err != nil {
+		return err
+	}
+	state.outlined = !state.outlined
+	return nil
 }
 
 func (d *demo) restartAnimation() tea.Cmd {

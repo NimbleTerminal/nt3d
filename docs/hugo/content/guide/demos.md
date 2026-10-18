@@ -43,7 +43,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 <img class="poster" src="../../posters/shapes.png" alt="A textured cube, golden torus, purple cone, orange cylinder, and green globe in a row">
 
-`task shapes`. Every [shape builder](../shapes/), lit and textured. `s` cycles the normals between as built, flat, and smooth; `t` turns them to glass, `e` adds highlights, and `d` adds fog.
+`task shapes`. Every [shape builder](../shapes/), lit and textured. `s` cycles the normals between as built, flat, and smooth; `t` turns them to glass, `e` adds highlights, `b` toggles [silhouette outlines](../materials/#outlines), and `d` adds fog.
 
 ## Mesh files
 
@@ -127,6 +127,9 @@ Only `cmd/animate` imports the Khronos embed package and assigns its `Files` to 
 ## Gobkit characters
 
 <img class="poster" src="../../posters/characters.png" alt="An animated Gobkit minion">
+
+Press `b` for dark silhouette outlines in either GPU or software. The setting
+survives character and clip changes, and toggling it keeps the current pose.
 
 `task characters` plays **Minion A-1**, **Corgi**, and **Duck** from [Gobkit](https://gobkit.com).
 All three have named `idle`, `attack`, and `dead` clips; the animals also have `walk`.

@@ -248,6 +248,14 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.fog = !d.fog
 			return d, d.view.Refresh()
 		case "b", "x":
+			if v.String() == "b" && d.animatedSamples != nil {
+				err = d.toggleAnimatedOutlines()
+				break
+			}
+			if v.String() == "b" && d.meshes != nil {
+				err = d.toggleOutlines()
+				break
+			}
 			if v.String() == "b" && d.particles != nil {
 				err = d.cycleParticleBlend()
 				break

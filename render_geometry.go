@@ -68,8 +68,13 @@ func (s *instanceSet) release() {
 	}
 }
 
+// Two matrices and the outline color/width.
+const instanceRecordSize = 144
+
 // transformState is what an instance's transform record holds.
 type transformState struct {
+	outline             OutlineStyle
+	unlit               bool
 	world               nt3dmath.Mat4
 	specular, shininess float32
 	procedural          bool // Its texture is drawn each frame: wrapped by hand.
@@ -119,6 +124,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		node.used = 0
 	}
 	type groupKey struct {
+		outline  OutlineStyle
 		geometry geometryKey
 		texture  *Texture
 		normal   *Texture
@@ -163,7 +169,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			groups = append(groups, &group{keys[i], []int{i}, true})
 			continue
 		}
-		k := groupKey{geometry: keys[i]}
+		k := groupKey{geometry: keys[i], outline: geom.Outline}
 		if mapped(geom) {
 			k.texture = baseMap(geom.Material)
 			k.normal = normalMap(geom.Material)
@@ -220,7 +226,7 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 	s.release()
 	*s = instanceSet{}
 	next := instanceSet{}
-	size := uint64(capacity) * 128
+	size := uint64(capacity) * instanceRecordSize
 	var err error
 	if next.transform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: size, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
 		return nil, err
@@ -252,6 +258,8 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	states := make([]transformState, len(members))
 	for k, i := range members {
 		states[k].world = instance(f, i).World
+		states[k].outline = f.Geometry[i].Outline
+		states[k].unlit = f.Geometry[i].Material != nil && f.Geometry[i].Material.Unlit
 		if m := f.Geometry[i].Material; m != nil && m.Specular > 0 && !m.Unlit {
 			states[k].specular, states[k].shininess = m.Specular, m.shininess()
 		}
@@ -262,9 +270,9 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	if slices.Equal(states, s.last) {
 		return nil
 	}
-	data := make([]byte, 0, 128*len(states))
+	data := make([]byte, 0, instanceRecordSize*len(states))
 	for _, st := range states {
-		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.procedural, true)...)
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.procedural, true, st.outline, st.unlit)...)
 	}
 	s.last = states
 	return dev.Queue().WriteBuffer(s.transform, 0, data)
@@ -274,7 +282,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 // matrix only turns directions, so its last column is free: it carries the
 // material's specular strength and exponent, whether its texture is
 // procedural, and whether the node shows.
-func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedural, visible bool) []byte {
+func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedural, visible bool, outline OutlineStyle, unlit bool) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
@@ -284,7 +292,14 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedura
 	if visible {
 		normal[15] = 1
 	}
-	return append(floats(world[:]...), floats(normal[:]...)...)
+	// The normal matrix's unused last row carries the unlit flag.
+	normal[3], normal[7], normal[11] = 0, 0, 0
+	if unlit {
+		normal[3] = 1
+	}
+	data := append(floats(world[:]...), floats(normal[:]...)...)
+	c := outline.Color
+	return appendFloats(data, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, outline.Width)
 }
 
 func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {
@@ -292,7 +307,7 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Materi
 	if m != nil && m.Specular > 0 && !m.Unlit {
 		specular, shininess = m.Specular, m.shininess()
 	}
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, false, v.Visible))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit))
 }
 
 // sortPoints orders a geometry's alpha points farthest first for the view
@@ -345,7 +360,7 @@ func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, tr
 	if err = dev.Queue().WriteBuffer(b.buffer, 0, data); err != nil {
 		return err
 	}
-	b.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: uint64(len(data))}, {Binding: 2, Buffer: transform, Size: 128}}})
+	b.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: uint64(len(data))}, {Binding: 2, Buffer: transform, Size: instanceRecordSize}}})
 	if err != nil {
 		return err
 	}
@@ -399,11 +414,6 @@ func geometryData(geom Geometry) (data [9][]byte) {
 		opacity := float32(1)
 		if blended {
 			opacity = float32(v.Color.A) / 255
-		}
-		if geom.Material != nil && geom.Material.Unlit {
-			v.Normal.X = 0
-			v.Normal.Y = 0
-			v.Normal.Z = 0
 		}
 		if mapped(geom) {
 			// The texture gives color, so the color slot carries the cutout

@@ -6,9 +6,9 @@ import "nimbleterminal.dev/nt3d/math"
 // overhang is how far, in render pixels, a geometry's screen-sized marks
 // (points, line widths, arrow heads) may reach past its bounds, plus one.
 func overhang(g *Geometry) float32 {
-	r := float32(0)
+	r := g.Outline.Width
 	if len(g.Lines) > 0 {
-		r = lineWidth(g.LineWidth)
+		r = max(r, lineWidth(g.LineWidth))
 	}
 	if g.PointStyle.Units == WorldUnits && len(g.Points) > 0 {
 		r = max(r, MaxPointPixels) // As far as a world radius reaches on screen.

@@ -150,3 +150,45 @@ func TestGobkitAssetSize(t *testing.T) {
 		}
 	}
 }
+
+func TestCharacterOutlineToggle(t *testing.T) {
+	d := newCharactersDemo(t)
+	if err := d.animation.Sample(d.animation.Clip.Duration() * .37); err != nil {
+		t.Fatal(err)
+	}
+	player, at := d.animation, d.animation.Time
+	d.Update(tea.KeyPressMsg{Code: 'b'})
+	if d.animation != player || d.animation.Time != at {
+		t.Fatal("outline toggle reset playback")
+	}
+	assertOutline := func(on bool) {
+		t.Helper()
+		f, err := d.scene.Frame(d.view.Camera(), 80, 60)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(f.Geometry) == 0 {
+			t.Fatal("missing character")
+		}
+		for _, g := range f.Geometry {
+			if (g.Outline.Width > 0) != on {
+				t.Fatal("character lost outline setting")
+			}
+		}
+	}
+	assertOutline(true)
+	if err := d.animation.Sample(d.animation.Clip.Duration() * .6); err != nil {
+		t.Fatal(err)
+	}
+	assertOutline(true)
+	for i := range characterSamples {
+		if err := d.loadAnimatedSample(i, 1); err != nil {
+			t.Fatal(err)
+		}
+		assertOutline(true)
+		d.restartAnimation()
+		assertOutline(true)
+	}
+	d.Update(tea.KeyPressMsg{Code: 'b'})
+	assertOutline(false)
+}

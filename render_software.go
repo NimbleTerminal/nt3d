@@ -163,7 +163,9 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	raster := func(a, b, c *clipCorner, material *Material, side int) {
 		textured := material != nil && material.Texture != nil
 		cutout := textured && material.Cutout
-		blended := side != opaqueFaces
+		hull := side < 0
+		blended := side == backFaces || side == frontFaces || side == outlineTransparent
+		back := side == backFaces || hull
 		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && !material.Unlit
 		var tangent, bitangent nt3dmath.Vec3
 		if normalMapped {
@@ -180,7 +182,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
 		area := (x1-x0)*(y2-y0) - (y1-y0)*(x2-x0)
-		if side == backFaces && area <= .000001 || side != backFaces && area >= -.000001 {
+		if back && area <= .000001 || !back && area >= -.000001 {
 			return
 		} // CCW faces become clockwise with screen Y down
 		// A pixel center on an edge belongs to one triangle, by the top-left
@@ -253,7 +255,9 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 						}
 						return float32(encodeSRGB(float64(v))) * 255
 					}
-					rgb = [3]float32{work(tex[0]) * tint(0), work(tex[1]) * tint(1), work(tex[2]) * tint(2)}
+					if !hull {
+						rgb = [3]float32{work(tex[0]) * tint(0), work(tex[1]) * tint(1), work(tex[2]) * tint(2)}
+					}
 					opacity *= tex[3]
 				}
 				if lit || fogged {
@@ -297,18 +301,24 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	// crosses the near plane is cut there, as the GPU does, not discarded.
 	// side chooses the faces drawn, and how: opaque front faces, or a
 	// transparent geometry's back or front faces.
-	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv []UV, material *Material, side int) {
+	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv []UV, material *Material, side int, outline OutlineStyle) {
+		hull := side < 0
+		back := side == backFaces || hull
+		blended := side == backFaces || side == frontFaces || side == outlineTransparent
 		var corners [3]clipCorner
 		for k, i := range index {
 			corners[k].x, corners[k].y, corners[k].z, corners[k].w = m.Transform(vertices[i].Position)
 			if len(uv) > 0 {
 				corners[k].uv = uv[i]
 			}
+			if hull {
+				expandOutline(&corners[k], normals.Direction(vertices[i].Normal), &f, outline.Width*px)
+			}
 		}
 		// Most triangles lie wholly past the near plane: cull those facing
 		// away before lighting them.
 		whole := corners[0].z >= 0 && corners[1].z >= 0 && corners[2].z >= 0
-		if whole && (min(corners[0].w, corners[1].w, corners[2].w) <= 0 || facing(&corners[0], &corners[1], &corners[2]) == (side == backFaces)) {
+		if whole && (min(corners[0].w, corners[1].w, corners[2].w) <= 0 || facing(&corners[0], &corners[1], &corners[2]) == back) {
 			return
 		}
 		unlit, textured := material != nil && material.Unlit, material != nil && material.Texture != nil
@@ -317,14 +327,14 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			if side == backFaces {
 				n = n.Scale(-1) // Lit as seen from behind.
 			}
-			if side != opaqueFaces {
+			if blended {
 				corners[k].cut = float32(c.A) / 255
 			} else if textured && material.EdgeOn {
 				corners[k].cut = edgeOnCut(material.threshold(), normals.Direction(n), f.viewAt(world.Point(vertices[i].Position)))
 			} else if material != nil {
 				corners[k].cut = material.threshold()
 			}
-			if unlit {
+			if unlit || hull {
 				n = nt3dmath.Vec3{}
 			}
 			corners[k].world = world.Point(vertices[i].Position)
@@ -333,6 +343,9 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			}
 			if textured && !material.Tint {
 				c = color.RGBA{255, 255, 255, 255}
+			}
+			if hull {
+				c = outline.Color
 			}
 			// The surface's own color, in the working space; it is lit
 			// per pixel.
@@ -444,13 +457,13 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		}
 		if !transparent(&f.Geometry[gi]) {
 			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, opaqueFaces)
+				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, opaqueFaces, OutlineStyle{})
 			}
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, opaqueFaces)
+				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, opaqueFaces, OutlineStyle{})
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
@@ -461,6 +474,33 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		for i := 0; i < len(g.Arrows); i += arrowStep {
 			a := g.Arrows[i]
 			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put, strokeFog(inst.World.Point(a.Start), inst.World.Point(a.End)))
+		}
+	}
+
+	// Opaque hulls share the surface depth buffer. Draw after all opaque
+	// geometry so nearer surfaces hide them regardless of scene order.
+	drawOutline := func(gi int, side int) {
+		g := &f.Geometry[gi]
+		if !drawn[gi] || g.Outline.Width == 0 {
+			return
+		}
+		inst := instance(f, gi)
+		m := f.Matrix.Mul(inst.World)
+		inverse, _ := inst.World.InverseAffine()
+		normals := inverse.Transpose()
+		// Hulls keep alpha sampling, but never lighting or normal-map detail.
+		material := Material{Unlit: true}
+		if g.Material != nil {
+			material = *g.Material
+			material.Unlit = true
+		}
+		for i := 0; i+2 < len(g.Indices); i += 3 {
+			tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, &material, side, g.Outline)
+		}
+	}
+	for gi := range f.Geometry {
+		if !transparent(&f.Geometry[gi]) {
+			drawOutline(gi, outlineOpaque)
 		}
 	}
 
@@ -549,11 +589,12 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		g, inst := &f.Geometry[gi], instance(f, gi)
 		m := f.Matrix.Mul(inst.World)
 		if transparent(g) {
+			drawOutline(gi, outlineTransparent)
 			inverse, _ := inst.World.InverseAffine()
 			normals := inverse.Transpose()
 			for _, side := range []int{backFaces, frontFaces} {
 				for i := 0; i+2 < len(g.Indices); i += 3 {
-					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, side)
+					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, side, OutlineStyle{})
 				}
 			}
 		}

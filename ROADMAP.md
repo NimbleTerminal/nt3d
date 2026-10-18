@@ -28,8 +28,8 @@ move to Done with their commit; git history has the details.
 - [ ] **Mipmap follow-ups**: procedural textures (needs `ntgpuimage`
   render-target mips); coverage-preserving alpha mips for cutouts (fur and
   leaves sample full size today).
-- [ ] **Outline or toon edges** on the GPU and software renderers, for
-  readability at terminal sizes.
+- [ ] **Outline follow-ups**: sharp-crease edges, world-unit widths, and seamless
+  contours for meshes with split normals.
 - [ ] **Point-light shadows**.
 - [ ] **A floor option for drop shadows**, instead of the bottom of each instance's world bounds.
 - [ ] **Order-independent transparency**: only if scenes hit the sorting
@@ -69,6 +69,10 @@ move to Done with their commit; git history has the details.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- [x] **Silhouette outlines** — configurable pixel-width back-face hulls on GPU
+  and software, with depth, alpha, animation, and supersampling support; `b` in
+  the shapes and characters galleries.
 
 - [x] **Normal-map rendering** — linear-data textures, matching GPU/software
   diffuse/specular/environment shading, morph/skin support through generated

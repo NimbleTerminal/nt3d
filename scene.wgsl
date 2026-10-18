@@ -4,7 +4,7 @@ struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye:
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
-struct Instance { world:mat4x4<f32>, normal:mat4x4<f32> };
+struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32> };
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
 // Points have records of their own, five words each: position, radius
 // (negative in world units), and color as RGBA8. Alpha points are drawn in
@@ -125,7 +125,7 @@ fn pointOutput(vi:u32,index:u32)->Out {
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
 // Meshes are drawn instanced: each instance's transform is its own.
-fn meshOutput(vi:u32,ii:u32,side:f32)->Out {let p=items[vi];var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(p.color.rgb,f32(ii)));o.color.a=p.a.w;return o;}
+fn meshOutput(vi:u32,ii:u32,side:f32)->Out {let p=items[vi];var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(p.color.rgb,f32(ii)));o.color.a=p.a.w;if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}return o;}
 @vertex fn vs_mesh(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,1.0);}
 @vertex fn vs_mesh_back(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,-1.0);}
 // Depth-clip the centerline before expanding it in pixel space.
@@ -221,6 +221,7 @@ fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
  var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;o.normalStrength=p.color.w;
+ if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}
  // Image textures repeat through their samplers; procedural ones (flagged in
  // the instance record) are drawn each frame, clamped, and wrapped by hand.
  o.repeat=select(0.0,1.0,(flags&1u)!=0u && instances[ii].normal[3].z>0.5);
@@ -345,4 +346,30 @@ struct SkyOut { @builtin(position) clip:vec4<f32>, @location(0) ray:vec3<f32> };
  let c=textureSampleLevel(mapTexture,mapSampler,uv,0.0).rgb;
  if u.viewport.z<0.5 {return vec4<f32>(select(1.055*pow(c,vec3<f32>(1.0/2.4))-0.055,c*12.92,c<=vec3<f32>(0.0031308)),1.0);}
  return vec4<f32>(c,1.0);
+}
+
+// Inverted hull: expand back faces in output pixels along the projected normal.
+// Use the same records (and GPU skin output) as the surface; no mesh reupload.
+fn outlineOutput(input:Out,vi:u32,ii:u32)->Out {
+ var o=input; let inst=instances[ii];
+ let n=(inst.normal*vec4<f32>(items[vi].b.xyz,0.0)).xyz;
+ let d=u.matrix*vec4<f32>(n,0.0);
+ let direction=(d.xy*o.clip.w-o.clip.xy*d.w)*u.viewport.xy;
+ if o.clip.w>0.00001 && length(direction)>0.000001 {
+  o.clip=vec4<f32>(o.clip.xy+normalize(direction)*inst.outline.w*2.0/u.viewport.xy*o.clip.w,o.clip.zw);
+ }
+ o.color=vec4<f32>(decode(inst.outline.rgb),o.color.a);
+ o.normal=vec3<f32>(0.0);o.normalStrength=0.0;
+ if inst.outline.w<=0.0 {o.clip=vec4<f32>(0.0,0.0,2.0,1.0);}
+ return o;
+}
+@vertex fn vs_outline(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return outlineOutput(meshOutput(vi,ii,1.0),vi,ii);}
+@vertex fn vs_outline_map(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return outlineOutput(mapOutput(vi,ii,1.0),vi,ii);}
+@fragment fn fs_outline_cutout(o:Out)->@location(0) vec4<f32> {
+ if sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat).a<o.cut {discard;}
+ return vec4<f32>(finish(o,o.color.rgb),1.0);
+}
+@fragment fn fs_outline_blend(o:Out)->@location(0) vec4<f32> {
+ let alpha=sampleMap(o.uv,dpdx(o.uv),dpdy(o.uv),o.repeat).a*o.cut;
+ return vec4<f32>(finish(o,o.color.rgb),alpha);
 }

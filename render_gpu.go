@@ -49,6 +49,7 @@ type gpuRenderer struct {
 	skinPipeline           *wgpu.ComputePipeline
 	skinLayout             *wgpu.BindGroupLayout
 	dropPipeline           *wgpu.RenderPipeline
+	outlinePipelines       [5]*wgpu.RenderPipeline
 	shadowLayout           *wgpu.BindGroupLayout
 	noShadow, shadowTarget shadowTarget
 	shadowActive           bool
@@ -324,6 +325,9 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 			return err
 		}
 		dev := frame.Device
+		if err := g.prepareOutlines(dev, f); err != nil {
+			return err
+		}
 		if g.shadowActive && g.shadowTarget.texture == nil {
 			var err error
 			g.shadowTarget, err = g.makeShadowTarget(dev, shadowMapSize)
@@ -407,6 +411,11 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 		for _, i := range []int{5, 0, 1, 2, 3, 6, 4} {
 			if i == 4 {
 				for _, d := range g.draws {
+					if !transparent(&f.Geometry[d.index]) {
+						g.drawOutline(pass, f, d)
+					}
+				}
+				for _, d := range g.draws {
 					if d.geom.batches[8].count > 0 {
 						pass.SetPipeline(g.dropPipeline)
 						pass.SetBindGroup(0, d.set.binds[8], nil)
@@ -416,6 +425,9 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 				// Then blend them, farthest first, back faces before front.
 				for _, index := range f.blendOrder(drawn) {
 					d := g.draws[g.blendDraw[index]]
+					if transparent(&f.Geometry[index]) {
+						g.drawOutline(pass, f, d)
+					}
 					// A blended draw's triangles blend only if they are
 					// transparent; opaque ones drew with everything opaque.
 					for side := range 2 {
@@ -560,6 +572,11 @@ func (g *gpuRenderer) Close() error {
 				b.buffer.Release()
 			}
 		}
+		for _, p := range g.outlinePipelines {
+			if p != nil {
+				p.Release()
+			}
+		}
 		for _, p := range g.pipelines {
 			if p != nil {
 				p.Release()
@@ -613,7 +630,7 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 		return nil
 	}
 	var err error
-	g.transforms, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 128, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+	g.transforms, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: instanceRecordSize, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return err
 	}

@@ -195,6 +195,7 @@ func (s *Scene) UpdateDeformations() error {
 		weightsDirty := d.weights == nil || !slices.Equal(d.weights, def.Weights)
 		source := d.base
 		source.Material = n.geometry.Material
+		source.Outline = n.geometry.Outline
 		if !weightsDirty {
 			source.Vertices = d.morphed
 		} else if len(def.Morphs) > 0 {
