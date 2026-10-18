@@ -418,22 +418,55 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			c := p.Color
 			rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
 			alpha := min(1, float32(c.A)/255*float32(step))
-			switch style.Blend {
-			case OpaqueBlend:
-				c = fogColor(c, distance)
-			case AlphaBlend:
-				if fogged {
-					fogRGB(&rgb, distance)
+			if style.Texture == nil {
+				switch style.Blend {
+				case OpaqueBlend:
+					c = fogColor(c, distance)
+				case AlphaBlend:
+					if fogged {
+						fogRGB(&rgb, distance)
+					}
+				case AdditiveBlend:
+					// Fog fades an additive point out, rather than toward its color.
+					alpha *= 1 - f.Fog.amount(distance)
 				}
-			case AdditiveBlend:
-				// Fog fades an additive point out, rather than toward its color.
-				alpha *= 1 - f.Fog.amount(distance)
 			}
 			loX, hiX := max(0, int(math.Floor(float64(x-radius)))), min(f.Width-1, int(math.Ceil(float64(x+radius))))
 			loY, hiY := max(0, int(math.Floor(float64(y-radius)))), min(f.Height-1, int(math.Ceil(float64(y+radius))))
 			for sy := loY; sy <= hiY; sy++ {
 				for sx := loX; sx <= hiX; sx++ {
 					dx, dy := float32(sx)+.5-x, float32(sy)+.5-y
+					if style.Texture != nil {
+						if dx < -radius || dx >= radius || dy < -radius || dy >= radius {
+							continue
+						}
+						tex := style.spriteSample(p, (dx/radius+1)*.5, (dy/radius+1)*.5)
+						if style.Blend == OpaqueBlend && tex[3] < .5 {
+							continue
+						}
+						tinted := rgb
+						for k := range tinted {
+							v := tex[k]
+							if !linear {
+								v = float32(encodeSRGB(float64(v)))
+							}
+							tinted[k] *= v
+						}
+						opacity := alpha * tex[3]
+						if style.Blend == AdditiveBlend {
+							add(sx, sy, z, tinted, opacity*(1-f.Fog.amount(distance)))
+						} else {
+							if fogged {
+								fogRGB(&tinted, distance)
+							}
+							if style.Blend == AlphaBlend {
+								blend(sx, sy, z, tinted, opacity)
+							} else {
+								put(sx, sy, z, color.RGBA{toPixel(tinted[0]), toPixel(tinted[1]), toPixel(tinted[2]), 255})
+							}
+						}
+						continue
+					}
 					d2 := dx*dx + dy*dy
 					if d2 > radius*radius {
 						continue

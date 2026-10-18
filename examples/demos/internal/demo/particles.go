@@ -3,6 +3,7 @@ package demo
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"math"
 
@@ -30,6 +31,9 @@ var particleBlends = []struct {
 }
 
 type particleScene struct {
+	sprites           bool
+	atlas             *nt3d.Texture
+	installed         map[nt3d.NodeID]particleConfig
 	blend, count      int  // Indexes into particleBlends and particleCounts.
 	hard              bool // Hard discs rather than soft.
 	t, phase          float64
@@ -37,8 +41,18 @@ type particleScene struct {
 	buffer            []nt3d.Point // Reused each move: the scene copies what it is given.
 }
 
+type particleConfig struct {
+	count int
+	style nt3d.PointStyle
+}
+
 func (d *demo) setupParticles() error {
-	d.particles = &particleScene{count: 1}
+	d.particles = &particleScene{count: 1, installed: make(map[nt3d.NodeID]particleConfig)}
+	var err error
+	d.particles.atlas, err = particleAtlas()
+	if err != nil {
+		return err
+	}
 	// A dark floor of two triangles, for the smoke to show against.
 	const s = 3
 	up := nt3dmath.Vec3{Z: 1}
@@ -140,11 +154,31 @@ func (d *demo) moveParticles() error {
 		{ps.smoke, n / 3, nt3d.PointStyle{Shape: shape, Units: nt3d.WorldUnits, Blend: b.smoke}, smokeParticle},
 		{ps.dust, n - n/2 - n/3, nt3d.PointStyle{Shape: shape, Blend: b.dust}, dustParticle},
 	} {
+		if ps.sprites {
+			k.style.Texture = ps.atlas
+			k.style.Columns = 2
+			k.style.Rows = 2
+		}
 		ps.buffer = ps.buffer[:0]
 		for i := range k.n {
-			ps.buffer = append(ps.buffer, k.at(i, ps.t))
+			p := k.at(i, ps.t)
+			p.Frame = uint32(i+int(ps.t*8)) % 4
+			ps.buffer = append(ps.buffer, p)
 		}
-		if err := d.scene.SetNodeGeometry(k.id, nt3d.Geometry{PointStyle: k.style, Points: ps.buffer}); err != nil {
+		config := particleConfig{k.n, k.style}
+		var err error
+		if ps.installed[k.id] == config {
+			var bounds nt3dmath.AABB
+			bounds.Include(vec(-3, -3, 0))
+			bounds.Include(vec(3, 3, 3))
+			err = d.scene.SetNodePoints(k.id, ps.buffer, bounds)
+		} else {
+			err = d.scene.SetNodeGeometry(k.id, nt3d.Geometry{PointStyle: k.style, Points: ps.buffer})
+			if err == nil {
+				ps.installed[k.id] = config
+			}
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -181,6 +215,33 @@ func (d *demo) particlesView(content string) string {
 	if ps.hard {
 		shape = "hard"
 	}
-	return fmt.Sprintf("nt3d particles · b blend · s shape · n count · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %s · %dk particles · drag orbit · wheel zoom · r rotate · %s",
+	if ps.sprites {
+		shape = "atlas sprites"
+	}
+	return fmt.Sprintf("nt3d particles · t sprites · b blend · s shape · n count · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %s · %dk particles · drag orbit · wheel zoom · r rotate · %s",
 		content, d.rendering(), particleBlends[ps.blend].name, shape, particleCounts[ps.count]/1000, d.status)
+}
+
+func (d *demo) toggleParticleSprites() error {
+	d.particles.sprites = !d.particles.sprites
+	return d.moveParticles()
+}
+
+// Four small smoke/flare variants, generated here: no asset dependencies.
+func particleAtlas() (*nt3d.Texture, error) {
+	const cell = 32
+	img := image.NewNRGBA(image.Rect(0, 0, 2*cell, 2*cell))
+	for frame := range 4 {
+		for y := range cell {
+			for x := range cell {
+				u, v := (float64(x)+.5)/cell*2-1, (float64(y)+.5)/cell*2-1
+				theta := math.Atan2(v, u)
+				radius := math.Sqrt(u*u + v*v)
+				edge := .72 + .16*math.Cos(float64(frame+3)*theta+float64(frame))
+				a := math.Max(0, 1-radius/edge)
+				img.SetNRGBA((frame%2)*cell+x, (frame/2)*cell+y, color.NRGBA{255, 255, 255, uint8(a * a * 255)})
+			}
+		}
+	}
+	return nt3d.NewTexture(img)
 }

@@ -16,10 +16,6 @@ move to Done with their commit; git history has the details.
   generation, separate UV sets and texture transforms. The initial renderer uses
   a per-triangle basis from deformed positions and UVs.
 
-- [ ] **Particles**:
-  - a cheap per-frame update of one geometry's points (no full
-    validate, copy, and bounds pass per frame)
-  - textured sprites and atlas frames, building on sprite points
 - [ ] **Shared points, lines, and boxes**, only if something needs them
   (particles don't: they are many positions, not many copies): charts
   keep all their markers in one geometry, already one upload and draw,
@@ -69,6 +65,13 @@ move to Done with their commit; git history has the details.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **Particle updates and atlas sprites**: `SetNodePoints` / `UpdateNodePoints`
+  preserve snapshots, skip unrelated validation/copies and bounds scans, and
+  reuse GPU buffers with range uploads. Image sprites and per-point atlas frames
+  support opaque cutouts, alpha and additive blending on GPU and software;
+  wireframe uses dots. The particles demo uses the fast path and `t` toggles sprites.
+
 
 - [x] **Silhouette outlines** — configurable pixel-width back-face hulls on GPU
   and software, with depth, alpha, animation, and supersampling support; `b` in

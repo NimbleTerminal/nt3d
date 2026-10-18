@@ -54,6 +54,11 @@ func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGr
 
 // textureKey is an uploaded texture: an image texture, by its sampler's
 // addressing, repeating or clamped, and anisotropy.
+type textureBinding struct {
+	src    *Texture
+	repeat bool
+}
+
 type textureKey struct {
 	src    *Texture
 	repeat bool
@@ -69,13 +74,14 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 	used := make(map[textureKey]bool)
 	var sampledLayout *wgpu.BindGroupLayout
 	for _, geom := range f.Geometry {
-		if !mapped(geom) || len(geom.Indices) == 0 {
-			continue
+		var bindings []textureBinding
+		if mapped(geom) && len(geom.Indices) > 0 {
+			bindings = append(bindings, textureBinding{baseMap(geom.Material), geom.Material.Repeat}, textureBinding{normalMap(geom.Material), geom.Material.NormalRepeat})
 		}
-		for _, binding := range []struct {
-			src    *Texture
-			repeat bool
-		}{{baseMap(geom.Material), geom.Material.Repeat}, {normalMap(geom.Material), geom.Material.NormalRepeat}} {
+		if geom.PointStyle.Texture != nil && len(geom.Points) > 0 {
+			bindings = append(bindings, textureBinding{geom.PointStyle.Texture, false})
+		}
+		for _, binding := range bindings {
 			src := binding.src
 			if src.shader != "" {
 				sampledLayout = g.procedural[src].target.BindGroupLayout()
@@ -113,8 +119,57 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 			delete(g.textures, key)
 		}
 	}
-	if sampledLayout != nil && g.texturePipeline == nil {
-		return g.r.Do(func(dev *wgpu.Device) error { return g.setupTextures(dev, sampledLayout) })
+	if sampledLayout != nil && (g.texturePipeline == nil || g.spriteLayout == nil) {
+		return g.r.Do(func(dev *wgpu.Device) error {
+			if g.texturePipeline == nil {
+				if err := g.setupTextures(dev, sampledLayout); err != nil {
+					return err
+				}
+			}
+			if g.spriteLayout == nil {
+				return g.setupSprites(dev, sampledLayout)
+			}
+			return nil
+		})
 	}
 	return nil
+}
+
+func (g *gpuRenderer) setupSprites(dev *wgpu.Device, sampled *wgpu.BindGroupLayout) (err error) {
+	defer func() {
+		if err != nil {
+			for i, p := range g.spritePipelines {
+				if p != nil {
+					p.Release()
+					g.spritePipelines[i] = nil
+				}
+			}
+			if g.spriteLayout != nil {
+				g.spriteLayout.Release()
+				g.spriteLayout = nil
+			}
+		}
+	}()
+	g.spriteLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.pointBindLayout, g.shadowLayout, sampled}})
+	if err != nil {
+		return err
+	}
+	g.spritePipelines[0], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "opaque sprites", Layout: g.spriteLayout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_sprite"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_sprite", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
+	if err != nil {
+		return err
+	}
+	g.spritePipelines[1], err = pointPipeline(dev, g.spriteLayout, g.shader, "vs_sprite_sorted", "fs_sprite_alpha", false)
+	if err != nil {
+		return err
+	}
+	g.spritePipelines[2], err = pointPipeline(dev, g.spriteLayout, g.shader, "vs_sprite", "fs_sprite_add", true)
+	return err
+}
+
+func (g *gpuRenderer) drawSprite(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
+	style := f.Geometry[d.index].PointStyle
+	pass.SetPipeline(g.spritePipelines[style.Blend])
+	pass.SetBindGroup(0, d.set.binds[0], nil)
+	pass.SetBindGroup(2, g.textures[textureKey{style.Texture, false, f.anisotropy()}].BindGroup(), nil)
+	pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
 }

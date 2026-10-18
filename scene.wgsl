@@ -27,7 +27,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
 // position (whose distance from the camera, not affine, is found per
 // fragment) and normal, and the instance's specular strength and exponent
 // (its normal matrix's spare column).
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32 };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32> };
 // eyeDistance is a world point's distance from the camera, as fog measures
 // it: straight, or along the view for orthographic cameras.
 fn eyeDistance(world:vec3<f32>)->f32 {
@@ -372,4 +372,28 @@ fn outlineOutput(input:Out,vi:u32,ii:u32)->Out {
 @fragment fn fs_outline_blend(o:Out)->@location(0) vec4<f32> {
  let alpha=sampleMap(o.uv,dpdx(o.uv),dpdy(o.uv),o.repeat).a*o.cut;
  return vec4<f32>(finish(o,o.color.rgb),alpha);
+}
+
+// Sprite atlas cells sample level zero and clamp to texel centers, so bilinear
+// filtering cannot leak neighboring frames into a sprite.
+fn spriteOutput(vi:u32,index:u32)->Out {
+ var o=pointOutput(vi,index);o.rect=items[index].a;
+ o.uv=vec2<f32>((o.uv.x+1.0)*0.5,(1.0-o.uv.y)*0.5);return o;
+}
+@vertex fn vs_sprite(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,ii);}
+@vertex fn vs_sprite_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,order[ii]);}
+fn spriteSample(o:Out)->vec4<f32> {
+ let halfTexel=0.5/vec2<f32>(textureDimensions(mapTexture));
+ let uv=clamp(o.rect.xy+o.uv*o.rect.zw,o.rect.xy+halfTexel,o.rect.xy+o.rect.zw-halfTexel);
+ return textureSampleLevel(mapTexture,mapSampler,uv,0.0);
+}
+@fragment fn fs_sprite(o:Out)->@location(0) vec4<f32> {
+ let t=spriteSample(o);if t.a<0.5 {discard;}
+ return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),1.0);
+}
+@fragment fn fs_sprite_alpha(o:Out)->@location(0) vec4<f32> {
+ let t=spriteSample(o);return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),t.a*o.cut);
+}
+@fragment fn fs_sprite_add(o:Out)->@location(0) vec4<f32> {
+ let t=spriteSample(o);return vec4<f32>(mapColor(t.rgb)*o.color.rgb,t.a*o.cut*(1.0-fogAmount(o.world)));
 }

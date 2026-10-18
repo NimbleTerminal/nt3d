@@ -66,6 +66,8 @@ type gpuRenderer struct {
 	// and fills binding 1 (see setup).
 	pointBindLayout *wgpu.BindGroupLayout
 	pointLayout     *wgpu.PipelineLayout
+	spriteLayout    *wgpu.PipelineLayout
+	spritePipelines [3]*wgpu.RenderPipeline
 	pointBlends     [2][2]*wgpu.RenderPipeline
 	zeros           *wgpu.Buffer
 	sorter          pointSorter
@@ -446,6 +448,10 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 					}
 					// Then its blended points, after its triangles.
 					if geom := &f.Geometry[index]; blendedPoints(geom) && d.geom.batches[0].count > 0 {
+						if geom.PointStyle.Texture != nil {
+							g.drawSprite(pass, f, d)
+							continue
+						}
 						pass.SetPipeline(g.pointBlends[geom.PointStyle.Blend-AlphaBlend][geom.PointStyle.Shape])
 						pass.SetBindGroup(0, d.set.binds[0], nil)
 						pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
@@ -473,6 +479,8 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 				b := d.geom.batches[i]
 				switch {
 				case b.count == 0 || i == 1 && transparent(&f.Geometry[d.index]) || i == 0 && blendedPoints(&f.Geometry[d.index]):
+				case i == 0 && f.Geometry[d.index].PointStyle.Texture != nil:
+					g.drawSprite(pass, f, d)
 				case i == 1:
 					pass.SetPipeline(g.pipelines[1])
 					pass.SetBindGroup(0, d.set.binds[1], nil)
@@ -556,10 +564,13 @@ func (g *gpuRenderer) Close() error {
 		if g.texturePipeline != nil {
 			g.texturePipeline.Release()
 		}
-		for _, p := range slices.Concat(g.blendPipelines[:], g.textureBlends[:], g.pointBlends[0][:], g.pointBlends[1][:]) {
+		for _, p := range slices.Concat(g.blendPipelines[:], g.textureBlends[:], g.pointBlends[0][:], g.pointBlends[1][:], g.spritePipelines[:]) {
 			if p != nil {
 				p.Release()
 			}
+		}
+		if g.spriteLayout != nil {
+			g.spriteLayout.Release()
 		}
 		if g.textureLayout != nil {
 			g.textureLayout.Release()

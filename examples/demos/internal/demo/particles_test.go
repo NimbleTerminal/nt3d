@@ -67,3 +67,36 @@ func TestParticlesMove(t *testing.T) {
 		}
 	}
 }
+
+func TestParticleSpritesFastUpdate(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupParticles(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.toggleParticleSprites(); err != nil {
+		t.Fatal(err)
+	}
+	_, before := pointCount(t, d.scene)
+	d.particles.t = .2
+	if err := d.moveParticles(); err != nil {
+		t.Fatal(err)
+	}
+	_, after := pointCount(t, d.scene)
+	for i, g := range after.Geometry {
+		if len(g.Points) == 0 {
+			continue
+		}
+		if g.PointStyle.Texture == nil || g.PointStyle.Columns != 2 || g.PointStyle.Rows != 2 {
+			t.Fatal("missing atlas")
+		}
+		if before.GeometryRevisions[i] != after.GeometryRevisions[i] {
+			t.Fatal("particle buffers rebuilt")
+		}
+		if before.Geometry[i].Points[0] == g.Points[0] {
+			t.Fatal("particles did not move")
+		}
+	}
+	if _, _, err := nt3d.Snapshot(after, nt3d.Software, nil); err != nil {
+		t.Fatal(err)
+	}
+}

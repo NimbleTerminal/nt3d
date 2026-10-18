@@ -864,7 +864,7 @@ func TestGPUPointStylesMatchSoftware(t *testing.T) {
 	for _, blend := range []PointBlend{OpaqueBlend, AlphaBlend, AdditiveBlend} {
 		for _, shape := range []PointShape{HardPoint, SoftPoint} {
 			for _, units := range []PointUnits{PixelUnits, WorldUnits} {
-				style := PointStyle{shape, units, blend}
+				style := PointStyle{Shape: shape, Units: units, Blend: blend}
 				radius := float32(10)
 				if units == WorldUnits {
 					radius = .25

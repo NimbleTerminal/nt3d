@@ -75,6 +75,17 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 				continue
 			}
 			px, py := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5
+			if g.PointStyle.Texture != nil {
+				r := f.pointRadius(g.PointStyle, p.Radius, cw, 1)
+				dx, dy := x-px, y-py
+				if max(dx, -dx) <= max(tolerance, r) && max(dy, -dy) <= max(tolerance, r) {
+					alpha := g.PointStyle.spriteSample(p, (dx/r+1)*.5, (dy/r+1)*.5)[3]
+					if g.PointStyle.Blend == OpaqueBlend && alpha >= .5 || g.PointStyle.Blend != OpaqueBlend && alpha*float32(p.Color.A) > 0 {
+						set(PointPrimitive, j, p.Datum, p.Position, 0)
+					}
+				}
+				continue
+			}
 			if r := max(tolerance, f.pointRadius(g.PointStyle, p.Radius, cw, 1)); (px-x)*(px-x)+(py-y)*(py-y) <= r*r {
 				set(PointPrimitive, j, p.Datum, p.Position, 0)
 			}

@@ -24,17 +24,20 @@ type geometryKey struct {
 // gpuGeometry is a geometry's uploaded primitives and the instance sets that
 // draw them: one set for each draw of the frame, reused across frames.
 type gpuGeometry struct {
-	skin    *gpuSkin
-	batches [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
-	sets    []*instanceSet
-	used    int           // Sets drawn from this frame.
-	order   *wgpu.Buffer  // Alpha points' order, farthest first, as last sorted.
-	view    nt3dmath.Mat4 // The matrix it was sorted under.
-	sorted  bool
+	sprite        gpuBatch
+	pointRevision uint64
+	skin          *gpuSkin
+	batches       [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
+	sets          []*instanceSet
+	used          int           // Sets drawn from this frame.
+	order         *wgpu.Buffer  // Alpha points' order, farthest first, as last sorted.
+	view          nt3dmath.Mat4 // The matrix it was sorted under.
+	sorted        bool
 }
 
 func (n *gpuGeometry) release() {
 	n.skin.release()
+	releaseBatch(n.sprite)
 	for _, b := range n.batches {
 		releaseBatch(b)
 	}
@@ -158,8 +161,42 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					return err
 				}
 			}
+			if geom.pointUpdate != nil {
+				node.pointRevision = geom.pointUpdate.revision
+			}
+			if err := g.uploadData(dev, &node.sprite, spriteData(geom.PointStyle, geom.Points), 48); err != nil {
+				node.release()
+				return err
+			}
 			g.geometries[keys[i]] = node
 			g.uploads++
+		}
+		u := geom.pointUpdate
+		revision := uint64(0)
+		if u != nil {
+			revision = u.revision
+		}
+		if node.pointRevision != revision {
+			first, end := 0, len(geom.Points)
+			if u != nil && node.pointRevision == u.previous {
+				first, end = u.first, u.end
+			}
+			data := geometryData(Geometry{Points: geom.Points[first:end], PointStyle: geom.PointStyle})[0]
+			if err := dev.Queue().WriteBuffer(node.batches[0].buffer, uint64(first*pointRecord), data); err != nil {
+				return err
+			}
+			if geom.DropShadow.Strength > 0 {
+				data := geometryData(Geometry{Bounds: geom.Bounds, DropShadow: geom.DropShadow})[8]
+				if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, data); err != nil {
+					return err
+				}
+			}
+			if node.sprite.buffer != nil {
+				if err := dev.Queue().WriteBuffer(node.sprite.buffer, uint64(first*48), spriteData(geom.PointStyle, geom.Points[first:end])); err != nil {
+					return err
+				}
+			}
+			node.pointRevision, node.sorted = revision, false
 		}
 		g.nodes[i] = node
 		if !drawn[i] {
@@ -242,6 +279,9 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 				order, orderSize = node.order, 4*uint64(b.count)
 			}
 			layout, entries = g.pointBindLayout, []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: g.zeros, Size: 48}, {Binding: 2, Buffer: next.transform, Size: size}, {Binding: 3, Buffer: b.buffer, Size: b.size}, {Binding: 4, Buffer: order, Size: orderSize}}
+			if node.sprite.buffer != nil {
+				entries[1] = wgpu.BindGroupEntry{Binding: 1, Buffer: node.sprite.buffer, Size: node.sprite.size}
+			}
 		}
 		if next.binds[kind], err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries}); err != nil {
 			next.release()
@@ -459,3 +499,15 @@ func geometryData(geom Geometry) (data [9][]byte) {
 // pointRecord is the bytes of a point's record: position and radius, four
 // floats, and its color as RGBA8. Other records are twelve floats.
 const pointRecord = 20
+
+func spriteData(style PointStyle, points []Point) []byte {
+	if style.Texture == nil {
+		return nil
+	}
+	data := make([]byte, 0, len(points)*48)
+	for _, p := range points {
+		r := style.spriteRect(p)
+		data = appendFloats(data, r[0], r[1], r[2], r[3], 0, 0, 0, 0, 0, 0, 0, 0)
+	}
+	return data
+}

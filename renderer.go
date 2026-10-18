@@ -288,7 +288,7 @@ func validateFrame(f Frame) error {
 		return fmt.Errorf("nt3d: frame exceeds GPU binding limit")
 	}
 	for i, g := range f.Geometry {
-		if err := g.Validate(); err != nil {
+		if err := validateFrameGeometry(g); err != nil {
 			return err
 		}
 		m := instance(f, i).World

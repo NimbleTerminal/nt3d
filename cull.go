@@ -12,6 +12,8 @@ func overhang(g *Geometry) float32 {
 	}
 	if g.PointStyle.Units == WorldUnits && len(g.Points) > 0 {
 		r = max(r, MaxPointPixels) // As far as a world radius reaches on screen.
+	} else if g.pointUpdate != nil {
+		r = max(r, 32) // Validated pixel points never exceed 32; avoid a frame scan.
 	} else {
 		for _, p := range g.Points {
 			r = max(r, p.Radius)

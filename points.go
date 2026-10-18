@@ -11,6 +11,15 @@ import (
 // PointStyle is how a geometry's points are drawn. The zero value is hard
 // discs, radius in pixels, opaque.
 type PointStyle struct {
+	// Texture draws square camera-facing sprites, tinted by Point.Color.
+	// It replaces the disc shape. Opaque sprites cut out alpha below 0.5;
+	// blended sprites multiply texture alpha by Point.Color.A.
+	// Only image color textures are supported. Filtering stays within each cell.
+	Texture *Texture
+	// Columns and Rows divide an atlas into equal cells; zero means one.
+	Columns, Rows uint32
+	// Frame is added to each Point.Frame, wrapping through row-major cells.
+	Frame uint32
 	Shape PointShape
 	Units PointUnits
 	Blend PointBlend
@@ -53,6 +62,12 @@ const MaxPointPixels = 256
 func validPointStyle(s PointStyle) error {
 	if s.Shape > SoftPoint || s.Units > WorldUnits || s.Blend > AdditiveBlend {
 		return fmt.Errorf("nt3d: unknown point style")
+	}
+	if s.Texture != nil {
+		t := s.Texture
+		if !t.valid() || t.data || t.shader != "" || max(1, s.Columns) > uint32(t.width) || max(1, s.Rows) > uint32(t.height) || uint32(t.width)%max(1, s.Columns) != 0 || uint32(t.height)%max(1, s.Rows) != 0 {
+			return fmt.Errorf("nt3d: sprite requires an image texture and an evenly divided atlas")
+		}
 	}
 	return nil
 }
@@ -143,4 +158,16 @@ func (s *pointSorter) sort(points []Point, m *nt3dmath.Mat4) []uint32 {
 		order, spareOrder = spareOrder, order
 	}
 	return order // Four passes: back in s.order.
+}
+
+// spriteRect returns normalized cell offset and size, with overflow-safe wrap.
+func (s PointStyle) spriteRect(p Point) [4]float32 {
+	c, r := max(1, s.Columns), max(1, s.Rows)
+	frame := uint32((uint64(s.Frame) + uint64(p.Frame)) % (uint64(c) * uint64(r)))
+	return [4]float32{float32(frame%c) / float32(c), float32(frame/c) / float32(r), 1 / float32(c), 1 / float32(r)}
+}
+func (s PointStyle) spriteSample(p Point, u, v float32) [4]float32 {
+	rect := s.spriteRect(p)
+	dx, dy := .5/float32(s.Texture.width), .5/float32(s.Texture.height)
+	return s.Texture.sampleLinear(UV{max(rect[0]+dx, min(rect[0]+rect[2]-dx, rect[0]+u*rect[2])), max(rect[1]+dy, min(rect[1]+rect[3]-dy, rect[1]+v*rect[3]))}, false, 0)
 }

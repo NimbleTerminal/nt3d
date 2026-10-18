@@ -10,6 +10,7 @@ import (
 )
 
 type Point struct {
+	Frame    uint32 // Atlas frame offset, added to PointStyle.Frame (row-major, wrapping).
 	Position nt3dmath.Vec3
 	Radius   float32
 	Color    color.RGBA
@@ -42,8 +43,9 @@ type DropShadow struct {
 // Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
 // Scene setters copy geometry; frame consumers must treat snapshots as read-only.
 type Geometry struct {
-	posed     *posedGeometry
-	Billboard *Billboard // Optional camera-facing transform, resolved by Scene.Frame.
+	pointUpdate *pointUpdate
+	posed       *posedGeometry
+	Billboard   *Billboard // Optional camera-facing transform, resolved by Scene.Frame.
 
 	// WireGrid optionally describes a row-major rectangular vertex lattice (NX, NY).
 	// Wireframe draws viewport-adaptive rows/columns instead of triangle edges.

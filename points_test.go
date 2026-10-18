@@ -35,7 +35,7 @@ func TestPointStyleValidation(t *testing.T) {
 	for name, g := range map[string]Geometry{
 		"small world radius":     {PointStyle: world, Points: radius(.001)},
 		"large world radius":     {PointStyle: world, Points: radius(1000)},
-		"every field set":        {PointStyle: PointStyle{SoftPoint, WorldUnits, AdditiveBlend}, Points: radius(.1)},
+		"every field set":        {PointStyle: PointStyle{Shape: SoftPoint, Units: WorldUnits, Blend: AdditiveBlend}, Points: radius(.1)},
 		"a style without points": {PointStyle: PointStyle{Blend: AlphaBlend}},
 	} {
 		if err := g.Validate(); err != nil {

@@ -284,6 +284,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "t":
+			if d.particles != nil {
+				err = d.toggleParticleSprites()
+				break
+			}
 			if d.mipmaps != nil {
 				err = d.cyclePattern()
 				break
