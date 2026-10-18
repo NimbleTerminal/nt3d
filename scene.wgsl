@@ -1,5 +1,6 @@
+@group(1) @binding(0) var shadowMap: texture_depth_2d;
 struct Light { a: vec4<f32>, b: vec4<f32> };
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
@@ -55,11 +56,26 @@ fn toward(l:Light,p:vec3<f32>)->vec4<f32> {
  if l.b.w>0.0 {let k=max(0.0,1.0-d2/(l.b.w*l.b.w));fade=k*k;}
  return vec4<f32>(v*inverseSqrt(d2),fade);
 }
+// Manual depth lookup uses only core textureLoad, with clamped PCF taps.
+fn shadowVisibility(p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
+ let q=u.shadow*vec4<f32>(p+n*(1.5*u.shadowParams.z),1.0);
+ let xy=vec2<f32>(q.x*0.5+0.5,0.5-q.y*0.5)*u.shadowParams.w;
+ if any(xy<vec2<f32>(0.0)) || any(xy>=vec2<f32>(u.shadowParams.w)) || q.z<0.0 || q.z>1.0 {return 1.0;}
+ let center=vec2<i32>(floor(xy));let size=i32(u.shadowParams.w);
+ let bias=u.shadowParams.y*(1.0+2.0*(1.0-max(0.0,dot(n,l))));var lit=0.0;
+ for(var y=-1;y<=1;y=y+1) {for(var x=-1;x<=1;x=x+1) {
+ let texel=clamp(center+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(size-1));
+ if textureLoad(shadowMap,texel,0)>=q.z-bias {lit+=1.0;}
+ }}return lit/9.0;
+}
+fn lightVisibility(i:u32,p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
+ if f32(i)==u.shadowParams.x {return shadowVisibility(p,n,l);}return 1.0;
+}
 // illuminate is the light reaching a surface with unit normal n at p:
 // ambient, from ground to sky as n turns up, and each light's diffuse.
 fn illuminate(n:vec3<f32>,p:vec3<f32>)->vec3<f32> {
  var c=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
- for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz)));}
+ for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz))*lightVisibility(i,p,n,t.xyz));}
  return c;
 }
 // fogAmount is how far toward the fog's color a world point fades.
@@ -79,7 +95,7 @@ fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {
    if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
    for(var i=0u;i<u32(u.sky.w);i=i+1u) {
     let l=u.lights[i];let t=toward(l,o.world);let h=t.xyz+view;
-    if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {c+=l.b.rgb*(t.w*o.spec.x*pow(max(0.0,dot(n,normalize(h))),o.spec.y));}
+    if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {c+=l.b.rgb*(lightVisibility(i,o.world,n,t.xyz)*t.w*o.spec.x*pow(max(0.0,dot(n,normalize(h))),o.spec.y));}
    }
   }
  }
@@ -175,7 +191,7 @@ fn lineOutput(vi:u32,ii:u32,bias:f32)->Out {
  let a=items[ii];return strokeOutput(vi,clipPosition(a.a.xyz,a.color.w),clipPosition(a.b.xyz,a.color.w),a.color,a.color,a.a.w,a.b.w,0.0,worldPosition(a.a.xyz,a.color.w),worldPosition(a.b.xyz,a.color.w));
 }
 @vertex fn vs_ui(@builtin(vertex_index) vi:u32)->Out {let p=items[vi];var o:Out;let x=p.a.x/u.viewport.x*2.0-1.0;let y=1.0-p.a.y/u.viewport.y*2.0;o.clip=vec4<f32>(x,y,0.0,1.0);o.color=vec4<f32>(decode(p.color.rgb),p.color.a);o.uv=vec2<f32>(0.0);o.point=0.0;return o;}
-@vertex fn vs_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
+fn boxOutput(vi:u32,ii:u32)->Out {
 var corners=array<vec3<f32>,36>(vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(1.0,0.0,1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,0.0,0.0),vec3<f32>(0.0,1.0,1.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,1.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,0.0,0.0),vec3<f32>(1.0,1.0,1.0),vec3<f32>(1.0,0.0,1.0));
 var normals=array<vec3<f32>,6>(vec3<f32>(0.0,0.0,-1.0),vec3<f32>(0.0,0.0,1.0),vec3<f32>(0.0,-1.0,0.0),vec3<f32>(0.0,1.0,0.0),vec3<f32>(-1.0,0.0,0.0),vec3<f32>(1.0,0.0,0.0));
 // Materials, and so highlights, apply to meshes only.
@@ -192,8 +208,8 @@ fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
 @fragment fn fs_point_add(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(o.color.rgb,o.cut*(1.0-fogAmount(o.world)));}
 @fragment fn fs_point_add_soft(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(o.color.rgb,o.cut*softness(o)*(1.0-fogAmount(o.world)));}
 
-@group(1) @binding(0) var mapTexture: texture_2d<f32>;
-@group(1) @binding(1) var mapSampler: sampler;
+@group(2) @binding(0) var mapTexture: texture_2d<f32>;
+@group(2) @binding(1) var mapSampler: sampler;
 // Textured records carry the cutout threshold, or a transparent vertex's
 // opacity, where color would be; it reaches the fragment in cut.
 // Flags: 1 repeat, 2 edge-on, 4 tint, whose color is a 24-bit integer.
@@ -257,4 +273,35 @@ fn mapColor(c:vec3<f32>)->vec3<f32> {
  let t=sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat);
  if t.a<o.cut {discard;}
  return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),1.0);
+}
+
+@vertex fn vs_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return boxOutput(vi,ii);}
+struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>, @location(1) cut:f32, @location(2) @interpolate(flat) repeat:f32 };
+@vertex fn vs_shadow_mesh(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->ShadowOut {
+ var o:ShadowOut;o.clip=u.shadow*instances[ii].world*vec4<f32>(items[vi].a.xyz,1.0);return o;
+}
+@vertex fn vs_shadow_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->ShadowOut {
+ let b=boxOutput(vi,ii);var o:ShadowOut;o.clip=u.shadow*vec4<f32>(b.world,1.0);return o;
+}
+@vertex fn vs_shadow_texture(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->ShadowOut {
+ let p=items[vi];var o:ShadowOut;o.clip=u.shadow*instances[ii].world*vec4<f32>(p.a.xyz,1.0);
+ o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;
+ o.repeat=select(0.0,1.0,(u32(p.color.y)&1u)!=0u && instances[ii].normal[3].z>0.5);return o;
+}
+@fragment fn fs_shadow_cutout(o:ShadowOut) {if sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat).a<o.cut {discard;}}
+
+// Drop bounds are local; transform every corner before fitting the world disc.
+@vertex fn vs_drop(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
+ let item=items[0]; let world=instances[ii].world;
+ var lo=vec3<f32>(1e30);var hi=vec3<f32>(-1e30);
+ for(var i=0u;i<8u;i=i+1u) {
+  let p=vec3<f32>(select(item.a.x,item.b.x,(i&1u)!=0u),select(item.a.y,item.b.y,(i&2u)!=0u),select(item.a.z,item.b.z,(i&4u)!=0u));
+  let q=(world*vec4<f32>(p,1.0)).xyz;lo=min(lo,q);hi=max(hi,q);
+ }
+ var radius=item.b.w;
+ if radius==0.0 {radius=max(hi.x-lo.x,hi.y-lo.y)*0.5;}
+ var corners=array<vec2<f32>,6>(vec2<f32>(-1.,-1.),vec2<f32>(1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,1.));
+ let corner=corners[vi];let pos=vec3<f32>((lo.xy+hi.xy)*0.5+corner*radius,lo.z);
+ var o:Out;o.clip=u.matrix*vec4<f32>(pos,1.0);o.clip.z+=-0.00001*o.clip.w;
+ o.uv=corner;o.point=1.0;o.cut=item.a.w;o.color=vec4<f32>(0.0);o.normal=vec3<f32>(0.0);o.world=pos;return o;
 }

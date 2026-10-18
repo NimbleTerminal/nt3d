@@ -19,18 +19,21 @@ func ForestMain() { mainDemo(true, sceneForest) }
 var forestCounts = []int{500, 2000, 8000}
 
 type forestScene struct {
-	kinds  []forestKind
-	trees  []forestTree
-	count  int  // Index into forestCounts.
-	copies bool // Each tree its own geometry, rather than shared.
-	group  nt3d.NodeID
+	shadows shadowMode
+	kinds   []forestKind
+	trees   []forestTree
+	count   int  // Index into forestCounts.
+	copies  bool // Each tree its own geometry, rather than shared.
+	group   nt3d.NodeID
 }
 
 // forestKind is one kind of tree: its mesh, shared or copied.
 type forestKind struct {
-	name     string
-	geometry nt3d.Geometry
-	shared   *nt3d.SharedGeometry
+	name         string
+	geometry     nt3d.Geometry
+	shared       *nt3d.SharedGeometry
+	dropGeometry nt3d.Geometry
+	dropShared   *nt3d.SharedGeometry
 }
 
 type forestTree struct {
@@ -89,7 +92,13 @@ func forestKinds() ([]forestKind, error) {
 		if err != nil {
 			return nil, err
 		}
-		kinds = append(kinds, forestKind{k.name, g, shared})
+		drop := g
+		drop.DropShadow = nt3d.DropShadow{Strength: .4}
+		dropShared, err := nt3d.NewSharedGeometry(drop)
+		if err != nil {
+			return nil, err
+		}
+		kinds = append(kinds, forestKind{k.name, g, shared, drop, dropShared})
 	}
 	return kinds, nil
 }
@@ -153,6 +162,9 @@ func (d *demo) plantForest() error {
 // dressTree gives a tree its kind's shared mesh, or its own copy of it.
 func (d *demo) dressTree(t forestTree) error {
 	k := d.forest.kinds[t.kind]
+	if d.forest.shadows == shadowDrop {
+		k.geometry, k.shared = k.dropGeometry, k.dropShared
+	}
 	if d.forest.copies {
 		return d.scene.SetNodeGeometry(t.node, k.geometry)
 	}
@@ -202,6 +214,6 @@ func (d *demo) forestView(content string) string {
 	for _, t := range d.forest.trees {
 		triangles += len(d.forest.kinds[t.kind].geometry.Indices) / 3
 	}
-	return fmt.Sprintf("nt3d forest · i instancing · n trees · a wind · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d trees, %d triangles · drag orbit · wheel zoom · r rotate · %s",
-		content, d.rendering(), mode, len(d.forest.trees), triangles, d.status)
+	return fmt.Sprintf("nt3d forest · i instancing · n trees · s shadows · a wind · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d trees, %d triangles · drag orbit · wheel zoom · r rotate · %s",
+		content, d.rendering(), mode+" · "+d.forest.shadows.String(), len(d.forest.trees), triangles, d.status)
 }

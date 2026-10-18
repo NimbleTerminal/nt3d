@@ -28,7 +28,8 @@ move to Done with their commit; git history has the details.
   is wireframe-only.
 - [ ] **Outline or toon edges** on the GPU and software renderers, for
   readability at terminal sizes.
-- [ ] **Shadows**: drop shadows first; shadow maps later.
+- [ ] **Point-light shadows**.
+- [ ] **A floor option for drop shadows**, instead of the bottom of each instance's world bounds.
 - [ ] **Order-independent transparency**: only if scenes hit the sorting
   limits (intersecting glass, overlapping layers of one mesh).
 - [ ] **Fur fins don't sway** with the wind; only slightly visible.
@@ -68,6 +69,9 @@ move to Done with their commit; git history has the details.
 ## Done
 
 Recent milestones, newest first:
+
+- shadows: drop discs and directional shadow maps, both renderers; `s` in
+  lights and forest (API: `b19983c`, `bf7b9ad`)
 
 - `v0.1.0`: the first release, at `nimbleterminal.dev/nt3d`
 - `749834b`…`d5a711f` sprite points: soft, sized in world units, alpha and additive blending, both renderers, 20-byte GPU records; the particles demo

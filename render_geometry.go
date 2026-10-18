@@ -24,7 +24,7 @@ type geometryKey struct {
 // gpuGeometry is a geometry's uploaded primitives and the instance sets that
 // draw them: one set for each draw of the frame, reused across frames.
 type gpuGeometry struct {
-	batches [8]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles.
+	batches [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
 	sets    []*instanceSet
 	used    int           // Sets drawn from this frame.
 	order   *wgpu.Buffer  // Alpha points' order, farthest first, as last sorted.
@@ -51,7 +51,7 @@ func (n *gpuGeometry) release() {
 type instanceSet struct {
 	transform *wgpu.Buffer
 	capacity  int
-	binds     [8]*wgpu.BindGroup
+	binds     [9]*wgpu.BindGroup
 	last      []transformState // What the buffer holds.
 }
 
@@ -346,11 +346,11 @@ func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, tr
 	return nil
 }
 
-func geometryData(geom Geometry) (data [8][]byte) {
+func geometryData(geom Geometry) (data [9][]byte) {
 	// Each record is twelve floats; each kind is sized once, so encoding
 	// allocates per kind rather than per record.
 	const record = 12 * 4
-	var records [8]int
+	var records [9]int
 	records[0], records[2], records[3], records[6] = len(geom.Points), len(geom.Boxes), len(geom.Lines), len(geom.Arrows)
 	if textured(geom) {
 		records[7] = len(geom.Indices)
@@ -365,6 +365,10 @@ func geometryData(geom Geometry) (data [8][]byte) {
 			}
 			data[kind] = make([]byte, 0, n*size)
 		}
+	}
+	if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() {
+		a, b := geom.Bounds.Min, geom.Bounds.Max
+		data[8] = appendFloats(nil, a.X, a.Y, a.Z, geom.DropShadow.Strength, b.X, b.Y, b.Z, geom.DropShadow.Radius, 0, 0, 0, 0)
 	}
 	// Each node binds one transform; records always reference its slot zero.
 	vertex := func(kind int, v Vertex, radius float32) {

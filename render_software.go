@@ -75,6 +75,10 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	// Surfaces are shaded in 0..255, in linear light or as encoded, as the
 	// frame works; pixels are 8-bit sRGB.
 	linear, rig, aniso := f.Linear, newRig(&f), f.anisotropy()
+	drawn := f.drawn(px)
+	if rig.shadowLight >= 0 {
+		rig.shadow = buildShadowMap(&f, drawn, softwareShadowSize(&f))
+	}
 	toPixel := func(v float32) uint8 {
 		if linear {
 			return encode8(v / 255)
@@ -154,7 +158,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		// A triangle with normals is lit; unlit ones have none.
 		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
 		// Whether pixels need the world point, and so perspective weights.
-		located := fogged || lit && (specular || rig.points)
+		located := fogged || lit && (specular || rig.points || rig.shadow != nil)
 		perspective := blended || textured || lit || fogged
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
@@ -398,7 +402,6 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			}
 		}
 	}
-	drawn := f.drawn(px)
 	for gi, g := range f.Geometry {
 		if !drawn[gi] {
 			continue
@@ -431,6 +434,86 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		for i := 0; i < len(g.Arrows); i += arrowStep {
 			a := g.Arrows[i]
 			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put, strokeFog(inst.World.Point(a.Start), inst.World.Point(a.End)))
+		}
+	}
+
+	// rasterDisc draws a clipped shadow triangle without writing depth.
+	rasterDisc := func(a, b, c *clipCorner) {
+		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
+		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
+		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
+		area := (x1-x0)*(y2-y0) - (y1-y0)*(x2-x0)
+		if area > -.000001 && area < .000001 {
+			return
+		}
+		// A pixel center on an edge belongs to one triangle, by the top-left
+		// rule the GPU follows, so a transparent shared edge blends once.
+		// Each edge runs as it would around the triangle wound clockwise on
+		// screen (positive area): a top edge runs right along a row, a left
+		// edge up.
+		sign := float32(1)
+		if area < 0 {
+			sign = -1
+		}
+		owns := func(xa, ya, xb, yb float32) bool {
+			dx, dy := (xb-xa)*sign, (yb-ya)*sign
+			return dy < 0 || dy == 0 && dx > 0
+		}
+		own0, own1, own2 := owns(x1, y1, x2, y2), owns(x2, y2, x0, y0), owns(x0, y0, x1, y1)
+		loX, hiX := max(0, int(math.Floor(float64(min(x0, x1, x2))))), min(f.Width-1, int(math.Ceil(float64(max(x0, x1, x2)))))
+		loY, hiY := max(0, int(math.Floor(float64(min(y0, y1, y2))))), min(f.Height-1, int(math.Ceil(float64(max(y0, y1, y2)))))
+		for y := loY; y <= hiY; y++ {
+			for x := loX; x <= hiX; x++ {
+				px, py := float32(x)+.5, float32(y)+.5
+				e0 := edge(x1, y1, x2, y2, px, py) * sign
+				e1 := edge(x2, y2, x0, y0, px, py) * sign
+				e2 := edge(x0, y0, x1, y1, px, py) * sign
+				if e0 < 0 || e1 < 0 || e2 < 0 || e0 == 0 && !own0 || e1 == 0 && !own1 || e2 == 0 && !own2 {
+					continue
+				}
+				u, v := e0*sign/area, e1*sign/area
+				t := 1 - u - v
+				q0, q1, q2 := u/a.w, v/b.w, t/c.w
+				sum := q0 + q1 + q2
+				q0, q1, q2 = q0/sum, q1/sum, q2/sum
+				du := q0*a.uv.U + q1*b.uv.U + q2*c.uv.U
+				dv := q0*a.uv.V + q1*b.uv.V + q2*c.uv.V
+				d2 := du*du + dv*dv
+				if d2 > 1 {
+					continue
+				}
+				rgb := [3]float32{}
+				if fogged {
+					p := a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
+					fogRGB(&rgb, f.eyeDistance(p))
+				}
+				blend(x, y, u*z0+v*z1+t*z2+lineBias, rgb, a.cut*(1-d2)*(1-d2))
+			}
+		}
+	}
+
+	for gi := range f.Geometry {
+		if !drawn[gi] {
+			continue
+		}
+		center, radius, strength, ok := dropDisc(&f.Geometry[gi], instance(f, gi).World)
+		if !ok {
+			continue
+		}
+		var corners [4]clipCorner
+		for k, uv := range []UV{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}} {
+			p := center.Add(nt3dmath.Vec3{X: uv.U * radius, Y: uv.V * radius})
+			corners[k].x, corners[k].y, corners[k].z, corners[k].w = f.Matrix.Transform(p)
+			corners[k].world, corners[k].uv, corners[k].cut = p, uv, strength
+		}
+		for _, ids := range [][3]int{{0, 1, 2}, {0, 2, 3}} {
+			var storage [4]clipCorner
+			polygon := clipNear([3]clipCorner{corners[ids[0]], corners[ids[1]], corners[ids[2]]}, &storage)
+			for k := 1; k+1 < len(polygon); k++ {
+				if polygon[0].w > 0 && polygon[k].w > 0 && polygon[k+1].w > 0 {
+					rasterDisc(&polygon[0], &polygon[k], &polygon[k+1])
+				}
+			}
 		}
 	}
 	// Transparent triangles and blended points blend over everything

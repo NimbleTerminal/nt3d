@@ -46,6 +46,19 @@ Units are world units and nothing is rescaled for you. The near and far planes s
 
 **Lighting.** `Frame.Lighting` (or the widget's `SetLighting`) holds an ambient light and up to eight lights (`MaxLights`), shaded per pixel on both the GPU and in software. The ambient light blends from `Ground`'s color on surfaces facing down to `Sky`'s facing up; equal colors give even light. Each `Light` is a `DirectionalLight` (from `Direction`, which it requires, like the sun) or a `PointLight` (from `Position`, fading to nothing at `Range`, or as 1/(1+d²) without one), with an sRGB `Color` (zero means white) and an `Intensity` (zero means 1). `DefaultLighting()` is a gray ambient and one white key light from above, front, and right. Unlit materials, points, lines, and overlays are never lit.
 
+**Shadows.** Both WebGPU and software draw two kinds. `Geometry.DropShadow` lays a soft black disc centered under the geometry, on the horizontal plane at the bottom of its world bounds, without needing a light. `Strength` sets its center darkness from 0 to 1 (zero disables it); `Radius` is in world units, or zero for the bounds' larger horizontal half extent. Shared geometry gets one disc per instance. Valid geometry bounds are required. Drop shadows darken surfaces beneath the disc, including unlit ones.
+
+For shadows cast by a light, set `Light.Shadows`: the first directional light with the flag gets a shadow map fitted to the visible scene, with soft edges. Opaque and textured meshes, cutouts with their gaps, and boxes cast; lit surfaces receive, including transparent ones. Transparent meshes, points, lines, arrows, and overlays don't cast, and unlit surfaces don't receive. Point lights don't cast shadows.
+
+```go
+geometry.DropShadow = nt3d.DropShadow{Strength: 0.5} // Radius follows the bounds.
+lighting := nt3d.DefaultLighting()
+lighting.Lights[0].Shadows = true
+frame.Lighting = lighting
+```
+
+Both kinds follow the instances drawn by the camera: a culled object loses its shadow, even when a drop disc's `Radius` would reach into view. Wireframe ignores both. In the [lights and forest demos](../demos/), `s` cycles through no shadows, drop shadows, and shadow maps.
+
 **Points.** `Geometry.PointStyle` sets how a geometry's points are drawn. `Shape` is `HardPoint`, the default, or `SoftPoint`, whose alpha falls off smoothly to its edge. `Units` is `PixelUnits`, the default (a `Radius` of 1 to 32 pixels at any distance), or `WorldUnits` (any positive radius, smaller farther away, between half a pixel and `MaxPointPixels` on screen). `Blend` is `OpaqueBlend`, the default; `AlphaBlend`, over what's behind by the color's alpha, with the geometry's points sorted farthest first each frame; or `AdditiveBlend`, added to what's behind times alpha, so overlapping points glow. Blended points are hidden by nearer opaque surfaces but hide nothing themselves, and fog fades additive points out rather than tinting them. Points are never lit, and wireframe draws them as dots whatever their style. To animate particles, set new points every frame with `SetNodeGeometry`: the [particles demo](../demos/#particles) moves 100,000 that way.
 
 **Linear light.** Frames from `Scene.Frame` light, blend, and average colors in linear light, decoding sRGB first and encoding the result, so light adds as it does physically. Surfaces turning away from the light dim gradually, and blended and smoothed edges keep their brightness instead of darkening. Hand-built frames work in encoded color unless they set `Frame.Linear`.

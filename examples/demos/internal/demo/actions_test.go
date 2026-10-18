@@ -24,3 +24,19 @@ func TestSceneActions(t *testing.T) {
 		}
 	}
 }
+
+func TestShadowActions(t *testing.T) {
+	for _, d := range []*demo{{lights: &lightScene{}}, {forest: &forestScene{}}} {
+		context, k := d.sceneKeys()
+		found := false
+		for _, binding := range k.scene {
+			help := binding.Help()
+			if help.Key == "s" && help.Desc == "shadows" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s has no shadow action", context)
+		}
+	}
+}

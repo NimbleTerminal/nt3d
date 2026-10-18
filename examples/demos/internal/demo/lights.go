@@ -15,6 +15,7 @@ import (
 func LightsMain() { mainDemo(true, sceneLights) }
 
 type lightScene struct {
+	shadows   shadowMode
 	preset    int  // Index into lightPresets.
 	ranged    bool // Point lights fade to nothing at their range, rather than with distance alone.
 	dull      bool // The shapes without highlights.
@@ -138,6 +139,9 @@ func (d *demo) buildLightShapes() error {
 		if g, err = nt3d.TransformGeometry(g, nt3dmath.Translation(shape.at)); err != nil {
 			return err
 		}
+		if d.lights.shadows == shadowDrop {
+			g.DropShadow = nt3d.DropShadow{Strength: .5}
+		}
 		if _, err = d.scene.SetGeometry(shape.name, g); err != nil {
 			return err
 		}
@@ -210,6 +214,9 @@ func (d *demo) applyLights() (nt3d.Lighting, error) {
 func (d *demo) decorateLights(f *nt3d.Frame) {
 	p := lightPresets[d.lights.preset]
 	f.Lighting = p.lights(d.lights.t, d.lights.ranged)
+	if p.sun != nil && d.lights.shadows == shadowMap {
+		f.Lighting.Lights[0].Shadows = true
+	}
 	if p.background.A != 0 {
 		f.Background = p.background
 	}
@@ -257,6 +264,6 @@ func (d *demo) lightsView(content string) string {
 	if d.lights.dull {
 		shine = "dull"
 	}
-	return fmt.Sprintf("nt3d lights · l preset · f falloff · e highlights · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
-		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, shine, d.status)
+	return fmt.Sprintf("nt3d lights · l preset · f falloff · e highlights · s shadows · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
+		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, shine+" · "+d.lights.shadows.String(), d.status)
 }

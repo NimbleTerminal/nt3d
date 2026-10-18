@@ -105,6 +105,7 @@ func validLighting(l Lighting) bool {
 // working space (decoded when it works in linear light) times their
 // intensities, directions normalized.
 type lightRig struct {
+	shadow      *shadowMap
 	sky, ground [3]float32
 	lights      []rigLight
 	shadowLight int  // Index of the shadow-casting light, or -1.
@@ -177,6 +178,9 @@ func (r *lightRig) light(rgb *[3]float32, n, p nt3dmath.Vec3) {
 			dir, fade := l.toward(p)
 			s = n.Dot(dir) * fade
 		}
+		if i == r.shadowLight && r.shadow != nil {
+			s *= r.shadow.visibility(p, n, l.v)
+		}
 		if s > 0 {
 			c0 += l.color[0] * s
 			c1 += l.color[1] * s
@@ -206,6 +210,9 @@ func (r *lightRig) highlight(m *Material, n, p, view nt3dmath.Vec3) [3]float32 {
 			continue
 		}
 		s := m.Specular * float32(math.Pow(float64(max(0, n.Dot(h.Normalize()))), float64(m.shininess()))) * fade
+		if i == r.shadowLight && r.shadow != nil {
+			s *= r.shadow.visibility(p, n, dir)
+		}
 		for k := range c {
 			c[k] += l.color[k] * s
 		}

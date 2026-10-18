@@ -46,9 +46,9 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.particles != nil:
 		return "particles", keys{[]key.Binding{bind("b", "b", "blend"), bind("s", "s", "shape"), bind("n", "n", "count"), bind("a", "a", "pause")}}
 	case d.lights != nil:
-		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("f", "f", "falloff"), bind("e", "e", "highlights"), bind("a", "a", "pause")}}
+		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("f", "f", "falloff"), bind("e", "e", "highlights"), bind("s", "s", "shadows"), bind("a", "a", "pause")}}
 	case d.forest != nil:
-		return "forest", keys{[]key.Binding{bind("i", "i", "instancing"), bind("n", "n", "trees"), bind("a", "a", "wind")}}
+		return "forest", keys{[]key.Binding{bind("i", "i", "instancing"), bind("n", "n", "trees"), bind("s", "s", "shadows"), bind("a", "a", "wind")}}
 	case d.mipmaps != nil:
 		return "mipmaps", keys{[]key.Binding{bind("m", "m", "filtering"), bind("t", "t", "texture"), bind("x", "x", "supersample")}}
 	case d.fur != nil:

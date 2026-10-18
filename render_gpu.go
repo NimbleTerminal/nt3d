@@ -30,8 +30,8 @@ func sceneShaderSource() string {
 
 // uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
 // and light count, eye, forward, fog, fog color, ground ambient, and
-// MaxLights lights of two vec4s each.
-const uniformSize = 160 + 16 + MaxLights*32
+// MaxLights lights of two vec4s each, then shadow matrix and lookup params.
+const uniformSize = 160 + 16 + MaxLights*32 + 80
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -41,9 +41,14 @@ type gpuBatch struct {
 }
 
 type gpuRenderer struct {
-	textureLayout   *wgpu.PipelineLayout
-	texturePipeline *wgpu.RenderPipeline
-	cutoutPipeline  *wgpu.RenderPipeline
+	dropPipeline           *wgpu.RenderPipeline
+	shadowLayout           *wgpu.BindGroupLayout
+	noShadow, shadowTarget shadowTarget
+	shadowActive           bool
+	shadowPipelines        [4]*wgpu.RenderPipeline
+	textureLayout          *wgpu.PipelineLayout
+	texturePipeline        *wgpu.RenderPipeline
+	cutoutPipeline         *wgpu.RenderPipeline
 	// Transparent meshes' back faces, then front faces: untextured and textured.
 	blendPipelines [2]*wgpu.RenderPipeline
 	textureBlends  [2]*wgpu.RenderPipeline
@@ -98,7 +103,11 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		g.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout}})
+		g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}}})
+		if err != nil {
+			return err
+		}
+		g.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout}})
 		if err != nil {
 			return err
 		}
@@ -115,7 +124,7 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		g.pointLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.pointBindLayout}})
+		g.pointLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.pointBindLayout, g.shadowLayout}})
 		if err != nil {
 			return err
 		}
@@ -155,6 +164,9 @@ func (g *gpuRenderer) setup() (err error) {
 				}
 			}
 		}
+		if g.dropPipeline, err = pointPipeline(dev, g.layout, g.shader, "vs_drop", "fs_point_alpha_soft", false); err != nil {
+			return err
+		}
 		if g.zeros, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 48, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
 			return err
 		}
@@ -162,7 +174,11 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		return nil
+		g.noShadow, err = g.makeShadowTarget(dev, 1)
+		if err != nil {
+			return err
+		}
+		return g.setupShadowPipelines(dev)
 	})
 }
 
@@ -278,11 +294,26 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	ub = append(ub, floats(rig.ground[0], rig.ground[1], rig.ground[2], 0)...)
 	ub = append(ub, floats(lights[:]...)...)
 	drawn := f.drawn(1)
+	view, active := fitShadow(&f, drawn, shadowMapSize)
+	g.shadowActive = active
+	params := [4]float32{-1, 0, 0, 0}
+	if active {
+		params = [4]float32{float32(view.light), 1.0 / shadowMapSize, view.texel, shadowMapSize}
+	}
+	ub = append(ub, floats(view.matrix[:]...)...)
+	ub = append(ub, floats(params[:]...)...)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
 			return err
 		}
 		dev := frame.Device
+		if g.shadowActive && g.shadowTarget.texture == nil {
+			var err error
+			g.shadowTarget, err = g.makeShadowTarget(dev, shadowMapSize)
+			if err != nil {
+				return err
+			}
+		}
 		if err := g.uploadIdentity(dev); err != nil {
 			return err
 		}
@@ -321,16 +352,34 @@ func background(f Frame) gputypes.Color {
 // drawScene records the scene's pass into a color and depth target.
 func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
+		if g.shadowActive {
+			if err := g.drawShadow(f, encoder); err != nil {
+				return err
+			}
+		}
+
 		pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: background(f)}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpClear, DepthStoreOp: gputypes.StoreOpStore, DepthClearValue: 1, StencilReadOnly: true}})
 		if err != nil {
 			return err
 		}
+		shadowBind := g.noShadow.bind
+		if g.shadowActive {
+			shadowBind = g.shadowTarget.bind
+		}
+		pass.SetBindGroup(1, shadowBind, nil)
 		// Draws hold the drawn instances: hidden and culled nodes keep their
 		// buffers but are not drawn. Meshes draw each run of instances at once;
 		// other primitives belong to unshared geometry, one instance each.
 		// Transparent triangles wait for everything opaque.
 		for _, i := range []int{5, 0, 1, 2, 3, 6, 4} {
 			if i == 4 {
+				for _, d := range g.draws {
+					if d.geom.batches[8].count > 0 {
+						pass.SetPipeline(g.dropPipeline)
+						pass.SetBindGroup(0, d.set.binds[8], nil)
+						pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.count})
+					}
+				}
 				// Then blend them, farthest first, back faces before front.
 				for _, index := range f.blendOrder(drawn) {
 					d := g.draws[g.blendDraw[index]]
@@ -435,6 +484,9 @@ func (g *gpuRenderer) Close() error {
 			delete(g.geometries, key)
 		}
 		g.nodes = nil
+		if g.dropPipeline != nil {
+			g.dropPipeline.Release()
+		}
 		if g.cutoutPipeline != nil {
 			g.cutoutPipeline.Release()
 		}
@@ -483,6 +535,16 @@ func (g *gpuRenderer) Close() error {
 		if g.bindLayout != nil {
 			g.bindLayout.Release()
 		}
+		for _, p := range g.shadowPipelines {
+			if p != nil {
+				p.Release()
+			}
+		}
+		g.noShadow.release()
+		g.shadowTarget.release()
+		if g.shadowLayout != nil {
+			g.shadowLayout.Release()
+		}
 		if g.shader != nil {
 			g.shader.Release()
 		}
@@ -511,15 +573,14 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 	return err
 }
 
-// drawTextured draws a geometry's textured triangles with the pipeline set.
 // drawTextured draws a run's textured triangles with the pipeline set.
 func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
 	pass.SetBindGroup(0, d.set.binds[7], nil)
 	src := f.Geometry[d.index].Material.Texture
 	if t := g.procedural[src]; t != nil {
-		pass.SetBindGroup(1, t.target.BindGroup(), nil)
+		pass.SetBindGroup(2, t.target.BindGroup(), nil)
 	} else {
-		pass.SetBindGroup(1, g.textures[textureKey{src, f.Geometry[d.index].Material.Repeat, f.anisotropy()}].BindGroup(), nil)
+		pass.SetBindGroup(2, g.textures[textureKey{src, f.Geometry[d.index].Material.Repeat, f.anisotropy()}].BindGroup(), nil)
 	}
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count})
 }

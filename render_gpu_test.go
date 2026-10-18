@@ -783,7 +783,7 @@ func TestGPUInstanceSetFailureRetries(t *testing.T) {
 		if _, err := r.instanceSet(dev, node, 1<<40); err == nil {
 			return errors.New("a set past the device's limits was made")
 		}
-		if set := node.sets[0]; set.capacity != 0 || set.transform != nil || set.binds != [8]*wgpu.BindGroup{} {
+		if set := node.sets[0]; set.capacity != 0 || set.transform != nil || set.binds != [9]*wgpu.BindGroup{} {
 			return fmt.Errorf("a failed set kept capacity %d", set.capacity)
 		}
 		node.used = 0
@@ -910,6 +910,124 @@ func TestGPUPointFogMatchesSoftware(t *testing.T) {
 		for _, p := range [][2]int{{40, 40}, {42, 40}, {10, 10}, {70, 70}} {
 			if g, s := at(gpu, p[0], p[1]), at(software, p[0], p[1]); !closeRGB(g, s, 4) {
 				t.Errorf("blend %d at %v: GPU %v, software %v", blend, p, g, s)
+			}
+		}
+	}
+}
+
+func TestGPUShadowsMatchSoftware(t *testing.T) {
+	scenes := shadowScenes(t)
+	r := &gpuRenderer{}
+	defer r.Close()
+	for name, f := range scenes {
+		for _, linear := range []bool{true, false} {
+			f.Linear = linear
+			img, err := r.Render(f)
+			check(t, err)
+			sw := softwareRender(f)
+			off := 0
+			for y := range f.Height {
+				for x := range f.Width {
+					if !closeRGB(at(img, x, y), at(sw, x, y), 6) {
+						off++
+					}
+				}
+			}
+			if off > f.Width*f.Height/50 {
+				t.Errorf("%s, linear %v: %d of %d pixels differ; center GPU %v, software %v", name, linear, off, f.Width*f.Height, at(img, 40, 40), at(sw, 40, 40))
+			}
+		}
+	}
+}
+
+// Toggle shadows on one renderer: the retained map must never leak into an
+// unshadowed frame, and frames with no bounded geometry must not create a map.
+func TestGPUShadowTargetLifecycle(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	f := shadowScenes(t)["quad casts"]
+	unbounded := f
+	unbounded.Geometry = append([]Geometry(nil), f.Geometry...)
+	for i := range unbounded.Geometry {
+		unbounded.Geometry[i].Bounds = nt3dmath.AABB{}
+	}
+	_, err := r.Render(unbounded)
+	check(t, err)
+	if r.shadowTarget.texture != nil {
+		t.Fatal("unbounded geometry allocated a map")
+	}
+	_, err = r.Render(f)
+	check(t, err)
+	target := r.shadowTarget.texture
+	if target == nil {
+		t.Fatal("missing shadow map")
+	}
+	plain := f
+	plain.Lighting.Lights = append([]Light(nil), f.Lighting.Lights...)
+	for i := range plain.Lighting.Lights {
+		plain.Lighting.Lights[i].Shadows = false
+	}
+	img, err := r.Render(plain)
+	check(t, err)
+	sw := softwareRender(plain)
+	off := 0
+	for y := range plain.Height {
+		for x := range plain.Width {
+			if !closeRGB(at(img, x, y), at(sw, x, y), 6) {
+				off++
+			}
+		}
+	}
+	if off > plain.Width*plain.Height/50 {
+		t.Fatalf("disabled shadows: %d pixels differ", off)
+	}
+	_, err = r.Render(f)
+	check(t, err)
+	if r.shadowTarget.texture != target {
+		t.Fatal("shadow map was not retained")
+	}
+	check(t, r.Close())
+	if r.shadowTarget.texture != nil || r.noShadow.texture != nil {
+		t.Fatal("shadow targets not released")
+	}
+}
+
+// Drop discs share their geometry's transforms and blend before glass.
+func TestGPUDropShadowsMatchSoftware(t *testing.T) {
+	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .6, Y: .6, Z: .6}, Color: white})
+	check(t, err)
+	cube, err = TransformGeometry(cube, nt3dmath.Translation(nt3dmath.Vec3{X: 1.5, Z: -.7}))
+	check(t, err)
+	cube.DropShadow = DropShadow{Strength: .5, Radius: .6}
+	fog := blendScene(t, nil, cube)
+	fog.Fog = Fog{Near: 1, Far: 6}
+	ball, err := BuildSphere(Sphere{Radius: .6, Color: color.RGBA{240, 240, 240, 128}, Material: glass})
+	check(t, err)
+	ball, err = TransformGeometry(ball, nt3dmath.Translation(nt3dmath.Vec3{Z: -.4}))
+	check(t, err)
+	ball.DropShadow = DropShadow{Strength: .7, Radius: .9}
+	scene, _, sg := grid(t, 3, .5, true)
+	sg.geometry.DropShadow = DropShadow{Strength: .8, Radius: .3}
+	shared := frame(t, scene)
+	scenes := map[string]Frame{"cube": blendScene(t, nil, cube), "fog": fog, "shared grid": shared, "glass": blendScene(t, nil, ball)}
+	r := &gpuRenderer{}
+	defer r.Close()
+	for name, f := range scenes {
+		for _, linear := range []bool{true, false} {
+			f.Linear = linear
+			img, err := r.Render(f)
+			check(t, err)
+			sw := softwareRender(f)
+			off := 0
+			for y := range f.Height {
+				for x := range f.Width {
+					if !closeRGB(at(img, x, y), at(sw, x, y), 6) {
+						off++
+					}
+				}
+			}
+			if off > f.Width*f.Height/50 {
+				t.Errorf("%s, linear %v: %d of %d pixels differ", name, linear, off, f.Width*f.Height)
 			}
 		}
 	}

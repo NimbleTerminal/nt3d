@@ -2,6 +2,7 @@
 package demo
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -115,4 +116,86 @@ func settle(t *testing.T, v *nt3dwidget.Model, cmd tea.Cmd) {
 		step(next)
 	}
 	step(cmd)
+}
+
+// The cycle routes drop shadows to geometry and mapped shadows to the sun.
+func TestShadowCycle(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	for step, strength := range []float32{.5, 0, 0} {
+		if err := d.cycleShadows(); err != nil {
+			t.Fatal(err)
+		}
+		f, err := d.scene.Frame(nt3d.DefaultCamera(), 64, 48)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.decorateLights(&f)
+		if f.Lighting.Lights[0].Shadows != (step == 1) {
+			t.Fatalf("step %d: sun", step)
+		}
+		found := false
+		for i, inst := range f.Instances {
+			if inst.Name == "cube" {
+				found = true
+				if f.Geometry[i].DropShadow.Strength != strength {
+					t.Fatalf("step %d: cube", step)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("no cube")
+		}
+	}
+}
+
+// Exercise the actual key routing, refreshed widget and displayed status.
+func TestShadowKeysRender(t *testing.T) {
+	for _, forest := range []bool{false, true} {
+		d := &demo{scene: nt3d.NewScene()}
+		var err error
+		if forest {
+			err = d.setupForest()
+		} else {
+			err = d.setupLights()
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		session := picture.NewTerminalSession(picture.TerminalOptions{Kitty: picture.KittyCapabilityUnsupported})
+		d.fog = false
+		d.view = nt3dwidget.New(d.scene, 20, 8, nt3dwidget.WithRenderMode(nt3d.Software), nt3dwidget.WithTerminalSession(session), nt3dwidget.WithFrameDecorator(d.decorate))
+		settle(t, d.view, d.view.Init())
+		wantModes := []shadowMode{shadowNone, shadowDrop, shadowMap, shadowNone}
+		for step, key := range []rune{'2', 's', 's', 's'} {
+			_, cmd := d.Update(tea.KeyPressMsg{Code: key})
+			settle(t, d.view, cmd)
+			mode := shadowNone
+			if forest {
+				mode = d.forest.shadows
+			} else {
+				mode = d.lights.shadows
+			}
+			want := wantModes[step]
+			if mode != want {
+				t.Fatalf("forest %v, step %d, key %c: mode %v, want %v", forest, step, key, mode, want)
+			}
+			var status string
+			if forest {
+				status = d.forestView("")
+			} else {
+				status = d.lightsView("")
+			}
+			if !strings.Contains(status, want.String()) {
+				t.Fatalf("status: %s", status)
+			}
+			if d.view.Err() != nil {
+				t.Fatal(d.view.Err())
+			}
+		}
+		d.view.Close()
+		session.Close()
+	}
 }

@@ -18,6 +18,7 @@ import (
 	"nimbleterminal.dev/ntpicture"
 	"os"
 	"runtime"
+	"slices"
 	"time"
 )
 
@@ -47,6 +48,41 @@ type demo struct {
 	forest            *forestScene
 	lights            *lightScene
 	particles         *particleScene
+}
+
+type shadowMode int
+
+const (
+	shadowNone shadowMode = iota
+	shadowDrop
+	shadowMap
+)
+
+func (m shadowMode) String() string {
+	switch m {
+	case shadowDrop:
+		return "drop shadows"
+	case shadowMap:
+		return "shadow map"
+	default:
+		return "no shadows"
+	}
+}
+
+func (d *demo) cycleShadows() error {
+	if d.lights != nil {
+		d.lights.shadows = (d.lights.shadows + 1) % 3
+		return d.buildLightShapes()
+	}
+	if d.forest != nil {
+		d.forest.shadows = (d.forest.shadows + 1) % 3
+		for _, tree := range d.forest.trees {
+			if err := d.dressTree(tree); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 type sceneMode int
@@ -280,6 +316,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.cycleNormals()
 			case d.particles != nil:
 				err = d.toggleParticleShape()
+			case d.lights != nil || d.forest != nil:
+				err = d.cycleShadows()
 			default:
 				return d, nil
 			}
@@ -350,6 +388,10 @@ func (d *demo) rendering() string {
 // from just behind the camera's target to well past it, so the far side of
 // the scene fades whatever the zoom.
 func (d *demo) decorate(f *nt3d.Frame) {
+	if d.forest != nil && d.forest.shadows == shadowMap && len(f.Lighting.Lights) > 0 {
+		f.Lighting.Lights = slices.Clone(f.Lighting.Lights)
+		f.Lighting.Lights[0].Shadows = true
+	}
 	if d.lights != nil {
 		d.decorateLights(f)
 	}

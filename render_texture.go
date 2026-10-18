@@ -19,7 +19,7 @@ func releaseBatch(b gpuBatch) {
 }
 
 func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGroupLayout) (err error) {
-	g.textureLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, sampledLayout}})
+	g.textureLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout, sampledLayout}})
 	if err != nil {
 		return err
 	}
@@ -34,6 +34,9 @@ func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGr
 		if err == nil {
 			g.textureBlends[i], err = blendPipeline(dev, g.textureLayout, g.shader, entry, "fs_blend_texture", i)
 		}
+	}
+	if err == nil {
+		err = g.setupTexturedShadowPipelines(dev)
 	}
 	if err != nil {
 		for _, p := range []**wgpu.RenderPipeline{&g.texturePipeline, &g.cutoutPipeline, &g.textureBlends[0], &g.textureBlends[1]} {
