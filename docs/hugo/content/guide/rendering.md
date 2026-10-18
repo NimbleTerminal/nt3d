@@ -86,3 +86,5 @@ Most programs should use `Scene.Frame`. If you build frames yourself, keep the g
 For the GPU to cache node by node, also supply `GeometryRevisions`, one per geometry, and unique nonzero `Instance.Node` identities; change a node's revision when its geometry or material changes. Without them, any change re-uploads the whole frame. Revisions must not collide with other frames sent to the same renderer, which `Scene` takes care of across scenes. If you edit the geometry of a frame a scene made, update its revisions too, or clear `GeometryRevisions` and change `Revision`.
 
 Hand-built frames don't cull unless you set `Frame.Cull`, and then each geometry's `Bounds` must contain it.
+
+**Environment.** Add a [gradient sky or image panorama](../environment/) with `Scene.SetEnvironment`. GPU and software share diffuse image-based lighting; wireframe shows a terminal sky background.

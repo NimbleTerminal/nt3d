@@ -34,12 +34,13 @@ type lamp struct {
 }
 
 type lightPreset struct {
-	name       string
-	background color.RGBA // Zero means the demos' usual light gray.
-	ambient    nt3d.Ambient
-	sun        *nt3d.Light // A directional light, turning slowly about Z when spin is set.
-	spin       bool
-	lamps      []lamp
+	environment func() *nt3d.Environment
+	name        string
+	background  color.RGBA // Zero means the demos' usual light gray.
+	ambient     nt3d.Ambient
+	sun         *nt3d.Light // A directional light, turning slowly about Z when spin is set.
+	spin        bool
+	lamps       []lamp
 }
 
 func gray(v uint8) color.RGBA { return color.RGBA{v, v, v, 255} }
@@ -64,8 +65,11 @@ func hue(h float64) color.RGBA {
 }
 
 var lightPresets = []lightPreset{
+	{name: "sky and key", environment: dayEnvironment, sun: &nt3d.Light{Direction: nt3dmath.Vec3{X: 1, Y: -1, Z: 2}, Intensity: .65}},
+	{name: "sky IBL", environment: dayEnvironment},
+	{name: "image IBL", environment: imageEnvironment},
 	{name: "default", ambient: nt3d.DefaultLighting().Ambient, sun: &nt3d.DefaultLighting().Lights[0]},
-	{name: "sun and sky", background: color.RGBA{196, 214, 238, 255}, ambient: nt3d.Ambient{Sky: color.RGBA{150, 182, 235, 255}, Ground: color.RGBA{112, 86, 60, 255}, Intensity: .4},
+	{name: "sun and sky", environment: dayEnvironment, background: color.RGBA{196, 214, 238, 255}, ambient: nt3d.Ambient{},
 		sun: &nt3d.Light{Direction: nt3dmath.Vec3{X: 1, Y: -1, Z: 1.1}, Color: color.RGBA{255, 228, 186, 255}, Intensity: 1.2}, spin: true},
 	{name: "lamps", background: gray(30), ambient: nt3d.Ambient{Sky: gray(255), Ground: gray(255), Intensity: .06}, lamps: []lamp{
 		{color: color.RGBA{255, 60, 50, 255}, radius: 1.5, height: .5, speed: .9, offset: 0, intensity: 1.8, rng: 3.5},
@@ -178,6 +182,11 @@ func (p lightPreset) lights(t float64, ranged bool) nt3d.Lighting {
 func (d *demo) applyLights() (nt3d.Lighting, error) {
 	ls := d.lights
 	p := lightPresets[ls.preset]
+	var environment *nt3d.Environment
+	if p.environment != nil {
+		environment = p.environment()
+	}
+	d.scene.SetEnvironment(environment)
 	l := p.lights(ls.t, ls.ranged)
 	points := l.Lights[len(l.Lights)-len(p.lamps):]
 	for i := range ls.lamps {

@@ -66,6 +66,9 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- [x] **Environment sky and diffuse IBL** — gradient or equirectangular image,
+  shared GPU/software lighting, terminal sky fallback, and lighting gallery presets.
+
 - [x] **World-anchored labels and billboards** — textured, depth-tested scene
   geometry with pixel/world sizes, fixed or camera-facing orientation, shared
   instances, picking, and terminal text fallback. Terrain gallery annotations.

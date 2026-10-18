@@ -36,6 +36,12 @@ func TestLightPresets(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				if p.environment != nil && f.Environment == nil {
+					t.Fatalf("%s lost its environment", p.name)
+				}
+				if p.environment == nil && f.Environment != nil {
+					t.Fatalf("%s retained previous environment", p.name)
+				}
 				f.Lighting = l
 				if _, err := nt3d.NewSoftwareRenderer().Render(f); err != nil {
 					t.Fatalf("%s at %.1f, ranged %v: %v", p.name, at, ranged, err)
@@ -123,6 +129,13 @@ func TestShadowCycle(t *testing.T) {
 	d := &demo{scene: nt3d.NewScene()}
 	if err := d.setupLights(); err != nil {
 		t.Fatal(err)
+	}
+	// Select a direct-light preset explicitly: environment-only presets have no sun.
+	for i, p := range lightPresets {
+		if p.sun != nil {
+			d.lights.preset = i
+			break
+		}
 	}
 	for step, strength := range []float32{.5, 0, 0} {
 		if err := d.cycleShadows(); err != nil {

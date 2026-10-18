@@ -105,6 +105,7 @@ func validLighting(l Lighting) bool {
 // working space (decoded when it works in linear light) times their
 // intensities, directions normalized.
 type lightRig struct {
+	environment [4][3]float32
 	shadow      *shadowMap
 	sky, ground [3]float32
 	lights      []rigLight
@@ -128,6 +129,17 @@ func newRig(f *Frame) lightRig {
 	}
 	l := f.Lighting
 	r := lightRig{shadowLight: shadowCaster(l), sky: work(l.Ambient.Sky, l.Ambient.intensity()), ground: work(l.Ambient.Ground, l.Ambient.intensity())}
+	if f.Environment != nil && !f.EnvironmentBackgroundOnly {
+		strength := f.EnvironmentStrength
+		if strength == 0 {
+			strength = 1
+		}
+		for j := range r.environment {
+			for k := range 3 {
+				r.environment[j][k] = f.Environment.diffuse[j][k] * strength
+			}
+		}
+	}
 	for _, x := range l.Lights {
 		c := x.Color
 		if c.A == 0 {
@@ -169,6 +181,9 @@ func (l *rigLight) toward(p nt3dmath.Vec3) (nt3dmath.Vec3, float32) {
 func (r *lightRig) light(rgb *[3]float32, n, p nt3dmath.Vec3) {
 	t := n.Z*.5 + .5
 	c0, c1, c2 := r.ground[0]+(r.sky[0]-r.ground[0])*t, r.ground[1]+(r.sky[1]-r.ground[1])*t, r.ground[2]+(r.sky[2]-r.ground[2])*t
+	c0 += max(0, r.environment[0][0]+r.environment[1][0]*n.X+r.environment[2][0]*n.Y+r.environment[3][0]*n.Z)
+	c1 += max(0, r.environment[0][1]+r.environment[1][1]*n.X+r.environment[2][1]*n.Y+r.environment[3][1]*n.Z)
+	c2 += max(0, r.environment[0][2]+r.environment[1][2]*n.X+r.environment[2][2]*n.Y+r.environment[3][2]*n.Z)
 	for i := range r.lights {
 		l := &r.lights[i]
 		var s float32

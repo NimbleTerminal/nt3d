@@ -1,6 +1,6 @@
 @group(1) @binding(0) var shadowMap: texture_depth_2d;
 struct Light { a: vec4<f32>, b: vec4<f32> };
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,4>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
@@ -75,6 +75,7 @@ fn lightVisibility(i:u32,p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
 // ambient, from ground to sky as n turns up, and each light's diffuse.
 fn illuminate(n:vec3<f32>,p:vec3<f32>)->vec3<f32> {
  var c=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
+ c+=max(vec3<f32>(0.0),u.environment[0].rgb+u.environment[1].rgb*n.x+u.environment[2].rgb*n.y+u.environment[3].rgb*n.z);
  for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz))*lightVisibility(i,p,n,t.xyz));}
  return c;
 }
@@ -304,4 +305,22 @@ struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>,
  let corner=corners[vi];let pos=vec3<f32>((lo.xy+hi.xy)*0.5+corner*radius,lo.z);
  var o:Out;o.clip=u.matrix*vec4<f32>(pos,1.0);o.clip.z+=-0.00001*o.clip.w;
  o.uv=corner;o.point=1.0;o.cut=item.a.w;o.color=vec4<f32>(0.0);o.normal=vec3<f32>(0.0);o.world=pos;return o;
+}
+
+// A fullscreen distant sky, independent of camera position and scene depth.
+struct SkyOut { @builtin(position) clip:vec4<f32>, @location(0) ray:vec3<f32> };
+@vertex fn vs_environment(@builtin(vertex_index) index:u32)->SkyOut {
+ var xy=vec2<f32>(-1.0,-1.0);
+ if index==1u {xy=vec2<f32>(3.0,-1.0);}
+ if index==2u {xy=vec2<f32>(-1.0,3.0);}
+ var o:SkyOut;o.clip=vec4<f32>(xy,1.0,1.0);
+ o.ray=u.skyForward.xyz+xy.x*u.skyRight.xyz+xy.y*u.skyUp.xyz;return o;
+}
+@fragment fn fs_environment(o:SkyOut)->@location(0) vec4<f32> {
+ let d=normalize(o.ray);
+ let half=0.5/f32(textureDimensions(mapTexture).y);
+ let uv=vec2<f32>(atan2(d.y,d.x)/6.28318530718+0.5,clamp(acos(clamp(d.z,-1.0,1.0))/3.14159265359,half,1.0-half));
+ let c=textureSampleLevel(mapTexture,mapSampler,uv,0.0).rgb;
+ if u.viewport.z<0.5 {return vec4<f32>(select(1.055*pow(c,vec3<f32>(1.0/2.4))-0.055,c*12.92,c<=vec3<f32>(0.0031308)),1.0);}
+ return vec4<f32>(c,1.0);
 }

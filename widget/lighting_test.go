@@ -40,3 +40,19 @@ func TestSetLightingCopiesLights(t *testing.T) {
 		t.Fatalf("frame's light moved with the caller's: X = %v", got)
 	}
 }
+
+func TestSceneEnvironmentReachesWidget(t *testing.T) {
+	s := nt3d.NewScene()
+	m := New(s, 20, 10, WithRenderMode(nt3d.Software))
+	defer m.Close()
+	e := nt3d.GradientEnvironment(color.RGBA{60, 100, 200, 255}, color.RGBA{200, 220, 240, 255}, color.RGBA{90, 80, 70, 255})
+	s.SetEnvironment(e)
+	f := m.frame()
+	if f.Environment != e {
+		t.Fatal("scene environment lost in widget frame")
+	}
+	s.SetEnvironment(nil)
+	if m.frame().Environment != nil || f.Environment != e {
+		t.Fatal("widget environment snapshot changed")
+	}
+}

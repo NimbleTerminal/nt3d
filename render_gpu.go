@@ -30,8 +30,9 @@ func sceneShaderSource() string {
 
 // uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
 // and light count, eye, forward, fog, fog color, ground ambient, and
-// MaxLights lights of two vec4s each, then shadow matrix and lookup params.
-const uniformSize = 160 + 16 + MaxLights*32 + 80
+// MaxLights lights of two vec4s each, shadow matrix and lookup params,
+// four diffuse environment coefficients, and three sky camera basis vectors.
+const uniformSize = 160 + 16 + MaxLights*32 + 80 + 112
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -41,6 +42,10 @@ type gpuBatch struct {
 }
 
 type gpuRenderer struct {
+	environmentSource      *Environment
+	environmentTexture     *gpuimage.Texture
+	environmentPipeline    *wgpu.RenderPipeline
+	environmentBind        *wgpu.BindGroup
 	skinPipeline           *wgpu.ComputePipeline
 	skinLayout             *wgpu.BindGroupLayout
 	dropPipeline           *wgpu.RenderPipeline
@@ -258,6 +263,9 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	if err := g.prepareTextures(f); err != nil {
 		return nil, err
 	}
+	if err := g.prepareEnvironment(f); err != nil {
+		return nil, err
+	}
 	if err := g.prepareTarget(f); err != nil {
 		return nil, err
 	}
@@ -304,6 +312,13 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	}
 	ub = append(ub, floats(view.matrix[:]...)...)
 	ub = append(ub, floats(params[:]...)...)
+	for _, c := range rig.environment {
+		ub = append(ub, floats(c[0], c[1], c[2], 0)...)
+	}
+	right, up, forward := f.skyBasis()
+	for _, v := range []nt3dmath.Vec3{right, up, forward} {
+		ub = append(ub, floats(v.X, v.Y, v.Z, 0)...)
+	}
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
 			return err
@@ -379,6 +394,12 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 			shadowBind = g.shadowTarget.bind
 		}
 		pass.SetBindGroup(1, shadowBind, nil)
+		if f.Environment != nil {
+			pass.SetPipeline(g.environmentPipeline)
+			pass.SetBindGroup(0, g.environmentBind, nil)
+			pass.SetBindGroup(2, g.environmentTexture.BindGroup(), nil)
+			pass.Draw(gputypes.DrawArgs{VertexCount: 3, InstanceCount: 1})
+		}
 		// Draws hold the drawn instances: hidden and culled nodes keep their
 		// buffers but are not drawn. Meshes draw each run of instances at once;
 		// other primitives belong to unshared geometry, one instance each.
@@ -482,6 +503,10 @@ func (g *gpuRenderer) Close() error {
 	if g.r == nil {
 		return nil
 	}
+	if g.environmentTexture != nil {
+		_ = g.environmentTexture.Close()
+		g.environmentTexture = nil
+	}
 	for src, t := range g.procedural {
 		g.releaseProcedural(t)
 		delete(g.procedural, src)
@@ -491,6 +516,12 @@ func (g *gpuRenderer) Close() error {
 		delete(g.textures, src)
 	}
 	_ = g.r.Do(func(*wgpu.Device) error {
+		if g.environmentBind != nil {
+			g.environmentBind.Release()
+		}
+		if g.environmentPipeline != nil {
+			g.environmentPipeline.Release()
+		}
 		if g.skinPipeline != nil {
 			g.skinPipeline.Release()
 			g.skinPipeline = nil

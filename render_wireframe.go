@@ -4,6 +4,7 @@ package nt3d
 
 import (
 	"github.com/rivo/uniseg"
+	"image"
 	"image/color"
 	"strings"
 
@@ -189,6 +190,30 @@ func wireRender(f Frame, cols, rows int) string {
 	}
 	for _, label := range f.CellText {
 		c.SetTextWithStyle(ntcanvas.Point{X: label.X, Y: label.Y}, label.Text, styleFor(label.Color))
+	}
+	if f.Environment != nil {
+		for y := 0; y < rows; y++ {
+			for x := 0; x < cols; x++ {
+				p := ntcanvas.Point{X: x, Y: y}
+				cell := c.Cell(p)
+				if cell.Continuation {
+					continue
+				}
+				sky := f.skyPixel((2*x+1)*f.Width/(2*cols), (2*y+1)*f.Height/(2*rows))
+				style := cell.Style
+				if style.Background == 0 {
+					style.Background = ntcanvas.RGBColor(sky.R, sky.G, sky.B)
+				}
+				if style.Foreground == 0 {
+					ink := uint8(235)
+					if int(sky.R)+int(sky.G)+int(sky.B) > 384 {
+						ink = 32
+					}
+					style.Foreground = ntcanvas.RGBColor(ink, ink, ink)
+				}
+				c.SetStyleRect(image.Rect(x, y, x+max(1, cell.Width), y+1), style)
+			}
+		}
 	}
 	return c.Render(c.Bounds())
 }

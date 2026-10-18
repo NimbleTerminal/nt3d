@@ -72,9 +72,15 @@ type Frame struct {
 	DynamicLines []Vertex // World-space pairs, depth-tested with a small positive bias.
 	Overlays     []OverlayRect
 	CellText     []CellText
-	Background   color.RGBA
-	Lighting     Lighting
-	Complete     bool // Disable interactive software sampling for full snapshots.
+	// Environment supplies a distant sky and adds diffuse image-based light.
+	// Nil preserves the solid Background. EnvironmentStrength scales the light;
+	// zero means 1. EnvironmentBackgroundOnly disables its lighting contribution.
+	Environment               *Environment
+	EnvironmentStrength       float32
+	EnvironmentBackgroundOnly bool
+	Background                color.RGBA
+	Lighting                  Lighting
+	Complete                  bool // Disable interactive software sampling for full snapshots.
 	// Supersample renders at this multiple of Width and Height, 1..4, and
 	// averages each block back to one pixel, smoothing edges, thin strands,
 	// and cutouts. Zero means 1. Pixel sizes (points, line widths, overlays)
@@ -136,7 +142,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	if err := s.UpdateDeformations(); err != nil {
 		return Frame{}, err
 	}
-	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Cull: true, Linear: true}
+	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Environment: s.environment, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Cull: true, Linear: true}
 	if width < 1 || height < 1 || width > MaxFramePixels || height > MaxFramePixels/width {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)
 	}
@@ -258,6 +264,9 @@ func validateFrame(f Frame) error {
 	}
 	if !validFloat(f.Matrix[:]...) {
 		return fmt.Errorf("nt3d: non-finite frame")
+	}
+	if !validFloat(f.EnvironmentStrength) || f.EnvironmentStrength < 0 || (f.Environment != nil && (f.Environment.panorama == nil || f.Environment.texture == nil || !f.Environment.texture.valid() || !finiteVec(f.Forward))) {
+		return fmt.Errorf("nt3d: invalid environment")
 	}
 	if !validLighting(f.Lighting) {
 		return fmt.Errorf("nt3d: lighting needs at most %d lights of known kinds, finite, with nonnegative intensity and range, and directional lights a direction", MaxLights)

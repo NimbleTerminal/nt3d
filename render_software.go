@@ -61,6 +61,16 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		off := i * 4
 		img.Pix[off], img.Pix[off+1], img.Pix[off+2], img.Pix[off+3] = f.Background.R, f.Background.G, f.Background.B, 255
 	}
+	if f.Environment != nil {
+		right, up, forward := f.skyBasis()
+		for y := 0; y < f.Height; y++ {
+			row := forward.Add(up.Scale(1 - 2*(float32(y)+.5)/float32(f.Height)))
+			for x := 0; x < f.Width; x++ {
+				ray := row.Add(right.Scale(2*(float32(x)+.5)/float32(f.Width) - 1)).Normalize()
+				img.SetRGBA(x, y, f.Environment.pixel(ray))
+			}
+		}
+	}
 	put := func(x, y int, z float32, c color.RGBA) {
 		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
 			return
