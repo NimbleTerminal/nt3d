@@ -6,7 +6,7 @@ env:
 
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
-  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles animation
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles animation animate
 
 tasks:
   default:
@@ -19,10 +19,10 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
+      - gofmt -w *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
+      - test -z "$(gofmt -l *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...
@@ -35,6 +35,7 @@ tasks:
     desc: Explicit hardware GPU tests (fail if no GPU is available)
     cmds:
       - go test -mod=readonly -tags webgpu -run TestGPU -count=1 -v .
+      - go -C examples/demos test -mod=readonly -tags webgpu -run TestGPU -count=1 -v ./internal/demo
   vet:
     cmds:
       - go vet -mod=readonly ./...
@@ -67,7 +68,7 @@ tasks:
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/animation
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/animation dist/web/animate
       - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
       - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -80,6 +81,7 @@ tasks:
       - go -C examples/demos build -mod=readonly -o ../../dist/web/lights/app.wasm ./cmd/lights
       - go -C examples/demos build -mod=readonly -o ../../dist/web/particles/app.wasm ./cmd/particles
       - go -C examples/demos build -mod=readonly -o ../../dist/web/animation/app.wasm ./cmd/animation
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/animate/app.wasm ./cmd/animate
   web-assets:
     cmds:
       - go -C examples/demos tool booba-assets ../../dist/web/terrain/
@@ -94,6 +96,7 @@ tasks:
       - go -C examples/demos tool booba-assets ../../dist/web/lights/
       - go -C examples/demos tool booba-assets ../../dist/web/particles/
       - go -C examples/demos tool booba-assets ../../dist/web/animation/
+      - go -C examples/demos tool booba-assets ../../dist/web/animate/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -214,3 +217,8 @@ tasks:
     desc: Play a generated glTF with joints, morphs, and transform tracks
     deps: [{task: build:demo, vars: {NAME: animation}}]
     cmds: ["bin/nt3d-animation {{.CLI_ARGS}}"]
+
+  animate:
+    desc: Play the embedded Khronos morph, skin, and rotation samples
+    deps: [{task: build:demo, vars: {NAME: animate}}]
+    cmds: ["bin/nt3d-animate {{.CLI_ARGS}}"]

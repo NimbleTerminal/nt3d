@@ -2,20 +2,23 @@
 package demo
 
 import (
-	_ "embed"
 	"fmt"
+	"io/fs"
 	"nimbleterminal.dev/nt3d"
-	nt3dgltf "nimbleterminal.dev/nt3d/mesh/gltf"
+	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
-
-// animatedGLTF is an original, generated CC0 ribbon with two joints and a morph.
-//
-//go:embed models/animated.gltf
-var animatedGLTF []byte
 
 func AnimationMain() { mainDemo(false, sceneAnimation) }
 func (d *demo) setupAnimation() error {
-	model, err := nt3dgltf.Decode(animatedGLTF, nil)
+	data, err := fs.ReadFile(SampleFiles, "animated.gltf")
+	if err != nil {
+		return err
+	}
+	format, ok := nt3dmesh.FormatOf("animated.gltf", data)
+	if !ok {
+		return fmt.Errorf("glTF loader is not registered")
+	}
+	model, err := nt3dmesh.Decode(data, format, nil)
 	if err != nil {
 		return err
 	}

@@ -14,8 +14,8 @@ import (
 	"nimbleterminal.dev/nt3d/mesh"
 )
 
-// SampleFiles holds the sample models the models and fur demos show. Their
-// commands set it from the models package, which embeds them, so that the
+// SampleFiles holds the sample models the models, fur, and animation demos show. Their
+// commands set it from their embed packages, so that the
 // other demos' programs do not carry the files.
 var SampleFiles fs.FS
 

@@ -23,6 +23,7 @@ import (
 )
 
 type demo struct {
+	animatedSamples   *animateScene
 	animation         *nt3d.Animation
 	animationTime     float64
 	view              *nt3dwidget.Model
@@ -101,6 +102,7 @@ const (
 	sceneLights
 	sceneParticles
 	sceneAnimation
+	sceneAnimate
 )
 
 // terrainScene reports whether the terrain controls apply.
@@ -331,6 +333,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, nil
 			}
 		case "[", "]":
+			if d.animatedSamples != nil {
+				step := 1
+				if v.String() == "[" {
+					step = -1
+				}
+				return d, d.stepAnimatedSample(step)
+			}
 			if d.models == nil {
 				return d, nil
 			}
@@ -339,6 +348,15 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				step = -1
 			}
 			return d, d.stepSample(step)
+		case ",", ".":
+			if d.animatedSamples == nil {
+				return d, nil
+			}
+			step := 1
+			if v.String() == "," {
+				step = -1
+			}
+			return d, d.stepAnimationClip(step)
 		case "i":
 			if d.forest != nil {
 				err = d.toggleInstancing()
@@ -471,6 +489,10 @@ func (d *demo) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
+	if d.animatedSamples != nil {
+		v.Content = d.zones.Scan(d.animateView(v.Content))
+		return v
+	}
 	if d.animation != nil {
 		v.Content = d.zones.Scan("nt3d glTF animation · a pause · 1/2/3 backend · q quit\n" + v.Content + "\nTwo joints, a morph target, and generic TRS tracks · drag orbit · wheel zoom")
 		return v
@@ -561,6 +583,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		return err
 	}
 	switch kind {
+	case sceneAnimate:
+		if err = d.setupAnimate(); err != nil {
+			return err
+		}
 	case sceneAnimation:
 		if err = d.setupAnimation(); err != nil {
 			return err
@@ -658,6 +684,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 				d.view.SetPostProcess(e.apply)
 			}
 		}
+	case sceneAnimate:
+		d.frameAnimatedSample()
 	case sceneModels:
 		d.frameSample()
 	}

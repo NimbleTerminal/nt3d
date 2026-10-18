@@ -105,3 +105,19 @@ The gallery links to every demo, each running inside [go-booba](https://github.c
 <img class="poster" src="../../posters/animation.png" alt="A ribbon bent by animated joints and a morph target">
 
 `task animation`. An original generated CC0 glTF ribbon bends on two joints, changes shape through a morph target, and plays translation, quaternion rotation, and scale tracks. `a` pauses; `1`, `2`, and `3` switch between GPU, software, and wireframe. The demo loads through glTF and drives the [generic animation API](../animation/).
+
+## Khronos animations
+
+<img class="poster" src="../../posters/animate.png" alt="The Khronos Animated Morph Cube">
+
+`task animate` cycles through three self-contained samples from [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets):
+
+- **AnimatedMorphCube** (GLB): two morph targets turn a cube into a thin slab and a ramp.
+- **SimpleSkin** (glTF plus binary buffers): two joints bend a strip through blended vertex weights and inverse bind matrices.
+- **AnimatedTriangle** (glTF plus binary buffers): quaternion keyframes rotate a triangle.
+
+`[` and `]` change models, `a` toggles play/pause, and `,` and `.` switch clips when a model has more than one. The bundled samples each have one clip. `1`, `2`, and `3` select GPU, software, and wireframe. Playback uses the generic animation API, and changing clips starts from a fresh instance so untracked channels return to the bind pose.
+
+The model assets are **CC0**, by Microsoft (AnimatedMorphCube) and Marco Hutter (SimpleSkin and AnimatedTriangle). Upstream metadata is **CC-BY-4.0**. Original READMEs and licenses accompany every sample, with a pinned source revision in `examples/demos/internal/demo/gltf/SOURCES.md`. All sample files together, including provenance, occupy about 19 KB.
+
+Only `cmd/animate` imports the Khronos embed package and assigns its `Files` to `demo.SampleFiles`. Relative `.bin` files are read through the mesh loader's `Options.Open`. Other demo binaries do not embed these samples, and the separate `examples/demos` module keeps them out of the main library's distribution. The generated `animation` demo and general-purpose `meshes` viewer also opt into glTF decoding; other demos do not import that decoder.
