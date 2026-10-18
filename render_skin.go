@@ -140,8 +140,7 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 			return err
 		}
 		if node.batches[8].buffer != nil {
-			a, b := geom.Bounds.Min, geom.Bounds.Max
-			data := appendFloats(nil, a.X, a.Y, a.Z, geom.DropShadow.Strength, b.X, b.Y, b.Z, geom.DropShadow.Radius, 0, 0, 0, 0)
+			data := dropShadowData(&geom)
 			if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, data); err != nil {
 				return err
 			}

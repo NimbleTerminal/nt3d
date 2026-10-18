@@ -15,6 +15,7 @@ import (
 func LightsMain() { mainDemo(true, sceneLights) }
 
 type lightScene struct {
+	lift      bool
 	normal    bool
 	shadows   shadowMode
 	preset    int  // Index into lightPresets.
@@ -146,11 +147,11 @@ func (d *demo) buildLightShapes() error {
 		if err != nil {
 			return err
 		}
-		if g, err = nt3d.TransformGeometry(g, nt3dmath.Translation(shape.at)); err != nil {
+		if g, err = nt3d.TransformGeometry(g, nt3dmath.Translation(d.lightShapePosition(shape.at))); err != nil {
 			return err
 		}
 		if d.lights.shadows == shadowDrop {
-			g.DropShadow = nt3d.DropShadow{Strength: .5}
+			g.DropShadow = nt3d.DropShadow{Strength: .5, FixedFloor: true, FloorZ: 0}
 		}
 		if _, err = d.scene.SetGeometry(shape.name, g); err != nil {
 			return err
@@ -229,7 +230,7 @@ func (d *demo) applyLights() (nt3d.Lighting, error) {
 func (d *demo) decorateLights(f *nt3d.Frame) {
 	p := lightPresets[d.lights.preset]
 	f.Lighting = p.lights(d.lights.t, d.lights.ranged)
-	if p.sun != nil && d.lights.shadows == shadowMap {
+	if len(f.Lighting.Lights) > 0 && d.lights.shadows == shadowMap {
 		f.Lighting.Lights[0].Shadows = true
 	}
 	if p.background.A != 0 {
@@ -279,11 +280,18 @@ func (d *demo) lightsView(content string) string {
 	if d.lights.dull {
 		shine = "dull"
 	}
-	return fmt.Sprintf("nt3d lights · l preset · f falloff · e highlights · n normal map · s shadows · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
-		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, fmt.Sprintf("%s · normal map %t · %s", shine, d.lights.normal, d.lights.shadows.String()), d.status)
+	return fmt.Sprintf("nt3d lights · l preset · f falloff · e highlights · n normal map · b lift · s shadows · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
+		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, fmt.Sprintf("%s · normal map %t · lifted %t · %s", shine, d.lights.normal, d.lights.lift, d.lights.shadows.String()), d.status)
 }
 
 func (d *demo) toggleNormalMap() error {
 	d.lights.normal = !d.lights.normal
 	return d.buildLightShapes()
+}
+
+func (d *demo) lightShapePosition(p nt3dmath.Vec3) nt3dmath.Vec3 {
+	if d.lights.lift {
+		p.Z += .6
+	}
+	return p
 }

@@ -19,7 +19,7 @@ func TestDropShadowValidation(t *testing.T) {
 		s, r float32
 		ok   bool
 	}{{0, 0, true}, {.5, 0, true}, {1, 2, true}, {1.5, 0, false}, {-.1, 0, false}, {.5, -1, false}, {float32(math.NaN()), 0, false}, {.5, float32(math.Inf(1)), false}} {
-		g.DropShadow = DropShadow{c.s, c.r}
+		g.DropShadow = DropShadow{Strength: c.s, Radius: c.r}
 		if err := g.Validate(); (err == nil) != c.ok {
 			t.Errorf("%+v: %v", c, err)
 		}
@@ -28,7 +28,7 @@ func TestDropShadowValidation(t *testing.T) {
 
 func TestDropShadowSurvivesTransformAndMerge(t *testing.T) {
 	g := quad(1, 0, white, nil, false)
-	g.DropShadow = DropShadow{Strength: .4, Radius: 2}
+	g.DropShadow = DropShadow{Strength: .4, Radius: 2, FixedFloor: true, FloorZ: -1}
 	moved, err := TransformGeometry(g, nt3dmath.Translation(nt3dmath.Vec3{X: 1}))
 	check(t, err)
 	later := quad(1, 2, white, nil, false)
@@ -47,7 +47,7 @@ func TestShadowCaster(t *testing.T) {
 		want int
 	}{
 		{Lighting{}, -1},
-		{Lighting{Lights: []Light{{Kind: PointLight, Position: nt3dmath.Vec3{Z: 1}, Shadows: true}}}, -1},
+		{Lighting{Lights: []Light{{Kind: PointLight, Position: nt3dmath.Vec3{Z: 1}, Shadows: true}}}, 0},
 		{Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{Z: 1}}, down}}, 1},
 		{Lighting{Lights: []Light{down, down}}, 0},
 	}
@@ -114,7 +114,7 @@ func TestFitShadowDrawnWorldBoundsAndPadding(t *testing.T) {
 	for _, vertex := range g.Vertices {
 		g.Bounds.Include(vertex.Position)
 	}
-	lighting := Lighting{Lights: []Light{{Kind: PointLight, Shadows: true}, {Direction: nt3dmath.Vec3{Z: 1}, Shadows: true}}}
+	lighting := Lighting{Lights: []Light{{Kind: PointLight}, {Direction: nt3dmath.Vec3{Z: 1}, Shadows: true}}}
 	f := Frame{Geometry: []Geometry{g, g}, Lighting: lighting, Instances: []Instance{
 		{World: nt3dmath.Translation(nt3dmath.Vec3{X: 10, Z: 4}), Visible: true},
 		{World: nt3dmath.Translation(nt3dmath.Vec3{X: 100}), Visible: true},

@@ -48,18 +48,26 @@ Retain `NewSoftwareRenderer()` between image-only frames to reuse private depth 
 
 **Lighting.** `Frame.Lighting` (or the widget's `SetLighting`) holds an ambient light and up to eight lights (`MaxLights`), shaded per pixel on both the GPU and in software. The ambient light blends from `Ground`'s color on surfaces facing down to `Sky`'s facing up; equal colors give even light. Each `Light` is a `DirectionalLight` (from `Direction`, which it requires, like the sun) or a `PointLight` (from `Position`, fading to nothing at `Range`, or as 1/(1+d²) without one), with an sRGB `Color` (zero means white) and an `Intensity` (zero means 1). `DefaultLighting()` is a gray ambient and one white key light from above, front, and right. Unlit materials, points, lines, and overlays are never lit.
 
-**Shadows.** Both WebGPU and software draw two kinds. `Geometry.DropShadow` lays a soft black disc centered under the geometry, on the horizontal plane at the bottom of its world bounds, without needing a light. `Strength` sets its center darkness from 0 to 1 (zero disables it); `Radius` is in world units, or zero for the bounds' larger horizontal half extent. Shared geometry gets one disc per instance. Valid geometry bounds are required. Drop shadows darken surfaces beneath the disc, including unlit ones.
+**Shadows.** Both WebGPU and software draw two kinds. `Geometry.DropShadow` lays a soft black disc centered under the geometry, on the horizontal plane at the bottom of its world bounds, without needing a light. `Strength` sets its center darkness from 0 to 1 (zero disables it); `Radius` is in world units, or zero for the bounds' larger horizontal half extent. `FixedFloor: true` places the disc at world-space `FloorZ` (including zero), keeping it on the ground when an instance moves vertically. It still follows the instance horizontally, and does not create a visible floor mesh. Shared geometry gets one disc per instance. Valid geometry bounds are required. Drop shadows darken surfaces beneath the disc, including unlit ones.
 
-For shadows cast by a light, set `Light.Shadows`: the first directional light with the flag gets a shadow map fitted to the visible scene, with soft edges. Opaque and textured meshes, cutouts with their gaps, and boxes cast; lit surfaces receive, including transparent ones. Transparent meshes, points, lines, arrows, and overlays don't cast, and unlit surfaces don't receive. Point lights don't cast shadows.
+For shadows cast by a light, set `Light.Shadows`: the first light with the flag casts, whether directional or point. Directional maps fit the visible scene; point lights use six 90-degree views around `Position`, bounded by the visible scene and optionally `Range`. Both use a small 3×3 depth filter for soft edges. Opaque and textured meshes, cutouts with their gaps, and boxes cast; lit surfaces receive, including transparent ones. Transparent meshes, points, lines, arrows, and overlays don't cast, and unlit surfaces don't receive. Animated and skinned meshes use their current pose. Only one light casts mapped shadows at a time; other lights and ambient illumination remain unaffected.
 
 ```go
-geometry.DropShadow = nt3d.DropShadow{Strength: 0.5} // Radius follows the bounds.
+geometry.DropShadow = nt3d.DropShadow{Strength: 0.5, FixedFloor: true, FloorZ: 0}
+// Radius follows the bounds; the disc stays on world Z=0.
 lighting := nt3d.DefaultLighting()
 lighting.Lights[0].Shadows = true
 frame.Lighting = lighting
+// Or select a point light:
+frame.Lighting.Lights = []nt3d.Light{{
+    Kind: nt3d.PointLight, Position: nt3dmath.Vec3{X: 2, Z: 3},
+    Range: 10, Shadows: true,
+}}
 ```
 
-Both kinds follow the instances drawn by the camera: a culled object loses its shadow, even when a drop disc's `Radius` would reach into view. Wireframe ignores both. In the [lights and forest demos](../demos/), `s` cycles through no shadows, drop shadows, and shadow maps.
+Both kinds follow the instances drawn by the camera: a culled object loses its shadow, even when a drop disc's `Radius` would reach into view. Wireframe ignores both. In the [lights and forest demos](../demos/), `s` cycles through no shadows, drop shadows, and shadow maps. In lights, use `l` to select a point-light preset and `b` to lift the shapes above the fixed drop-shadow floor.
+
+Point maps use six 1024² depth faces on the GPU and for complete software frames (24 MiB depth storage); interactive software can use smaller faces. Directional maps remain 2048², with smaller interactive software maps. Point maps cost six geometry passes and can show small filtering seams at face boundaries. The near plane is 0.0001 of the fitted far distance; setting a useful `Range` helps precision in very large scenes. Wireframe does not render shadows.
 
 **Points.** `Geometry.PointStyle` sets how a geometry's points are drawn. `Shape` is `HardPoint`, the default, or `SoftPoint`, whose alpha falls off smoothly to its edge. `Units` is `PixelUnits`, the default (a `Radius` of 1 to 32 pixels at any distance), or `WorldUnits` (any positive radius, smaller farther away, between half a pixel and `MaxPointPixels` on screen). `Blend` is `OpaqueBlend`, the default; `AlphaBlend`, over what's behind by the color's alpha, with the geometry's points sorted farthest first each frame; or `AdditiveBlend`, added to what's behind times alpha, so overlapping points glow. Blended points are hidden by nearer opaque surfaces but hide nothing themselves, and fog fades additive points out rather than tinting them. Points are never lit, and wireframe draws them as dots whatever their style. For animated particles, [`SetNodePoints` and `UpdateNodePoints`](../particles/) reuse GPU buffers and accept fixed bounds. `PointStyle.Texture` draws textured squares with grid-atlas selection through `Point.Frame`. The [particles demo](../demos/#particles) moves up to 100,000 points; `t` toggles atlas sprites.
 

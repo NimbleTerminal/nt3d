@@ -265,6 +265,11 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.fog = !d.fog
 			return d, d.view.Refresh()
 		case "b", "x":
+			if d.lights != nil && v.String() == "b" {
+				d.lights.lift = !d.lights.lift
+				err = d.buildLightShapes()
+				break
+			}
 			if v.String() == "b" && d.animatedSamples != nil {
 				err = d.toggleAnimatedOutlines()
 				break

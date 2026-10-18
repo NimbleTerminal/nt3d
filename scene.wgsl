@@ -1,6 +1,6 @@
-@group(1) @binding(0) var shadowMap: texture_depth_2d;
+@group(1) @binding(0) var shadowMap: texture_depth_2d_array;
 struct Light { a: vec4<f32>, b: vec4<f32> };
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,4>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,4>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
@@ -57,15 +57,31 @@ fn toward(l:Light,p:vec3<f32>)->vec4<f32> {
  return vec4<f32>(v*inverseSqrt(d2),fade);
 }
 // Manual depth lookup uses only core textureLoad, with clamped PCF taps.
+fn pointShadowFace(v:vec3<f32>)->u32 {
+ let a=abs(v);
+ if a.x>=a.y && a.x>=a.z {return select(0u,1u,v.x<0.0);}
+ if a.y>=a.z {return select(2u,3u,v.y<0.0);}
+ return select(4u,5u,v.z<0.0);
+}
 fn shadowVisibility(p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
- let q=u.shadow*vec4<f32>(p+n*(1.5*u.shadowParams.z),1.0);
- let xy=vec2<f32>(q.x*0.5+0.5,0.5-q.y*0.5)*u.shadowParams.w;
+ var face=0u;var pos=p+n*(1.5*u.shadowParams.z);var matrix=u.shadow;
+ let light=u.lights[u32(u.shadowParams.x)];let point=light.a.w>0.5;
+ if point {
+  let d=abs(p-light.a.xyz);let texel=2.0*max(d.x,max(d.y,d.z))/u.shadowParams.w;
+  pos=p+n*(1.5*texel);face=pointShadowFace(pos-light.a.xyz);matrix=u.pointShadows[face];
+ }
+ let clip=matrix*vec4<f32>(pos,1.0);
+ if clip.w<=0.0{return 1.0;}
+ let q=clip.xyz/clip.w;
+ var xy=vec2<f32>(q.x*0.5+0.5,0.5-q.y*0.5)*u.shadowParams.w;
+ if point {xy=clamp(xy,vec2<f32>(0.0),vec2<f32>(u.shadowParams.w-0.001));}
  if any(xy<vec2<f32>(0.0)) || any(xy>=vec2<f32>(u.shadowParams.w)) || q.z<0.0 || q.z>1.0 {return 1.0;}
  let center=vec2<i32>(floor(xy));let size=i32(u.shadowParams.w);
- let bias=u.shadowParams.y*(1.0+2.0*(1.0-max(0.0,dot(n,l))));var lit=0.0;
+ var bias=u.shadowParams.y*(1.0+2.0*(1.0-max(0.0,dot(n,l))));var lit=0.0;
+ if point {bias*=max(1.0-q.z,0.000001);}
  for(var y=-1;y<=1;y=y+1) {for(var x=-1;x<=1;x=x+1) {
  let texel=clamp(center+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(size-1));
- if textureLoad(shadowMap,texel,0)>=q.z-bias {lit+=1.0;}
+ if textureLoad(shadowMap,texel,i32(face),0)>=q.z-bias {lit+=1.0;}
  }}return lit/9.0;
 }
 fn lightVisibility(i:u32,p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
@@ -303,13 +319,13 @@ fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec
 @vertex fn vs_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return boxOutput(vi,ii);}
 struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>, @location(1) cut:f32, @location(2) @interpolate(flat) repeat:f32 };
 @vertex fn vs_shadow_mesh(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->ShadowOut {
- var o:ShadowOut;o.clip=u.shadow*instances[ii].world*vec4<f32>(items[vi].a.xyz,1.0);return o;
+ var o:ShadowOut;o.clip=u.pointShadows[vi>>28u]*instances[ii].world*vec4<f32>(items[vi&0x0fffffffu].a.xyz,1.0);return o;
 }
 @vertex fn vs_shadow_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->ShadowOut {
- let b=boxOutput(vi,ii);var o:ShadowOut;o.clip=u.shadow*vec4<f32>(b.world,1.0);return o;
+ let b=boxOutput(vi&0x0fffffffu,ii);var o:ShadowOut;o.clip=u.pointShadows[vi>>28u]*vec4<f32>(b.world,1.0);return o;
 }
 @vertex fn vs_shadow_texture(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->ShadowOut {
- let p=items[vi];var o:ShadowOut;o.clip=u.shadow*instances[ii].world*vec4<f32>(p.a.xyz,1.0);
+ let p=items[vi&0x0fffffffu];var o:ShadowOut;o.clip=u.pointShadows[vi>>28u]*instances[ii].world*vec4<f32>(p.a.xyz,1.0);
  o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;
  o.repeat=select(0.0,1.0,(u32(p.color.y)&1u)!=0u && instances[ii].normal[3].z>0.5);return o;
 }
@@ -326,7 +342,7 @@ struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>,
  var radius=item.b.w;
  if radius==0.0 {radius=max(hi.x-lo.x,hi.y-lo.y)*0.5;}
  var corners=array<vec2<f32>,6>(vec2<f32>(-1.,-1.),vec2<f32>(1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,1.));
- let corner=corners[vi];let pos=vec3<f32>((lo.xy+hi.xy)*0.5+corner*radius,lo.z);
+ let corner=corners[vi];let pos=vec3<f32>((lo.xy+hi.xy)*0.5+corner*radius,select(lo.z,item.color.x,item.color.y>0.5));
  var o:Out;o.clip=u.matrix*vec4<f32>(pos,1.0);o.clip.z+=-0.00001*o.clip.w;
  o.uv=corner;o.point=1.0;o.cut=item.a.w;o.color=vec4<f32>(0.0);o.normal=vec3<f32>(0.0);o.world=pos;return o;
 }

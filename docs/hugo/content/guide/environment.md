@@ -68,7 +68,7 @@ This first version uses four first-order spherical-harmonic coefficients, with
 cosine convolution, for broad directional diffuse illumination. It is a cheap,
 low-frequency approximation: it does not reproduce small bright light sources,
 cast environment shadows, or provide glossy/specular reflections. Existing
-directional and point lights still provide highlights and directional shadows.
+directional and point lights still provide highlights and mapped shadows.
 Unlit materials, points, lines, and overlays remain unlit. Prefer the default
 linear-light frames for physically meaningful color blending.
 

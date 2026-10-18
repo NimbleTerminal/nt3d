@@ -29,7 +29,7 @@ type Box struct {
 }
 
 // DropShadow lays a soft dark disc under a geometry, on the plane at the
-// bottom of its world bounds, centered under them: as if lit from
+// bottom of its world bounds (or FixedFloor at FloorZ), centered under them: as if lit from
 // straight above by nothing in particular. It needs no light. Strength is
 // how dark the disc's center is, 0..1; zero means no drop shadow. Radius
 // is the disc's radius in world units; zero means the bounds' larger
@@ -38,6 +38,10 @@ type Box struct {
 type DropShadow struct {
 	Strength float32
 	Radius   float32
+	// FixedFloor places the disc at world-space FloorZ instead of the bounds bottom.
+	// The plane is not transformed with the instance; geometry still supplies its XY center.
+	FixedFloor bool
+	FloorZ     float32
 }
 
 // Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
@@ -84,7 +88,7 @@ func validateGeometry(g Geometry) error {
 	if err := g.Outline.validate(); err != nil {
 		return err
 	}
-	if !validFloat(g.DropShadow.Strength, g.DropShadow.Radius) || g.DropShadow.Strength < 0 || g.DropShadow.Strength > 1 || g.DropShadow.Radius < 0 {
+	if !validFloat(g.DropShadow.Strength, g.DropShadow.Radius, g.DropShadow.FloorZ) || g.DropShadow.Strength < 0 || g.DropShadow.Strength > 1 || g.DropShadow.Radius < 0 {
 		return fmt.Errorf("nt3d: invalid drop shadow")
 	}
 	if g.WireGrid != ([2]int{}) {

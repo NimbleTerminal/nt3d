@@ -12,11 +12,13 @@ import (
 func TestGPUSkinMatchesCPU(t *testing.T) {
 	for _, texture := range []bool{false, true} {
 		for _, normal := range []bool{false, true} {
-			t.Run(fmt.Sprintf("textured=%v/normal=%v", texture, normal), func(t *testing.T) { testGPUSkinMatchesCPU(t, texture, normal) })
+			for _, point := range []bool{false, true} {
+				t.Run(fmt.Sprintf("textured=%v/normal=%v/point-shadow=%v", texture, normal, point), func(t *testing.T) { testGPUSkinMatchesCPU(t, texture, normal, point) })
+			}
 		}
 	}
 }
-func testGPUSkinMatchesCPU(t *testing.T, texture, normal bool) {
+func testGPUSkinMatchesCPU(t *testing.T, texture, normal, point bool) {
 	s, id, joint := animationSkinScene(t)
 	// Color the bind mesh before rebinding deformation.
 	n := s.nodes[id]
@@ -46,6 +48,10 @@ func testGPUSkinMatchesCPU(t *testing.T, texture, normal bool) {
 	check(t, err)
 	f := frame(t, s)
 	f.Lighting = Lighting{Ambient: DefaultLighting().Ambient, Lights: []Light{{Direction: nt3dmath.Vec3{X: 1, Y: 1, Z: 2}, Color: color.RGBA{255, 255, 255, 255}, Intensity: 1, Shadows: true}}}
+	if point {
+		f.Lighting.Lights[0].Kind = PointLight
+		f.Lighting.Lights[0].Position = nt3dmath.Vec3{X: 1, Y: 1, Z: 2}
+	}
 	gpu := &gpuRenderer{}
 	defer gpu.Close()
 	img, err := gpu.Render(f)

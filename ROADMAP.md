@@ -26,8 +26,6 @@ move to Done with their commit; git history has the details.
   leaves sample full size today).
 - [ ] **Outline follow-ups**: sharp-crease edges, world-unit widths, and seamless
   contours for meshes with split normals.
-- [ ] **Point-light shadows**.
-- [ ] **A floor option for drop shadows**, instead of the bottom of each instance's world bounds.
 - [ ] **Order-independent transparency**: only if scenes hit the sorting
   limits (intersecting glass, overlapping layers of one mesh).
 - [ ] **Fur fins don't sway** with the wind; only slightly visible.
@@ -89,6 +87,10 @@ move to Done with their commit; git history has the details.
   instances, picking, and terminal text fallback. Terrain gallery annotations.
 
 Recent milestones, newest first:
+
+- [x] **Point-light shadows and fixed drop-shadow floors**: six-face point maps
+  on GPU/software; `DropShadow.FixedFloor` / `FloorZ` keep discs on a world plane.
+  Lights demo: `s` shadows, `l` presets, `b` lift shapes.
 
 - shadows: drop discs and directional shadow maps, both renderers; `s` in
   lights and forest (API: `b19983c`, `bf7b9ad`)

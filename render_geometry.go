@@ -432,8 +432,7 @@ func geometryData(geom Geometry) (data [9][]byte) {
 		}
 	}
 	if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() {
-		a, b := geom.Bounds.Min, geom.Bounds.Max
-		data[8] = appendFloats(nil, a.X, a.Y, a.Z, geom.DropShadow.Strength, b.X, b.Y, b.Z, geom.DropShadow.Radius, 0, 0, 0, 0)
+		data[8] = dropShadowData(&geom)
 	}
 	// Each node binds one transform; records always reference its slot zero.
 	vertex := func(kind int, v Vertex, radius float32) {
@@ -522,4 +521,13 @@ func spriteData(style PointStyle, points []Point) []byte {
 		data = appendFloats(data, r[0], r[1], r[2], r[3], 0, 0, 0, 0, 0, 0, 0, 0)
 	}
 	return data
+}
+
+func dropShadowData(g *Geometry) []byte {
+	a, b := g.Bounds.Min, g.Bounds.Max
+	fixed := float32(0)
+	if g.DropShadow.FixedFloor {
+		fixed = 1
+	}
+	return appendFloats(nil, a.X, a.Y, a.Z, g.DropShadow.Strength, b.X, b.Y, b.Z, g.DropShadow.Radius, g.DropShadow.FloorZ, fixed, 0, 0)
 }

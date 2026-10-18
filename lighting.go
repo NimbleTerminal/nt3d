@@ -52,7 +52,7 @@ type Light struct {
 	Color     color.RGBA
 	Intensity float32
 	Range     float32 // Point only.
-	Shadows   bool    // Only the first directional light with Shadows casts shadows.
+	Shadows   bool    // Only the first light with Shadows casts shadows.
 }
 
 // defaultKey is the default key light's intensity: with the default
@@ -195,7 +195,11 @@ func (r *lightRig) lightNormal(rgb *[3]float32, n, p, geometric nt3dmath.Vec3) {
 			s = n.Dot(dir) * fade
 		}
 		if i == r.shadowLight && r.shadow != nil {
-			s *= r.shadow.visibility(p, geometric, l.v)
+			dir := l.v
+			if l.kind == PointLight {
+				dir, _ = l.toward(p)
+			}
+			s *= r.shadow.visibility(p, geometric, dir)
 		}
 		if s > 0 {
 			c0 += l.color[0] * s

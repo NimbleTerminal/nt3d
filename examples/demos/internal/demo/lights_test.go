@@ -242,3 +242,44 @@ func TestNormalMapToggle(t *testing.T) {
 		}
 	}
 }
+
+func TestPointLightShadowsAndDropFloor(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range lightPresets {
+		if len(p.lamps) == 0 {
+			continue
+		}
+		d.lights.preset = i
+		d.lights.shadows = shadowMap
+		f, err := d.scene.Frame(nt3d.DefaultCamera(), 80, 60)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.decorateLights(&f)
+		if len(f.Lighting.Lights) == 0 || !f.Lighting.Lights[0].Shadows {
+			t.Fatal("point-light preset has no shadows", p.name)
+		}
+	}
+	d.lights.lift = true
+	d.lights.shadows = shadowDrop
+	if err := d.buildLightShapes(); err != nil {
+		t.Fatal(err)
+	}
+	f, err := d.scene.Frame(nt3d.DefaultCamera(), 80, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, inst := range f.Instances {
+		if inst.Name == "cube" {
+			g := f.Geometry[i]
+			if !g.DropShadow.FixedFloor || g.DropShadow.FloorZ != 0 || g.Bounds.Min.Z < .5 {
+				t.Fatal("lifted cube did not keep its drop floor")
+			}
+			return
+		}
+	}
+	t.Fatal("cube missing")
+}

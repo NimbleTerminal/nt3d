@@ -31,8 +31,9 @@ func sceneShaderSource() string {
 // uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
 // and light count, eye, forward, fog, fog color, ground ambient, and
 // MaxLights lights of two vec4s each, shadow matrix and lookup params,
-// four diffuse environment coefficients, and three sky camera basis vectors.
-const uniformSize = 160 + 16 + MaxLights*32 + 80 + 112
+// four diffuse environment coefficients, three sky camera basis vectors, and
+// six light-view matrices (one used for a directional light).
+const uniformSize = 160 + 16 + MaxLights*32 + 80 + 112 + 6*64
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -113,7 +114,7 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}}})
+		g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}}})
 		if err != nil {
 			return err
 		}
@@ -184,7 +185,7 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		g.noShadow, err = g.makeShadowTarget(dev, 1)
+		g.noShadow, err = g.makeShadowTarget(dev, 1, 1)
 		if err != nil {
 			return err
 		}
@@ -307,11 +308,17 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	ub = append(ub, floats(rig.ground[0], rig.ground[1], rig.ground[2], 0)...)
 	ub = append(ub, floats(lights[:]...)...)
 	drawn := f.drawn(1)
-	view, active := fitShadow(&f, drawn, shadowMapSize)
-	g.shadowActive = active
+	size := shadowMapSize
+	if i := shadowCaster(f.Lighting); i >= 0 && f.Lighting.Lights[i].Kind == PointLight {
+		size = pointShadowMapSize
+	}
+	views := fitShadows(&f, drawn, size)
+	g.shadowActive = len(views) > 0
+	var view shadowView
 	params := [4]float32{-1, 0, 0, 0}
-	if active {
-		params = [4]float32{float32(view.light), 1.0 / shadowMapSize, view.texel, shadowMapSize}
+	if g.shadowActive {
+		view = views[0]
+		params = [4]float32{float32(view.light), 1 / float32(size), view.texel, float32(size)}
 	}
 	ub = append(ub, floats(view.matrix[:]...)...)
 	ub = append(ub, floats(params[:]...)...)
@@ -322,6 +329,13 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	for _, v := range []nt3dmath.Vec3{right, up, forward} {
 		ub = append(ub, floats(v.X, v.Y, v.Z, 0)...)
 	}
+	for i := 0; i < 6; i++ {
+		var matrix nt3dmath.Mat4
+		if i < len(views) {
+			matrix = views[i].matrix
+		}
+		ub = append(ub, floats(matrix[:]...)...)
+	}
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
 			return err
@@ -330,9 +344,10 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		if err := g.prepareOutlines(dev, f); err != nil {
 			return err
 		}
-		if g.shadowActive && g.shadowTarget.texture == nil {
+		if g.shadowActive && (g.shadowTarget.texture == nil || g.shadowTarget.size != size || len(g.shadowTarget.faces) != len(views)) {
+			g.shadowTarget.release()
 			var err error
-			g.shadowTarget, err = g.makeShadowTarget(dev, shadowMapSize)
+			g.shadowTarget, err = g.makeShadowTarget(dev, size, len(views))
 			if err != nil {
 				return err
 			}
@@ -654,6 +669,11 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 
 // drawTextured draws a run's textured triangles with the pipeline set.
 func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
+	g.drawTexturedOffset(pass, f, d, 0)
+}
+
+// The high four vertex bits select a shadow face. Ordinary draws use zero.
+func (g *gpuRenderer) drawTexturedOffset(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, first uint32) {
 	pass.SetBindGroup(0, d.set.binds[7], nil)
 	src := baseMap(f.Geometry[d.index].Material)
 	if t := g.procedural[src]; t != nil {
@@ -663,7 +683,7 @@ func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuD
 	}
 	m := f.Geometry[d.index].Material
 	pass.SetBindGroup(3, g.textures[textureKey{normalMap(m), m.NormalRepeat, f.anisotropy()}].BindGroup(), nil)
-	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count})
+	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count, FirstVertex: first})
 }
 
 func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBatch, bind *wgpu.BindGroup) {
