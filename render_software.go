@@ -166,6 +166,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		hull := side < 0
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
 		back := side == backFaces || hull
+		directTexture := textured && !linear && material.Unlit && !material.Tint && !fogged && !blended && !hull
 		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && !material.Unlit
 		var tangent, bitangent nt3dmath.Vec3
 		if normalMapped {
@@ -245,6 +246,13 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 					}
 					if cutout && tex[3] < q0*a.cut+q1*b.cut+q2*c.cut {
 						continue // Cut out: neither color nor depth.
+					}
+					// Even an authored white tint can interpolate a fraction away
+					// from 1. Keep the original float path in that case: near a
+					// byte boundary its rounding can change the output.
+					if directTexture && (q0*a.shade[0]+q1*b.shade[0]+q2*c.shade[0])/255 == 1 {
+						put(x, y, u*z0+v*z1+t*z2, color.RGBA{encodeOpaque8(tex[0]), encodeOpaque8(tex[1]), encodeOpaque8(tex[2]), 255})
+						continue
 					}
 					// White, or the tint, times the texture, in the working
 					// space: linear light, or encoded.
