@@ -47,7 +47,7 @@ func (s *Scene) UpdateNodePoints(id NodeID, first int, points []Point, bounds nt
 		return fmt.Errorf("nt3d: point update requires finite bounds")
 	}
 	for _, p := range points {
-		if !finiteVec(p.Position) || !validPointRadius(old.PointStyle.Units, p.Radius) || !contains(bounds, p.Position) {
+		if !finiteVec(p.Position) || !validPointRadius(old.PointStyle.Units, p.Radius) || !validGaussian(old.PointStyle, p) || !contains(bounds, p.Position) {
 			return fmt.Errorf("nt3d: invalid point or point outside supplied bounds")
 		}
 	}

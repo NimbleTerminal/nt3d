@@ -12,6 +12,9 @@ move to Done with their commit; git history has the details.
 
 ## Rendering
 
+- [ ] **Gaussian splatting follow-ups**: higher SH, GPU sorting, compressed formats,
+  large-scene performance, and ordering across overlapping geometry.
+
 - [ ] **Normal-map follow-ups** — authored tangent frames and MikkTSpace-compatible
   generation. Independent normal UV sets and glTF texture transforms are supported. The renderer uses
   a per-triangle basis from deformed positions and UVs.
@@ -57,6 +60,11 @@ move to Done with their commit; git history has the details.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **3D Gaussian splatting (first version)**: standard uncompressed 3DGS PLY
+  with DC color, anisotropic GPU ellipses using the point pipeline and CPU radix
+  sorting, matching software ellipses, wireframe centers, and an embedded gallery
+  sample. See the rendering guide for count budgets and ordering limitations.
 
 - **glTF hierarchy, cameras and texture transforms**: static and animated files
   instantiate reusable `SceneAsset` trees; node cameras expose authored perspective

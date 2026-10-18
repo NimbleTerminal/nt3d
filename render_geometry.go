@@ -512,11 +512,17 @@ func geometryData(geom Geometry) (data [9][]byte) {
 const pointRecord = 20
 
 func spriteData(style PointStyle, points []Point) []byte {
-	if style.Texture == nil {
+	if style.Texture == nil && style.Shape != GaussianPoint {
 		return nil
 	}
 	data := make([]byte, 0, len(points)*48)
 	for _, p := range points {
+		if style.Shape == GaussianPoint {
+			for _, a := range p.GaussianAxes {
+				data = appendFloats(data, a.X, a.Y, a.Z, 0)
+			}
+			continue
+		}
 		r := style.spriteRect(p)
 		data = appendFloats(data, r[0], r[1], r[2], r[3], 0, 0, 0, 0, 0, 0, 0, 0)
 	}

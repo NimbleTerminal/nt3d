@@ -132,11 +132,14 @@ type plyVertex struct {
 // scan with a range grid (obj_info num_cols and num_rows, as the Stanford
 // scans have) becomes a surface joining neighboring samples, leaving out
 // triangles that would bridge a jump in depth; one without is a cloud of
-// points, up to nt3d.MaxPoints.
+// points, up to nt3d.MaxPoints. 3DGS attributes select DecodeGaussianPLY.
 func DecodePLY(data []byte, o *Options) (*Model, error) {
 	elements, format, comments, body, err := plyHeader(data)
 	if err != nil {
 		return nil, err
+	}
+	if gaussianPLY(elements) {
+		return DecodeGaussianPLY(data, o)
 	}
 	r := &plyReader{data: data, at: body, line: bytes.Count(data[:body], []byte("\n")) + 1}
 	switch format {

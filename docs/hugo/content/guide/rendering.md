@@ -98,3 +98,69 @@ For the GPU to cache node by node, also supply `GeometryRevisions`, one per geom
 Hand-built frames don't cull unless you set `Frame.Cull`, and then each geometry's `Bounds` must contain it.
 
 **Environment.** Add a [gradient sky or image panorama](../environment/) with `Scene.SetEnvironment`. GPU and software share diffuse image-based lighting; wireframe shows a terminal sky background.
+
+## 3D Gaussian splatting
+
+`nt3dmesh.DecodePLY` automatically recognizes uncompressed 3DGS PLY files;
+`nt3dmesh.DecodeGaussianPLY` explicitly requires them. `ReadFile` also works.
+The result is ordinary scene geometry, so orbit, pan, zoom, node transforms,
+visibility, fog, and renderer switching work as usual:
+
+```go
+model, err := nt3dmesh.ReadFile("scene.ply", nil)
+// Handle err, then install the cloud (standard 3DGS has one object).
+id, err := scene.SetGeometry("splats", model.Objects[0].Geometry)
+```
+
+Try `task gaussians`, or the **Gaussian splatting** gallery demo. Its original,
+CC0 576-splat ring is embedded from `examples/demos/internal/demo/models/gaussian-ring.ply`.
+Drag to orbit, scroll to zoom, and press `1`, `2`, or `3` for GPU, software,
+or wireframe. The same PLY can be opened with `task meshes -- path/to/scene.ply`.
+
+### Supported PLY subset
+
+ASCII, binary little-endian, and binary big-endian files are accepted. One
+`vertex` element must contain scalar `x y z`, `scale_0..2`, `rot_0..3`,
+`opacity`, and `f_dc_0..2` properties, in any order. Following the
+[reference 3DGS format](https://github.com/graphdeco-inria/gaussian-splatting/blob/main/scene/gaussian_model.py),
+scales are exponentiated, opacity uses a sigmoid, and the w,x,y,z quaternion
+is normalized. DC color is `0.5 + 0.2820947918 * f_dc`, clamped and stored as
+sRGB8; opacity is also quantized to eight bits. Normals and other scalar
+properties are ignored. Higher SH coefficients produce a warning and are
+ignored. Compressed PLY, `.splat`, exposure metadata, and view-dependent SH
+are not supported. Invalid/nonfinite attributes, zero quaternions, missing
+properties, and activated scales outside `[1e-20, 1e6]` are rejected.
+
+### Rendering and limits
+
+Gaussians extend `Point` with three local one-sigma `GaussianAxes`, using
+`PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend}`.
+Set a positive `Radius` for point validation; Gaussian rendering uses the axes.
+Node and baked affine transforms rotate and scale the axes. GPU rendering
+reuses the point quad, auxiliary sprite buffer, and stable CPU radix sorter;
+it uploads sorted indices when the view or geometry changes. Sorting is by
+center depth **within each geometry**. Merge overlapping clouds into one
+geometry with `MergeGeometry` for interleaved sorting. Intersections with
+transparent meshes retain the usual geometry-order limitations.
+
+GPU and software project covariance with the perspective/orthographic
+Jacobian and evaluate `exp(-r²/2)` on three-sigma ellipses. Both use a 0.3
+pixel-squared variance floor, a 256 logical-pixel maximum support radius,
+and a 0.99 peak opacity cap. They depth-test against opaque geometry without
+writing depth. Splats are self-colored/unlit, receive fog, and use the normal
+linear-color and supersampling paths. They do not cast lighting shadows.
+Centers outside the near/far planes are discarded; large splats can therefore
+pop when their centers cross a plane. This is a first-order projection and
+center-depth ordering, not exact volumetric integration.
+
+Software renders every Gaussian with the same sort and ellipse math, even in
+interactive frames; it can be slow for large clouds or heavy overlap.
+Wireframe draws the existing sampled point centers (up to about 2,000), without
+ellipse shape or alpha. Start with **up to 10,000 splats on GPU** and **about
+1,000 in software** for interactive use; these are conservative starting
+budgets, not measured frame-rate guarantees. Coverage, resolution, and
+supersampling matter as much as count. The hard limit remains `MaxPoints`
+(500,000) and Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
+GPU records use 72 bytes per splat including sort indices; CPU scene snapshots,
+axes, sort scratch, and the input file require additional memory. Higher SH,
+GPU sorting, compressed formats, and large-scene optimization are deferred.

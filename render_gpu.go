@@ -63,13 +63,13 @@ type gpuRenderer struct {
 	textureBlends  [2]*wgpu.RenderPipeline
 	// Points bind their records and order in place of items: opaque points
 	// through pipelines[0], blended ones through pointBlends, alpha then
-	// additive, hard then soft. zeros stands in for unsorted points' order
+	// additive, hard then soft then Gaussian. zeros stands in for unsorted points' order
 	// and fills binding 1 (see setup).
 	pointBindLayout *wgpu.BindGroupLayout
 	pointLayout     *wgpu.PipelineLayout
 	spriteLayout    *wgpu.PipelineLayout
 	spritePipelines [3]*wgpu.RenderPipeline
-	pointBlends     [2][2]*wgpu.RenderPipeline
+	pointBlends     [2][3]*wgpu.RenderPipeline
 	zeros           *wgpu.Buffer
 	sorter          pointSorter
 	orderBytes      []byte
@@ -169,8 +169,15 @@ func (g *gpuRenderer) setup() (err error) {
 			}
 		}
 		for blend, vertex := range [2]string{"vs_point_sorted", "vs_point"} {
-			for shape, fragment := range [2][2]string{{"fs_point_alpha", "fs_point_alpha_soft"}, {"fs_point_add", "fs_point_add_soft"}}[blend] {
-				if g.pointBlends[blend][shape], err = pointPipeline(dev, g.pointLayout, g.shader, vertex, fragment, blend == 1); err != nil {
+			for shape, fragment := range [2][3]string{{"fs_point_alpha", "fs_point_alpha_soft", "fs_gaussian"}, {"fs_point_add", "fs_point_add_soft", "fs_gaussian"}}[blend] {
+				if blend == 1 && shape == int(GaussianPoint) {
+					continue
+				} // Gaussians require alpha blending.
+				entry := vertex
+				if shape == int(GaussianPoint) {
+					entry = "vs_gaussian"
+				}
+				if g.pointBlends[blend][shape], err = pointPipeline(dev, g.pointLayout, g.shader, entry, fragment, blend == 1); err != nil {
 					return err
 				}
 			}

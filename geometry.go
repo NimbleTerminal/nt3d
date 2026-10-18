@@ -10,11 +10,14 @@ import (
 )
 
 type Point struct {
-	Frame    uint32 // Atlas frame offset, added to PointStyle.Frame (row-major, wrapping).
-	Position nt3dmath.Vec3
-	Radius   float32
-	Color    color.RGBA
-	Datum    int
+	// GaussianAxes are the three rotated one-sigma axes in local coordinates.
+	// Used only by GaussianPoint; affine transforms scale and rotate these axes.
+	GaussianAxes [3]nt3dmath.Vec3
+	Frame        uint32 // Atlas frame offset, added to PointStyle.Frame (row-major, wrapping).
+	Position     nt3dmath.Vec3
+	Radius       float32
+	Color        color.RGBA
+	Datum        int
 }
 
 type Vertex struct {
@@ -154,7 +157,7 @@ func validateGeometry(g Geometry) error {
 		return err
 	}
 	for _, p := range g.Points {
-		if !validFloat(p.Position.X, p.Position.Y, p.Position.Z) || !validPointRadius(g.PointStyle.Units, p.Radius) {
+		if !validFloat(p.Position.X, p.Position.Y, p.Position.Z) || !validPointRadius(g.PointStyle.Units, p.Radius) || !validGaussian(g.PointStyle, p) {
 			return fmt.Errorf("nt3d: invalid point geometry")
 		}
 	}

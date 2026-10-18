@@ -37,6 +37,9 @@ func TransformGeometry(g Geometry, m nt3dmath.Mat4) (Geometry, error) {
 	}
 	for i := range g.Points {
 		g.Points[i].Position = m.Point(g.Points[i].Position)
+		for k, axis := range g.Points[i].GaussianAxes {
+			g.Points[i].GaussianAxes[k] = m.Direction(axis)
+		}
 	}
 	for i := range g.Lines {
 		g.Lines[i].Position = m.Point(g.Lines[i].Position)

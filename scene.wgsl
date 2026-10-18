@@ -414,3 +414,30 @@ fn spriteSample(o:Out)->vec4<f32> {
 @fragment fn fs_sprite_add(o:Out)->@location(0) vec4<f32> {
  let t=spriteSample(o);return vec4<f32>(mapColor(t.rgb)*o.color.rgb,t.a*o.cut*(1.0-fogAmount(o.world)));
 }
+
+// Covariance axes share the sprite auxiliary buffer. Project each axis by
+// the homogeneous Jacobian, then use a Cholesky factor for the ellipse.
+@vertex fn vs_gaussian(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
+ let index=order[ii];let p=points[index];let axes=items[index];
+ var o=pointOutput(vi,index);
+ let m=u.matrix*instances[0].world;
+ let center=m*vec4<f32>(p.x,p.y,p.z,1.0);
+ if center.w<=0.0 || center.z<0.0 || center.z>center.w {o.clip=vec4<f32>(2.0,2.0,2.0,1.0);return o;}
+ var cov=vec3<f32>(0.3,0.0,0.3);
+ let vectors=array<vec3<f32>,3>(axes.a.xyz,axes.b.xyz,axes.color.xyz);
+ for(var k=0u;k<3u;k++) {
+  let d=m*vec4<f32>(vectors[k],0.0);
+  let s=(d.xy-center.xy/center.w*d.w)/center.w*u.viewport.xy*0.5;
+  cov+=vec3<f32>(s.x*s.x,s.x*s.y,s.y*s.y);
+ }
+ let a=sqrt(cov.x);let b=cov.y/a;let c=sqrt(max(cov.z-b*b,0.000001));
+ let scale=min(1.0,maxPointPixels/(3.0*sqrt(max(cov.x,cov.z))));
+ let q=o.uv*3.0;
+ let offset=vec2<f32>(a*q.x,b*q.x+c*q.y)*scale;
+ o.clip=vec4<f32>(center.xy+offset*2.0/u.viewport.xy*center.w,center.zw);
+ return o;
+}
+@fragment fn fs_gaussian(o:Out)->@location(0) vec4<f32> {
+ let r2=dot(o.uv,o.uv);if r2>1.0 {discard;}
+ return vec4<f32>(finish(o,o.color.rgb),min(0.99,o.cut)*exp(-4.5*r2));
+}

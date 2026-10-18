@@ -1,0 +1,112 @@
+package nt3dmesh
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"math"
+	"nimbleterminal.dev/nt3d"
+	"strings"
+	"testing"
+)
+
+func gaussianFile(format string, values []float32) []byte {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "ply\nformat %s 1.0\nelement vertex 1\n", format)
+	for _, p := range gaussianProperties {
+		fmt.Fprintf(&b, "property float %s\n", p)
+	}
+	b.WriteString("end_header\n")
+	for _, v := range values {
+		switch format {
+		case "ascii":
+			fmt.Fprintf(&b, "%g ", v)
+		case "binary_little_endian":
+			binary.Write(&b, binary.LittleEndian, v)
+		default:
+			binary.Write(&b, binary.BigEndian, v)
+		}
+	}
+	return b.Bytes()
+}
+func TestGaussianPLY(t *testing.T) {
+	values := []float32{1, 2, 3, 0, 1, -1, 0, 0, -1, -2, 2, 0, 0, 0}
+	for _, format := range []string{"ascii", "binary_little_endian", "binary_big_endian"} {
+		m, err := DecodePLY(gaussianFile(format, values), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := m.Objects[0].Geometry
+		p := g.Points[0]
+		if g.PointStyle.Shape != nt3d.GaussianPoint || p.Color.R != 128 || p.Color.A != 128 || p.GaussianAxes[0].X != 1 || math.Abs(float64(p.GaussianAxes[1].Y)-math.Exp(-1)) > 1e-6 {
+			t.Fatalf("decoded %s: %+v", format, p)
+		}
+		if _, err := DecodePLY(gaussianFile(format, values)[:40], nil); err == nil {
+			t.Fatal("truncation accepted")
+		}
+	}
+	data := gaussianFile("ascii", values)
+	for _, bad := range []string{strings.Replace(string(data), "scale_0", "missing", 1), strings.Replace(string(data), "vertex 1", "vertex 500001", 1), strings.Replace(string(data), "1 2 3", "nan 2 3", 1)} {
+		if _, err := DecodePLY([]byte(bad), nil); err == nil {
+			t.Fatal("invalid file accepted")
+		}
+	}
+	for _, index := range []int{7, 10} {
+		v := append([]float32{}, values...)
+		if index == 7 {
+			v[index] = 1000
+		} else {
+			v[index] = 0
+		}
+		if _, err := DecodePLY(gaussianFile("ascii", v), nil); err == nil {
+			t.Fatal("invalid scale/quaternion accepted")
+		}
+	}
+	if _, err := DecodePLY(data, &Options{MaxBytes: 8}); err == nil {
+		t.Fatal("byte limit ignored")
+	}
+}
+
+func TestGaussianPLYRotationOrientationAndWarnings(t *testing.T) {
+	// A non-unit quaternion rotating 90 degrees about Z, plus Y-up conversion.
+	values := []float32{1, 2, 3, 0, 0, 0, 0, 0, -1, -2, 2, 0, 0, 2}
+	data := gaussianFile("binary_little_endian", values)
+	if _, err := DecodePLY(data[:len(data)-1], nil); err == nil {
+		t.Fatal("truncated binary body accepted")
+	}
+	m, err := DecodePLY(data, &Options{Up: YUp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := m.Objects[0].Geometry.Points[0]
+	if math.Abs(float64(p.GaussianAxes[0].Z)-1) > 1e-6 || p.Position.Y != -3 || p.Position.Z != 2 {
+		t.Fatalf("rotation/orientation lost: %+v", p)
+	}
+	text := string(gaussianFile("ascii", values))
+	text = strings.Replace(text, "end_header", "property float f_rest_0\nend_header", 1) + "0 "
+	m, err = DecodePLY([]byte(text), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Warnings) != 1 {
+		t.Fatal("missing higher SH warning")
+	}
+}
+
+// Real captures can contain extremely thin surface splats; the screen-space
+// variance floor stabilizes them without inflating the stored world axes.
+func TestGaussianPLYThinAxes(t *testing.T) {
+	values := []float32{0, 0, 0, 0, 0, 0, 0, -24.1, -23.6, -2, 1, 0, 0, 0}
+	m, err := DecodePLY(gaussianFile("binary_little_endian", values), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	axis := m.Objects[0].Geometry.Points[0].GaussianAxes[0].X
+	if math.Abs(float64(axis)/math.Exp(float64(values[7]))-1) > 1e-6 {
+		t.Fatal("thin axis changed")
+	}
+	values[7] = -1000
+	if _, err := DecodePLY(gaussianFile("ascii", values), nil); err == nil {
+		t.Fatal("underflowed axis accepted")
+	}
+}

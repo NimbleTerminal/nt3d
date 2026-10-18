@@ -29,8 +29,9 @@ type PointStyle struct {
 type PointShape uint8
 
 const (
-	HardPoint PointShape = iota // A disc with a hard edge.
-	SoftPoint                   // A disc whose alpha fades to nothing at its edge; drawn hard when opaque.
+	HardPoint     PointShape = iota // A disc with a hard edge.
+	SoftPoint                       // A disc whose alpha fades to nothing at its edge; drawn hard when opaque.
+	GaussianPoint                   // An anisotropic Gaussian, truncated at three sigma; requires AlphaBlend and WorldUnits.
 )
 
 // PointUnits is what a point's Radius measures.
@@ -60,8 +61,11 @@ const (
 const MaxPointPixels = 256
 
 func validPointStyle(s PointStyle) error {
-	if s.Shape > SoftPoint || s.Units > WorldUnits || s.Blend > AdditiveBlend {
+	if s.Shape > GaussianPoint || s.Units > WorldUnits || s.Blend > AdditiveBlend {
 		return fmt.Errorf("nt3d: unknown point style")
+	}
+	if s.Shape == GaussianPoint && (s.Blend != AlphaBlend || s.Units != WorldUnits || s.Texture != nil) {
+		return fmt.Errorf("nt3d: Gaussians require world units, alpha blending, and no texture")
 	}
 	if s.Texture != nil {
 		t := s.Texture
@@ -104,8 +108,12 @@ func (f *Frame) pointRadius(style PointStyle, radius, w, scale float32) float32 
 
 // softness is how much of a point's alpha reaches a pixel at r2, its
 // squared distance from the center over the squared radius: all of a hard
-// point's; a soft point's falling as (1-r²)² to nothing at its edge.
+// point's; a soft point's falling as (1-r²)² to nothing at its edge;
+// a Gaussian's exp(-4.5*r²), with radius measuring three sigma.
 func softness(shape PointShape, r2 float32) float32 {
+	if shape == GaussianPoint {
+		return float32(math.Exp(float64(-4.5 * r2)))
+	}
 	if shape == HardPoint {
 		return 1
 	}

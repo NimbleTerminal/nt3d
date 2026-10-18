@@ -92,7 +92,7 @@ type Options struct {
 	// Parts chooses which 3MF build items to assemble, by index into
 	// Model.Parts; nil assembles all. The triangle limit applies to those chosen.
 	Parts []bool
-	// MaxBytes limits what a 3MF package may unpack to. Zero uses DefaultMaxBytes.
+	// MaxBytes limits unpacked 3MF data and Gaussian PLY input bytes. Zero uses DefaultMaxBytes.
 	MaxBytes int64
 	// Up is the file's up axis. Files do not say, so the caller must.
 	Up Up
@@ -114,6 +114,9 @@ func (o *Options) orient(m *Model) {
 		}
 		for j := range g.Points {
 			g.Points[j].Position = turn(g.Points[j].Position)
+			for k, axis := range g.Points[j].GaussianAxes {
+				g.Points[j].GaussianAxes[k] = turn(axis)
+			}
 		}
 		for j := range g.Arrows {
 			g.Arrows[j].Start, g.Arrows[j].End = turn(g.Arrows[j].Start), turn(g.Arrows[j].End)

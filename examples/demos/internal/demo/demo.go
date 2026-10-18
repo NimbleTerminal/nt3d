@@ -101,6 +101,7 @@ const (
 	sceneForest
 	sceneLights
 	sceneParticles
+	sceneGaussians
 	sceneAnimation
 	sceneAnimate
 	sceneCharacters
@@ -590,14 +591,14 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	snapshot := flag.String("snapshot", "", "write a PNG without opening a terminal")
 	duration := flag.Duration("duration", 0, "exit after a duration")
 	medium := flag.String("medium", "auto", "auto, direct, or shm")
-	up := flag.String("up", "z", "mesh files' up axis: z, or y for most OBJ files")
+	up := flag.String("up", "z", "mesh files' up axis: z, y, or -y for Y-down captures")
 	supersample := flag.Int("supersample", 0, "GPU supersampling, 1..4 (x cycles it in the fur demo)")
 	effectName := flag.String("effect", "none", "fur demo post effect: none, soft focus, or vignette")
 	flag.Parse()
 	upAxis := nt3dmesh.ZUp
 	switch *up {
 	case "z":
-	case "y":
+	case "y", "-y":
 		upAxis = nt3dmesh.YUp
 	default:
 		return fmt.Errorf("invalid up axis")
@@ -676,6 +677,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupLights(); err != nil {
 			return err
 		}
+	case sceneGaussians:
+		if err = d.setupGaussians(); err != nil {
+			return err
+		}
 	case sceneParticles:
 		if err = d.setupParticles(); err != nil {
 			return err
@@ -695,6 +700,12 @@ func run(proceduralDefault bool, kind sceneMode) error {
 			return err
 		}
 		if err = d.scene.Reparent(marker, d.group); err != nil {
+			return err
+		}
+	}
+	if kind == sceneMeshes && *up == "-y" {
+		// Rotate the Y-up result by 180 degrees about X for Y-down captures.
+		if err = d.scene.SetTransform(d.group, nt3dmath.Scaling(nt3dmath.Vec3{X: 1, Y: -1, Z: -1})); err != nil {
 			return err
 		}
 	}
@@ -718,7 +729,7 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))
 	defer d.view.Close()
 	switch kind {
-	case sceneMeshes, sceneLarge, sceneAnimation:
+	case sceneMeshes, sceneLarge, sceneAnimation, sceneGaussians:
 		d.view.Fit()
 		if kind == sceneAnimation {
 			camera := d.view.Camera()

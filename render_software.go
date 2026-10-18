@@ -422,6 +422,9 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 	drawPoints := func(g *Geometry, inst Instance, m *nt3dmath.Mat4) {
 		style := g.PointStyle
 		step := sampled(len(g.Points), 10000)
+		if style.Shape == GaussianPoint {
+			step = 1
+		}
 		var order []uint32
 		if style.Blend == AlphaBlend {
 			order = new(pointSorter).sort(g.Points, m)
@@ -438,10 +441,18 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			}
 			x, y, z := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5, cz/cw
 			radius := f.pointRadius(style, p.Radius, cw, px)
+			var ellipse gaussianEllipse
+			if style.Shape == GaussianPoint {
+				ellipse = projectGaussian(p, m, f.Width, f.Height, px)
+				radius = ellipse.radius
+			}
 			distance := f.eyeDistance(inst.World.Point(p.Position))
 			c := p.Color
 			rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
 			alpha := min(1, float32(c.A)/255*float32(step))
+			if style.Shape == GaussianPoint {
+				alpha = min(.99, alpha)
+			}
 			if style.Texture == nil {
 				switch style.Blend {
 				case OpaqueBlend:
@@ -492,6 +503,11 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 						continue
 					}
 					d2 := dx*dx + dy*dy
+					if style.Shape == GaussianPoint {
+						u := dx / ellipse.a
+						v := (dy - ellipse.b*u) / ellipse.c
+						d2 = (u*u + v*v) * radius * radius / 9
+					}
 					if d2 > radius*radius {
 						continue
 					}
