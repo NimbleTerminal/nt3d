@@ -214,26 +214,74 @@ func sampleLevelData(img *image.NRGBA, uv UV, repeat, data bool) [4]float32 {
 	y := v*float64(h) - .5
 	x0, y0 := int(math.Floor(x)), int(math.Floor(y))
 	fx, fy := float32(x-float64(x0)), float32(y-float64(y0))
-	at := func(i, n int) int {
-		if repeat {
-			return ((i % n) + n) % n
-		}
-		return max(0, min(n-1, i))
+	x1, y1 := x0+1, y0+1
+	if repeat {
+		x0, x1 = wrapTexel(x0, w), wrapTexel(x1, w)
+		y0, y1 = wrapTexel(y0, h), wrapTexel(y1, h)
+	} else {
+		x0, x1 = max(0, min(w-1, x0)), max(0, min(w-1, x1))
+		y0, y1 = max(0, min(h-1, y0)), max(0, min(h-1, y1))
+	}
+	x0, x1, y0, y1 = x0*4, x1*4, y0*img.Stride, y1*img.Stride
+	weights := [4]float32{(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy}
+	decode := &srgbDecode
+	if data {
+		decode = &dataDecode
 	}
 	var c [4]float32
-	for k, p := range [4][2]int{{x0, y0}, {x0 + 1, y0}, {x0, y0 + 1}, {x0 + 1, y0 + 1}} {
-		weight := [4]float32{(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy}[k]
-		px := img.Pix[at(p[1], h)*img.Stride+at(p[0], w)*4:]
-		for j := range 3 {
-			v := srgbDecode[px[j]]
-			if data {
-				v = float32(px[j]) / 255
-			}
-			c[j] += weight * v
-		}
+	// Explicit taps preserve top-left, top-right, bottom-left, bottom-right
+	// accumulation while eliminating both fixed-size inner loops.
+	{
+		px := img.Pix[y0+x0 : y0+x0+4]
+		weight := weights[0]
+		c[0] += weight * decode[px[0]]
+		c[1] += weight * decode[px[1]]
+		c[2] += weight * decode[px[2]]
 		c[3] += weight * float32(px[3]) / 255
 	}
+	{
+		px := img.Pix[y0+x1 : y0+x1+4]
+		weight := weights[1]
+		c[0] += weight * decode[px[0]]
+		c[1] += weight * decode[px[1]]
+		c[2] += weight * decode[px[2]]
+		c[3] += weight * float32(px[3]) / 255
+	}
+	{
+		px := img.Pix[y1+x0 : y1+x0+4]
+		weight := weights[2]
+		c[0] += weight * decode[px[0]]
+		c[1] += weight * decode[px[1]]
+		c[2] += weight * decode[px[2]]
+		c[3] += weight * float32(px[3]) / 255
+	}
+	{
+		px := img.Pix[y1+x1 : y1+x1+4]
+		weight := weights[3]
+		c[0] += weight * decode[px[0]]
+		c[1] += weight * decode[px[1]]
+		c[2] += weight * decode[px[2]]
+		c[3] += weight * float32(px[3]) / 255
+	}
+
 	return c
+}
+
+// dataDecode shares the exact float32 division used by linear-data sampling.
+// Like srgbDecode, this is one process-wide table, not per-texture storage.
+var dataDecode = func() (t [256]float32) {
+	for i := range t {
+		t[i] = float32(i) / 255
+	}
+	return
+}()
+
+func wrapTexel(i, n int) int {
+	i %= n
+	if i < 0 {
+		i += n
+	}
+	return i
 }
 
 // NewTexture snapshots src, including images with nonzero bounds, of at most
