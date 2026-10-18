@@ -52,6 +52,7 @@ type Light struct {
 	Color     color.RGBA
 	Intensity float32
 	Range     float32 // Point only.
+	Shadows   bool    // Only the first directional light with Shadows casts shadows.
 }
 
 // defaultKey is the default key light's intensity: with the default
@@ -106,6 +107,7 @@ func validLighting(l Lighting) bool {
 type lightRig struct {
 	sky, ground [3]float32
 	lights      []rigLight
+	shadowLight int  // Index of the shadow-casting light, or -1.
 	points      bool // Whether any light is a point light, so shading needs surface positions.
 }
 
@@ -124,7 +126,7 @@ func newRig(f *Frame) lightRig {
 		return [3]float32{float32(c.R) / 255 * k, float32(c.G) / 255 * k, float32(c.B) / 255 * k}
 	}
 	l := f.Lighting
-	r := lightRig{sky: work(l.Ambient.Sky, l.Ambient.intensity()), ground: work(l.Ambient.Ground, l.Ambient.intensity())}
+	r := lightRig{shadowLight: shadowCaster(l), sky: work(l.Ambient.Sky, l.Ambient.intensity()), ground: work(l.Ambient.Ground, l.Ambient.intensity())}
 	for _, x := range l.Lights {
 		c := x.Color
 		if c.A == 0 {
