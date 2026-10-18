@@ -77,7 +77,7 @@ func (s *Scene) SetNormalMap(name string, t *Texture) error {
 // The basis is derived from the current triangle, including deformed positions.
 func normalBasis(a, b, c *clipCorner) (tangent, bitangent nt3dmath.Vec3) {
 	e1, e2 := b.world.Sub(a.world), c.world.Sub(a.world)
-	u1, v1, u2, v2 := b.uv.U-a.uv.U, b.uv.V-a.uv.V, c.uv.U-a.uv.U, c.uv.V-a.uv.V
+	u1, v1, u2, v2 := b.normalUV.U-a.normalUV.U, b.normalUV.V-a.normalUV.V, c.normalUV.U-a.normalUV.U, c.normalUV.V-a.normalUV.V
 	det := u1*v2 - v1*u2
 	if abs(det) <= 1e-8*max(abs(u1*v2), abs(v1*u2), 1e-30) {
 		return

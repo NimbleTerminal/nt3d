@@ -13,7 +13,7 @@ move to Done with their commit; git history has the details.
 ## Rendering
 
 - [ ] **Normal-map follow-ups** — authored tangent frames and MikkTSpace-compatible
-  generation, separate UV sets and texture transforms. The initial renderer uses
+  generation. Independent normal UV sets and glTF texture transforms are supported. The renderer uses
   a per-triangle basis from deformed positions and UVs.
 
 - [ ] **Shared points, lines, and boxes**, only if something needs them
@@ -34,12 +34,6 @@ move to Done with their commit; git history has the details.
 
 ## Formats
 
-- [ ] **glTF follow-ups**:
-  - [x] Done: generic clips, playback/blending, morphs, CPU/GPU skinning, and glTF mapping
-  - cameras
-  - `KHR_texture_transform`
-  - [x] Done: animated node hierarchy through reusable `SceneAsset` instances
-  - [x] Done: generated CC0 glTF animation gallery demo
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
   exact rendering means subdividing them.
 
@@ -65,6 +59,12 @@ move to Done with their commit; git history has the details.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **glTF hierarchy, cameras and texture transforms**: static and animated files
+  instantiate reusable `SceneAsset` trees; node cameras expose authored perspective
+  and orthographic lenses, roll, and animated poses. `KHR_texture_transform` and UV
+  set overrides feed independent color/normal UVs on GPU and software. Flat rest-pose
+  objects remain available. Generic animation, skins and gallery demos shipped earlier.
 
 - **Particle updates and atlas sprites**: `SetNodePoints` / `UpdateNodePoints`
   preserve snapshots, skip unrelated validation/copies and bounds scans, and

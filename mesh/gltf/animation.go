@@ -22,16 +22,7 @@ func matrix32(m mat4) (out nt3dmath.Mat4) {
 	return
 }
 func vec(v [3]float32) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v[0], Y: v[1], Z: v[2]} }
-func (d *gltfDecoder) animatedAsset() error {
-	dynamic := len(d.doc.Animations) > 0 || len(d.doc.Skins) > 0
-	for _, m := range d.doc.Meshes {
-		for _, p := range m.Primitives {
-			dynamic = dynamic || len(p.Targets) > 0
-		}
-	}
-	if !dynamic {
-		return nil
-	}
+func (d *gltfDecoder) sceneAsset() error {
 	left := d.o.ByteLimit()
 	d.decodedLeft = &left
 	asset := &nt3d.SceneAsset{Nodes: []nt3d.AssetNode{{Name: "Y-up", Parent: -1, Local: matrix32(yUp)}}}
@@ -43,7 +34,7 @@ func (d *gltfDecoder) animatedAsset() error {
 	for i, n := range d.doc.Nodes {
 		for _, c := range n.Children {
 			if c < 0 || c >= len(parents) || parents[c] != -1 {
-				return fmt.Errorf("nt3dmesh: invalid animated hierarchy")
+				return fmt.Errorf("nt3dmesh: invalid scene hierarchy")
 			}
 			parents[c] = i
 		}
@@ -55,13 +46,13 @@ func (d *gltfDecoder) animatedAsset() error {
 		depth++
 		defer func() { depth-- }()
 		if depth > 1024 {
-			return fmt.Errorf("%w: animated hierarchy exceeds 1024 levels", nt3dmesh.ErrTooLarge)
+			return fmt.Errorf("%w: scene hierarchy exceeds 1024 levels", nt3dmesh.ErrTooLarge)
 		}
 		if _, ok := ids[i]; ok {
 			return nil
 		}
 		if visiting[i] {
-			return fmt.Errorf("nt3dmesh: animated hierarchy cycle")
+			return fmt.Errorf("nt3dmesh: scene hierarchy cycle")
 		}
 		visiting[i] = true
 		p := 0
@@ -117,6 +108,18 @@ func (d *gltfDecoder) animatedAsset() error {
 			selected[i] = true
 		}
 	}
+	for i, n := range d.doc.Nodes {
+		if n.Camera != nil && selected[i] {
+			camera, err := d.camera(*n.Camera)
+			if err != nil {
+				return err
+			}
+			asset.Nodes[ids[i]].Camera = camera
+			if asset.Nodes[ids[i]].Name == "" {
+				asset.Nodes[ids[i]].Name = d.doc.Cameras[*n.Camera].Name
+			}
+		}
+	}
 	meshes := map[int][]int{}
 	for ni, n := range d.doc.Nodes {
 		if n.Mesh == nil || !selected[ni] {
@@ -129,7 +132,8 @@ func (d *gltfDecoder) animatedAsset() error {
 			}
 			temp := *d
 			temp.m = &nt3dmesh.Model{}
-			temp.capture = true
+			temp.capture = n.Skin != nil || len(p.Targets) > 0
+			temp.points, temp.lines = 0, 0
 			temp.sources = nil
 			temp.budget = budget{limit: d.o.TriangleLimit()}
 			if err := temp.primitive(n.Name, p, mat4(gltf.DefaultMatrix)); err != nil {
@@ -356,6 +360,9 @@ func (d *gltfDecoder) animatedAsset() error {
 			return err
 		}
 		asset.Clips = append(asset.Clips, clip)
+	}
+	if err := staticReflections(asset); err != nil {
+		return err
 	}
 	// Validate all bindings before returning a reusable asset.
 	if _, err := asset.Instantiate(nt3d.NewScene(), nt3d.Root, "validate"); err != nil {

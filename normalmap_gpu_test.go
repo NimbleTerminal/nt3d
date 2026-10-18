@@ -12,7 +12,7 @@ import (
 func TestGPUNormalMaps(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
-	for i, kind := range []string{"normal only", "base color", "zero", "mirrored", "degenerate", "transparent", "unlit", "transform", "cutout", "mip"} {
+	for i, kind := range []string{"normal only", "base color", "zero", "mirrored", "degenerate", "transparent", "unlit", "transform", "cutout", "mip", "independent", "independent cutout"} {
 		t.Run(kind, func(t *testing.T) {
 			f := normalFrame(t)
 			f.Revision = uint64(i + 1)
@@ -20,6 +20,15 @@ func TestGPUNormalMaps(t *testing.T) {
 			switch kind {
 			case "base color":
 				m.Texture = testTexture(t, color.RGBA{150, 80, 30, 255})
+			case "independent", "independent cutout":
+				f.Geometry[0].NormalUV = append([]UV(nil), f.Geometry[0].UV...)
+				for j := range f.Geometry[0].NormalUV {
+					f.Geometry[0].NormalUV[j].U = 1 - f.Geometry[0].NormalUV[j].U
+				}
+				if kind == "independent cutout" {
+					m.Texture = testTexture(t, white)
+					m.Cutout = true
+				}
 			case "zero":
 				m.NormalStrength = 0
 			case "mirrored":

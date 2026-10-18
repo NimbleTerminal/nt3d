@@ -65,7 +65,17 @@ func (d *demo) loadSample(i int) error {
 			return err
 		}
 	}
-	group, err := m.AddTo(d.scene, d.group, fmt.Sprintf("%s %d", filepath.Base(s.file), i))
+	var group nt3d.NodeID
+	var instantiated *nt3d.AnimatedInstance
+	name := fmt.Sprintf("%s %d", filepath.Base(s.file), i)
+	if m.Asset != nil {
+		instantiated, err = m.Asset.Instantiate(d.scene, d.group, name)
+		if err == nil {
+			group = instantiated.Root
+		}
+	} else {
+		group, err = m.AddTo(d.scene, d.group, name)
+	}
 	if err != nil {
 		return err
 	}
@@ -75,10 +85,19 @@ func (d *demo) loadSample(i int) error {
 	}
 	d.models.index, d.models.group, d.models.model = i, group, m
 	d.meshes = &meshScene{title: s.title}
-	node, _ := d.scene.Node(group)
-	for j, id := range node.Children {
-		d.meshes.nodes = append(d.meshes.nodes, id)
-		d.meshes.sources = append(d.meshes.sources, m.Objects[j].Geometry)
+	if instantiated != nil {
+		for j, n := range m.Asset.Nodes {
+			if n.Geometry != nil {
+				d.meshes.nodes = append(d.meshes.nodes, instantiated.Nodes[j])
+				d.meshes.sources = append(d.meshes.sources, *n.Geometry)
+			}
+		}
+	} else {
+		node, _ := d.scene.Node(group)
+		for j, id := range node.Children {
+			d.meshes.nodes = append(d.meshes.nodes, id)
+			d.meshes.sources = append(d.meshes.sources, m.Objects[j].Geometry)
+		}
 	}
 	d.meshes.triangles = m.Triangles()
 	d.status = s.about

@@ -69,8 +69,10 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	}
 	var mesh, points *Geometry
 	uv := true
+	normalUV := false
 	for i := range gs {
 		g := &gs[i]
+		normalUV = normalUV || len(g.NormalUV) > 0
 		if out.DropShadow.Strength == 0 && g.DropShadow.Strength > 0 {
 			out.DropShadow = g.DropShadow
 		}
@@ -117,6 +119,13 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 			out.Indices = append(out.Indices, base+i)
 		}
 		out.Vertices = append(out.Vertices, g.Vertices...)
+		if normalUV {
+			if len(g.NormalUV) > 0 {
+				out.NormalUV = append(out.NormalUV, g.NormalUV...)
+			} else {
+				out.NormalUV = append(out.NormalUV, g.UV...)
+			}
+		}
 		if uv && mesh != nil {
 			out.UV = append(out.UV, g.UV...)
 		}
@@ -195,10 +204,11 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 		position, normal nt3dmath.Vec3
 		color            color.RGBA
 		uv               UV
+		normalUV         UV
 	}
 	out := cloneGeometry(g)
 	out.WireGrid = [2]int{}
-	out.Vertices, out.UV = nil, nil
+	out.Vertices, out.UV, out.NormalUV = nil, nil, nil
 	out.Indices = make([]uint32, 0, len(g.Indices))
 	seen := map[key]uint32{}
 	textured := len(g.UV) == len(g.Vertices) && len(g.UV) != 0
@@ -210,11 +220,17 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 			if textured {
 				k.uv = g.UV[g.Indices[corner]]
 			}
+			if len(g.NormalUV) > 0 {
+				k.normalUV = g.NormalUV[g.Indices[corner]]
+			}
 			index, ok := seen[k]
 			if !ok {
 				index = uint32(len(out.Vertices))
 				seen[k] = index
 				out.Vertices = append(out.Vertices, v)
+				if len(g.NormalUV) > 0 {
+					out.NormalUV = append(out.NormalUV, k.normalUV)
+				}
 				if textured {
 					out.UV = append(out.UV, k.uv)
 				}

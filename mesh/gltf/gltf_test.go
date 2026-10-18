@@ -499,14 +499,13 @@ func TestGLTFNormalMapOptions(t *testing.T) {
 				material.PBRMetallicRoughness = &gltf.PBRMetallicRoughness{BaseColorTexture: &gltf.TextureInfo{Index: 0}}
 			case "missing UV":
 				delete(doc.Meshes[0].Primitives[0].Attributes, gltf.TEXCOORD_0)
-				wantWarning = "no texture coordinates"
+				wantWarning = "no TEXCOORD_0"
 			case "different UV":
 				normal.TexCoord = 1
 				material.PBRMetallicRoughness = &gltf.PBRMetallicRoughness{BaseColorTexture: &gltf.TextureInfo{Index: 0}}
-				wantWarning = "different UV"
+				wantWarning = "no TEXCOORD_1"
 			case "transform":
 				normal.Extensions = gltf.Extensions{"KHR_texture_transform": map[string]any{"offset": []float64{.2, 0}}}
-				wantWarning = "texture transforms"
 			case "authored tangent":
 				doc.Meshes[0].Primitives[0].Attributes[gltf.TANGENT] = modeler.WriteTangent(doc, [][4]float32{{1, 0, 0, 1}, {1, 0, 0, 1}, {1, 0, 0, 1}})
 				wantWarning = "authored tangents"

@@ -27,7 +27,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
 // position (whose distance from the camera, not affine, is found per
 // fragment) and normal, and the instance's specular strength and exponent
 // (its normal matrix's spare column).
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32> };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32> };
 // eyeDistance is a world point's distance from the camera, as fog measures
 // it: straight, or along the view for orthographic cameras.
 fn eyeDistance(world:vec3<f32>)->f32 {
@@ -220,7 +220,8 @@ fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
 fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
- var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;o.normalStrength=p.color.w;
+ var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;o.normalStrength=p.color.w;o.normalUV=o.uv;
+ if (flags&8u)!=0u {o.normalUV=items[arrayLength(&items)/2u+vi].a.xy;}
  if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}
  // Image textures repeat through their samplers; procedural ones (flagged in
  // the instance record) are drawn each frame, clamped, and wrapped by hand.
@@ -273,27 +274,27 @@ fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec
  if dot(projected,projected)<1e-12 || dot(b,b)<1e-12 {return o.normal;}
  let tangent=normalize(projected);var bitangent=cross(n,tangent);
  if dot(bitangent,b)<0.0 {bitangent=-bitangent;}
- let sample=textureSampleGrad(normalTexture,normalSampler,o.uv,gx,gy).rgb*2.0-1.0;
+ let sample=textureSampleGrad(normalTexture,normalSampler,o.normalUV,gx,gy).rgb*2.0-1.0;
  let result=tangent*sample.x*o.normalStrength+bitangent*sample.y*o.normalStrength+n*sample.z;
  if dot(result,result)<1e-12 {return o.normal;}
  return normalize(result);
 }
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
- let n=surfaceNormal(o,gx,gy,dpdx(o.world),dpdy(o.world));
+ let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
  return vec4<f32>(finishNormal(o,mapColor(sampleMap(o.uv,gx,gy,o.repeat).rgb)*o.color.rgb,n),1.0);
 }
 // Transparent materials blend by the texture's alpha times the vertex's.
 @fragment fn fs_blend_texture(o:Out)->@location(0) vec4<f32> {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
  let t=sampleMap(o.uv,gx,gy,o.repeat);
- let n=surfaceNormal(o,gx,gy,dpdx(o.world),dpdy(o.world));
+ let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
  return vec4<f32>(finishNormal(o,mapColor(t.rgb)*o.color.rgb,n),t.a*o.cut);
 }
 // Cutout materials skip texels under their threshold, sampled full size so
 // distance does not average the cut away; what remains is opaque.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
- let n=surfaceNormal(o,dpdx(o.uv),dpdy(o.uv),dpdx(o.world),dpdy(o.world));
+ let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
  let t=sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat);
  if t.a<o.cut {discard;}
  return vec4<f32>(finishNormal(o,mapColor(t.rgb)*o.color.rgb,n),1.0);

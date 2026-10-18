@@ -280,8 +280,8 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 						n = n.Scale(1 / float32(math.Sqrt(float64(n.Dot(n)))))
 						geometric := n
 						if normalMapped {
-							uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
-							sample := material.NormalMap.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.NormalRepeat, aniso)
+							uv := UV{q0*a.normalUV.U + q1*b.normalUV.U + q2*c.normalUV.U, q0*a.normalUV.V + q1*b.normalUV.V + q2*c.normalUV.V}
+							sample := material.NormalMap.sampleFootprint(uv, normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.NormalRepeat, aniso)
 							n = perturbNormal(n, tangent, bitangent, sample, material.NormalStrength)
 						}
 						rig.lightNormal(&rgb, n, p, geometric)
@@ -309,7 +309,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 	// crosses the near plane is cut there, as the GPU does, not discarded.
 	// side chooses the faces drawn, and how: opaque front faces, or a
 	// transparent geometry's back or front faces.
-	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv []UV, material *Material, side int, outline OutlineStyle) {
+	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv, normalUV []UV, material *Material, side int, outline OutlineStyle) {
 		hull := side < 0
 		back := side == backFaces || hull
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
@@ -318,6 +318,10 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			corners[k].x, corners[k].y, corners[k].z, corners[k].w = m.Transform(vertices[i].Position)
 			if len(uv) > 0 {
 				corners[k].uv = uv[i]
+				corners[k].normalUV = uv[i]
+			}
+			if len(normalUV) > 0 {
+				corners[k].normalUV = normalUV[i]
 			}
 			if hull {
 				expandOutline(&corners[k], normals.Direction(vertices[i].Normal), &f, outline.Width*px)
@@ -498,13 +502,13 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 		}
 		if !transparent(&f.Geometry[gi]) {
 			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, opaqueFaces, OutlineStyle{})
+				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Material, opaqueFaces, OutlineStyle{})
 			}
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, opaqueFaces, OutlineStyle{})
+				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, opaqueFaces, OutlineStyle{})
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
@@ -536,7 +540,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			material.Unlit = true
 		}
 		for i := 0; i+2 < len(g.Indices); i += 3 {
-			tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, &material, side, g.Outline)
+			tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, &material, side, g.Outline)
 		}
 	}
 	for gi := range f.Geometry {
@@ -635,7 +639,7 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 			normals := inverse.Transpose()
 			for _, side := range []int{backFaces, frontFaces} {
 				for i := 0; i+2 < len(g.Indices); i += 3 {
-					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material, side, OutlineStyle{})
+					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Material, side, OutlineStyle{})
 				}
 			}
 		}
@@ -684,4 +688,10 @@ func abs(v float32) float32 {
 		return -v
 	}
 	return v
+}
+
+func normalUVAt(a, b, c *clipCorner, x0, y0, x1, y1, x2, y2, area, px, py float32) UV {
+	aa, bb, cc := *a, *b, *c
+	aa.uv, bb.uv, cc.uv = aa.normalUV, bb.normalUV, cc.normalUV
+	return uvAt(&aa, &bb, &cc, x0, y0, x1, y1, x2, y2, area, px, py)
 }

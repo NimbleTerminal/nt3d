@@ -80,15 +80,18 @@ normal maps add detail to them rather than replacing them.
 The loader maps `normalTexture` and its `scale` (default 1) into `NormalMap` and
 `NormalStrength`. The image is cached separately from base color even if both
 slots reference the same image, so their color-space interpretations stay correct.
-Normal-only materials can select any readable `TEXCOORD_n`. When both map slots
-are present, they must select the same UV set.
+Each map can select any readable `TEXCOORD_n`, including a `KHR_texture_transform`
+UV-set override. Offset, rotation and scale are baked into its coordinates.
+`Geometry.NormalUV` supplies independent normal-map UVs; nil uses `Geometry.UV`.
+Both renderers derive the triangle basis from the normal-map coordinates, including
+when clipping or skinning the mesh. Mesh operations preserve both UV arrays.
+Independent UVs use an additional GPU record per index, halving the per-geometry
+triangle limit; the glTF loader splits these meshes automatically.
 
 `Model.Warnings` reports cases that cannot be represented:
 
 - Authored `TANGENT` attributes are replaced with the generated triangle basis.
-- A different UV set from base color or a normal-map texture transform causes the
-  normal map to be skipped.
-- Missing/unreadable image or UV data falls back to vertex-normal shading.
+- Missing image or UV data falls back to vertex-normal shading; malformed UV accessors are rejected.
 - Sampler addressing retains the loader's existing approximation: clamp only when
   both axes clamp; otherwise repeat, including mirrored-repeat samplers.
 

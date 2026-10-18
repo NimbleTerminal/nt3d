@@ -25,6 +25,7 @@ func testGPUSkinMatchesCPU(t *testing.T, texture, normal bool) {
 	}
 	if texture || normal {
 		n.deformation.base.UV = []UV{{0, 0}, {1, 0}, {0, 1}}
+		n.deformation.base.NormalUV = []UV{{1, 0}, {0, 0}, {1, 1}}
 		m := &Material{}
 		if texture {
 			m.Texture = testTexture(t, color.RGBA{40, 200, 130, 255})

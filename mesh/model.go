@@ -186,7 +186,8 @@ type Object struct {
 
 // Model is what a mesh file holds.
 type Model struct {
-	// Asset preserves an animated hierarchy; Objects remain the flat rest-pose view.
+	// Asset preserves a reusable scene hierarchy, cameras and clips;
+	// Objects remain the flat rest-pose view. glTF always supplies Asset.
 	Asset    *nt3d.SceneAsset
 	Format   Format
 	Objects  []Object

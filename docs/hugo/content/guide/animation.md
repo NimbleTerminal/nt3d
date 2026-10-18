@@ -59,7 +59,7 @@ The CPU pose supplies exact bounds, culling, picking, software rendering, and wi
 
 ## glTF mapping
 
-`nt3dgltf.Decode` keeps the compatibility `Model.Objects` flat rest-pose view. Animated or morphed files also populate `Model.Asset`, a generic `SceneAsset`. `Model.AddTo` automatically instantiates that hierarchy; retrieve its bound clips with `scene.AnimationClips(root)`. Alternatively, instantiate explicitly:
+`nt3dgltf.Decode` keeps the compatibility `Model.Objects` flat rest-pose view. All glTF files also populate `Model.Asset`, a generic `SceneAsset`, preserving static nodes and cameras as well as animation. `Model.AddTo` automatically instantiates that hierarchy; retrieve its bound clips with `scene.AnimationClips(root)`. Alternatively, instantiate explicitly:
 
 ```go
 instance, err := model.Asset.Instantiate(scene, nt3d.Root, "character")

@@ -126,7 +126,7 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 		if skin.sourceRevision != p.sourceRevision {
 			source := p.source
 			source.Material = geom.Material
-			data := geometryData(source)[slot]
+			data := geometryData(source)[slot][:len(geom.Indices)*48]
 			if err := dev.Queue().WriteBuffer(skin.source, 0, data); err != nil {
 				return err
 			}

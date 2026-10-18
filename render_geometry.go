@@ -154,6 +154,9 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					return err
 				}
 			}
+			if len(geom.NormalUV) > 0 && mapped(geom) {
+				node.batches[7].count = uint32(len(geom.Indices))
+			}
 			if geom.PointStyle.Blend == AlphaBlend && len(geom.Points) > 0 {
 				var err error
 				if node.order, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 4 * uint64(len(geom.Points)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
@@ -461,6 +464,9 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			// 2 edge-on, 4 tint), and, for a tint, the vertex color as a
 			// 24-bit integer, which a float holds exactly.
 			m, flags, cut := geom.Material, 0, geom.Material.threshold()
+			if len(geom.NormalUV) > 0 {
+				flags |= 8
+			}
 			if blended {
 				cut = opacity
 			}
@@ -482,6 +488,12 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			data[7] = appendFloats(data[7], v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, strength)
 		} else {
 			vertex(1, v, opacity)
+		}
+	}
+	if len(geom.NormalUV) > 0 && mapped(geom) {
+		for _, i := range geom.Indices {
+			uv := geom.NormalUV[i]
+			data[7] = appendFloats(data[7], uv.U, uv.V, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 		}
 	}
 	for _, b := range geom.Boxes {

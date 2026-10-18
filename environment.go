@@ -88,18 +88,29 @@ func (e *Environment) sample(d nt3dmath.Vec3) [4]float32 {
 	return sampleLevel(e.panorama, UV{u, max(half, min(1-half, v))}, true)
 }
 
-// The sky uses the camera's orientation with a fixed 45 degree vertical field
-// of view, including orthographic views. Translation and zoom leave it fixed.
+// Perspective skies follow the projection and camera roll. Orthographic
+// skies use a fixed 45 degree field of view; translation leaves them fixed.
 func (f Frame) skyBasis() (right, up, forward nt3dmath.Vec3) {
 	forward = f.Forward.Normalize()
 	if forward == (nt3dmath.Vec3{}) {
 		forward = nt3dmath.Vec3{Y: 1}
 	}
-	right = forward.Cross(nt3dmath.Vec3{Z: 1}).Normalize()
-	if right == (nt3dmath.Vec3{}) {
-		right = nt3dmath.Vec3{X: 1}
+	right = nt3dmath.Vec3{X: f.Matrix[0], Y: f.Matrix[4], Z: f.Matrix[8]}.Normalize()
+	up = nt3dmath.Vec3{X: f.Matrix[1], Y: f.Matrix[5], Z: f.Matrix[9]}.Normalize()
+	if right == (nt3dmath.Vec3{}) || up == (nt3dmath.Vec3{}) {
+		right = forward.Cross(nt3dmath.Vec3{Z: 1}).Normalize()
+		if right == (nt3dmath.Vec3{}) {
+			right = nt3dmath.Vec3{X: 1}
+		}
+		up = right.Cross(forward)
 	}
-	up = right.Cross(forward)
+	if f.Perspective {
+		x := float32(math.Sqrt(float64(f.Matrix[0]*f.Matrix[0] + f.Matrix[4]*f.Matrix[4] + f.Matrix[8]*f.Matrix[8])))
+		y := float32(math.Sqrt(float64(f.Matrix[1]*f.Matrix[1] + f.Matrix[5]*f.Matrix[5] + f.Matrix[9]*f.Matrix[9])))
+		if x > 0 && y > 0 {
+			return right.Scale(1 / x), up.Scale(1 / y), forward
+		}
+	}
 	return right.Scale(float32(math.Tan(halfFOV)) * float32(f.Width) / float32(f.Height)), up.Scale(float32(math.Tan(halfFOV))), forward
 }
 

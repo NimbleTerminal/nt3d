@@ -28,6 +28,7 @@ type Node struct {
 	Children     []NodeID
 }
 type sceneNode struct {
+	camera *Camera
 	// Preserve logical TRS scales across rotation samples, avoiding rounding drift.
 	animationMatrix nt3dmath.Mat4
 	animationScale  nt3dmath.Vec3

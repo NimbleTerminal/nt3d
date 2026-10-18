@@ -67,6 +67,7 @@ func clipLine(a, b Vertex, bounds nt3dmath.AABB) (Vertex, Vertex, bool) {
 type meshVertex struct {
 	Vertex
 	UV
+	normalUV UV
 }
 
 func clipTriangleUV(a, b, c meshVertex, bounds nt3dmath.AABB) []meshVertex {
@@ -94,7 +95,7 @@ func clipTriangleUV(a, b, c meshVertex, bounds nt3dmath.AABB) []meshVertex {
 				if inside(previous) != inside(current) {
 					x, y := components(previous.Position)[axis], components(current.Position)[axis]
 					t := (float64(bound) - float64(x)) / (float64(y) - float64(x))
-					v := meshVertex{Vertex: interpolateVertex(previous.Vertex, current.Vertex, t), UV: UV{float32(float64(previous.U)*(1-t) + float64(current.U)*t), float32(float64(previous.V)*(1-t) + float64(current.V)*t)}}
+					v := meshVertex{normalUV: UV{previous.normalUV.U + (current.normalUV.U-previous.normalUV.U)*float32(t), previous.normalUV.V + (current.normalUV.V-previous.normalUV.V)*float32(t)}, Vertex: interpolateVertex(previous.Vertex, current.Vertex, t), UV: UV{float32(float64(previous.U)*(1-t) + float64(current.U)*t), float32(float64(previous.V)*(1-t) + float64(current.V)*t)}}
 					p := components(v.Position)
 					p[axis] = bound
 					v.Position = vector(p)
@@ -117,6 +118,7 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 	out := g
 	out.WireGrid = [2]int{}
 	out.UV = nil
+	out.NormalUV = nil
 	out.Arrows = nil
 	out.Points, out.Vertices, out.Indices, out.Boxes, out.Lines = nil, nil, nil, nil, nil
 	for _, p := range g.Points {
@@ -130,12 +132,18 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 			if len(g.UV) > 0 {
 				v.UV = g.UV[index]
 			}
+			if len(g.NormalUV) > 0 {
+				v.normalUV = g.NormalUV[index]
+			}
 			return v
 		}
 		polygon := clipTriangleUV(at(g.Indices[i]), at(g.Indices[i+1]), at(g.Indices[i+2]), b)
 		base := uint32(len(out.Vertices))
 		for _, v := range polygon {
 			out.Vertices = append(out.Vertices, v.Vertex)
+			if len(g.NormalUV) > 0 {
+				out.NormalUV = append(out.NormalUV, v.normalUV)
+			}
 			if len(g.UV) > 0 {
 				out.UV = append(out.UV, v.UV)
 			}

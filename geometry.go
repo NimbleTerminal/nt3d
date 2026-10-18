@@ -52,6 +52,7 @@ type Geometry struct {
 	// BuildHeightfield sets this automatically; clear it if changing mesh topology.
 	WireGrid [2]int
 
+	NormalUV []UV      // Optional independent normal-map UVs; nil uses UV.
 	UV       []UV      // One per vertex when textured.
 	Material *Material // Applies to indexed triangles only.
 	Points   []Point
@@ -105,6 +106,17 @@ func validateGeometry(g Geometry) error {
 		}
 	}
 
+	if len(g.NormalUV) != 0 && len(g.NormalUV) != len(g.Vertices) {
+		return fmt.Errorf("nt3d: normal UV length mismatch")
+	}
+	if len(g.NormalUV) > 0 && mapped(g) && len(g.Indices) > MaxMeshIndices/2 {
+		return fmt.Errorf("nt3d: independent normal UV mesh exceeds GPU binding limit")
+	}
+	for _, uv := range g.NormalUV {
+		if !validFloat(uv.U, uv.V) {
+			return fmt.Errorf("nt3d: non-finite normal UV")
+		}
+	}
 	if len(g.UV) != 0 && len(g.UV) != len(g.Vertices) {
 		return fmt.Errorf("nt3d: UV length mismatch")
 	}

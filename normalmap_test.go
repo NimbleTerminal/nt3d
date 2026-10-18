@@ -98,3 +98,41 @@ func TestNormalMapReplacement(t *testing.T) {
 		t.Fatal("normal replacement invalidated geometry or mutated snapshot")
 	}
 }
+
+func TestIndependentNormalUV(t *testing.T) {
+	f := normalFrame(t)
+	g := &f.Geometry[0]
+	g.NormalUV = append([]UV(nil), g.UV...)
+	for i := range g.NormalUV {
+		g.NormalUV[i].U = 1 - g.NormalUV[i].U
+	}
+	check(t, g.Validate())
+	if c := at(softwareRender(f), 40, 40); c.R > 3 {
+		t.Fatal("independent normal UV ignored", c)
+	}
+	clone := cloneGeometry(*g)
+	clone.NormalUV[0].U = 7
+	if g.NormalUV[0].U == 7 {
+		t.Fatal("normal UV slice aliased")
+	}
+	var b nt3dmath.AABB
+	b.Include(nt3dmath.Vec3{X: -.3, Y: -.3, Z: 0})
+	b.Include(nt3dmath.Vec3{X: .3, Y: .3, Z: 1})
+	clipped, err := Clip(*g, b)
+	check(t, err)
+	for i, uv := range clipped.NormalUV {
+		if abs(uv.U+clipped.UV[i].U-1) > 1e-5 {
+			t.Fatal("clipped normal UV not interpolated")
+		}
+	}
+	smooth, err := SmoothNormals(*g, 1)
+	check(t, err)
+	if len(smooth.NormalUV) != len(smooth.Vertices) {
+		t.Fatal("smoothing lost normal UV")
+	}
+	merged, err := MergeGeometry(*g, *g)
+	check(t, err)
+	if len(merged.NormalUV) != 2*len(g.NormalUV) {
+		t.Fatal("merge lost normal UV")
+	}
+}

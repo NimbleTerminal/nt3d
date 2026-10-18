@@ -38,8 +38,9 @@ scene.SetEnvironment(environment)
 ```
 
 The sky follows camera orientation but stays fixed under translation and zoom.
-It uses a 45-degree vertical field of view, also in orthographic views, so
-orthographic models have a useful sky instead of a single constant direction.
+Perspective views use the camera's authored field of view and roll. Orthographic
+views use a fixed 45-degree field of view, so models have a useful sky instead
+of a single constant direction.
 For hand-built frames, set `Frame.Forward` to the camera's viewing direction.
 `Scene.Frame` does this automatically.
 

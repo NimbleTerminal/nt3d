@@ -92,7 +92,32 @@ PLY is how the [Stanford scanning repository](https://graphics.stanford.edu/data
 - Roughness and metalness become an approximate highlight. Metals, which glTF colors by their reflected surroundings, show their base color.
 - Strips, fans, points, and lines are read. Missing normals are computed flat.
 
-Files that require an extension nt3d can't honor, such as Draco or meshopt compression, are refused. Animation, skins, and morph targets use the [generic animation API](../animation/). Animated models retain their hierarchy in `Model.Asset`; `AddTo` instantiates it and `scene.AnimationClips(root)` exposes its clips. Normal maps render through the [generic normal-map path](../normal-maps/), including scale and linear-data sampling; authored tangent bases and separate base/normal UV sets remain limited. Cameras, emission maps, and texture transforms are passed over, with a warning where they'd change the look.
+Files that require an extension nt3d can't honor, such as Draco or meshopt compression, are refused. Animation, skins, and morph targets use the [generic animation API](../animation/). All glTF models retain their hierarchy in `Model.Asset`, including empty transform nodes. `AddTo` instantiates it and `scene.AnimationClips(root)` exposes its clips. `Model.Objects`, `Bounds`, and `Geometry` keep the flattened rest-pose view for existing callers. Static mirrored nodes retain their ancestry, with reflections moved into primitive vertices; animated negative or singular scales remain unsupported by the scene graph.
+
+Normal maps use the [generic normal-map path](../normal-maps/). `KHR_texture_transform` applies scale, rotation, then offset to each supported texture slot's UVs, including its `texCoord` override. Base color and normal maps can use different UV sets and transforms: decoded `Geometry.UV` and optional `Geometry.NormalUV` contain the results, so software, GPU, picking and cutout shadows share them. The extension is accepted when required. Emissive/occlusion/metallic-roughness textures remain outside the renderer's material model; this extension does not add those maps. Authored tangents still use the generated triangle basis.
+
+### Authored cameras
+
+Perspective and orthographic cameras belong to their nodes, including animated parent transforms. Camera-only scenes are supported. No imported camera automatically replaces the viewer's orbit camera:
+
+```go
+root, err := model.AddTo(scene, nt3d.Root, "model")
+if err != nil { return err }
+cameras := scene.Cameras(root)
+if len(cameras) > 0 {
+    camera, err := scene.NodeCamera(cameras[0])
+    if err != nil { return err }
+    frame, err := scene.Frame(camera, width, height)
+    // Render frame, or pass camera to the widget's SetCamera method.
+    _, _ = frame, err
+}
+```
+
+Call `NodeCamera` again after sampling animation to follow its motion. The returned `Camera` is a detached snapshot, with `Pose` holding its orientation and position (-Z forward, +Y up). It preserves roll, vertical `YFOV` in radians, optional fixed `AspectRatio`, clipping planes, and orthographic `Xmag`/`Ymag` half extents. An omitted perspective far plane stays infinite. Node scale does not scale the lens. Normal viewport aspect is used when the file omits perspective aspect.
+
+These are generic APIs: procedural sources can call `SetNodeCamera`, or set `AssetNode.Camera`. The ordinary orbit camera retains its defaults. Orbit/automatic rotation returns an authored view to orbit orientation; pan and zoom retain its roll. Picking rays and perspective skies use the same lens and orientation as rendering.
+
+See the [glTF camera specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#cameras) and [KHR_texture_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) for the source conventions.
 
 ## Writing
 

@@ -7,6 +7,7 @@ import nt3dmath "nimbleterminal.dev/nt3d/math"
 // AssetNode is a reusable hierarchy node. Parent is -1 for a root, otherwise
 // an earlier node index. Skeleton and clip NodeIDs are one-based node indices.
 type AssetNode struct {
+	Camera      *Camera
 	Name        string
 	Parent      int
 	Local       nt3dmath.Mat4
@@ -52,6 +53,11 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 		out.Nodes = append(out.Nodes, id)
 		if e = s.SetTransform(id, n.Local); e != nil {
 			return nil, e
+		}
+		if n.Camera != nil {
+			if e = s.SetNodeCamera(id, *n.Camera); e != nil {
+				return nil, e
+			}
 		}
 		if n.Geometry != nil {
 			if e = s.SetNodeGeometry(id, *n.Geometry); e != nil {

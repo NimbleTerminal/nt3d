@@ -50,6 +50,7 @@ func cloneGeometry(g Geometry) Geometry {
 	g.Lines = slices.Clone(g.Lines)
 	g.Arrows = slices.Clone(g.Arrows)
 	g.UV = slices.Clone(g.UV)
+	g.NormalUV = slices.Clone(g.NormalUV)
 	g.Material = cloneMaterial(g.Material)
 	if g.Billboard != nil {
 		b := *g.Billboard

@@ -28,6 +28,13 @@ func TestSamplesLoad(t *testing.T) {
 		if len(m.Warnings) != 0 || m.Triangles() == 0 || d.status != s.about {
 			t.Fatalf("%s: %d triangles, warnings %v", s.file, m.Triangles(), m.Warnings)
 		}
+		before := d.scene.Bounds()
+		if err := d.cycleNormals(); err != nil {
+			t.Fatal(err)
+		}
+		if d.scene.Bounds() != before {
+			t.Fatal("normal toggle changed hierarchy or bounds")
+		}
 		textured := false
 		for _, o := range m.Objects {
 			textured = textured || o.Geometry.Material != nil && o.Geometry.Material.Texture != nil
