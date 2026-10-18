@@ -23,6 +23,8 @@ import (
 )
 
 type demo struct {
+	animation         *nt3d.Animation
+	animationTime     float64
 	view              *nt3dwidget.Model
 	fog               bool // Fog that keeps its look as the camera zooms.
 	scene             *nt3d.Scene
@@ -98,11 +100,12 @@ const (
 	sceneForest
 	sceneLights
 	sceneParticles
+	sceneAnimation
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil
+	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil
 }
 
 type quitMsg struct{}
@@ -157,9 +160,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(v)
 		elapsed := now.Sub(d.lastPhase).Seconds()
 		d.lastPhase = now
-		if !d.animate || (!d.procedural && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil) {
+		if !d.animate || (!d.procedural && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil) {
 			return d, phaseTick()
 		}
+		d.animationTime += elapsed
 		d.phase = math.Mod(d.phase+elapsed, 2*math.Pi)
 		// Let an in-flight frame finish; the next update catches up to wall time.
 		if d.view.Busy() {
@@ -167,6 +171,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var err error
 		switch {
+		case d.animation != nil:
+			err = d.animation.Sample(d.animationTime)
 		case d.dynamic != nil:
 			err = d.stepDynamic()
 		case d.fur != nil:
@@ -465,6 +471,10 @@ func (d *demo) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
+	if d.animation != nil {
+		v.Content = d.zones.Scan("nt3d glTF animation · a pause · 1/2/3 backend · q quit\n" + v.Content + "\nTwo joints, a morph target, and generic TRS tracks · drag orbit · wheel zoom")
+		return v
+	}
 	if d.dynamic != nil {
 		state := "paused"
 		if d.animate {
@@ -551,6 +561,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		return err
 	}
 	switch kind {
+	case sceneAnimation:
+		if err = d.setupAnimation(); err != nil {
+			return err
+		}
 	case sceneDynamic:
 		if err = d.setupDynamic(); err != nil {
 			return err
@@ -625,8 +639,13 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))
 	defer d.view.Close()
 	switch kind {
-	case sceneMeshes, sceneLarge:
+	case sceneMeshes, sceneLarge, sceneAnimation:
 		d.view.Fit()
+		if kind == sceneAnimation {
+			camera := d.view.Camera()
+			camera.Distance *= 1.4
+			d.view.SetCamera(camera)
+		}
 	case sceneFur:
 		camera := d.view.Camera()
 		camera.Beta = 30

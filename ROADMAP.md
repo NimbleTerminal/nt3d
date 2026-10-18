@@ -35,11 +35,11 @@ move to Done with their commit; git history has the details.
 ## Formats
 
 - [ ] **glTF follow-ups**:
-  - animation and skins
+  - [x] Done: generic clips, playback/blending, morphs, CPU/GPU skinning, and glTF mapping
   - cameras
   - `KHR_texture_transform`
-  - keeping the node hierarchy instead of flattening it
-  - a glTF sample in the models demo (license permitting)
+  - [x] Done: animated node hierarchy through reusable `SceneAsset` instances
+  - [x] Done: generated CC0 glTF animation gallery demo
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
   exact rendering means subdividing them.
 

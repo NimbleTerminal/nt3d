@@ -133,6 +133,9 @@ const MaxFramePixels = 4096 * 2160
 // Frame creates a scene snapshot. The caller owns its header and decoration
 // slices; its geometry and materials must not be mutated. Scene edits preserve it.
 func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
+	if err := s.UpdateDeformations(); err != nil {
+		return Frame{}, err
+	}
 	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Cull: true, Linear: true}
 	if width < 1 || height < 1 || width > MaxFramePixels || height > MaxFramePixels/width {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)

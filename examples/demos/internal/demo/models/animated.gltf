@@ -1,0 +1,283 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "nt3d generated animation fixture; CC0"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0,
+        1
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Ribbon",
+      "mesh": 0,
+      "skin": 0
+    },
+    {
+      "name": "Base",
+      "children": [
+        2
+      ]
+    },
+    {
+      "name": "Tip",
+      "translation": [
+        0,
+        1,
+        0
+      ]
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "JOINTS_0": 3,
+            "WEIGHTS_0": 4
+          },
+          "indices": 2,
+          "targets": [
+            {
+              "POSITION": 5
+            }
+          ],
+          "material": 0
+        }
+      ],
+      "weights": [
+        0
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.1,
+          0.6,
+          0.9,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.7
+      }
+    }
+  ],
+  "skins": [
+    {
+      "joints": [
+        1,
+        2
+      ],
+      "inverseBindMatrices": 6
+    }
+  ],
+  "animations": [
+    {
+      "name": "Sway and stretch",
+      "samplers": [
+        {
+          "input": 7,
+          "output": 8,
+          "interpolation": "LINEAR"
+        },
+        {
+          "input": 7,
+          "output": 9,
+          "interpolation": "LINEAR"
+        },
+        {
+          "input": 7,
+          "output": 10,
+          "interpolation": "LINEAR"
+        },
+        {
+          "input": 7,
+          "output": 11,
+          "interpolation": "LINEAR"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 2,
+            "path": "rotation"
+          }
+        },
+        {
+          "sampler": 1,
+          "target": {
+            "node": 0,
+            "path": "weights"
+          }
+        },
+        {
+          "sampler": 2,
+          "target": {
+            "node": 1,
+            "path": "translation"
+          }
+        },
+        {
+          "sampler": 3,
+          "target": {
+            "node": 1,
+            "path": "scale"
+          }
+        }
+      ]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 6,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 6,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5123,
+      "count": 12,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 6,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 6,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 6,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 2,
+      "type": "MAT4"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 5,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5126,
+      "count": 5,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 5,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 5,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5126,
+      "count": 5,
+      "type": "VEC3"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 72
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 72,
+      "byteLength": 72
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 144,
+      "byteLength": 24
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 168,
+      "byteLength": 48
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 216,
+      "byteLength": 96
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 312,
+      "byteLength": 72
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 384,
+      "byteLength": 128
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 512,
+      "byteLength": 20
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 532,
+      "byteLength": 80
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 612,
+      "byteLength": 20
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 632,
+      "byteLength": 60
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 692,
+      "byteLength": 60
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 752,
+      "uri": "data:application/octet-stream;base64,mpmZvgAAAAAAAAAAmpmZPgAAAAAAAAAAmpmZvgAAgD8AAAAAmpmZPgAAgD8AAAAAmpmZvgAAAEAAAAAAmpmZPgAAAEAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAABAAIAAgABAAMAAgADAAQABAADAAUAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAABAAAAAAAAAAEAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAA/AAAAPwAAAAAAAAAAAAAAPwAAAD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzcxMvgAAAACamRk+zcxMPgAAAACamRk+AACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAgD8AAAAAAACAPwAAAEAAAEBAAACAQAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAE2Qr767enA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAATZCvPrt6cD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAgD8AAAAAAACAPwAAAAAAAAAAAAAAAAAAAADNzEw+AAAAAAAAAAAAAAAAAAAAAAAAAADNzEy+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/zcyMPwAAgD8AAIA/AACAPwAAgD8AAIA/ZmZmPwAAgD8AAIA/AACAPwAAgD8="
+    }
+  ]
+}

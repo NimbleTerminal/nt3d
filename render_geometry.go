@@ -24,6 +24,7 @@ type geometryKey struct {
 // gpuGeometry is a geometry's uploaded primitives and the instance sets that
 // draw them: one set for each draw of the frame, reused across frames.
 type gpuGeometry struct {
+	skin    *gpuSkin
 	batches [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
 	sets    []*instanceSet
 	used    int           // Sets drawn from this frame.
@@ -33,6 +34,7 @@ type gpuGeometry struct {
 }
 
 func (n *gpuGeometry) release() {
+	n.skin.release()
 	for _, b := range n.batches {
 		releaseBatch(b)
 	}
@@ -83,6 +85,9 @@ type gpuDraw struct {
 }
 
 func frameGeometryKey(f Frame, i int) geometryKey {
+	if p := f.Geometry[i].posed; p != nil {
+		return geometryKey{shared: p.identity}
+	}
 	if len(f.Shared) != 0 && f.Shared[i] != 0 {
 		return geometryKey{shared: f.Shared[i]}
 	}

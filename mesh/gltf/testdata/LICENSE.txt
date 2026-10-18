@@ -1,0 +1,7 @@
+The animated.gltf ribbon and its generator are original nt3d project sample
+content dedicated to the public domain under CC0 1.0 Universal.
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Regenerate from the repository root:
+    python3 mesh/gltf/testdata/generate.py
+The generator also writes the identical embedded gallery sample.

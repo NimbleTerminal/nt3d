@@ -92,7 +92,7 @@ PLY is how the [Stanford scanning repository](https://graphics.stanford.edu/data
 - Roughness and metalness become an approximate highlight. Metals, which glTF colors by their reflected surroundings, show their base color.
 - Strips, fans, points, and lines are read. Missing normals are computed flat.
 
-Files that require an extension nt3d can't honor, such as Draco or meshopt compression, are refused. Animation, skins, morph targets, cameras, normal and emission maps, and texture transforms are passed over, with a warning where they'd change the look.
+Files that require an extension nt3d can't honor, such as Draco or meshopt compression, are refused. Animation, skins, and morph targets use the [generic animation API](../animation/). Animated models retain their hierarchy in `Model.Asset`; `AddTo` instantiates it and `scene.AnimationClips(root)` exposes its clips. Cameras, normal and emission maps, and texture transforms are passed over, with a warning where they'd change the look.
 
 ## Writing
 

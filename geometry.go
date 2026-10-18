@@ -42,6 +42,7 @@ type DropShadow struct {
 // Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
 // Scene setters copy geometry; frame consumers must treat snapshots as read-only.
 type Geometry struct {
+	posed     *posedGeometry
 	Billboard *Billboard // Optional camera-facing transform, resolved by Scene.Frame.
 
 	// WireGrid optionally describes a row-major rectangular vertex lattice (NX, NY).

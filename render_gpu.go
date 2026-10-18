@@ -41,6 +41,8 @@ type gpuBatch struct {
 }
 
 type gpuRenderer struct {
+	skinPipeline           *wgpu.ComputePipeline
+	skinLayout             *wgpu.BindGroupLayout
 	dropPipeline           *wgpu.RenderPipeline
 	shadowLayout           *wgpu.BindGroupLayout
 	noShadow, shadowTarget shadowTarget
@@ -320,6 +322,9 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		if err := g.prepareGeometry(dev, f, drawn); err != nil {
 			return err
 		}
+		if err := g.skinGeometry(dev, frame.Encoder, f); err != nil {
+			return err
+		}
 		if err := g.uploadLines(dev, f); err != nil {
 			return err
 		}
@@ -335,6 +340,13 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		// supersampled.
 		return g.renderScene(frame, f, func(color, depth *wgpu.TextureView) error { return g.drawScene(f, drawn, frame.Encoder, color, depth) })
 	})
+	if err != nil {
+		for _, node := range g.geometries {
+			if node.skin != nil {
+				node.skin.revision = 0
+			}
+		}
+	}
 	return img, err
 }
 
@@ -479,6 +491,14 @@ func (g *gpuRenderer) Close() error {
 		delete(g.textures, src)
 	}
 	_ = g.r.Do(func(*wgpu.Device) error {
+		if g.skinPipeline != nil {
+			g.skinPipeline.Release()
+			g.skinPipeline = nil
+		}
+		if g.skinLayout != nil {
+			g.skinLayout.Release()
+			g.skinLayout = nil
+		}
 		for key, node := range g.geometries {
 			node.release()
 			delete(g.geometries, key)

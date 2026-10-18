@@ -86,10 +86,14 @@ const GLTF nt3dmesh.Format = "gltf"
 //
 // Buffers and images outside a .glb are read through Options.Open, within
 // Options.MaxBytes. Files that require an extension nt3d cannot honor, such
-// as Draco or meshopt compression, are refused; animation, skins, morph
-// targets, cameras, normal and emissive maps, and texture transforms are
+// as Draco or meshopt compression, are refused. Animation, skins and morphs
+// populate Model.Asset; AddTo instantiates its hierarchy and generic clips.
+// Cameras, normal and emissive maps, and texture transforms are
 // passed over, with a warning for those that change how the model looks.
 func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
+	if int64(len(data)) > o.ByteLimit() {
+		return nil, nt3dmesh.ErrTooLarge
+	}
 	d := &gltfDecoder{o: o, m: &nt3dmesh.Model{Format: GLTF}, budget: budget{limit: o.TriangleLimit()}, textures: map[int]*nt3d.Texture{}, warned: map[string]bool{}}
 	left := o.ByteLimit()
 	d.files = sideFiles{left: &left}
@@ -111,12 +115,6 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if err := d.extensions(); err != nil {
 		return nil, err
 	}
-	if len(d.doc.Animations) > 0 {
-		d.warn("animations are not played; the model is shown at rest")
-	}
-	if len(d.doc.Skins) > 0 {
-		d.warn("skins are not applied; skinned meshes are shown unposed")
-	}
 	if err := d.scene(); err != nil {
 		return nil, err
 	}
@@ -128,6 +126,9 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 			return nil, fmt.Errorf("nt3dmesh: glTF %s: %w", d.m.Objects[i].Name, err)
 		}
 	}
+	if err := d.animatedAsset(); err != nil {
+		return nil, err
+	}
 	return d.m, nil
 }
 
@@ -138,16 +139,20 @@ var supportedExtensions = []string{"KHR_materials_unlit"}
 var ignoredExtensions = []string{"KHR_lights_punctual", "KHR_materials_emissive_strength", "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat", "KHR_materials_sheen", "KHR_materials_volume", "KHR_materials_transmission", "KHR_materials_variants"}
 
 type gltfDecoder struct {
-	doc      *gltf.Document
-	o        *nt3dmesh.Options
-	m        *nt3dmesh.Model
-	budget   budget
-	files    sideFiles
-	textures map[int]*nt3d.Texture // By texture index; nil when it failed.
-	warned   map[string]bool
-	visits   int
-	points   int // Across the model, within nt3d.MaxPoints.
-	lines    int // Line ends across the model, within maxLineVertices.
+	decodedLeft *int64
+	depth       int
+	capture     bool
+	sources     [][]vertexOrigin
+	doc         *gltf.Document
+	o           *nt3dmesh.Options
+	m           *nt3dmesh.Model
+	budget      budget
+	files       sideFiles
+	textures    map[int]*nt3d.Texture // By texture index; nil when it failed.
+	warned      map[string]bool
+	visits      int
+	points      int // Across the model, within nt3d.MaxPoints.
+	lines       int // Line ends across the model, within maxLineVertices.
 }
 
 func (d *gltfDecoder) warn(format string, a ...any) {
@@ -316,6 +321,11 @@ func (d *gltfDecoder) scene() error {
 }
 
 func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
+	d.depth++
+	defer func() { d.depth-- }()
+	if d.depth > 1024 {
+		return fmt.Errorf("%w: glTF hierarchy exceeds 1024 levels", nt3dmesh.ErrTooLarge)
+	}
 	if i < 0 || i >= len(d.doc.Nodes) {
 		return fmt.Errorf("nt3dmesh: glTF names node %d of %d", i, len(d.doc.Nodes))
 	}
@@ -342,9 +352,6 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 		if name == "" {
 			name = fmt.Sprintf("mesh %d", *n.Mesh)
 		}
-		if len(mesh.Weights) > 0 || len(n.Weights) > 0 {
-			d.warn("morph targets are not applied")
-		}
 		for _, p := range mesh.Primitives {
 			if err := d.primitive(name, p, world); err != nil {
 				return err
@@ -369,6 +376,13 @@ func (d *gltfDecoder) accessor(index int, what string) (*gltf.Accessor, error) {
 	a := d.doc.Accessors[index]
 	if a.Count < 0 || a.Count > 3*d.budget.limit+3 {
 		return nil, fmt.Errorf("%w: glTF %s has %d elements", nt3dmesh.ErrTooManyTriangles, what, a.Count)
+	}
+	if d.decodedLeft != nil {
+		cost := int64(a.Count) * 64
+		if cost > *d.decodedLeft {
+			return nil, nt3dmesh.ErrTooLarge
+		}
+		*d.decodedLeft -= cost
 	}
 	return a, nil
 }
@@ -689,6 +703,9 @@ func (b *gltfBuilder) nt3dMaterial() *nt3d.Material {
 
 // start begins a new piece of the object.
 func (b *gltfBuilder) start() {
+	if b.d.capture {
+		b.d.sources = append(b.d.sources, nil)
+	}
 	b.d.m.Objects = append(b.d.m.Objects, nt3dmesh.Object{Name: b.name, Material: b.look.name, Geometry: nt3d.Geometry{Material: b.material}})
 	b.piece = &b.d.m.Objects[len(b.d.m.Objects)-1]
 	b.remap = map[uint32]uint32{}
@@ -785,6 +802,10 @@ func (b *gltfBuilder) face(tri [3]uint32, back bool) error {
 		}
 		g.Indices = append(g.Indices, j)
 		g.Vertices = append(g.Vertices, nt3d.Vertex{Position: corners[k], Normal: n, Color: c})
+		if b.d.capture {
+			last := len(b.d.sources) - 1
+			b.d.sources[last] = append(b.d.sources[last], vertexOrigin{i, back})
+		}
 		b.piece.Plain = append(b.piece.Plain, plain)
 		if b.uv != nil {
 			g.UV = append(g.UV, nt3d.UV{U: b.uv[i][0], V: b.uv[i][1]})

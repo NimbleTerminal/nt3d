@@ -99,3 +99,9 @@ task serve      # then open http://localhost:8768
 ```
 
 The gallery links to every demo, each running inside [go-booba](https://github.com/NimbleMarkets/go-booba) with GPU, software, and wireframe rendering. The site's sources are in `web/`, and the built site in `dist/web/` can be served from any subdirectory.
+
+## Animation
+
+<img class="poster" src="../../posters/animation.png" alt="A ribbon bent by animated joints and a morph target">
+
+`task animation`. An original generated CC0 glTF ribbon bends on two joints, changes shape through a morph target, and plays translation, quaternion rotation, and scale tracks. `a` pauses; `1`, `2`, and `3` switch between GPU, software, and wireframe. The demo loads through glTF and drives the [generic animation API](../animation/).

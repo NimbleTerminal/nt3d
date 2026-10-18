@@ -6,7 +6,7 @@ env:
 
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
-  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles animation
 
 tasks:
   default:
@@ -67,7 +67,7 @@ tasks:
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/animation
       - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
       - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -79,6 +79,7 @@ tasks:
       - go -C examples/demos build -mod=readonly -o ../../dist/web/forest/app.wasm ./cmd/forest
       - go -C examples/demos build -mod=readonly -o ../../dist/web/lights/app.wasm ./cmd/lights
       - go -C examples/demos build -mod=readonly -o ../../dist/web/particles/app.wasm ./cmd/particles
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/animation/app.wasm ./cmd/animation
   web-assets:
     cmds:
       - go -C examples/demos tool booba-assets ../../dist/web/terrain/
@@ -92,6 +93,7 @@ tasks:
       - go -C examples/demos tool booba-assets ../../dist/web/forest/
       - go -C examples/demos tool booba-assets ../../dist/web/lights/
       - go -C examples/demos tool booba-assets ../../dist/web/particles/
+      - go -C examples/demos tool booba-assets ../../dist/web/animation/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -207,3 +209,8 @@ tasks:
       - task: vet
       - task: build
       - task: build-web
+
+  animation:
+    desc: Play a generated glTF with joints, morphs, and transform tracks
+    deps: [{task: build:demo, vars: {NAME: animation}}]
+    cmds: ["bin/nt3d-animation {{.CLI_ARGS}}"]

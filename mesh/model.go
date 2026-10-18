@@ -186,6 +186,8 @@ type Object struct {
 
 // Model is what a mesh file holds.
 type Model struct {
+	// Asset preserves an animated hierarchy; Objects remain the flat rest-pose view.
+	Asset    *nt3d.SceneAsset
 	Format   Format
 	Objects  []Object
 	Warnings []string // Problems passed over, such as a missing texture.
@@ -259,8 +261,17 @@ func (m *Model) Geometry() (nt3d.Geometry, error) {
 }
 
 // AddTo adds a group node named name under parent, with one child node per
-// object, named name/0, name/1, and so on. On failure nothing is added.
+// object, named name/0, name/1, and so on. Models with Asset instead instantiate
+// its hierarchy and bind its generic clips (Scene.AnimationClips).
+// On failure nothing is added.
 func (m *Model) AddTo(s *nt3d.Scene, parent nt3d.NodeID, name string) (nt3d.NodeID, error) {
+	if m.Asset != nil {
+		instance, err := m.Asset.Instantiate(s, parent, name)
+		if err != nil {
+			return 0, err
+		}
+		return instance.Root, nil
+	}
 	group, err := s.Add(parent, name)
 	if err != nil {
 		return 0, err

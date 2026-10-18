@@ -28,6 +28,10 @@ type Node struct {
 	Children     []NodeID
 }
 type sceneNode struct {
+	// Preserve logical TRS scales across rotation samples, avoiding rounding drift.
+	animationMatrix nt3dmath.Mat4
+	animationScale  nt3dmath.Vec3
+	deformation     *deformationState
 	Node
 	geometry         *Geometry
 	shared           *SharedGeometry // When geometry is shared's.
@@ -40,6 +44,7 @@ type sceneNode struct {
 // Mutations and Frame must run on one goroutine. Produced frames can be rendered
 // asynchronously while the scene is edited, provided readers do not mutate them.
 type Scene struct {
+	clips                                    map[NodeID][]AnimationClip
 	nodes                                    map[NodeID]*sceneNode
 	names                                    map[string]NodeID
 	order                                    []NodeID
@@ -234,7 +239,9 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 		return err
 	}
 	g = cloneGeometry(g)
+	g.posed = nil
 	g.Bounds = GeometryBounds(g)
+	n.deformation = nil
 	n.geometry, n.shared, n.pickIndex = &g, nil, nil
 	s.changed(true, true)
 	n.geometryRevision = s.revision
@@ -263,6 +270,7 @@ func NewSharedGeometry(g Geometry) (*SharedGeometry, error) {
 		return nil, errors.New("nt3d: shared geometry holds triangles only")
 	}
 	g = cloneGeometry(g)
+	g.posed = nil
 	g.Bounds = GeometryBounds(g)
 	return &SharedGeometry{geometry: g, id: nextRevision.Add(1)}, nil
 }
@@ -295,6 +303,7 @@ func (s *Scene) SetNodeShared(id NodeID, sg *SharedGeometry) error {
 	if sg == nil {
 		return errors.New("nt3d: nil shared geometry")
 	}
+	n.deformation = nil
 	n.geometry, n.shared, n.pickIndex = &sg.geometry, sg, nil
 	s.changed(true, true)
 	n.geometryRevision = sg.id // The same for every node that shows it.
@@ -338,6 +347,7 @@ func (s *Scene) Remove(id NodeID) error {
 		queue = append(queue, node.Children...)
 		delete(s.names, node.Name)
 		delete(s.nodes, at)
+		delete(s.clips, at)
 	}
 	s.order = slices.DeleteFunc(s.order, func(v NodeID) bool { return s.nodes[v] == nil })
 	s.changed(true, true)
@@ -351,6 +361,7 @@ func (s *Scene) Clear() {
 
 // Bounds returns visible world-space bounds, without chart range policy.
 func (s *Scene) Bounds() (b nt3dmath.AABB) {
+	_ = s.UpdateDeformations() // On an invalid procedural pose retain the last valid mesh.
 	for _, id := range s.order {
 		n := s.nodes[id]
 		if n.geometry == nil || !s.visible(id) {
