@@ -238,6 +238,25 @@ func NewTexture(src image.Image) (*Texture, error) {
 		return nil, fmt.Errorf("nt3d: texture dimensions must be 1..8192")
 	}
 	t := &Texture{width: w, height: h, pixels: make([]byte, w*h*4)}
+	// NRGBA is already straight-alpha. Opaque RGBA has identical channel
+	// representation. Copy only visible rows to preserve subimage bounds and
+	// stride, and keep the texture independent of subsequent source mutations.
+	var pixels []byte
+	var stride, offset int
+	switch img := src.(type) {
+	case *image.NRGBA:
+		pixels, stride, offset = img.Pix, img.Stride, img.PixOffset(b.Min.X, b.Min.Y)
+	case *image.RGBA:
+		if img.Opaque() {
+			pixels, stride, offset = img.Pix, img.Stride, img.PixOffset(b.Min.X, b.Min.Y)
+		}
+	}
+	if pixels != nil {
+		for y := 0; y < h; y++ {
+			copy(t.pixels[y*w*4:(y+1)*w*4], pixels[offset+y*stride:offset+y*stride+w*4])
+		}
+		return t, nil
+	}
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			c := color.NRGBAModel.Convert(src.At(b.Min.X+x, b.Min.Y+y)).(color.NRGBA)
