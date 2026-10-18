@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"nimbleterminal.dev/nt3d/math"
+	"sync"
 )
 
 type RenderMode uint8
@@ -187,16 +188,53 @@ type Renderer interface {
 
 func NewGPURenderer() Renderer { return &gpuRenderer{} }
 
-type softwareRenderer struct{}
+// Retain at most 4 MiB of private depth scratch. Larger snapshots use temporary
+// storage, leaving the interactive buffer intact. Shrinking below one quarter
+// of its capacity replaces the buffer with an exactly sized allocation.
+const maxSoftwareDepthPixels = 1 << 20
 
-func NewSoftwareRenderer() Renderer { return softwareRenderer{} }
-func (softwareRenderer) Render(f Frame) (image.Image, error) {
+type softwareRenderer struct {
+	mu     sync.Mutex
+	depth  []float32
+	closed bool
+}
+
+// NewSoftwareRenderer returns a renderer with bounded private depth scratch.
+// Render and Close may overlap: calls are serialized, Close waits for an active
+// render, releases scratch, and rejects later renders. Close is idempotent.
+// Each returned image is independently owned. Frames must remain immutable
+// throughout Render. Retain the renderer between frames and Close it after use.
+func NewSoftwareRenderer() Renderer { return &softwareRenderer{} }
+func (r *softwareRenderer) Render(f Frame) (image.Image, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil, errors.New("nt3d: software renderer closed")
+	}
 	if err := validateFrame(f); err != nil {
 		return nil, err
 	}
-	return softwareRender(f), nil
+	s := supersampleFactor(f)
+	n := f.Width * f.Height * s * s
+	var depth []float32
+	if n > maxSoftwareDepthPixels {
+		depth = make([]float32, n)
+	} else {
+		if cap(r.depth) < n || n < cap(r.depth)/4 {
+			r.depth = make([]float32, n)
+		}
+		r.depth = r.depth[:n]
+		depth = r.depth
+	}
+	return softwareRenderScratch(f, depth), nil
 }
-func (softwareRenderer) Close() error { return nil }
+func (r *softwareRenderer) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	r.depth = nil
+	return nil
+}
 
 // Snapshot renders all primitives. WebGPU failure falls back to software.
 // Supply a reusable GPU renderer to retain uploads; nil selects software fallback.

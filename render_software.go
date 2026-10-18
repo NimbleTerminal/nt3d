@@ -18,6 +18,22 @@ func softwareRender(f Frame) image.Image {
 	return img
 }
 
+// softwareRenderScratch uses private raster depth; it never returns that slice.
+// Unlike RenderSoftware, image-only rendering needs no reduced depth result.
+func softwareRenderScratch(f Frame, depth []float32) image.Image {
+	s := supersampleFactor(f)
+	if s == 1 {
+		img, _ := softwareDrawDepth(f, 1, depth)
+		return img
+	}
+	big := f
+	big.Width, big.Height, big.Overlays = f.Width*s, f.Height*s, nil
+	bigImg, _ := softwareDrawDepth(big, s, depth)
+	img := shrink(bigImg, s, f.Linear)
+	drawOverlays(img, f)
+	return img
+}
+
 // softwareRenderDepth is softwareRender with its depth buffer, at the
 // frame's size: each pixel's depth, or noDepth where nothing is. A
 // supersampled pixel's is the nearest of its block.
@@ -53,9 +69,13 @@ const noDepth = 2
 // softwareDraw draws a frame whose pixel sizes (points, line widths, arrow
 // heads) are scaled by scale, as a supersampled frame's are.
 func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
+	return softwareDrawDepth(f, scale, make([]float32, f.Width*f.Height))
+}
+
+// depth is exactly Width*Height values and is reset even on equal-area resizes.
+func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []float32) {
 	px := float32(scale)
 	img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
-	depth := make([]float32, f.Width*f.Height)
 	for i := range depth {
 		depth[i] = noDepth
 		off := i * 4

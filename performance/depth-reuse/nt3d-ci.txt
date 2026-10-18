@@ -1,0 +1,134 @@
+task: [fmt-check] test -z "$(gofmt -l *.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
+task: [test-race] go test -mod=readonly -race ./...
+ok  	nimbleterminal.dev/nt3d	14.888s
+ok  	nimbleterminal.dev/nt3d/math	(cached)
+ok  	nimbleterminal.dev/nt3d/mesh	(cached)
+?   	nimbleterminal.dev/nt3d/mesh/formats	[no test files]
+ok  	nimbleterminal.dev/nt3d/mesh/gltf	1.551s
+ok  	nimbleterminal.dev/nt3d/widget	1.677s
+task: [test-race] go -C examples/demos test -mod=readonly -race ./...
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/animate	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/animation	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/characters	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/dynamic	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/forest	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/fur	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/large	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/lights	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/meshes	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/mipmaps	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/models	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/particles	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/procedural	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/shapes	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/cmd/terrain	[no test files]
+ok  	nimbleterminal.dev/nt3d/examples/demos/internal/demo	5.300s
+?   	nimbleterminal.dev/nt3d/examples/demos/internal/demo/gltf	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/internal/demo/gltf/generate	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/internal/demo/gobkit	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/internal/demo/models	[no test files]
+?   	nimbleterminal.dev/nt3d/examples/demos/internal/demo/models/generate	[no test files]
+task: [vet] go vet -mod=readonly ./...
+task: [vet] go -C examples/demos vet -mod=readonly ./...
+task: [build:lib] go build -mod=readonly ./...
+task: [build:meshes] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-meshes ./cmd/meshes
+task: [build:mipmaps] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-mipmaps ./cmd/mipmaps
+task: [build:particles] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-particles ./cmd/particles
+task: [build:lights] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-lights ./cmd/lights
+task: [build:procedural] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-procedural ./cmd/procedural
+task: [build:dynamic] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-dynamic ./cmd/dynamic
+task: [build:models] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-models ./cmd/models
+task: [build:animate] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-animate ./cmd/animate
+task: [build:forest] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-forest ./cmd/forest
+task: [build:shapes] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-shapes ./cmd/shapes
+task: [build:terrain] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-terrain ./cmd/terrain
+task: [build:large] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-large ./cmd/large
+task: [build:characters] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-characters ./cmd/characters
+task: [build:fur] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-fur ./cmd/fur
+task: [build:animation] go -C examples/demos build -mod=readonly -o ../../bin/nt3d-animation ./cmd/animation
+task: [build-wasm] mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/animation dist/web/animate dist/web/characters
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/shapes/app.wasm ./cmd/shapes
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/models/app.wasm ./cmd/models
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/large/app.wasm ./cmd/large
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/fur/app.wasm ./cmd/fur
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/mipmaps/app.wasm ./cmd/mipmaps
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/forest/app.wasm ./cmd/forest
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/lights/app.wasm ./cmd/lights
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/particles/app.wasm ./cmd/particles
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/animation/app.wasm ./cmd/animation
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/animate/app.wasm ./cmd/animate
+task: [build-wasm] go -C examples/demos build -mod=readonly -o ../../dist/web/characters/app.wasm ./cmd/characters
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/terrain/
+  wasm_exec.js          → ../../dist/web/terrain/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/terrain/booba
+  ghostty-web/ (3 files) → ../../dist/web/terrain/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/procedural/
+  wasm_exec.js          → ../../dist/web/procedural/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/procedural/booba
+  ghostty-web/ (3 files) → ../../dist/web/procedural/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/dynamic/
+  wasm_exec.js          → ../../dist/web/dynamic/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/dynamic/booba
+  ghostty-web/ (3 files) → ../../dist/web/dynamic/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/shapes/
+  wasm_exec.js          → ../../dist/web/shapes/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/shapes/booba
+  ghostty-web/ (3 files) → ../../dist/web/shapes/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/models/
+  wasm_exec.js          → ../../dist/web/models/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/models/booba
+  ghostty-web/ (3 files) → ../../dist/web/models/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/large/
+  wasm_exec.js          → ../../dist/web/large/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/large/booba
+  ghostty-web/ (3 files) → ../../dist/web/large/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/fur/
+  wasm_exec.js          → ../../dist/web/fur/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/fur/booba
+  ghostty-web/ (3 files) → ../../dist/web/fur/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/mipmaps/
+  wasm_exec.js          → ../../dist/web/mipmaps/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/mipmaps/booba
+  ghostty-web/ (3 files) → ../../dist/web/mipmaps/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/forest/
+  wasm_exec.js          → ../../dist/web/forest/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/forest/booba
+  ghostty-web/ (3 files) → ../../dist/web/forest/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/lights/
+  wasm_exec.js          → ../../dist/web/lights/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/lights/booba
+  ghostty-web/ (3 files) → ../../dist/web/lights/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/particles/
+  wasm_exec.js          → ../../dist/web/particles/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/particles/booba
+  ghostty-web/ (3 files) → ../../dist/web/particles/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/animation/
+  wasm_exec.js          → ../../dist/web/animation/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/animation/booba
+  ghostty-web/ (3 files) → ../../dist/web/animation/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/animate/
+  wasm_exec.js          → ../../dist/web/animate/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/animate/booba
+  ghostty-web/ (3 files) → ../../dist/web/animate/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [web-assets] go -C examples/demos tool booba-assets ../../dist/web/characters/
+  wasm_exec.js          → ../../dist/web/characters/wasm_exec.js
+  booba/ (19 files)      → ../../dist/web/characters/booba
+  ghostty-web/ (3 files) → ../../dist/web/characters/ghostty-web
+  index.html exists, skipped (use --force to overwrite)
+task: [build-web] cp -R web/. dist/web/

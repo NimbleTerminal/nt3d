@@ -1,0 +1,5 @@
+=== RUN   TestDepthPixelOracle
+648 frames SHA256 99f7a5f2cea9fc8753cfc9ef4bff0f0d76926371accc1d3ac4a7645ca4e1d62e
+--- PASS: TestDepthPixelOracle (0.54s)
+PASS
+ok  	github.com/NimbleMarkets/ntcharts3d	0.707s

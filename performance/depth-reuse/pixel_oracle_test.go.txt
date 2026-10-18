@@ -1,0 +1,32 @@
+package ntcharts3d
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"image"
+	nt3dmath "nimbleterminal.dev/nt3d/math"
+	"testing"
+)
+
+func TestDepthPixelOracle(t *testing.T) {
+	h := sha256.New()
+	for _, work := range []string{"camera", "bars", "primitives"} {
+		p, _ := presentationFixture(t, "glyph", work, 80, 22)
+		m := p.m
+		if work == "primitives" {
+			m.SetLines("lines", Lines{Start: []nt3dmath.Vec3{{X: -1, Y: -1}, {Z: .2}}, End: []nt3dmath.Vec3{{X: 1, Y: 1, Z: 1}, {X: 1, Y: -1, Z: .8}}, Width: 3})
+			m.SetScatter("points", Scatter{X: []float32{-.7, .2, .6}, Y: []float32{.3, -.2, .6}, Z: []float32{.8, .4, .2}})
+		}
+		for i := 0; i < 72; i++ {
+			m.camera.Beta = -90 + float64(i)*5
+			for _, s := range []image.Point{{160, 80}, {80, 160}, {320, 160}} {
+				img, _, err := m.Snapshot(s.X, s.Y)
+				if err != nil {
+					t.Fatal(err)
+				}
+				h.Write(img.(*image.RGBA).Pix)
+			}
+		}
+	}
+	fmt.Printf("648 frames SHA256 %x\n", h.Sum(nil))
+}

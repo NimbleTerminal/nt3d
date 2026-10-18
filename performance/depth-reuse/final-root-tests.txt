@@ -1,0 +1,11 @@
+=== RUN   TestSoftwareScratchEquivalenceAndOwnership
+--- PASS: TestSoftwareScratchEquivalenceAndOwnership (1.47s)
+=== RUN   TestSoftwareScratchResetRetentionAndClose
+    software_reuse_test.go:64: retained depth after 640x320: 819200 bytes
+    software_reuse_test.go:92: retained depth after 2048x1024: 819200 bytes
+    software_reuse_test.go:107: retained depth after Close: 0 bytes
+--- PASS: TestSoftwareScratchResetRetentionAndClose (0.11s)
+=== RUN   TestSoftwareConcurrentRenderClose
+--- PASS: TestSoftwareConcurrentRenderClose (0.01s)
+PASS
+ok  	nimbleterminal.dev/nt3d	3.101s

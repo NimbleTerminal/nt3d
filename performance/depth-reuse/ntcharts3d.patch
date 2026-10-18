@@ -1,0 +1,366 @@
+--- a/camera.go
++++ b/camera.go
+@@ -67,7 +67,7 @@
+ 	return
+ }
+ 
+-func (c Camera) Matrix(aspect float32) nt3dmath.Mat4 { return nt3d.Camera(c.valid()).Matrix(aspect) }
++func (c Camera) Matrix(aspect float32) nt3dmath.Mat4 { return c.engineCamera().Matrix(aspect) }
+ 
+ // RayFromCell returns a ray through a cell center, accounting for cell dimensions.
+ func (c Camera) RayFromCell(x, y, cols, rows, cellW, cellH int) nt3dmath.Ray {
+@@ -75,5 +75,12 @@
+ }
+ 
+ func (c Camera) ray(x, y float32, cols, rows, cw, ch int) nt3dmath.Ray {
+-	return nt3d.Camera(c.valid()).RayFromPixel(x*float32(cw), y*float32(ch), cols*cw, rows*ch)
++	return c.engineCamera().RayFromPixel(x*float32(cw), y*float32(ch), cols*cw, rows*ch)
+ }
++
++// Map fields explicitly so added engine camera features do not couple the
++// chart's public orbit-camera layout to the engine's struct layout.
++func (c Camera) engineCamera() nt3d.Camera {
++	c = c.valid()
++	return nt3d.Camera{Alpha: c.Alpha, Beta: c.Beta, Distance: c.Distance, Target: c.Target, Projection: c.Projection, AutoRotate: c.AutoRotate, ResumeAfter: c.ResumeAfter}
++}
+--- a/model.go
++++ b/model.go
+@@ -3,6 +3,7 @@
+ package ntcharts3d
+ 
+ import (
++	"errors"
+ 	"fmt"
+ 	"image/color"
+ 	"sync/atomic"
+@@ -43,6 +44,7 @@
+ 	colors                       Palette
+ 	background                   color.RGBA
+ 	renderer                     Renderer
++	software                     *softwareRenderer
+ 	renderMode                   RenderMode
+ 	requestedRenderMode          RenderMode
+ 	width, height, maxPoints     int
+@@ -77,6 +79,7 @@
+ 		dirty:              true,
+ 		kittyFormat:        picture.KittyFormatZlib,
+ 		renderer:           &gpuRenderer{},
++		software:           &softwareRenderer{},
+ 		colorLegendVisible: true,
+ 	}
+ 	for _, o := range opts {
+@@ -209,15 +212,20 @@
+ 	return cmd
+ }
+ 
+-// Close releases GPU resources after the event loop exits. Call Dispose while
+-// the loop is running to execute terminal placement cleanup.
++// Close releases GPU and software resources after the event loop exits. It is
++// idempotent and waits for active renders; queued software jobs are rejected.
++// Like other Model methods it must not overlap event-loop mutations, but may
++// overlap rendering commands. Call Dispose while the loop is running to execute
++// terminal placement cleanup.
+ func (m *Model) Close() error {
+ 	m.Dispose()
+ 	if m.ownZones {
+ 		m.zones.Close()
+ 	}
++	var gpuErr error
+ 	if m.renderer != nil {
+-		return m.renderer.Close()
+-	}
+-	return nil
+-}
++		gpuErr = m.renderer.Close()
++		m.renderer = nil
++	}
++	return errors.Join(gpuErr, m.software.Close())
++}
+--- a/render_software.go
++++ b/render_software.go
+@@ -2,8 +2,10 @@
+ package ntcharts3d
+ 
+ import (
++	"errors"
+ 	"image"
+ 	"nimbleterminal.dev/nt3d"
++	"sync"
+ )
+ 
+ func abs(v float32) float32 {
+@@ -16,3 +18,38 @@
+ func renderSoftware(f Frame) (image.Image, error) {
+ 	return nt3d.NewSoftwareRenderer().Render(engineFrame(f))
+ }
++
++// softwareRenderer owns fallback resources independently of the GPU adapter.
++// The lock also protects old nt3d versions: Snapshot can overlap a command.
++// Model/frame construction remains on the event loop; no callbacks run here.
++type softwareRenderer struct {
++	mu     sync.Mutex
++	engine nt3d.Renderer
++	closed bool
++}
++
++func (r *softwareRenderer) Render(f Frame) (image.Image, error) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.closed {
++		return nil, errors.New("ntcharts3d: software renderer closed")
++	}
++	if r.engine == nil {
++		r.engine = nt3d.NewSoftwareRenderer()
++	}
++	return r.engine.Render(engineFrame(f))
++}
++func (r *softwareRenderer) Close() error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.closed {
++		return nil
++	}
++	r.closed = true
++	if r.engine != nil {
++		err := r.engine.Close()
++		r.engine = nil
++		return err
++	}
++	return nil
++}
+--- a/schedule.go
++++ b/schedule.go
+@@ -157,6 +157,7 @@
+ 	resolution := m.resolution()
+ 	f := m.frame()
+ 	id, seq, renderMode, r, cols, rows := m.id, m.seq, m.renderMode, m.renderer, m.plotWidth(), m.plotHeight()
++	software := m.software
+ 	return tea.Batch(resolution, func() tea.Msg {
+ 		start := time.Now()
+ 		var img image.Image
+@@ -174,7 +175,7 @@
+ 		}
+ 		if renderMode == Software {
+ 			var renderErr error
+-			img, renderErr = renderSoftware(f)
++			img, renderErr = software.Render(f)
+ 			if renderErr != nil {
+ 				err = renderErr
+ 			}
+--- a/snapshot.go
++++ b/snapshot.go
+@@ -21,7 +21,9 @@
+ // no image to give.
+ //
+ // Snapshot returns when the image is drawn. Like the chart's other methods,
+-// it must not be called while another goroutine changes the chart.
++// it must not be called while another goroutine changes the chart. Rendering
++// is serialized with scheduled render commands; returned images remain owned
++// by the caller across later renders and Close.
+ func (m *Model) Snapshot(width, height int) (image.Image, RenderMode, error) {
+ 	mode := m.requestedRenderMode
+ 	switch {
+@@ -39,6 +41,6 @@
+ 			return img, WebGPU, nil
+ 		}
+ 	}
+-	img, err := renderSoftware(f)
++	img, err := m.software.Render(f)
+ 	return img, Software, err
+ }
+--- /dev/null
++++ b/software_lifetime_test.go
+@@ -0,0 +1,141 @@
++// ntcharts3d - Copyright (c) 2026 Neomantra Corp.
++package ntcharts3d
++
++import (
++	"bytes"
++	"errors"
++	"image"
++	"slices"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"nimbleterminal.dev/nt3d"
++)
++
++// Deliberately unsafe engine: the adapter must serialize even older engines.
++type gatedSoftware struct {
++	entered chan struct{}
++	release chan struct{}
++	calls   atomic.Int32
++	closes  atomic.Int32
++	active  atomic.Int32
++	overlap atomic.Bool
++}
++
++func (g *gatedSoftware) Render(f nt3d.Frame) (image.Image, error) {
++	if g.active.Add(1) != 1 {
++		g.overlap.Store(true)
++	}
++	defer g.active.Add(-1)
++	if g.calls.Add(1) == 1 {
++		close(g.entered)
++		<-g.release
++	}
++	result, err := nt3d.RenderSoftware(f)
++	return result.Image, err
++}
++func (g *gatedSoftware) Close() error {
++	if g.active.Load() != 0 {
++		g.overlap.Store(true)
++	}
++	g.closes.Add(1)
++	return nil
++}
++func gate() *gatedSoftware {
++	return &gatedSoftware{entered: make(chan struct{}), release: make(chan struct{})}
++}
++
++func TestSoftwareSnapshotOverlapsScheduledRender(t *testing.T) {
++	m := bars(t, WithRenderMode(Software))
++	g := gate()
++	m.software.engine = g
++	m.started = true
++	cmd := m.schedule()
++	done := make(chan struct{})
++	go func() { cmd(); close(done) }()
++	<-g.entered
++	// Snapshot is on the event-loop caller, while the render command is running.
++	// Release that command from a worker; Snapshot must wait on the same adapter.
++	go func() { time.Sleep(10 * time.Millisecond); close(g.release) }()
++	img, mode, err := m.Snapshot(120, 80)
++	<-done
++	if err != nil || mode != Software || img == nil || g.overlap.Load() || g.calls.Load() != 2 {
++		t.Fatalf("overlap: calls=%d err=%v", g.calls.Load(), err)
++	}
++	pixels := slices.Clone(img.(*image.RGBA).Pix)
++	m.Snapshot(80, 120)
++	m.Close()
++	m.Close()
++	if !bytes.Equal(img.(*image.RGBA).Pix, pixels) || g.closes.Load() != 1 {
++		t.Fatal("result ownership or idempotent Close failed")
++	}
++}
++func TestSoftwareCloseWaitsAndRejectsQueuedWork(t *testing.T) {
++	m := bars(t, WithRenderMode(Software))
++	g := gate()
++	m.software.engine = g
++	m.started = true
++	queued := m.schedule()
++	f := m.frameSized(100, 80, 1.25, Software)
++	done := make(chan struct{})
++	go func() { m.software.Render(f); close(done) }()
++	<-g.entered
++	go func() { time.Sleep(10 * time.Millisecond); close(g.release) }()
++	if err := m.Close(); err != nil {
++		t.Fatal(err)
++	}
++	<-done
++	msg := queued().(rendered)
++	if msg.err == nil || msg.frame != nil || g.calls.Load() != 1 || g.overlap.Load() {
++		t.Fatal("queued work accessed closed renderer")
++	}
++	if _, cmd := m.Update(msg); cmd != nil {
++		t.Fatal("late result escaped Dispose")
++	}
++	if err := m.Close(); err != nil || g.closes.Load() != 1 {
++		t.Fatal("repeated Close")
++	}
++}
++func TestSoftwareSurvivesGPUFallbackCleanup(t *testing.T) {
++	m := bars(t, WithRenderer(&recorder{err: errors.New("GPU failure")}))
++	m.started = true
++	msg := m.schedule()().(rendered)
++	if msg.renderMode != Software || msg.frame == nil {
++		t.Fatal("no software fallback")
++	}
++	engine := m.software.engine
++	m.Update(msg)
++	if m.renderer != nil || m.software.closed || m.software.engine != engine {
++		t.Fatal("GPU cleanup disposed software renderer")
++	}
++	if _, _, err := m.Snapshot(120, 80); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := m.software.Render(Frame{}); err == nil {
++		t.Fatal("invalid frame accepted")
++	}
++	if _, _, err := m.Snapshot(80, 120); err != nil {
++		t.Fatal(err)
++	}
++}
++
++func TestSoftwareRetainedChartPixels(t *testing.T) {
++	for _, work := range []string{"camera", "bars"} {
++		p, _ := presentationFixture(t, "glyph", work, 80, 22)
++		m := p.m
++		for i, size := range []image.Point{{160, 80}, {80, 160}, {320, 160}, {80, 40}} {
++			m.camera.Beta += float64(i) * 25
++			frame := m.frameSized(size.X, size.Y, float32(size.X)/float32(size.Y), Software)
++			frame.complete = true
++			fresh, err := renderSoftware(frame)
++			if err != nil {
++				t.Fatal(err)
++			}
++			retained, mode, err := m.Snapshot(size.X, size.Y)
++			if err != nil || mode != Software || !same(fresh, retained) {
++				t.Fatal("retained chart differs", work, size, err)
++			}
++		}
++	}
++}
+--- /dev/null
++++ b/depth_bench_test.go
+@@ -0,0 +1,49 @@
++// ntcharts3d - Copyright (c) 2026 Neomantra Corp.
++package ntcharts3d
++
++import (
++	"image"
++	"testing"
++)
++
++// Fixed anisotropy (4), software, same deterministic map as presentation tests.
++// Snapshot has no adaptive raster sizing or transport. Each large-small op
++// includes one 2048x1024 snapshot followed by eight 640x320 interactive sizes.
++func BenchmarkDepthSnapshots(b *testing.B) {
++	for _, work := range []string{"camera", "texture", "resize", "large-small"} {
++		b.Run(work, func(b *testing.B) {
++			p, src := presentationFixture(b, "glyph", "camera", 80, 22)
++			m := p.m
++			if _, _, err := m.Snapshot(640, 320); err != nil {
++				b.Fatal(err)
++			}
++			b.ReportAllocs()
++			b.ResetTimer()
++			for i := 0; i < b.N; i++ {
++				c := m.camera
++				c.Beta = -90 + float64(i%72)*5
++				m.camera = c
++				sizes := []image.Point{{640, 320}}
++				switch work {
++				case "texture":
++					tex, err := NewTexture(src)
++					if err != nil {
++						b.Fatal(err)
++					}
++					m.SetSeriesTexture("map", tex)
++				case "resize":
++					sizes = []image.Point{{640, 320}, {320, 640}, {1280, 640}, {320, 160}}
++					sizes = sizes[i%len(sizes) : i%len(sizes)+1]
++				case "large-small":
++					sizes = []image.Point{{2048, 1024}, {640, 320}, {640, 320}, {640, 320}, {640, 320}, {640, 320}, {640, 320}, {640, 320}, {640, 320}}
++				}
++				for _, size := range sizes {
++					img, mode, err := m.Snapshot(size.X, size.Y)
++					if err != nil || mode != Software || img.Bounds().Size() != size || m.anisotropy != 4 {
++						b.Fatal("invalid snapshot", err)
++					}
++				}
++			}
++		})
++	}
++}

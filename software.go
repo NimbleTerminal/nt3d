@@ -26,7 +26,8 @@ type SoftwareResult struct {
 
 // RenderSoftware renders a frame in software, as NewSoftwareRenderer does,
 // returning the depth buffer with the picture: for outlines, fog, or
-// compositing done after rendering.
+// compositing done after rendering. Both Image and Depth are independently
+// owned by the caller and remain unchanged by later renders or renderer Close.
 func RenderSoftware(f Frame) (SoftwareResult, error) {
 	if err := validateFrame(f); err != nil {
 		return SoftwareResult{}, err

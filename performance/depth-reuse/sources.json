@@ -1,0 +1,20 @@
+{
+  "nt3d_before": "2111d0c31b625272bacc43e9c3d0fe687eda45fb",
+  "ntcharts3d_before": "f5ee68cb05686221c8b6056163606c42819c6ba0",
+  "notes": "Before charts uses the same explicit camera-field mapping as after. Identical dependency versions: modules-before.txt and modules-after.txt. After nt3d and charts have uncommitted source changes.",
+  "nt3d_after": {
+    "renderer.go": "c762ecd908bd3fade53975e0055e3dca7cf51c86d0261ae838e5c5fbbca4cc26",
+    "render_software.go": "f9be1696e244aba8823705bccdb606b0c209701760818ffb7db875ffcb3a7350",
+    "software.go": "c5071a60ca0ce39c5b0b8c34612feded5c15818fa115b8c235bceb20e86fce1e",
+    "software_reuse_test.go": "ac99593290bdbb4e3463c3d79df69d57caf97310269901ffbeda587f9b876153"
+  },
+  "ntcharts3d_after": {
+    "camera.go": "1670705ddbfa9d839865126957fed0a954dfc1f8dae9fcf48b07acac7b1429de",
+    "model.go": "d18559a42970c062f1fac24727ffa2a5690ee2f90e664583392633ddb486ec0b",
+    "render_software.go": "66d3b22c0198341c659a94efd9340464fbb00fb33b22d8716ab2daa473063d6c",
+    "schedule.go": "1b8fd4410086ffa3c0e6c6a2d5c3f20dada5f99f1b12a553c313646485b563e2",
+    "snapshot.go": "204641fc275d4f84dd245805c0a75eda5545cf3107d8a50283eb200878e5aeb0",
+    "software_lifetime_test.go": "f89b7bf684dedae88b2362ee9040bc4eec8794373350d91572f7584f89409506",
+    "depth_bench_test.go": "c5d214bf0b9e1698e8d2cde0b56f4f4bd41b2738b0dd2d07a0341d9645043a2a"
+  }
+}

@@ -1,0 +1,162 @@
+task: [test-gpu] go test -mod=readonly -tags webgpu -run TestGPU -count=1 -v .
+=== RUN   TestGPUSkinMatchesCPU
+=== RUN   TestGPUSkinMatchesCPU/textured=false/normal=false
+=== RUN   TestGPUSkinMatchesCPU/textured=false/normal=true
+=== RUN   TestGPUSkinMatchesCPU/textured=true/normal=false
+=== RUN   TestGPUSkinMatchesCPU/textured=true/normal=true
+--- PASS: TestGPUSkinMatchesCPU (0.83s)
+    --- PASS: TestGPUSkinMatchesCPU/textured=false/normal=false (0.55s)
+    --- PASS: TestGPUSkinMatchesCPU/textured=false/normal=true (0.09s)
+    --- PASS: TestGPUSkinMatchesCPU/textured=true/normal=false (0.09s)
+    --- PASS: TestGPUSkinMatchesCPU/textured=true/normal=true (0.09s)
+=== RUN   TestGPUEnvironment
+--- PASS: TestGPUEnvironment (0.04s)
+=== RUN   TestGPULabels
+--- PASS: TestGPULabels (0.07s)
+=== RUN   TestGPUNormalMaps
+=== RUN   TestGPUNormalMaps/normal_only
+=== RUN   TestGPUNormalMaps/base_color
+=== RUN   TestGPUNormalMaps/zero
+=== RUN   TestGPUNormalMaps/mirrored
+=== RUN   TestGPUNormalMaps/degenerate
+=== RUN   TestGPUNormalMaps/transparent
+=== RUN   TestGPUNormalMaps/unlit
+=== RUN   TestGPUNormalMaps/transform
+=== RUN   TestGPUNormalMaps/cutout
+=== RUN   TestGPUNormalMaps/mip
+=== RUN   TestGPUNormalMaps/independent
+=== RUN   TestGPUNormalMaps/independent_cutout
+--- PASS: TestGPUNormalMaps (0.06s)
+    --- PASS: TestGPUNormalMaps/normal_only (0.05s)
+    --- PASS: TestGPUNormalMaps/base_color (0.00s)
+    --- PASS: TestGPUNormalMaps/zero (0.00s)
+    --- PASS: TestGPUNormalMaps/mirrored (0.00s)
+    --- PASS: TestGPUNormalMaps/degenerate (0.00s)
+    --- PASS: TestGPUNormalMaps/transparent (0.00s)
+    --- PASS: TestGPUNormalMaps/unlit (0.00s)
+    --- PASS: TestGPUNormalMaps/transform (0.00s)
+    --- PASS: TestGPUNormalMaps/cutout (0.00s)
+    --- PASS: TestGPUNormalMaps/mip (0.00s)
+    --- PASS: TestGPUNormalMaps/independent (0.00s)
+    --- PASS: TestGPUNormalMaps/independent_cutout (0.00s)
+=== RUN   TestGPUOutlines
+=== RUN   TestGPUOutlines/unlit
+=== RUN   TestGPUOutlines/lit
+=== RUN   TestGPUOutlines/texture
+=== RUN   TestGPUOutlines/normal_map
+=== RUN   TestGPUOutlines/cutout
+=== RUN   TestGPUOutlines/transparent
+=== RUN   TestGPUOutlines/texture_transparent
+=== RUN   TestGPUOutlines/perspective
+=== RUN   TestGPUOutlines/transform
+=== RUN   TestGPUOutlines/supersample
+=== RUN   TestGPUOutlines/encoded
+=== RUN   TestGPUOutlines/fog
+=== RUN   TestGPUOutlines/hidden_alpha
+=== RUN   TestGPUOutlines/occluded
+--- PASS: TestGPUOutlines (0.17s)
+    --- PASS: TestGPUOutlines/unlit (0.06s)
+    --- PASS: TestGPUOutlines/lit (0.00s)
+    --- PASS: TestGPUOutlines/texture (0.03s)
+    --- PASS: TestGPUOutlines/normal_map (0.00s)
+    --- PASS: TestGPUOutlines/cutout (0.04s)
+    --- PASS: TestGPUOutlines/transparent (0.00s)
+    --- PASS: TestGPUOutlines/texture_transparent (0.02s)
+    --- PASS: TestGPUOutlines/perspective (0.00s)
+    --- PASS: TestGPUOutlines/transform (0.00s)
+    --- PASS: TestGPUOutlines/supersample (0.00s)
+    --- PASS: TestGPUOutlines/encoded (0.00s)
+    --- PASS: TestGPUOutlines/fog (0.00s)
+    --- PASS: TestGPUOutlines/hidden_alpha (0.00s)
+    --- PASS: TestGPUOutlines/occluded (0.00s)
+=== RUN   TestGPUOutlineDeformation
+--- PASS: TestGPUOutlineDeformation (0.08s)
+=== RUN   TestGPUSceneRevisions
+--- PASS: TestGPUSceneRevisions (0.05s)
+=== RUN   TestGPUAllPrimitivesAndOverlays
+--- PASS: TestGPUAllPrimitivesAndOverlays (0.04s)
+=== RUN   TestGPUProceduralTexture
+--- PASS: TestGPUProceduralTexture (0.06s)
+=== RUN   TestGPUProceduralParameters
+--- PASS: TestGPUProceduralParameters (0.06s)
+=== RUN   TestGPUPerNodeGeometryCache
+--- PASS: TestGPUPerNodeGeometryCache (0.05s)
+=== RUN   TestGPUManualFrameGeometryCache
+--- PASS: TestGPUManualFrameGeometryCache (0.04s)
+=== RUN   TestGPUNearPlaneMatchesSoftware
+--- PASS: TestGPUNearPlaneMatchesSoftware (0.04s)
+=== RUN   TestGPUCutoutMatchesSoftware
+--- PASS: TestGPUCutoutMatchesSoftware (0.05s)
+=== RUN   TestGPUCutoutThreshold
+--- PASS: TestGPUCutoutThreshold (0.05s)
+=== RUN   TestGPUSupersample
+--- PASS: TestGPUSupersample (0.04s)
+=== RUN   TestGPURepeat
+--- PASS: TestGPURepeat (0.05s)
+=== RUN   TestGPUTintAndEdgeOn
+--- PASS: TestGPUTintAndEdgeOn (0.05s)
+=== RUN   TestGPUCullMatchesUnculled
+--- PASS: TestGPUCullMatchesUnculled (0.04s)
+=== RUN   TestGPUTransparentMatchesSoftware
+--- PASS: TestGPUTransparentMatchesSoftware (0.06s)
+=== RUN   TestGPULinearLighting
+--- PASS: TestGPULinearLighting (0.04s)
+=== RUN   TestGPUSpecularAndFogMatchSoftware
+--- PASS: TestGPUSpecularAndFogMatchSoftware (0.05s)
+=== RUN   TestGPUSharedGeometry
+--- PASS: TestGPUSharedGeometry (0.07s)
+=== RUN   TestGPUSharedGeometrySplits
+--- PASS: TestGPUSharedGeometrySplits (0.05s)
+=== RUN   TestGPUMipmaps
+--- PASS: TestGPUMipmaps (0.05s)
+=== RUN   TestGPUAnisotropy
+--- PASS: TestGPUAnisotropy (0.05s)
+=== RUN   TestGPUPointsMatchSoftware
+--- PASS: TestGPUPointsMatchSoftware (0.04s)
+=== RUN   TestGPUStrokeGradientMatchesSoftware
+--- PASS: TestGPUStrokeGradientMatchesSoftware (0.04s)
+=== RUN   TestGPUSharedEdgeMatchesSoftware
+--- PASS: TestGPUSharedEdgeMatchesSoftware (0.04s)
+=== RUN   TestGPUInstanceSetFailureRetries
+--- PASS: TestGPUInstanceSetFailureRetries (0.04s)
+=== RUN   TestGPULightingMatchesSoftware
+--- PASS: TestGPULightingMatchesSoftware (0.05s)
+=== RUN   TestGPUPointStylesMatchSoftware
+--- PASS: TestGPUPointStylesMatchSoftware (0.05s)
+=== RUN   TestGPUPointFogMatchesSoftware
+--- PASS: TestGPUPointFogMatchesSoftware (0.04s)
+=== RUN   TestGPUShadowsMatchSoftware
+--- PASS: TestGPUShadowsMatchSoftware (0.07s)
+=== RUN   TestGPUShadowTargetLifecycle
+--- PASS: TestGPUShadowTargetLifecycle (0.04s)
+=== RUN   TestGPUDropShadowsMatchSoftware
+--- PASS: TestGPUDropShadowsMatchSoftware (0.04s)
+=== RUN   TestGPUSpritesMatchSoftware
+--- PASS: TestGPUSpritesMatchSoftware (0.07s)
+=== RUN   TestGPUPointUpdatesReuseBuffersAndReplay
+--- PASS: TestGPUPointUpdatesReuseBuffersAndReplay (0.05s)
+=== RUN   TestGPUPointMotionResortsAlpha
+--- PASS: TestGPUPointMotionResortsAlpha (0.04s)
+PASS
+ok  	nimbleterminal.dev/nt3d	3.088s
+task: [test-gpu] go -C examples/demos test -mod=readonly -tags webgpu -run TestGPU -count=1 -v ./internal/demo
+=== RUN   TestGPUAnimatedSamples
+=== RUN   TestGPUAnimatedSamples/Assembly_lab
+=== RUN   TestGPUAnimatedSamples/Animated_Morph_Cube
+=== RUN   TestGPUAnimatedSamples/Simple_Skin
+=== RUN   TestGPUAnimatedSamples/Animated_Triangle
+--- PASS: TestGPUAnimatedSamples (0.10s)
+    --- PASS: TestGPUAnimatedSamples/Assembly_lab (0.09s)
+    --- PASS: TestGPUAnimatedSamples/Animated_Morph_Cube (0.00s)
+    --- PASS: TestGPUAnimatedSamples/Simple_Skin (0.00s)
+    --- PASS: TestGPUAnimatedSamples/Animated_Triangle (0.00s)
+=== RUN   TestGPUGobkitCharacters
+--- PASS: TestGPUGobkitCharacters (0.19s)
+=== RUN   TestGPUAssemblyCameras
+--- PASS: TestGPUAssemblyCameras (0.05s)
+=== RUN   TestGPUParticleSprites
+--- PASS: TestGPUParticleSprites (0.07s)
+=== RUN   TestGPUShadowDemos
+--- PASS: TestGPUShadowDemos (0.08s)
+PASS
+ok  	nimbleterminal.dev/nt3d/examples/demos/internal/demo	0.696s

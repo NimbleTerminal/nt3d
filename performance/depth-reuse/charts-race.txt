@@ -1,0 +1,3 @@
+ok  	github.com/NimbleMarkets/ntcharts3d	7.713s
+?   	github.com/NimbleMarkets/ntcharts3d/cmd/wasm-build	[no test files]
+ok  	github.com/NimbleMarkets/ntcharts3d/examples/multichart	1.446s

@@ -1,0 +1,1 @@
+ok  	github.com/NimbleMarkets/ntcharts-osm/examples/mapview3d	1.521s
