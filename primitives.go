@@ -7,7 +7,6 @@ import (
 	"slices"
 )
 
-const MaxPoints = 500_000
 const MaxVectors = 100_000
 
 // Arrow is an unlit screen-facing stroke. Width and HeadSize are pixels.

@@ -90,11 +90,34 @@ type Geometry struct {
 // triangle. The GPU renderer keeps a 48-byte record for each index, vertices
 // shared or not, in a storage buffer; 128 MiB is the largest binding that
 // WebGPU promises, and so the largest mesh that can be drawn wherever WebGPU
-// can. MaxMeshTriangles is the same limit, counted in faces.
+// can. MaxMeshTriangles is the same limit, counted in faces. MaxPoints is
+// the same limit for points, whose records are 20 bytes; points with a
+// texture or Gaussian axes keep a 48-byte record too, and Gaussian SH 12
+// bytes a coefficient, so those geometries hold fewer: see MaxGaussians.
 const (
 	MaxMeshTriangles = (128 << 20) / 48 / 3
 	MaxMeshIndices   = 3 * MaxMeshTriangles
+	MaxPoints        = (128 << 20) / 20
 )
+
+// bindingLimit is the storage binding WebGPU guarantees, in bytes, that
+// Validate measures a geometry's buffers against. Tests lower it.
+var bindingLimit = 128 << 20
+
+// MaxGaussians is the most Gaussian splats one geometry holds with that many
+// RGB spherical harmonic coefficients each (0 for none; else 1, 4, 9, or 16,
+// degrees 0 to 3): their 48-byte axis records and their SH, 48 bytes plus 12
+// a coefficient, must each fit the binding. Other counts give 0.
+func MaxGaussians(coefficients int) int {
+	most := min(MaxPoints, (128<<20)/48)
+	switch coefficients {
+	case 0:
+		return most
+	case 1, 4, 9, 16:
+		return min(most, ((128<<20)-48)/(12*coefficients))
+	}
+	return 0
+}
 
 func validateGeometry(g Geometry) error {
 	if err := g.Outline.validate(); err != nil {
@@ -196,6 +219,13 @@ func validateGeometry(g Geometry) error {
 	// vertices as indices.
 	if len(g.Points) > MaxPoints || len(g.Vertices) > MaxMeshIndices || len(g.Indices) > MaxMeshIndices || len(g.Boxes) > 512*512 || len(g.Lines) > 2*512*512 {
 		return fmt.Errorf("nt3d: geometry exceeds cap")
+	}
+	// Each per-point buffer is one storage binding: the 20-byte records,
+	// the 48-byte axis or sprite records, and the SH, 48 bytes and 12 a
+	// coefficient.
+	sprites := g.PointStyle.Shape == GaussianPoint || g.PointStyle.Texture != nil
+	if len(g.Points)*20 > bindingLimit || sprites && len(g.Points)*48 > bindingLimit || len(g.GaussianSH) > 0 && 48+12*len(g.GaussianSH) > bindingLimit {
+		return fmt.Errorf("nt3d: geometry exceeds the GPU binding limit")
 	}
 	if len(g.Indices)%3 != 0 || len(g.Lines)%2 != 0 {
 		return fmt.Errorf("nt3d: incomplete triangle or line")

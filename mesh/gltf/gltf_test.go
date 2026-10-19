@@ -391,7 +391,9 @@ func TestGLTFRefusals(t *testing.T) {
 	fails(t, err, "non-finite texture coordinate")
 
 	// Points and lines count against caps of their own, across primitives.
-	cloud := make([][3]float32, nt3d.MaxPoints/2+1)
+	defer func(n int) { maxPoints = n }(maxPoints)
+	maxPoints = 10
+	cloud := make([][3]float32, maxPoints/2+1)
 	_, err = Decode(glb(t, gltfDoc(prim{positions: cloud, mode: gltf.PrimitivePoints}, prim{positions: cloud, mode: gltf.PrimitivePoints})), nil)
 	if !errors.Is(err, nt3dmesh.ErrTooManyTriangles) {
 		t.Fatalf("over the point cap: %v", err)

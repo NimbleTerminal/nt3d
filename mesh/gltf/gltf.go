@@ -154,7 +154,7 @@ type gltfDecoder struct {
 	textures       map[int]*nt3d.Texture // By texture index; nil when it failed.
 	warned         map[string]bool
 	visits         int
-	points         int // Across the model, within nt3d.MaxPoints.
+	points         int // Across the model, within maxPoints.
 	lines          int // Line ends across the model, within maxLineVertices.
 }
 
@@ -876,9 +876,12 @@ func (b *gltfBuilder) face(tri [3]uint32, back bool) error {
 	return nil
 }
 
+// maxPoints caps a model's points, across its primitives. Tests lower it.
+var maxPoints = nt3d.MaxPoints
+
 func (b *gltfBuilder) points(v []uint32) error {
-	if b.d.points += len(v); b.d.points > nt3d.MaxPoints {
-		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooManyTriangles, nt3d.MaxPoints)
+	if b.d.points += len(v); b.d.points > maxPoints {
+		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooManyTriangles, maxPoints)
 	}
 	b.start()
 	g := &b.piece.Geometry

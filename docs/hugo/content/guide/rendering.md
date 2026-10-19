@@ -164,8 +164,11 @@ Wireframe draws the existing sampled point centers (up to about 2,000), without
 ellipse shape or alpha. Start with **up to 10,000 splats on GPU** and **about
 1,000 in software** for interactive use; these are conservative starting
 budgets, not measured frame-rate guarantees. Coverage, resolution, and
-supersampling matter as much as count. The hard limit remains `MaxPoints`
-(500,000) and Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
+supersampling matter as much as count. The hard limit is the 128 MiB storage
+binding WebGPU guarantees, per buffer of one geometry: `nt3d.MaxGaussians(n)`
+gives the most splats with `n` SH coefficients each (699,050 at degree 3, 2.8
+million without SH), and a larger cloud is [split into slabs](../meshes/#staying-safe-with-big-or-hostile-files).
+Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
 GPU point/axis records use 72 bytes per splat including sort indices, plus
 12 bytes per RGB coefficient (192 extra bytes at degree 3). SH uses a separate
 buffer, keeping each storage buffer below WebGPU's 128 MiB baseline even at
