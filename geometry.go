@@ -26,6 +26,15 @@ type Vertex struct {
 	Color            color.RGBA
 }
 
+// Tangent is a vertex's tangent frame for normal mapping: the direction
+// in which the normal map's U grows along the surface, and W, +1 or -1,
+// its handedness: the bitangent is W × (normal × Direction), as glTF
+// defines it. A zero Direction perturbs nothing at that vertex.
+type Tangent struct {
+	Direction nt3dmath.Vec3
+	W         float32
+}
+
 type Box struct {
 	Min, Size nt3dmath.Vec3
 	Color     color.RGBA
@@ -60,7 +69,11 @@ type Geometry struct {
 	// BuildHeightfield sets this automatically; clear it if changing mesh topology.
 	WireGrid [2]int
 
-	NormalUV []UV      // Optional independent normal-map UVs; nil uses UV.
+	NormalUV []UV // Optional independent normal-map UVs; nil uses UV.
+	// Tangents optionally gives each vertex its tangent frame for normal
+	// mapping. Nil generates them when the geometry is set on a scene, or
+	// falls back to a per-triangle basis: see GenerateTangents.
+	Tangents []Tangent
 	UV       []UV      // One per vertex when textured.
 	Material *Material // Applies to indexed triangles only.
 	Points   []Point
@@ -148,8 +161,16 @@ func validateGeometry(g Geometry) error {
 	if len(g.NormalUV) != 0 && len(g.NormalUV) != len(g.Vertices) {
 		return fmt.Errorf("nt3d: normal UV length mismatch")
 	}
-	if len(g.NormalUV) > 0 && mapped(g) && len(g.Indices) > MaxMeshIndices/2 {
-		return fmt.Errorf("nt3d: independent normal UV mesh exceeds GPU binding limit")
+	if len(g.Tangents) != 0 && len(g.Tangents) != len(g.Vertices) {
+		return fmt.Errorf("nt3d: tangent length mismatch")
+	}
+	for _, t := range g.Tangents {
+		if !finiteVec(t.Direction) || t.W != 1 && t.W != -1 {
+			return fmt.Errorf("nt3d: invalid tangent")
+		}
+	}
+	if extended(g) && len(g.Indices) > MaxMeshIndices/2 {
+		return fmt.Errorf("nt3d: normal-mapped mesh with tangents or independent UVs exceeds GPU binding limit")
 	}
 	for _, uv := range g.NormalUV {
 		if !validFloat(uv.U, uv.V) {
@@ -236,6 +257,14 @@ func validateGeometry(g Geometry) error {
 		}
 	}
 	return nil
+}
+
+// extended reports whether a geometry's mesh needs the GPU's extension
+// record for each index, beside its primary one: a normal-mapped mesh
+// with tangents or independent normal UVs. Such meshes hold at most half
+// the triangles of others (MaxMeshTriangles/2).
+func extended(g Geometry) bool {
+	return g.Material != nil && g.Material.NormalMap != nil && (len(g.NormalUV) > 0 || len(g.Tangents) > 0)
 }
 
 // boxVertices uses outward counterclockwise faces, matching the GPU box shader.

@@ -68,6 +68,18 @@ type meshVertex struct {
 	Vertex
 	UV
 	normalUV UV
+	tangent  Tangent
+}
+
+// lerpTangent mixes two tangent frames: the direction linearly, the
+// handedness from the nearer end.
+func lerpTangent(a, b Tangent, t float64) Tangent {
+	mix := func(x, y float32) float32 { return float32(float64(x)*(1-t) + float64(y)*t) }
+	out := Tangent{Direction: nt3dmath.Vec3{X: mix(a.Direction.X, b.Direction.X), Y: mix(a.Direction.Y, b.Direction.Y), Z: mix(a.Direction.Z, b.Direction.Z)}, W: a.W}
+	if t >= .5 {
+		out.W = b.W
+	}
+	return out
 }
 
 func clipTriangleUV(a, b, c meshVertex, bounds nt3dmath.AABB) []meshVertex {
@@ -95,7 +107,7 @@ func clipTriangleUV(a, b, c meshVertex, bounds nt3dmath.AABB) []meshVertex {
 				if inside(previous) != inside(current) {
 					x, y := components(previous.Position)[axis], components(current.Position)[axis]
 					t := (float64(bound) - float64(x)) / (float64(y) - float64(x))
-					v := meshVertex{normalUV: UV{previous.normalUV.U + (current.normalUV.U-previous.normalUV.U)*float32(t), previous.normalUV.V + (current.normalUV.V-previous.normalUV.V)*float32(t)}, Vertex: interpolateVertex(previous.Vertex, current.Vertex, t), UV: UV{float32(float64(previous.U)*(1-t) + float64(current.U)*t), float32(float64(previous.V)*(1-t) + float64(current.V)*t)}}
+					v := meshVertex{tangent: lerpTangent(previous.tangent, current.tangent, t), normalUV: UV{previous.normalUV.U + (current.normalUV.U-previous.normalUV.U)*float32(t), previous.normalUV.V + (current.normalUV.V-previous.normalUV.V)*float32(t)}, Vertex: interpolateVertex(previous.Vertex, current.Vertex, t), UV: UV{float32(float64(previous.U)*(1-t) + float64(current.U)*t), float32(float64(previous.V)*(1-t) + float64(current.V)*t)}}
 					p := components(v.Position)
 					p[axis] = bound
 					v.Position = vector(p)
@@ -119,6 +131,7 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 	out.WireGrid = [2]int{}
 	out.UV = nil
 	out.NormalUV = nil
+	out.Tangents = nil
 	out.Arrows = nil
 	out.Points, out.Vertices, out.Indices, out.Boxes, out.Lines = nil, nil, nil, nil, nil
 	out.GaussianSH = nil
@@ -138,6 +151,9 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 			if len(g.NormalUV) > 0 {
 				v.normalUV = g.NormalUV[index]
 			}
+			if len(g.Tangents) > 0 {
+				v.tangent = g.Tangents[index]
+			}
 			return v
 		}
 		polygon := clipTriangleUV(at(g.Indices[i]), at(g.Indices[i+1]), at(g.Indices[i+2]), b)
@@ -146,6 +162,9 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 			out.Vertices = append(out.Vertices, v.Vertex)
 			if len(g.NormalUV) > 0 {
 				out.NormalUV = append(out.NormalUV, v.normalUV)
+			}
+			if len(g.Tangents) > 0 {
+				out.Tangents = append(out.Tangents, v.tangent)
 			}
 			if len(g.UV) > 0 {
 				out.UV = append(out.UV, v.UV)

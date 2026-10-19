@@ -33,9 +33,18 @@ func TransformGeometry(g Geometry, m nt3dmath.Mat4) (Geometry, error) {
 			g.Vertices[i].Normal = normals.Direction(v.Normal).Normalize()
 		}
 	}
+	for i, t := range g.Tangents {
+		if t.Direction != (nt3dmath.Vec3{}) {
+			g.Tangents[i].Direction = m.Direction(t.Direction).Normalize()
+		}
+	}
 	if m.Determinant3() < 0 {
 		for i := 0; i+2 < len(g.Indices); i += 3 {
 			g.Indices[i+1], g.Indices[i+2] = g.Indices[i+2], g.Indices[i+1]
+		}
+		// A reflection turns the frame's handedness.
+		for i := range g.Tangents {
+			g.Tangents[i].W = -g.Tangents[i].W
 		}
 	}
 	for i := range g.Points {
@@ -74,7 +83,7 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 		out.WireGrid = gs[0].WireGrid
 	}
 	var mesh, points *Geometry
-	uv := true
+	uv, tangents := true, true
 	normalUV := false
 	for i := range gs {
 		g := &gs[i]
@@ -94,6 +103,7 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 				out.Outline = g.Outline
 			}
 			uv = uv && len(g.UV) == len(g.Vertices)
+			tangents = tangents && len(g.Tangents) == len(g.Vertices)
 		}
 		if len(g.Lines) != 0 {
 			if out.LineWidth != 0 && lineWidth(g.LineWidth) != out.LineWidth {
@@ -135,6 +145,9 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 		}
 		if uv && mesh != nil {
 			out.UV = append(out.UV, g.UV...)
+		}
+		if tangents && mesh != nil {
+			out.Tangents = append(out.Tangents, g.Tangents...)
 		}
 		out.Points = append(out.Points, g.Points...)
 		out.GaussianSH = append(out.GaussianSH, g.GaussianSH...)
@@ -213,10 +226,11 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 		color            color.RGBA
 		uv               UV
 		normalUV         UV
+		tangent          Tangent
 	}
 	out := cloneGeometry(g)
 	out.WireGrid = [2]int{}
-	out.Vertices, out.UV, out.NormalUV = nil, nil, nil
+	out.Vertices, out.UV, out.NormalUV, out.Tangents = nil, nil, nil, nil
 	out.Indices = make([]uint32, 0, len(g.Indices))
 	seen := map[key]uint32{}
 	textured := len(g.UV) == len(g.Vertices) && len(g.UV) != 0
@@ -231,6 +245,9 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 			if len(g.NormalUV) > 0 {
 				k.normalUV = g.NormalUV[g.Indices[corner]]
 			}
+			if len(g.Tangents) > 0 {
+				k.tangent = g.Tangents[g.Indices[corner]]
+			}
 			index, ok := seen[k]
 			if !ok {
 				index = uint32(len(out.Vertices))
@@ -238,6 +255,9 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 				out.Vertices = append(out.Vertices, v)
 				if len(g.NormalUV) > 0 {
 					out.NormalUV = append(out.NormalUV, k.normalUV)
+				}
+				if len(g.Tangents) > 0 {
+					out.Tangents = append(out.Tangents, k.tangent)
 				}
 				if textured {
 					out.UV = append(out.UV, k.uv)
