@@ -299,3 +299,59 @@ func (t *Tree[T]) removeLeaf(leaf int32) {
 	t.release(parent)
 	t.refit(grand)
 }
+
+// Node describes one tree node to Ancestors and Walk: its depth (0 at the
+// root), its bounds, and, for a leaf, its ID.
+type Node struct {
+	Depth  int
+	Bounds nt3dmath.AABB
+	Leaf   bool
+	ID     ID
+}
+
+// Ancestors calls fn for the leaf's ancestors from the root down, ending with
+// the leaf itself, until fn returns false. It panics if id does not name a
+// leaf. It is meant for inspecting or drawing the tree.
+func (t *Tree[T]) Ancestors(id ID, fn func(Node) bool) {
+	leaf := t.leaf(id)
+	chain := make([]int32, 0, 32)
+	for i := leaf; i != null; i = t.nodes[i].parent {
+		chain = append(chain, i)
+	}
+	for depth := range chain {
+		i := chain[len(chain)-1-depth]
+		if !fn(t.describe(i, depth)) {
+			return
+		}
+	}
+}
+
+// Walk calls fn for every node in depth-first order, each parent before its
+// children, until fn returns false. It is meant for inspecting or drawing
+// the tree.
+func (t *Tree[T]) Walk(fn func(Node) bool) {
+	if t.root == null {
+		return
+	}
+	type entry struct{ index, depth int32 }
+	stack := make([]entry, 1, 64)
+	stack[0] = entry{t.root, 0}
+	for len(stack) > 0 {
+		e := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if !fn(t.describe(e.index, int(e.depth))) {
+			return
+		}
+		if n := &t.nodes[e.index]; n.child1 != null {
+			stack = append(stack, entry{n.child2, e.depth + 1}, entry{n.child1, e.depth + 1})
+		}
+	}
+}
+
+func (t *Tree[T]) describe(i int32, depth int) Node {
+	n := &t.nodes[i]
+	var b nt3dmath.AABB
+	b.Include(n.min)
+	b.Include(n.max)
+	return Node{Depth: depth, Bounds: b, Leaf: n.child1 == null, ID: ID(i)}
+}

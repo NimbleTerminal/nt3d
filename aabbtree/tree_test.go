@@ -296,3 +296,83 @@ func TestDeterministic(t *testing.T) {
 	}
 	check(t, a)
 }
+
+func TestAncestors(t *testing.T) {
+	tr := New[int]()
+	bs := boxes(200, 12)
+	ids := make([]ID, len(bs))
+	for i, b := range bs {
+		ids[i] = tr.Insert(b, i)
+	}
+	var path []Node
+	tr.Ancestors(ids[0], func(n Node) bool { path = append(path, n); return true })
+	if len(path) == 0 || len(path) > tr.Height() {
+		t.Fatalf("%d ancestors for height %d", len(path), tr.Height())
+	}
+	for i, n := range path {
+		if n.Depth != i {
+			t.Fatalf("node %d has depth %d", i, n.Depth)
+		}
+		if i > 0 {
+			outer, inner := path[i-1].Bounds, n.Bounds
+			if !overlaps(outer.Min, outer.Max, inner.Min, inner.Max) || outer.Min.X > inner.Min.X || outer.Max.X < inner.Max.X || outer.Min.Y > inner.Min.Y || outer.Max.Y < inner.Max.Y || outer.Min.Z > inner.Min.Z || outer.Max.Z < inner.Max.Z {
+				t.Fatalf("ancestor %d does not contain %d", i-1, i)
+			}
+		}
+		if n.Leaf != (i == len(path)-1) {
+			t.Fatalf("node %d: leaf %v", i, n.Leaf)
+		}
+	}
+	last := path[len(path)-1]
+	if last.ID != ids[0] || last.Bounds.Min != bs[0].Min || last.Bounds.Max != bs[0].Max {
+		t.Fatalf("last ancestor %+v", last)
+	}
+	calls := 0
+	tr.Ancestors(ids[0], func(Node) bool { calls++; return false })
+	if calls != 1 {
+		t.Fatalf("%d calls after returning false", calls)
+	}
+	tr.Remove(ids[1])
+	mustPanic(t, "unknown id", func() { tr.Ancestors(ids[1], func(Node) bool { return true }) })
+}
+
+func TestWalk(t *testing.T) {
+	New[int]().Walk(func(Node) bool { t.Fatal("empty tree visited"); return true })
+	tr := New[int]()
+	bs := boxes(200, 13)
+	ids := make([]ID, len(bs))
+	for i, b := range bs {
+		ids[i] = tr.Insert(b, i)
+	}
+	seen := map[ID]bool{}
+	visits, deepest := 0, 0
+	var parents []nt3dmath.AABB // Bounds of the current path by depth.
+	tr.Walk(func(n Node) bool {
+		visits++
+		deepest = max(deepest, n.Depth)
+		parents = append(parents[:n.Depth], n.Bounds)
+		for _, p := range parents[:n.Depth] {
+			if p.Min.X > n.Bounds.Min.X || p.Max.X < n.Bounds.Max.X || p.Min.Y > n.Bounds.Min.Y || p.Max.Y < n.Bounds.Max.Y || p.Min.Z > n.Bounds.Min.Z || p.Max.Z < n.Bounds.Max.Z {
+				t.Fatalf("an ancestor does not contain a node at depth %d", n.Depth)
+			}
+		}
+		if n.Leaf {
+			if seen[n.ID] {
+				t.Fatalf("leaf %d twice", n.ID)
+			}
+			seen[n.ID] = true
+			if tr.Value(n.ID) < 0 || tr.Value(n.ID) >= len(ids) || ids[tr.Value(n.ID)] != n.ID {
+				t.Fatalf("leaf %d carries value %d", n.ID, tr.Value(n.ID))
+			}
+		}
+		return true
+	})
+	if visits != 2*len(bs)-1 || len(seen) != len(bs) || deepest+1 != tr.Height() {
+		t.Fatalf("%d visits, %d leaves, deepest %d, height %d", visits, len(seen), deepest, tr.Height())
+	}
+	calls := 0
+	tr.Walk(func(Node) bool { calls++; return false })
+	if calls != 1 {
+		t.Fatalf("%d calls after returning false", calls)
+	}
+}
