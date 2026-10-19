@@ -3,6 +3,7 @@ package demo
 
 import (
 	_ "embed"
+	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/mesh"
 )
 
@@ -16,6 +17,14 @@ func (d *demo) setupGaussians() error {
 	if err != nil {
 		return err
 	}
-	_, err = d.scene.SetGeometry("Gaussian ring (576 splats)", m.Objects[0].Geometry)
-	return err
+	g := m.Objects[0].Geometry
+	id, err := d.scene.SetGeometry("Gaussian ring (576 splats)", g)
+	if err != nil {
+		return err
+	}
+	if err = d.scene.Reparent(id, d.group); err != nil {
+		return err
+	}
+	d.meshes = &meshScene{title: "Gaussian ring", hasSH: true, nodes: []nt3d.NodeID{id}, sources: []nt3d.Geometry{g}}
+	return nil
 }

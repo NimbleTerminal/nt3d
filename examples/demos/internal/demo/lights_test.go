@@ -283,3 +283,27 @@ func TestPointLightShadowsAndDropFloor(t *testing.T) {
 	}
 	t.Fatal("cube missing")
 }
+
+func TestSHLightRotationPreset(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.rotateSHLight(); err != nil {
+		t.Fatal(err)
+	}
+	a, err := d.scene.Frame(nt3d.DefaultCamera(), 64, 48)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.rotateSHLight(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := d.scene.Frame(nt3d.DefaultCamera(), 64, 48)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Environment == b.Environment || a.Environment.DiffuseSH() == b.Environment.DiffuseSH() {
+		t.Fatal("rotating SH changed no lighting")
+	}
+}

@@ -64,13 +64,21 @@ sky while disabling its light. `Frame.Environment` can also override the scene's
 choice for one frame. In a widget, set these fields in a frame decorator; use
 `SetLighting(nt3d.Lighting{})` to remove its default lights.
 
-This first version uses four first-order spherical-harmonic coefficients, with
-cosine convolution, for broad directional diffuse illumination. It is a cheap,
+Environment lighting uses nine degree-two RGB spherical-harmonic coefficients,
+with cosine convolution, for broad directional diffuse illumination. It is a cheap,
 low-frequency approximation: it does not reproduce small bright light sources,
 cast environment shadows, or provide glossy/specular reflections. Existing
 directional and point lights still provide highlights and mapped shadows.
 Unlit materials, points, lines, and overlays remain unlit. Prefer the default
 linear-light frames for physically meaningful color blending.
+
+Use `nt3d.NewSHEnvironment(radiance)` to build an environment directly from SH
+radiance coefficients, including a generated sky panorama. `Environment.DiffuseSH()`
+returns its nine convolved diffuse coefficients. The shared `nt3dsh` package
+provides projection, evaluation, and rotation; see
+[spherical-harmonic lighting](../rendering/#spherical-harmonic-lighting) for an
+example and coefficient conventions. Gaussian splats use SH for their own
+view-dependent color and remain unlit by the environment.
 
 The GPU uploads the panorama when it changes and draws one fullscreen triangle.
 Software samples the same sky and uses the same diffuse coefficients. The sky
@@ -80,6 +88,7 @@ backgrounds and contrasting default strokes. Fog keeps its existing behavior:
 set an explicit `Fog.Color` near the horizon color if you want it to meet the sky.
 
 Try `task lights` or the **Lights** web gallery: it starts with **sky and key**, then
-`l` selects **sky IBL**, **image IBL**, the original light rig, sun and sky, and lamp presets.
+`l` cycles through the environment and light presets, including **SH studio**.
+Press `h` to select the SH studio environment and rotate it in 30-degree steps.
 The image preset is an original generated warm/cool panorama, with no downloaded
 assets. `1`, `2`, and `3` compare GPU, software, and wireframe; drag to orbit.

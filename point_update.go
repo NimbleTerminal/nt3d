@@ -76,7 +76,12 @@ func validateFrameGeometry(g Geometry) error {
 	// Scene-owned arrays are immutable by contract. Public Geometry.Validate
 	// still checks every point; manually constructed frames have no certificate.
 	if u := g.pointUpdate; u != nil && len(g.Points) == len(u.points) && len(g.Points) > 0 && &g.Points[0] == &u.points[0] && g.PointStyle == u.style {
+		if err := validateGaussianSH(g); err != nil {
+			return err
+		}
 		g.Points = nil
+		g.GaussianSH = nil
+		g.GaussianSHTransform = nt3dmath.Mat4{}
 	}
 	return g.Validate()
 }

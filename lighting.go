@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 )
 
 // Lighting is how a frame's surfaces are lit: ambient light from all
@@ -105,12 +106,13 @@ func validLighting(l Lighting) bool {
 // working space (decoded when it works in linear light) times their
 // intensities, directions normalized.
 type lightRig struct {
-	environment [4][3]float32
-	shadow      *shadowMap
-	sky, ground [3]float32
-	lights      []rigLight
-	shadowLight int  // Index of the shadow-casting light, or -1.
-	points      bool // Whether any light is a point light, so shading needs surface positions.
+	environmentActive bool
+	environment       [9]nt3dsh.RGB
+	shadow            *shadowMap
+	sky, ground       [3]float32
+	lights            []rigLight
+	shadowLight       int  // Index of the shadow-casting light, or -1.
+	points            bool // Whether any light is a point light, so shading needs surface positions.
 }
 
 type rigLight struct {
@@ -130,6 +132,7 @@ func newRig(f *Frame) lightRig {
 	l := f.Lighting
 	r := lightRig{shadowLight: shadowCaster(l), sky: work(l.Ambient.Sky, l.Ambient.intensity()), ground: work(l.Ambient.Ground, l.Ambient.intensity())}
 	if f.Environment != nil && !f.EnvironmentBackgroundOnly {
+		r.environmentActive = true
 		strength := f.EnvironmentStrength
 		if strength == 0 {
 			strength = 1
@@ -182,9 +185,18 @@ func (r *lightRig) light(rgb *[3]float32, n, p nt3dmath.Vec3) { r.lightNormal(rg
 func (r *lightRig) lightNormal(rgb *[3]float32, n, p, geometric nt3dmath.Vec3) {
 	t := n.Z*.5 + .5
 	c0, c1, c2 := r.ground[0]+(r.sky[0]-r.ground[0])*t, r.ground[1]+(r.sky[1]-r.ground[1])*t, r.ground[2]+(r.sky[2]-r.ground[2])*t
-	c0 += max(0, r.environment[0][0]+r.environment[1][0]*n.X+r.environment[2][0]*n.Y+r.environment[3][0]*n.Z)
-	c1 += max(0, r.environment[0][1]+r.environment[1][1]*n.X+r.environment[2][1]*n.Y+r.environment[3][1]*n.Z)
-	c2 += max(0, r.environment[0][2]+r.environment[1][2]*n.X+r.environment[2][2]*n.Y+r.environment[3][2]*n.Z)
+	if r.environmentActive {
+		basis := nt3dsh.BasisUnit(2, n)
+		var indirect [3]float32
+		for i, c := range r.environment {
+			for k := range indirect {
+				indirect[k] += c[k] * basis[i]
+			}
+		}
+		c0 += max(0, indirect[0])
+		c1 += max(0, indirect[1])
+		c2 += max(0, indirect[2])
+	}
 	for i := range r.lights {
 		l := &r.lights[i]
 		var s float32

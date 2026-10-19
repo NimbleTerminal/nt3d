@@ -1,6 +1,6 @@
 @group(1) @binding(0) var shadowMap: texture_depth_2d_array;
 struct Light { a: vec4<f32>, b: vec4<f32> };
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,4>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,9>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
@@ -91,7 +91,11 @@ fn lightVisibility(i:u32,p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
 // ambient, from ground to sky as n turns up, and each light's diffuse.
 fn illuminate(n:vec3<f32>,p:vec3<f32>,geometric:vec3<f32>)->vec3<f32> {
  var c=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
- c+=max(vec3<f32>(0.0),u.environment[0].rgb+u.environment[1].rgb*n.x+u.environment[2].rgb*n.y+u.environment[3].rgb*n.z);
+ if u.viewport.w>0.5 {
+ var indirect=vec3<f32>(0.0);
+ for(var k=0u;k<9u;k++){indirect+=u.environment[k].rgb*nt3dSHBasis(k,n);}
+ c+=max(vec3<f32>(0.0),indirect);
+ }
  for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz))*lightVisibility(i,p,geometric,t.xyz));}
  return c;
 }
@@ -420,6 +424,7 @@ fn spriteSample(o:Out)->vec4<f32> {
 @vertex fn vs_gaussian(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
  let index=order[ii];let p=points[index];let axes=items[index];
  var o=pointOutput(vi,index);
+ if gaussianSH[9]>0.0 {o.color=vec4<f32>(gaussianSHColor(index,o.world),1.0);}
  let m=u.matrix*instances[0].world;
  let center=m*vec4<f32>(p.x,p.y,p.z,1.0);
  if center.w<=0.0 || center.z<0.0 || center.z>center.w {o.clip=vec4<f32>(2.0,2.0,2.0,1.0);return o;}
@@ -440,4 +445,20 @@ fn spriteSample(o:Out)->vec4<f32> {
 @fragment fn fs_gaussian(o:Out)->@location(0) vec4<f32> {
  let r2=dot(o.uv,o.uv);if r2>1.0 {discard;}
  return vec4<f32>(finish(o,o.color.rgb),min(0.99,o.cut)*exp(-4.5*r2));
+}
+
+// Header: 3x3 SH-from-local transform, coefficient stride/count, reserved.
+// Coefficients are packed RGB floats in point-major order.
+@group(0) @binding(5) var<storage,read> gaussianSH:array<f32>;
+fn gaussianSHColor(index:u32,world:vec3<f32>)->vec3<f32> {
+ var ray=u.forward.xyz;if u.eye.w>0.5 {ray=world-u.eye.xyz;}
+ let n=instances[0].normal;
+ let local=transpose(mat3x3<f32>(n[0].xyz,n[1].xyz,n[2].xyz))*ray;
+ let m=mat3x3<f32>(vec3<f32>(gaussianSH[0],gaussianSH[1],gaussianSH[2]),vec3<f32>(gaussianSH[3],gaussianSH[4],gaussianSH[5]),vec3<f32>(gaussianSH[6],gaussianSH[7],gaussianSH[8]));
+ let d=m*local;let rayLength=length(d);var direction=vec3<f32>(0.0);
+ if rayLength>0.0 {direction=d/rayLength;}
+ let stride=u32(gaussianSH[9]);let count=u32(gaussianSH[10]);
+ var rgb=vec3<f32>(0.5);
+ for(var k=0u;k<count;k++) {let at=12u+(index*stride+k)*3u;rgb+=nt3dSHBasis(k,direction)*vec3<f32>(gaussianSH[at],gaussianSH[at+1u],gaussianSH[at+2u]);}
+ return decode(max(rgb,vec3<f32>(0.0)));
 }

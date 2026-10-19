@@ -87,3 +87,47 @@ func TestGPUGaussianTransformsUpdatesAndClipping(t *testing.T) {
 		compare(f)
 	}
 }
+
+func TestGPUGaussianSHMatchesSoftware(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	for degree := 0; degree <= 3; degree++ {
+		for _, linear := range []bool{false, true} {
+			for _, perspective := range []bool{false, true} {
+				for _, dc := range []bool{false, true} {
+					s := NewScene()
+					g := shGaussianGeometry(degree)
+					g.PointStyle.SHDCOnly = dc
+					id, err := s.SetGeometry("SH", g)
+					check(t, err)
+					check(t, s.SetTransform(id, nt3dmath.RotationZ(.8).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 1.7, Y: .8, Z: 1}))))
+					camera := DefaultCamera()
+					if perspective {
+						camera.Projection = Perspective
+					}
+					f, err := s.Frame(camera, 96, 80)
+					check(t, err)
+					f.Linear = linear
+					f.Supersample = 2
+					gpu, err := r.Render(f)
+					check(t, err)
+					sw := softwareRender(f)
+					off := 0
+					for y := range f.Height {
+						for x := range f.Width {
+							if !closeRGB(at(gpu, x, y), at(sw, x, y), 4) {
+								if off < 3 {
+									t.Logf("at %d,%d GPU %v SW %v", x, y, at(gpu, x, y), at(sw, x, y))
+								}
+								off++
+							}
+						}
+					}
+					if off > 8 {
+						t.Fatalf("degree %d linear %v perspective %v DC %v: %d differing pixels", degree, linear, perspective, dc, off)
+					}
+				}
+			}
+		}
+	}
+}

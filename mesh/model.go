@@ -106,6 +106,16 @@ func (o *Options) orient(m *Model) {
 	turn := func(v nt3dmath.Vec3) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v.X, Y: -v.Z, Z: v.Y} }
 	for i := range m.Objects {
 		g := &m.Objects[i].Geometry
+		if len(g.GaussianSH) > 0 {
+			basis := g.GaussianSHTransform
+			if basis == (nt3dmath.Mat4{}) {
+				basis = nt3dmath.Identity()
+			}
+			// Inverse of the Y-up to Z-up rotation: (x,y,z) -> (x,z,-y).
+			inverse := nt3dmath.Identity()
+			inverse[5], inverse[6], inverse[9], inverse[10] = 0, -1, 1, 0
+			g.GaussianSHTransform = basis.Mul(inverse)
+		}
 		for j := range g.Vertices {
 			g.Vertices[j].Position, g.Vertices[j].Normal = turn(g.Vertices[j].Position), turn(g.Vertices[j].Normal)
 		}

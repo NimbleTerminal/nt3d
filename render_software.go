@@ -421,6 +421,8 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 	// keeps about its brightness.
 	drawPoints := func(g *Geometry, inst Instance, m *nt3dmath.Mat4) {
 		style := g.PointStyle
+		inverse, _ := inst.World.InverseAffine()
+		shFromWorld := gaussianSHMatrix(g).Mul(inverse)
 		step := sampled(len(g.Points), 10000)
 		if style.Shape == GaussianPoint {
 			step = 1
@@ -449,6 +451,12 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			distance := f.eyeDistance(inst.World.Point(p.Position))
 			c := p.Color
 			rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
+			if len(g.GaussianSH) > 0 {
+				rgb = f.gaussianColor(g, i, inst.World, shFromWorld)
+				for k := range rgb {
+					rgb[k] *= 255
+				}
+			}
 			alpha := min(1, float32(c.A)/255*float32(step))
 			if style.Shape == GaussianPoint {
 				alpha = min(.99, alpha)

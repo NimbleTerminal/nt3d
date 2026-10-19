@@ -24,6 +24,7 @@ type geometryKey struct {
 // gpuGeometry is a geometry's uploaded primitives and the instance sets that
 // draw them: one set for each draw of the frame, reused across frames.
 type gpuGeometry struct {
+	sh            gpuBatch
 	sprite        gpuBatch
 	pointRevision uint64
 	skin          *gpuSkin
@@ -38,6 +39,7 @@ type gpuGeometry struct {
 func (n *gpuGeometry) release() {
 	n.skin.release()
 	releaseBatch(n.sprite)
+	releaseBatch(n.sh)
 	for _, b := range n.batches {
 		releaseBatch(b)
 	}
@@ -167,6 +169,10 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			if geom.pointUpdate != nil {
 				node.pointRevision = geom.pointUpdate.revision
 			}
+			if err := g.uploadData(dev, &node.sh, gaussianSHData(&geom), 4); err != nil {
+				node.release()
+				return err
+			}
 			if err := g.uploadData(dev, &node.sprite, spriteData(geom.PointStyle, geom.Points), 48); err != nil {
 				node.release()
 				return err
@@ -282,6 +288,11 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 				order, orderSize = node.order, 4*uint64(b.count)
 			}
 			layout, entries = g.pointBindLayout, []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: g.zeros, Size: 48}, {Binding: 2, Buffer: next.transform, Size: size}, {Binding: 3, Buffer: b.buffer, Size: b.size}, {Binding: 4, Buffer: order, Size: orderSize}}
+			sh, shSize := g.zeros, uint64(48)
+			if node.sh.buffer != nil {
+				sh, shSize = node.sh.buffer, node.sh.size
+			}
+			entries = append(entries, wgpu.BindGroupEntry{Binding: 5, Buffer: sh, Size: shSize})
 			if node.sprite.buffer != nil {
 				entries[1] = wgpu.BindGroupEntry{Binding: 1, Buffer: node.sprite.buffer, Size: node.sprite.size}
 			}
@@ -536,4 +547,25 @@ func dropShadowData(g *Geometry) []byte {
 		fixed = 1
 	}
 	return appendFloats(nil, a.X, a.Y, a.Z, g.DropShadow.Strength, b.X, b.Y, b.Z, g.DropShadow.Radius, g.DropShadow.FloorZ, fixed, 0, 0)
+}
+
+// SH storage is separate from point/axis records so ordinary points pay no
+// extra GPU memory and 500k degree-three splats stay below 128 MiB per buffer.
+func gaussianSHData(g *Geometry) []byte {
+	if len(g.GaussianSH) == 0 {
+		return nil
+	}
+	data := make([]byte, 0, 48+len(g.GaussianSH)*12)
+	m := gaussianSHMatrix(g)
+	data = appendFloats(data, m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10])
+	count := gaussianSHCount(g)
+	active := count
+	if g.PointStyle.SHDCOnly {
+		active = 1
+	}
+	data = appendFloats(data, float32(count), float32(active), 0)
+	for _, c := range g.GaussianSH {
+		data = appendFloats(data, c[:]...)
+	}
+	return data
 }

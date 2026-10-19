@@ -12,7 +12,7 @@ move to Done with their commit; git history has the details.
 
 ## Rendering
 
-- [ ] **Gaussian splatting follow-ups**: higher SH, GPU sorting, compressed formats,
+- [ ] **Gaussian splatting follow-ups**: GPU sorting, compressed formats,
   large-scene performance, and ordering across overlapping geometry.
 
 - [ ] **Normal-map follow-ups** — authored tangent frames and MikkTSpace-compatible
@@ -60,6 +60,12 @@ move to Done with their commit; git history has the details.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **Shared spherical harmonics**: `nt3dsh` provides degree 0–3 real SH,
+  projection, rotation, diffuse convolution, and a shared Go/WGSL basis.
+  Gaussian PLY retains full view-dependent SH; image and analytic environments
+  use nine-coefficient diffuse lighting. Model-viewer DC/full-SH controls and
+  a rotatable SH studio lighting preset exercise both uses.
 
 - **3D Gaussian splatting (first version)**: standard uncompressed 3DGS PLY
   with DC color, anisotropic GPU ellipses using the point pipeline and CPU radix

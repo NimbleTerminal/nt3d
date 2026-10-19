@@ -20,9 +20,11 @@ type PointStyle struct {
 	Columns, Rows uint32
 	// Frame is added to each Point.Frame, wrapping through row-major cells.
 	Frame uint32
-	Shape PointShape
-	Units PointUnits
-	Blend PointBlend
+	// SHDCOnly disables directional coefficients without discarding them.
+	SHDCOnly bool
+	Shape    PointShape
+	Units    PointUnits
+	Blend    PointBlend
 }
 
 // PointShape is the shape of a point's disc.

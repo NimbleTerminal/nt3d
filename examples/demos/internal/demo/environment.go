@@ -6,6 +6,8 @@ import (
 	"image/color"
 	"math"
 	"nimbleterminal.dev/nt3d"
+	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 	"sync"
 )
 
@@ -46,4 +48,29 @@ var reliefNormalMap = sync.OnceValue(func() *nt3d.Texture {
 	}
 	tex, _ := nt3d.NewNormalMap(img)
 	return tex
+})
+
+// Twelve rotations share a single projected analytic studio environment.
+// The lights demo changes only the environment pointer when h is pressed.
+var shEnvironments = sync.OnceValue(func() []*nt3d.Environment {
+	radiance, err := nt3dsh.Project(2, func(d nt3dmath.Vec3) nt3dsh.RGB {
+		warm := max(float32(0), d.X) * max(float32(0), d.X)
+		cool := max(float32(0), -d.Y) * max(float32(0), -d.Y)
+		return nt3dsh.RGB{.12 + 1.5*warm, .12 + .65*warm + .3*cool, .16 + .15*warm + 1.5*cool}
+	})
+	if err != nil {
+		panic(err)
+	}
+	out := make([]*nt3d.Environment, 12)
+	for i := range out {
+		rotated, err := nt3dsh.Rotate(radiance, nt3dmath.RotationZ(float64(i)*math.Pi/6))
+		if err != nil {
+			panic(err)
+		}
+		out[i], err = nt3d.NewSHEnvironment(rotated)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return out
 })

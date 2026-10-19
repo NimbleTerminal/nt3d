@@ -24,6 +24,9 @@ func TransformGeometry(g Geometry, m nt3dmath.Mat4) (Geometry, error) {
 	}
 	normals := inverse.Transpose()
 	g = cloneGeometry(g)
+	if len(g.GaussianSH) > 0 {
+		g.GaussianSHTransform = gaussianSHMatrix(&g).Mul(inverse)
+	}
 	for i, v := range g.Vertices {
 		g.Vertices[i].Position = m.Point(v.Position)
 		if v.Normal != (nt3dmath.Vec3{}) {
@@ -99,8 +102,8 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 			out.LineWidth = lineWidth(g.LineWidth)
 		}
 		if len(g.Points) != 0 {
-			if points != nil && g.PointStyle != points.PointStyle {
-				return Geometry{}, errors.New("nt3d: cannot merge points of different styles")
+			if points != nil && (g.PointStyle != points.PointStyle || gaussianSHCount(g) != gaussianSHCount(points) || gaussianSHMatrix(g) != gaussianSHMatrix(points)) {
+				return Geometry{}, errors.New("nt3d: cannot merge points with different styles or SH layouts/frames")
 			}
 			if points == nil {
 				points = g
@@ -115,6 +118,7 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	}
 	if points != nil {
 		out.PointStyle = points.PointStyle
+		out.GaussianSHTransform = points.GaussianSHTransform
 	}
 	for _, g := range gs {
 		base := uint32(len(out.Vertices))
@@ -133,6 +137,7 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 			out.UV = append(out.UV, g.UV...)
 		}
 		out.Points = append(out.Points, g.Points...)
+		out.GaussianSH = append(out.GaussianSH, g.GaussianSH...)
 		out.Boxes = append(out.Boxes, g.Boxes...)
 		out.Lines = append(out.Lines, g.Lines...)
 		out.Arrows = append(out.Arrows, g.Arrows...)

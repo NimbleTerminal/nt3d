@@ -115,7 +115,7 @@ id, err := scene.SetGeometry("splats", model.Objects[0].Geometry)
 Try `task gaussians`, or the **Gaussian splatting** gallery demo. Its original,
 CC0 576-splat ring is embedded from `examples/demos/internal/demo/models/gaussian-ring.ply`.
 Drag to orbit, scroll to zoom, and press `1`, `2`, or `3` for GPU, software,
-or wireframe. The same PLY can be opened with `task meshes -- path/to/scene.ply`.
+or wireframe. Press `h` to compare DC and full SH color. The same PLY can be opened with `task meshes -- path/to/scene.ply`.
 
 ### Supported PLY subset
 
@@ -124,11 +124,15 @@ ASCII, binary little-endian, and binary big-endian files are accepted. One
 `opacity`, and `f_dc_0..2` properties, in any order. Following the
 [reference 3DGS format](https://github.com/graphdeco-inria/gaussian-splatting/blob/main/scene/gaussian_model.py),
 scales are exponentiated, opacity uses a sigmoid, and the w,x,y,z quaternion
-is normalized. DC color is `0.5 + 0.2820947918 * f_dc`, clamped and stored as
-sRGB8; opacity is also quantized to eight bits. Normals and other scalar
-properties are ignored. Higher SH coefficients produce a warning and are
-ignored. Compressed PLY, `.splat`, exposure metadata, and view-dependent SH
-are not supported. Invalid/nonfinite attributes, zero quaternions, missing
+is normalized. SH degree 0 through 3 is supported: `f_dc_0..2` plus zero,
+9, 24, or 45 contiguous `f_rest_*` properties. PLY's channel-major values
+are converted to point-major RGB coefficients. The renderer evaluates them
+in the local camera-to-splat direction and adds 0.5; negative colors are
+clamped before the normal sRGB/linear conversion. Orthographic cameras use
+parallel rays. Coefficients remain float32; opacity is quantized to eight
+bits. Wireframe uses clamped sRGB8 DC color. Normals and unrelated scalar
+properties are ignored. Incomplete SH bands, nonfinite coefficients,
+compressed PLY, `.splat`, and exposure metadata are not supported. Invalid/nonfinite attributes, zero quaternions, missing
 properties, and activated scales outside `[1e-20, 1e6]` are rejected.
 
 ### Rendering and limits
@@ -147,7 +151,8 @@ GPU and software project covariance with the perspective/orthographic
 Jacobian and evaluate `exp(-r²/2)` on three-sigma ellipses. Both use a 0.3
 pixel-squared variance floor, a 256 logical-pixel maximum support radius,
 and a 0.99 peak opacity cap. They depth-test against opaque geometry without
-writing depth. Splats are self-colored/unlit, receive fog, and use the normal
+writing depth. Splats retain captured, view-dependent appearance; these SH coefficients are
+not relightable materials. Splats are self-colored/unlit, receive fog, and use the normal
 linear-color and supersampling paths. They do not cast lighting shadows.
 Centers outside the near/far planes are discarded; large splats can therefore
 pop when their centers cross a plane. This is a first-order projection and
@@ -161,6 +166,62 @@ ellipse shape or alpha. Start with **up to 10,000 splats on GPU** and **about
 budgets, not measured frame-rate guarantees. Coverage, resolution, and
 supersampling matter as much as count. The hard limit remains `MaxPoints`
 (500,000) and Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
-GPU records use 72 bytes per splat including sort indices; CPU scene snapshots,
-axes, sort scratch, and the input file require additional memory. Higher SH,
-GPU sorting, compressed formats, and large-scene optimization are deferred.
+GPU point/axis records use 72 bytes per splat including sort indices, plus
+12 bytes per RGB coefficient (192 extra bytes at degree 3). SH uses a separate
+buffer, keeping each storage buffer below WebGPU's 128 MiB baseline even at
+the hard count limit. CPU scene snapshots, coefficients, sort scratch, and
+the input file require additional memory. GPU sorting, compressed formats,
+and large-scene optimization are deferred.
+
+`Geometry.GaussianSH` is an optional flat slice with 1, 4, 9, or 16 RGB
+coefficients per point. Nil keeps ordinary point color behavior.
+`PointStyle.SHDCOnly` evaluates only the first coefficient, making comparisons
+possible without discarding data. Point updates preserve coefficients; use
+`SetNodeGeometry` to replace them. `TransformGeometry` preserves the original
+SH coordinate frame even under nonuniform scale. `MergeGeometry` requires
+matching coefficient counts and SH coordinate frames. Coordinate conventions
+are shared with `nt3dsh`; point color alpha remains the opacity.
+
+## Spherical-harmonic lighting
+
+The `nimbleterminal.dev/nt3d/sh` package (named `nt3dsh`) provides a shared
+orthonormal real-SH basis through degree 3, projection, evaluation, rotation,
+and diffuse convolution. `WGSL()` generates a shader evaluator from the same
+polynomial definitions used by Go. RGB coefficients are color-space agnostic;
+use **linear radiance** for lighting. No gamma conversion, clamping, or 3DGS
+0.5 offset is implicit in this math package.
+
+All image environments now use degree-two diffuse SH (nine RGB coefficients).
+`NewSHEnvironment` also accepts coefficients directly, with an automatically
+generated sky. Diffuse illumination retains HDR coefficients; the generated
+sky is a clamped 128×64 sRGB image. `Environment.DiffuseSH` returns a copy of
+the convolved coefficients for inspection or use elsewhere.
+
+```go
+radiance, err := nt3dsh.Project(2, func(d nt3dmath.Vec3) nt3dsh.RGB {
+    warm := max(float32(0), d.X)
+    return nt3dsh.RGB{0.1 + warm, 0.1 + 0.5*warm, 0.2}
+})
+// Handle err. Rotate the incoming lighting around world Z.
+rotated, err := nt3dsh.Rotate(radiance, nt3dmath.RotationZ(math.Pi/4))
+// Handle err; NewSHEnvironment applies diffuse convolution itself.
+environment, err := nt3d.NewSHEnvironment(rotated)
+// Handle err, then install on the scene.
+scene.SetEnvironment(environment)
+```
+
+`nt3dsh.Diffuse` applies the clamped-cosine band factors divided by pi, so a
+constant unit environment gives unit diffuse lighting. Evaluate the result
+at a surface normal and multiply by albedo. It models broad diffuse lighting,
+not sharp specular reflections, visibility, or shadows. Direct lights and
+shadow maps remain available alongside it. SH can represent a probe's
+lighting, but probe placement, baking, interpolation, and spatial occlusion
+are not implemented.
+
+Run `task lights` and press `h` to select the **SH studio** preset and rotate
+it by 30° per press. The ordinary surfaces respond to the rotated environment.
+Run `task meshes -- --up=-y /tmp/blackjacket_geofront.ply` for the downloaded
+jacket, and press `h` to compare its captured full-SH appearance with DC-only.
+For snapshots, `--sh-dc` selects the DC-only version. The two uses share the
+basis math but evaluate different quantities: viewing direction for splats,
+surface normal for diffuse illumination.

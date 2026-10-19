@@ -9,6 +9,7 @@ import (
 	"math"
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 	"strings"
 )
 
@@ -30,7 +31,7 @@ func gaussianPLY(elements []plyElement) bool {
 // DecodeGaussianPLY reads uncompressed 3DGS PLY (ASCII or either binary byte
 // order). Scales are logarithms, opacity is a logit, and rot_0..3 is a wxyz
 // quaternion. DC spherical harmonics become clamped sRGB8 point colors;
-// higher harmonics are ignored with a warning. DecodePLY detects this subset.
+// degrees 0 through 3 are retained for view-dependent color. DecodePLY detects this subset.
 func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 	if int64(len(data)) > o.maxBytes() {
 		return nil, fmt.Errorf("nt3dmesh: Gaussian PLY exceeds byte limit")
@@ -74,13 +75,26 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 				return nil, r.errorf("duplicate or list vertex property %q", p.name)
 			}
 			has[p.name] = true
-			if strings.HasPrefix(p.name, "f_rest_") && len(m.Warnings) == 0 {
-				m.Warnings = append(m.Warnings, "Gaussian PLY: higher SH ignored; rendering DC color only")
-			}
+
 		}
 		for _, name := range gaussianProperties {
 			if !has[name] {
 				return nil, r.errorf("Gaussian PLY lacks %s", name)
+			}
+		}
+		rest := 0
+		for name := range has {
+			if strings.HasPrefix(name, "f_rest_") {
+				rest++
+			}
+		}
+		count := 1 + rest/3
+		if rest%3 != 0 || nt3dsh.Degree(count) < 0 {
+			return nil, r.errorf("Gaussian SH needs 0, 9, 24, or 45 f_rest properties")
+		}
+		for j := 0; j < rest; j++ {
+			if !has[fmt.Sprintf("f_rest_%d", j)] {
+				return nil, r.errorf("Gaussian SH properties must be contiguous from f_rest_0")
 			}
 		}
 		values, lists := map[string]float64{}, map[string][]float64{}
@@ -120,6 +134,17 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 				return uint8(math.Round(255 * max(0, min(1, .5+.28209479177387814*values[fmt.Sprintf("f_dc_%d", k)]))))
 			}
 			p.Color = color.RGBA{R: channel(0), G: channel(1), B: channel(2), A: uint8(math.Round(255 / (1 + math.Exp(-values["opacity"]))))}
+			coefficients := make([]nt3dsh.RGB, count)
+			for channel := 0; channel < 3; channel++ {
+				coefficients[0][channel] = float32(values[fmt.Sprintf("f_dc_%d", channel)])
+				for j := 1; j < count; j++ {
+					coefficients[j][channel] = float32(values[fmt.Sprintf("f_rest_%d", channel*(count-1)+j-1)])
+				}
+			}
+			if !nt3dsh.Valid(coefficients) {
+				return nil, r.errorf("nonfinite Gaussian SH coefficient")
+			}
+			g.GaussianSH = append(g.GaussianSH, coefficients...)
 			g.Points = append(g.Points, p)
 		}
 	}

@@ -52,3 +52,8 @@ The guide uses the [hugo-book](https://github.com/alex-shpak/hugo-book) theme (M
 3D Gaussian splatting: run `task gaussians` for an embedded 3DGS PLY sample.
 See the [rendering guide](docs/hugo/content/guide/rendering.md#3d-gaussian-splatting)
 for the supported PLY attributes, renderer behavior, and practical limits.
+
+Spherical harmonics live in `nimbleterminal.dev/nt3d/sh` (`nt3dsh`):
+shared Go/WGSL basis math, full degree-3 Gaussian appearance, and degree-2
+diffuse environment lighting. In `task lights`, press `h` to rotate an SH sky;
+in the Gaussian/model viewer, press `h` to compare DC and full SH.

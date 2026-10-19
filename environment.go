@@ -2,10 +2,12 @@
 package nt3d
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 )
 
 // Environment is an immutable distant sky and diffuse image-based light.
@@ -14,9 +16,8 @@ import (
 type Environment struct {
 	texture  *Texture
 	panorama *image.NRGBA
-	// First-order spherical harmonics after cosine convolution, divided by pi:
-	// constant plus X, Y, Z. A constant white image produces unit diffuse light.
-	diffuse [4][3]float32
+	// Degree-two diffuse SH, cosine-convolved and divided by pi.
+	diffuse [9]nt3dsh.RGB
 }
 
 // NewEnvironment snapshots an sRGB equirectangular image (normally 2:1).
@@ -32,23 +33,14 @@ func NewEnvironment(src image.Image) (*Environment, error) {
 		t.pixels[i] = 255
 	}
 	e := &Environment{texture: t, panorama: &image.NRGBA{Pix: t.pixels, Stride: t.width * 4, Rect: image.Rect(0, 0, t.width, t.height)}}
-	// Fixed equal-area quadrature bounds setup cost independently of image size.
-	const nx, ny = 64, 32
-	for y := 0; y < ny; y++ {
-		z := 1 - 2*(float64(y)+.5)/ny
-		r := math.Sqrt(1 - z*z)
-		for x := 0; x < nx; x++ {
-			phi := ((float64(x)+.5)/nx - .5) * 2 * math.Pi
-			d := nt3dmath.Vec3{X: float32(r * math.Cos(phi)), Y: float32(r * math.Sin(phi)), Z: float32(z)}
-			c := e.sample(d)
-			weights := [4]float32{1, 2 * d.X, 2 * d.Y, 2 * d.Z}
-			for j, w := range weights {
-				for k := range 3 {
-					e.diffuse[j][k] += c[k] * w / (nx * ny)
-				}
-			}
-		}
+	radiance, err := nt3dsh.Project(2, func(d nt3dmath.Vec3) nt3dsh.RGB {
+		c := e.sample(d)
+		return nt3dsh.RGB{c[0], c[1], c[2]}
+	})
+	if err != nil {
+		return nil, err
 	}
+	e.diffuse = nt3dsh.Diffuse(radiance)
 	return e, nil
 }
 
@@ -124,3 +116,34 @@ func (e *Environment) pixel(d nt3dmath.Vec3) color.RGBA {
 	c := e.sample(d)
 	return color.RGBA{encode8(c[0]), encode8(c[1]), encode8(c[2]), 255}
 }
+
+// NewSHEnvironment creates a sky and diffuse illumination from 1, 4, 9,
+// or 16 linear-radiance RGB coefficients in nt3dsh ordering. It snapshots
+// the coefficients. Diffuse lighting retains HDR values; the generated
+// 128x64 sRGB sky clamps values to [0,1], like other image environments.
+// Coefficients do not include the 3DGS 0.5 offset.
+func NewSHEnvironment(radiance []nt3dsh.RGB) (*Environment, error) {
+	if !nt3dsh.Valid(radiance) {
+		return nil, fmt.Errorf("nt3d: invalid SH environment")
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, 128, 64))
+	for y := 0; y < 64; y++ {
+		theta := (float64(y) + .5) * math.Pi / 64
+		z := math.Cos(theta)
+		r := math.Sin(theta)
+		for x := 0; x < 128; x++ {
+			phi := ((float64(x)+.5)/128 - .5) * 2 * math.Pi
+			c := nt3dsh.Evaluate(radiance, nt3dmath.Vec3{X: float32(r * math.Cos(phi)), Y: float32(r * math.Sin(phi)), Z: float32(z)})
+			img.SetNRGBA(x, y, color.NRGBA{R: encode8(c[0]), G: encode8(c[1]), B: encode8(c[2]), A: 255})
+		}
+	}
+	e, err := NewEnvironment(img)
+	if err != nil {
+		return nil, err
+	}
+	e.diffuse = nt3dsh.Diffuse(radiance)
+	return e, nil
+}
+
+// DiffuseSH returns a copy of the degree-two, cosine-convolved lighting.
+func (e *Environment) DiffuseSH() [9]nt3dsh.RGB { return e.diffuse }

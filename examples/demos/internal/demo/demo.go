@@ -240,6 +240,17 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			d.animate = !d.animate
 			d.lastPhase = time.Now()
+		case "h":
+			if d.meshes != nil && d.meshes.hasSH {
+				d.meshes.dcOnly = !d.meshes.dcOnly
+				err = d.rebuildMeshes()
+				break
+			}
+			if d.lights != nil {
+				err = d.rotateSHLight()
+				break
+			}
+			return d, nil
 		case "m":
 			if d.mipmaps != nil {
 				err = d.cycleFiltering()
@@ -588,6 +599,7 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	procedural := flag.Bool("procedural", proceduralDefault, "generate plasma textures with a GPU shader (CPU image fallback)")
 	animate := flag.Bool("animate", true, "animate the scene or procedural phase (a toggles pause)")
 	mode := flag.String("render-mode", "gpu", "gpu, software, or wireframe")
+	shDC := flag.Bool("sh-dc", false, "show only DC Gaussian color (h toggles full SH)")
 	snapshot := flag.String("snapshot", "", "write a PNG without opening a terminal")
 	duration := flag.Duration("duration", 0, "exit after a duration")
 	medium := flag.String("medium", "auto", "auto, direct, or shm")
@@ -700,6 +712,12 @@ func run(proceduralDefault bool, kind sceneMode) error {
 			return err
 		}
 		if err = d.scene.Reparent(marker, d.group); err != nil {
+			return err
+		}
+	}
+	if d.meshes != nil && *shDC {
+		d.meshes.dcOnly = true
+		if err = d.rebuildMeshes(); err != nil {
 			return err
 		}
 	}

@@ -63,7 +63,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.particles != nil:
 		return "particles", keys{[]key.Binding{bind("b", "b", "blend"), bind("s", "s", "shape"), bind("t", "t", "sprites"), bind("n", "n", "count"), bind("a", "a", "pause")}}
 	case d.lights != nil:
-		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("f", "f", "falloff"), bind("e", "e", "highlights"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("b", "b", "lift"), bind("a", "a", "pause")}}
+		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("h", "h", "SH rotation"), bind("e", "e", "highlights"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("b", "b", "lift"), bind("a", "a", "pause")}}
 	case d.forest != nil:
 		return "forest", keys{[]key.Binding{bind("i", "i", "instancing"), bind("n", "n", "trees"), bind("s", "s", "shadows"), bind("a", "a", "wind")}}
 	case d.mipmaps != nil:
@@ -75,6 +75,9 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.models != nil:
 		return "models", keys{[]key.Binding{bind("[", "[", "previous"), bind("]", "]", "next"), bind("s", "s", "normals"), bind("n", "n", "turn")}}
 	case d.meshes != nil:
+		if d.meshes.hasSH {
+			return "splats", keys{[]key.Binding{bind("h", "h", "DC/full SH"), bind("n", "n", "turn")}}
+		}
 		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("e", "e", "highlights"), bind("b", "b", "outlines"), bind("n", "n", "turn")}}
 	case d.dynamic != nil:
 		return "dynamic", keys{[]key.Binding{bind("a", "a", "pause"), bind("m", "m", "deform"), bind("b", "b", "add"), bind("x", "x", "remove"), bind("v", "v", "visibility")}}

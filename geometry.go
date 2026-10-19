@@ -7,6 +7,7 @@ import (
 	"image/color"
 
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 )
 
 type Point struct {
@@ -63,6 +64,14 @@ type Geometry struct {
 	UV       []UV      // One per vertex when textured.
 	Material *Material // Applies to indexed triangles only.
 	Points   []Point
+	// GaussianSH optionally holds 1, 4, 9, or 16 RGB coefficients per point,
+	// point-major, in nt3dsh ordering. PLY coefficients include DC, but not the
+	// 0.5 display offset. Nil uses Point.Color. Alpha remains Point.Color.A.
+	GaussianSH []nt3dsh.RGB
+	// GaussianSHTransform maps local view rays to the SH coordinate frame.
+	// Zero means identity. TransformGeometry preserves this frame exactly,
+	// including under nonuniform scale, without reprojecting coefficients.
+	GaussianSHTransform nt3dmath.Mat4
 	// PointStyle is how Points are drawn: their shape, the units of their
 	// radii, and how they blend.
 	PointStyle PointStyle
@@ -153,6 +162,9 @@ func validateGeometry(g Geometry) error {
 		}
 	}
 
+	if err := validateGaussianSH(g); err != nil {
+		return err
+	}
 	if err := validPointStyle(g.PointStyle); err != nil {
 		return err
 	}

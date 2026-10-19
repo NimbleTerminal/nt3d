@@ -121,9 +121,12 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 	out.NormalUV = nil
 	out.Arrows = nil
 	out.Points, out.Vertices, out.Indices, out.Boxes, out.Lines = nil, nil, nil, nil, nil
-	for _, p := range g.Points {
+	out.GaussianSH = nil
+	count := gaussianSHCount(&g)
+	for i, p := range g.Points {
 		if contains(b, p.Position) {
 			out.Points = append(out.Points, p)
+			out.GaussianSH = append(out.GaussianSH, g.GaussianSH[i*count:(i+1)*count]...)
 		}
 	}
 	for i := 0; i+2 < len(g.Indices); i += 3 {

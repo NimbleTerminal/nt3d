@@ -15,15 +15,16 @@ import (
 func LightsMain() { mainDemo(true, sceneLights) }
 
 type lightScene struct {
-	lift      bool
-	normal    bool
-	shadows   shadowMode
-	preset    int  // Index into lightPresets.
-	ranged    bool // Point lights fade to nothing at their range, rather than with distance alone.
-	dull      bool // The shapes without highlights.
-	t, phase  float64
-	lamps     [nt3d.MaxLights]nt3d.NodeID // A small glowing sphere at each point light.
-	lampColor [nt3d.MaxLights]color.RGBA  // What each lamp's geometry is colored, to rebuild it only on change.
+	shRotation int
+	lift       bool
+	normal     bool
+	shadows    shadowMode
+	preset     int  // Index into lightPresets.
+	ranged     bool // Point lights fade to nothing at their range, rather than with distance alone.
+	dull       bool // The shapes without highlights.
+	t, phase   float64
+	lamps      [nt3d.MaxLights]nt3d.NodeID // A small glowing sphere at each point light.
+	lampColor  [nt3d.MaxLights]color.RGBA  // What each lamp's geometry is colored, to rebuild it only on change.
 }
 
 // lamp is a point light circling the scene's middle.
@@ -70,6 +71,7 @@ var lightPresets = []lightPreset{
 	{name: "sky and key", environment: dayEnvironment, sun: &nt3d.Light{Direction: nt3dmath.Vec3{X: 1, Y: -1, Z: 2}, Intensity: .65}},
 	{name: "sky IBL", environment: dayEnvironment},
 	{name: "image IBL", environment: imageEnvironment},
+	{name: "SH studio", environment: func() *nt3d.Environment { return shEnvironments()[0] }},
 	{name: "default", ambient: nt3d.DefaultLighting().Ambient, sun: &nt3d.DefaultLighting().Lights[0]},
 	{name: "sun and sky", environment: dayEnvironment, background: color.RGBA{196, 214, 238, 255}, ambient: nt3d.Ambient{},
 		sun: &nt3d.Light{Direction: nt3dmath.Vec3{X: 1, Y: -1, Z: 1.1}, Color: color.RGBA{255, 228, 186, 255}, Intensity: 1.2}, spin: true},
@@ -193,6 +195,9 @@ func (d *demo) applyLights() (nt3d.Lighting, error) {
 	if p.environment != nil {
 		environment = p.environment()
 	}
+	if p.name == "SH studio" {
+		environment = shEnvironments()[ls.shRotation]
+	}
 	d.scene.SetEnvironment(environment)
 	l := p.lights(ls.t, ls.ranged)
 	points := l.Lights[len(l.Lights)-len(p.lamps):]
@@ -280,7 +285,7 @@ func (d *demo) lightsView(content string) string {
 	if d.lights.dull {
 		shine = "dull"
 	}
-	return fmt.Sprintf("nt3d lights · l preset · f falloff · e highlights · n normal map · b lift · s shadows · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
+	return fmt.Sprintf("nt3d lights · l preset · h SH rotation · f falloff · e highlights · n normal map · b lift · s shadows · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
 		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, fmt.Sprintf("%s · normal map %t · lifted %t · %s", shine, d.lights.normal, d.lights.lift, d.lights.shadows.String()), d.status)
 }
 
@@ -294,4 +299,16 @@ func (d *demo) lightShapePosition(p nt3dmath.Vec3) nt3dmath.Vec3 {
 		p.Z += .6
 	}
 	return p
+}
+
+func (d *demo) rotateSHLight() error {
+	for i, p := range lightPresets {
+		if p.name == "SH studio" {
+			d.lights.preset = i
+			break
+		}
+	}
+	d.lights.shRotation = (d.lights.shRotation + 1) % 12
+	_, err := d.applyLights()
+	return err
 }

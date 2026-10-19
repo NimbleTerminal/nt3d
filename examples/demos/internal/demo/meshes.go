@@ -15,14 +15,15 @@ import (
 func MeshesMain() { mainDemo(false, sceneMeshes) }
 
 type meshScene struct {
-	nodes     []nt3d.NodeID
-	sources   []nt3d.Geometry // As built or read, per node.
-	normals   int             // Index into meshNormals.
-	outlined  bool            // Expanded back-face contours.
-	glass     bool            // Shapes drawn transparent.
-	shiny     bool            // Shapes with specular highlights.
-	triangles int
-	title     string
+	hasSH, dcOnly bool
+	nodes         []nt3d.NodeID
+	sources       []nt3d.Geometry // As built or read, per node.
+	normals       int             // Index into meshNormals.
+	outlined      bool            // Expanded back-face contours.
+	glass         bool            // Shapes drawn transparent.
+	shiny         bool            // Shapes with specular highlights.
+	triangles     int
+	title         string
 }
 
 var meshNormals = []string{"as built", "flat", "smooth 40°"}
@@ -62,6 +63,7 @@ func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 		for j, id := range node.Children {
 			d.meshes.nodes = append(d.meshes.nodes, id)
 			d.meshes.sources = append(d.meshes.sources, m.Objects[j].Geometry)
+			d.meshes.hasSH = d.meshes.hasSH || len(m.Objects[j].Geometry.GaussianSH) > 0
 		}
 		d.meshes.triangles += m.Triangles()
 	}
@@ -151,6 +153,9 @@ const glassAlpha = 110
 func (d *demo) rebuildMeshes() error {
 	for i, id := range d.meshes.nodes {
 		g, err := d.meshes.sources[i], error(nil)
+		if len(g.GaussianSH) > 0 {
+			g.PointStyle.SHDCOnly = d.meshes.dcOnly
+		}
 		if d.meshes.outlined {
 			g.Outline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}}
 		}
@@ -188,6 +193,17 @@ func (d *demo) rebuildMeshes() error {
 }
 
 func (d *demo) meshesView(content string) string {
+	if d.meshes.hasSH {
+		count := 0
+		for _, g := range d.meshes.sources {
+			count += len(g.Points)
+		}
+		mode := "full SH"
+		if d.meshes.dcOnly {
+			mode = "DC only"
+		}
+		return fmt.Sprintf("nt3d splats · %s · h DC/full SH · d fog · n turn · 1/2/3 backend · q quit\n%s\n%s · %d splats · %s · drag orbit · wheel zoom · c fit · r rotate · %s", d.meshes.title, content, d.rendering(), count, mode, d.status)
+	}
 	glass, shine, outlines := "opaque", "dull", "outlines off"
 	if d.meshes.outlined {
 		outlines = "outlines on"

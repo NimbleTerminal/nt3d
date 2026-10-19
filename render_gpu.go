@@ -13,6 +13,7 @@ import (
 	"image/color"
 	"math"
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 	gpuimage "nimbleterminal.dev/ntgpuimage"
 	"slices"
 	"sync"
@@ -25,15 +26,15 @@ var sceneShader string
 // Go declared ahead of it: maxLights sizes its lights, and maxPointPixels
 // clamps points in world units.
 func sceneShaderSource() string {
-	return fmt.Sprintf("const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\n", MaxLights, MaxPointPixels) + sceneShader
+	return fmt.Sprintf("const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\n", MaxLights, MaxPointPixels) + nt3dsh.WGSL() + sceneShader
 }
 
 // uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
 // and light count, eye, forward, fog, fog color, ground ambient, and
 // MaxLights lights of two vec4s each, shadow matrix and lookup params,
-// four diffuse environment coefficients, three sky camera basis vectors, and
+// nine diffuse environment coefficients, three sky camera basis vectors, and
 // six light-view matrices (one used for a directional light).
-const uniformSize = 160 + 16 + MaxLights*32 + 80 + 112 + 6*64
+const uniformSize = 160 + 16 + MaxLights*32 + 80 + 192 + 6*64
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -124,14 +125,14 @@ func (g *gpuRenderer) setup() (err error) {
 		}
 		// Metal binds a group's buffers to consecutive slots, while the
 		// translated shader reads binding n from slot n, so the bindings run
-		// 0 to 4 without a gap. The shader also reads array lengths, for its
+		// 0 to 5 without a gap. The shader also reads array lengths, for its
 		// bounds checks, from its first unused slot, 1 in the point entry
 		// points; zeros there leave them unchecked, as an unbound slot
 		// leaves the other entry points.
 		storage := func(binding uint32) gputypes.BindGroupLayoutEntry {
 			return gputypes.BindGroupLayoutEntry{Binding: binding, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}
 		}
-		g.pointBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, storage(1), storage(2), storage(3), storage(4)}})
+		g.pointBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, storage(1), storage(2), storage(3), storage(4), storage(5)}})
 		if err != nil {
 			return err
 		}
@@ -291,7 +292,11 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	// and the lighting is in that space: the sky's ambient color, carrying
 	// the number of lights, here; the ground's and the lights after fog.
 	rig := newRig(&f)
-	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), linear, 0, rig.sky[0], rig.sky[1], rig.sky[2], float32(len(rig.lights)),
+	environmentActive := float32(0)
+	if rig.environmentActive {
+		environmentActive = 1
+	}
+	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), linear, environmentActive, rig.sky[0], rig.sky[1], rig.sky[2], float32(len(rig.lights)),
 		f.Eye.X, f.Eye.Y, f.Eye.Z, perspective, f.Forward.X, f.Forward.Y, f.Forward.Z, 0)...)
 	// Fog's near and far distances (equal when there is none) and color, in
 	// the frame's color space.

@@ -67,7 +67,7 @@ func TestGaussianPLY(t *testing.T) {
 	}
 }
 
-func TestGaussianPLYRotationOrientationAndWarnings(t *testing.T) {
+func TestGaussianPLYRotationOrientationAndSH(t *testing.T) {
 	// A non-unit quaternion rotating 90 degrees about Z, plus Y-up conversion.
 	values := []float32{1, 2, 3, 0, 0, 0, 0, 0, -1, -2, 2, 0, 0, 2}
 	data := gaussianFile("binary_little_endian", values)
@@ -83,14 +83,29 @@ func TestGaussianPLYRotationOrientationAndWarnings(t *testing.T) {
 		t.Fatalf("rotation/orientation lost: %+v", p)
 	}
 	text := string(gaussianFile("ascii", values))
-	text = strings.Replace(text, "end_header", "property float f_rest_0\nend_header", 1) + "0 "
+	properties, rest := "", ""
+	for i := 0; i < 45; i++ {
+		properties += fmt.Sprintf("property float f_rest_%d\n", i)
+		rest += fmt.Sprintf("%g ", float32(i)/100)
+	}
+	text = strings.Replace(text, "end_header", properties+"end_header", 1) + rest
 	m, err = DecodePLY([]byte(text), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Warnings) != 1 {
-		t.Fatal("missing higher SH warning")
+	sh := m.Objects[0].Geometry.GaussianSH
+	if len(sh) != 16 || sh[1][1] != .15 || sh[15][2] != .44 || len(m.Warnings) != 0 {
+		t.Fatalf("SH channel ordering: %+v", sh)
 	}
+	malformed := strings.Replace(text, "f_rest_44", "f_rest_45", 1)
+	if _, err := DecodePLY([]byte(malformed), nil); err == nil {
+		t.Fatal("accepted missing SH property")
+	}
+	nonfinite := strings.TrimSuffix(text, "0.44 ") + "nan "
+	if _, err := DecodePLY([]byte(nonfinite), nil); err == nil {
+		t.Fatal("accepted nonfinite SH")
+	}
+
 }
 
 // Real captures can contain extremely thin surface splats; the screen-space

@@ -44,6 +44,7 @@ func lerpRGBA(a, b color.RGBA, t float64) color.RGBA {
 func cloneGeometry(g Geometry) Geometry {
 	g.pointUpdate = nil
 	g.Points = slices.Clone(g.Points)
+	g.GaussianSH = slices.Clone(g.GaussianSH)
 	g.Vertices = slices.Clone(g.Vertices)
 	g.Indices = slices.Clone(g.Indices)
 	g.Boxes = slices.Clone(g.Boxes)

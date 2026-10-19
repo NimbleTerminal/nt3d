@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 	"strings"
 	"testing"
 )
@@ -144,5 +145,31 @@ func TestEnvironmentDirectionalDiffuse(t *testing.T) {
 		if math.Abs(float64(half[i]-top[i]*.5)) > 1e-6 {
 			t.Fatal("strength did not scale diffuse")
 		}
+	}
+}
+
+func TestSHEnvironmentDiffuseAndOwnership(t *testing.T) {
+	coefficients, err := nt3dsh.Project(2, func(d nt3dmath.Vec3) nt3dsh.RGB { return nt3dsh.RGB{1, .5 + .4*d.X*d.Y, .5 + .4*d.Z} })
+	check(t, err)
+	e, err := NewSHEnvironment(coefficients)
+	check(t, err)
+	coefficients[0][0] = 99
+	f := flatFrame(32, 32)
+	f.Environment = e
+	f.Linear = true
+	f.Lighting = Lighting{}
+	rig := newRig(&f)
+	for _, n := range []nt3dmath.Vec3{{X: .6, Y: .8}, {Z: 1}, {Z: -1}} {
+		rgb := [3]float32{1, 1, 1}
+		rig.light(&rgb, n, nt3dmath.Vec3{})
+		want := [3]float32{1, .5 + .1*n.X*n.Y, .5 + .4*(2.0/3)*n.Z}
+		for k := range rgb {
+			if math.Abs(float64(rgb[k]-want[k])) > .002 {
+				t.Fatalf("SH diffuse %v want %v", rgb, want)
+			}
+		}
+	}
+	if _, err := NewSHEnvironment(make([]nt3dsh.RGB, 2)); err == nil {
+		t.Fatal("accepted incomplete bands")
 	}
 }
