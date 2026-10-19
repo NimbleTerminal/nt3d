@@ -21,10 +21,6 @@ move to Done with their commit; git history has the details.
   compressed PLY, large-scene performance, and ordering across overlapping
   geometry (including the slabs a big cloud is split into).
 
-- [ ] **Normal-map follow-ups** — authored tangent frames and MikkTSpace-compatible
-  generation. Independent normal UV sets and glTF texture transforms are supported. The renderer uses
-  a per-triangle basis from deformed positions and UVs.
-
 - [ ] **Shared points, lines, and boxes**, only if something needs them
   (particles don't: they are many positions, not many copies): charts
   keep all their markers in one geometry, already one upload and draw,
@@ -66,6 +62,10 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **Tangent frames for normal maps**: authored `Geometry.Tangents` (glTF
+  `TANGENT`), MikkTSpace-compatible generation at scene upload and in the
+  glTF loader (per corner, splitting vertices), skinned and morphed frames
+  on both renderers, the per-triangle basis as fallback (`76c4cb0`…`0b4bd86`).
 - **SPZ Gaussian splats**: Niantic's compressed format, versions 2 to 4, in
   `nt3dmesh/spz`; point limits from the WebGPU binding (`MaxPoints`,
   `MaxGaussians`) and big clouds split into slabs (`552bee4`…`b7febd6`).

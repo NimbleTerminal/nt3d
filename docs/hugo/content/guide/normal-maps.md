@@ -60,20 +60,58 @@ Frames already submitted retain their old map. To add/remove a normal-map slot o
 change strength or wrapping, update the geometry/material through `SetGeometry`.
 For an animated mesh, reinstall its deformation definition if replacing geometry.
 
-## Tangent basis and animation
+## Tangent frames
 
-This implementation derives each triangle's tangent directions from its current
-positions and UVs, then orthonormalizes against the interpolated vertex normal.
-Mirrored UVs preserve their handedness. Degenerate UV triangles fall back to the
-interpolated normal. The basis follows transformed and deformed positions, so the
-same path works for procedural meshes, shared instances, morph targets, and
-CPU/GPU skinning. It adds no tangent buffers or per-frame tangent uploads.
+A normal map is baked against a tangent frame: the direction `T` in which
+its U grows along the surface, and a handedness `W` (+1 or -1) giving the
+bitangent as `W × (N × T)`, the glTF convention. Each vertex may carry one in
+`Geometry.Tangents`, beside `UV` and `NormalUV`:
 
-This is a **per-triangle basis**, not MikkTSpace or an authored tangent basis.
-Maps baked for smooth authored tangents can show seams or different shading,
-especially on coarse curved meshes. Explicit tangent attributes and a compatible
-tangent generator remain follow-ups. Preserve the mesh's authored vertex normals;
-normal maps add detail to them rather than replacing them.
+```go
+g.Tangents = append(g.Tangents, nt3d.Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1})
+```
+
+Both renderers choose the frame the same way, in this order:
+
+1. **Authored** `Geometry.Tangents`, set by you or by the glTF loader from a
+   `TANGENT` attribute. Validation requires one per vertex, finite, with `W`
+   exactly ±1; a zero direction perturbs nothing at that vertex.
+2. **Generated at upload.** `SetGeometry`, `SetNodeGeometry`, and
+   `NewSharedGeometry` fill `Tangents` with `GenerateTangents` when a
+   geometry has a normal map, vertex UVs, no tangents of its own, and at
+   most `MaxMeshTriangles/2` triangles. A frame's `Geometry.Tangents` being
+   non-empty tells you a scene geometry took this path or the first.
+3. **Per-triangle basis**, derived from the triangle's (deformed) positions
+   and normal-map UVs: frames built by hand without a scene, meshes past the
+   limit, and anything else without tangents. Mirrored UVs keep their
+   handedness; degenerate UV triangles fall back to the interpolated normal.
+
+`GenerateTangents` is a self-contained port of the parts of MikkTSpace that
+decide the frame, with that library's default parameters, so maps baked in
+Blender or for glTF exporters look as their authors saw them. Corners are
+welded by position, normal, and UV, so indexing does not matter; around each
+vertex, faces joined through shared edges with the same UV handedness
+average their U directions, weighted by their angle there, projected onto
+the vertex normal. Each vertex takes the frame of its first corner, so a
+vertex that faces of opposite handedness share (across a mirrored UV seam)
+gets one side's frame: give each side its own vertices, as the glTF loader
+does by splitting them. `GenerateCornerTangents` is the per-corner form for
+loaders. Neither keeps MikkTSpace's magnitudes or a stored bitangent.
+
+The frame is interpolated across each triangle like the normal, projected
+onto the interpolated normal at the pixel, and normalized. Tangents turn
+with positions, not as normals do: instance transforms, `TransformGeometry`
+(which also flips `W` under a reflection), skinning, and morph targets
+(`MorphTarget.Tangents` are direction deltas) all apply to them, so the
+frame follows the deformed surface with no per-frame regeneration. On the
+GPU a normal-mapped mesh with tangents or independent normal UVs keeps an
+extension record per index, which halves its per-geometry triangle limit to
+`MaxMeshTriangles/2`; `Validate` rejects larger ones and the glTF loader
+splits them. A transparent mesh seen from behind keeps the map's U and V
+directions and flips only the normal. Wireframe, picking, shadows (whose
+bias uses the unperturbed normal), and outlines ignore tangents. Preserve
+the mesh's authored vertex normals; normal maps add detail to them rather
+than replacing them.
 
 ## glTF mapping
 
@@ -88,17 +126,23 @@ when clipping or skinning the mesh. Mesh operations preserve both UV arrays.
 Independent UVs use an additional GPU record per index, halving the per-geometry
 triangle limit; the glTF loader splits these meshes automatically.
 
+Authored `TANGENT` attributes are used as they are, with their `W`. Without
+them, the loader generates frames per corner from the primitive's positions,
+normals, and the normal map's coordinates (after any texture transform), and
+splits a vertex whose corners disagree, matching MikkTSpace exactly; morph
+targets' `TANGENT` deltas are read too. Mirrored nodes and the back copies of
+double-sided faces get their handedness flipped.
+
 `Model.Warnings` reports cases that cannot be represented:
 
-- Authored `TANGENT` attributes are replaced with the generated triangle basis.
+- Unreadable or mis-sized `TANGENT` data is passed over and frames are generated.
 - Missing image or UV data falls back to vertex-normal shading; malformed UV accessors are rejected.
 - Sampler addressing retains the loader's existing approximation: clamp only when
   both axes clamp; otherwise repeat, including mirrored-repeat samplers.
 
 The [Khronos glTF specification](https://github.com/KhronosGroup/glTF/blob/main/specification/2.0/Specification.adoc#materials)
-defines the linear-data RGB encoding and X/Y scale used here. Its authored-tangent
-and MikkTSpace conventions are more precise than this first implementation's
-triangle basis. Keep loader warnings visible when evaluating imported assets.
+defines the linear-data RGB encoding, X/Y scale, and tangent conventions used
+here. Keep loader warnings visible when evaluating imported assets.
 
 ## Try it
 

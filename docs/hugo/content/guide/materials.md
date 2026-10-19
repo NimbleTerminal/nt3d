@@ -49,7 +49,7 @@ Other materials ignore alpha.
 `NewNormalMap(img)` creates a linear-data normal texture. Assign it to
 `Material.NormalMap`, set `NormalStrength: 1`, and provide `Geometry.UV`.
 GPU and software perturb diffuse, specular, and environment lighting. See
-[normal maps](../normal-maps/) for sampling, animation, glTF mapping, and tangent-basis limits.
+[normal maps](../normal-maps/) for sampling, tangent frames, animation, and glTF mapping.
 
 ## Highlights
 
