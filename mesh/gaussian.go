@@ -65,8 +65,8 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 			}
 			continue
 		}
-		if seen || e.count == 0 || e.count > nt3d.MaxPoints {
-			return nil, r.errorf("Gaussian vertex count must be 1..%d, in one element", nt3d.MaxPoints)
+		if seen || e.count == 0 {
+			return nil, r.errorf("Gaussian vertices must be in one element, with at least one")
 		}
 		seen = true
 		has := map[string]bool{}
@@ -152,10 +152,12 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 		return nil, fmt.Errorf("nt3dmesh: Gaussian PLY lacks vertices")
 	}
 	g.Bounds = nt3d.GeometryBounds(g)
-	if err := g.Validate(); err != nil {
-		return nil, err
+	m.Objects = PointPieces(Object{Geometry: g})
+	for _, piece := range m.Objects {
+		if err := piece.Geometry.Validate(); err != nil {
+			return nil, err
+		}
 	}
-	m.Objects = []Object{{Geometry: g}}
 	o.orient(m)
 	return m, nil
 }

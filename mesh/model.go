@@ -16,6 +16,7 @@ package nt3dmesh
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"image"
@@ -24,10 +25,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 )
 
 // Format names a mesh file format.
@@ -60,6 +63,73 @@ const DefaultMaxTriangles = 4 << 20
 
 // pieceTriangles is the most triangles one Object holds. Tests lower it.
 var pieceTriangles = nt3d.MaxMeshTriangles
+
+// piecePoints and maxGaussians are the most points, and Gaussian splats
+// with a count of SH coefficients each, one Object holds. Tests lower them.
+var (
+	piecePoints  = nt3d.MaxPoints
+	maxGaussians = nt3d.MaxGaussians
+)
+
+// PointPieces splits a point cloud larger than one geometry holds (see
+// nt3d.MaxPoints and nt3d.MaxGaussians) into consecutive Objects with the
+// object's Name, Material, and Part, each with its own Points, GaussianSH,
+// and Bounds, sharing the rest. The pieces are slabs along the cloud's
+// longest axis: the renderers blend geometries farthest first by their
+// bounds' centers, and sort within each, so slabs blend in nearly the
+// right order where pieces in file order would overlap entirely. A cloud
+// that fits is returned as it is, in a slice of one.
+func PointPieces(o Object) []Object {
+	g := &o.Geometry
+	most := piecePoints
+	per := 0
+	if len(g.Points) > 0 {
+		per = len(g.GaussianSH) / len(g.Points)
+	}
+	if g.PointStyle.Shape == nt3d.GaussianPoint {
+		most = maxGaussians(per)
+	}
+	if most <= 0 || len(g.Points) <= most {
+		return []Object{o}
+	}
+	bounds := g.Bounds
+	if !bounds.IsValid() {
+		bounds = nt3d.GeometryBounds(*g)
+	}
+	size := bounds.Max.Sub(bounds.Min)
+	along := func(v nt3dmath.Vec3) float32 { return v.X }
+	if size.Y > size.X && size.Y >= size.Z {
+		along = func(v nt3dmath.Vec3) float32 { return v.Y }
+	} else if size.Z > size.X && size.Z > size.Y {
+		along = func(v nt3dmath.Vec3) float32 { return v.Z }
+	}
+	order := make([]int, len(g.Points))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		return cmp.Compare(along(g.Points[a].Position), along(g.Points[b].Position))
+	})
+	var pieces []Object
+	for start := 0; start < len(order); start += most {
+		end := min(len(order), start+most)
+		piece := o
+		piece.Geometry.Points = make([]nt3d.Point, 0, end-start)
+		piece.Geometry.GaussianSH = nil
+		if per > 0 {
+			piece.Geometry.GaussianSH = make([]nt3dsh.RGB, 0, (end-start)*per)
+		}
+		for _, i := range order[start:end] {
+			piece.Geometry.Points = append(piece.Geometry.Points, g.Points[i])
+			if per > 0 {
+				piece.Geometry.GaussianSH = append(piece.Geometry.GaussianSH, g.GaussianSH[i*per:(i+1)*per]...)
+			}
+		}
+		piece.Geometry.Bounds = nt3d.GeometryBounds(piece.Geometry)
+		pieces = append(pieces, piece)
+	}
+	return pieces
+}
 
 // DefaultMaxBytes is how much a 3MF package may unpack to when Options.MaxBytes is zero.
 const DefaultMaxBytes = 256 << 20

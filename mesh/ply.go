@@ -132,7 +132,7 @@ type plyVertex struct {
 // scan with a range grid (obj_info num_cols and num_rows, as the Stanford
 // scans have) becomes a surface joining neighboring samples, leaving out
 // triangles that would bridge a jump in depth; one without is a cloud of
-// points, up to nt3d.MaxPoints. 3DGS attributes select DecodeGaussianPLY.
+// points, split into pieces past nt3d.MaxPoints. 3DGS attributes select DecodeGaussianPLY.
 func DecodePLY(data []byte, o *Options) (*Model, error) {
 	elements, format, comments, body, err := plyHeader(data)
 	if err != nil {
@@ -226,9 +226,6 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 		if len(vertices) == 0 {
 			return nil, errors.New("nt3dmesh: PLY contains no faces or vertices")
 		}
-		if len(vertices) > nt3d.MaxPoints {
-			return m, fmt.Errorf("%w: PLY has %d points; the limit is %d", ErrTooManyTriangles, len(vertices), nt3d.MaxPoints)
-		}
 		var g nt3d.Geometry
 		for _, v := range vertices {
 			c := o.color()
@@ -238,7 +235,7 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 			g.Points = append(g.Points, nt3d.Point{Position: v.position, Radius: 1, Color: c})
 		}
 		g.Bounds = nt3d.GeometryBounds(g)
-		m.Objects = []Object{{Geometry: g}}
+		m.Objects = PointPieces(Object{Geometry: g})
 	}
 	for i := range m.Objects {
 		g := &m.Objects[i].Geometry
