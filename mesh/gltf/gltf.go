@@ -89,7 +89,9 @@ const GLTF nt3dmesh.Format = "gltf"
 // Options.MaxBytes. Files that require an extension nt3d cannot honor, such
 // as Draco or meshopt compression, are refused. Animation, skins and morphs
 // populate Model.Asset; AddTo instantiates its hierarchy and generic clips.
-// Normal maps use a per-triangle UV basis; authored tangents are approximated.
+// Normal maps use authored TANGENT frames, or MikkTSpace-compatible ones
+// generated per corner (nt3d.GenerateCornerTangents), splitting vertices
+// whose corners differ.
 // KHR_texture_transform is baked into independent color and normal UVs.
 // Emissive maps are passed over with a warning.
 func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
@@ -243,6 +245,13 @@ func (a mat4) normal(n [3]float32) nt3dmath.Vec3 {
 		return v
 	}
 	return v.Normalize()
+}
+
+// direction turns a direction by a's linear part, as positions turn:
+// tangents, unlike normals, follow the surface.
+func (a mat4) direction(v nt3dmath.Vec3) nt3dmath.Vec3 {
+	x, y, z := float64(v.X), float64(v.Y), float64(v.Z)
+	return nt3dmath.Vec3{X: float32(a[0]*x + a[4]*y + a[8]*z), Y: float32(a[1]*x + a[5]*y + a[9]*z), Z: float32(a[2]*x + a[6]*y + a[10]*z)}
 }
 
 func (a mat4) det() float64 {
@@ -608,8 +617,24 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 		}
 	}
 	if l.normal != nil {
-		if _, ok := p.Attributes[gltf.TANGENT]; ok {
-			d.warn("authored tangents are replaced by a per-triangle UV basis for normal mapping")
+		if a, ok, err := attr(gltf.TANGENT); err != nil {
+			return err
+		} else if ok {
+			tangents, err := modeler.ReadTangent(d.doc, a, nil)
+			if err != nil || len(tangents) != len(positions) {
+				d.warn("%s: unreadable tangents are generated", name)
+			} else {
+				b.tangents = make([]nt3d.Tangent, len(tangents))
+				for i, t := range tangents {
+					if !validCoordinate(t[0], t[1], t[2]) || !validCoordinate(t[3], 0, 0) {
+						return fmt.Errorf("nt3dmesh: glTF %s has a non-finite tangent", name)
+					}
+					b.tangents[i] = nt3d.Tangent{Direction: nt3dmath.Vec3{X: t[0], Y: t[1], Z: t[2]}, W: 1}
+					if t[3] < 0 {
+						b.tangents[i].W = -1
+					}
+				}
+			}
 		}
 	}
 	readUV := func(mapping textureMapping) ([][2]float32, error) {
@@ -713,9 +738,23 @@ type gltfBuilder struct {
 	colors    [][4]uint16
 	uv        [][2]float32
 	normalUV  [][2]float32
-	material  *nt3d.Material
-	piece     *nt3dmesh.Object
-	remap     map[uint32]uint32 // Source vertex (twice, plus one for the back) to the piece's.
+	tangents  []nt3d.Tangent // Authored, per source vertex, in the primitive's space.
+	// Generated frames, per corner of the triangle list, placed by world
+	// for a front face, and which of its source vertex's distinct frames
+	// each corner has: corners that differ split the vertex.
+	corners  []nt3d.Tangent
+	variants []uint16
+	material *nt3d.Material
+	piece    *nt3dmesh.Object
+	remap    map[remapKey]uint32 // Source vertex to the piece's.
+}
+
+// remapKey names a piece vertex: its source vertex, which side, and which
+// of its tangent frames.
+type remapKey struct {
+	index   uint32
+	back    bool
+	variant uint16
 }
 
 // color is a vertex's sRGB color and alpha: the base color factor times the
@@ -763,7 +802,7 @@ func (b *gltfBuilder) start() {
 	}
 	b.d.m.Objects = append(b.d.m.Objects, nt3dmesh.Object{Name: b.name, Material: b.look.name, Geometry: nt3d.Geometry{Material: b.material}})
 	b.piece = &b.d.m.Objects[len(b.d.m.Objects)-1]
-	b.remap = map[uint32]uint32{}
+	b.remap = map[remapKey]uint32{}
 }
 
 func (b *gltfBuilder) place(i uint32) (nt3dmath.Vec3, error) {
@@ -778,6 +817,9 @@ func (b *gltfBuilder) triangles(v []uint32) error {
 	b.material = b.nt3dMaterial()
 	first := len(b.d.m.Objects)
 	mirror := b.world.det() < 0 // Mirroring turns faces inside out; turn them back.
+	if b.look.normal != nil && b.tangents == nil {
+		b.generateTangents(v, mirror)
+	}
 	for _, back := range []bool{false, true} {
 		if back && !b.look.double {
 			break
@@ -803,7 +845,11 @@ func (b *gltfBuilder) triangles(v []uint32) error {
 			if err := b.d.budget.take(1); err != nil {
 				return err
 			}
-			if err := b.face(tri, back); err != nil {
+			at := [3]int{t, t + 1, t + 2}
+			if mirror != back {
+				at[1], at[2] = at[2], at[1]
+			}
+			if err := b.face(tri, at, back); err != nil {
 				return err
 			}
 		}
@@ -815,11 +861,70 @@ func (b *gltfBuilder) triangles(v []uint32) error {
 	return nil
 }
 
+// generateTangents finds a frame for each corner of the triangle list,
+// MikkTSpace-compatibly, in the primitive's space with its authored
+// normals (or each face's own), then places it by world. A mirrored
+// placement turns the handedness, as it does the faces.
+func (b *gltfBuilder) generateTangents(v []uint32, mirror bool) {
+	uv := b.normalUV
+	if uv == nil {
+		uv = b.uv
+	}
+	if uv == nil {
+		return
+	}
+	n := len(v) / 3 * 3
+	positions, normals, uvs := make([]nt3dmath.Vec3, n), make([]nt3dmath.Vec3, n), make([]nt3d.UV, n)
+	for t := 0; t < n; t += 3 {
+		var flat nt3dmath.Vec3
+		if b.normals == nil {
+			p0, p1, p2 := vec(b.positions[v[t]]), vec(b.positions[v[t+1]]), vec(b.positions[v[t+2]])
+			if flat = p1.Sub(p0).Cross(p2.Sub(p0)); flat.Dot(flat) > 0 {
+				flat = flat.Normalize()
+			}
+		}
+		for k := t; k < t+3; k++ {
+			i := v[k]
+			positions[k], normals[k], uvs[k] = vec(b.positions[i]), flat, nt3d.UV{U: uv[i][0], V: uv[i][1]}
+			if b.normals != nil {
+				normals[k] = vec(b.normals[i])
+			}
+		}
+	}
+	b.corners = nt3d.GenerateCornerTangents(positions, normals, uvs)
+	b.variants = make([]uint16, n)
+	seen := map[uint32][]nt3d.Tangent{}
+	for k := range b.corners {
+		c := &b.corners[k]
+		if d := b.world.direction(c.Direction); d.Dot(d) > 0 {
+			c.Direction = d.Normalize()
+		}
+		if mirror {
+			c.W = -c.W
+		}
+		frames := seen[v[k]]
+		variant := -1
+		for j, f := range frames {
+			if f.W == c.W && f.Direction.Dot(c.Direction) > 1-1e-6 {
+				variant = j
+				break
+			}
+		}
+		if variant < 0 {
+			variant = len(frames)
+			seen[v[k]] = append(frames, *c)
+		}
+		b.variants[k] = uint16(min(variant, math.MaxUint16))
+	}
+}
+
 // face adds a triangle, sharing vertices within the piece unless their
-// normals are computed per face.
-func (b *gltfBuilder) face(tri [3]uint32, back bool) error {
+// normals are computed per face. at is each corner's index in the
+// primitive's triangle list.
+func (b *gltfBuilder) face(tri [3]uint32, at [3]int, back bool) error {
 	limit := pieceTriangles
-	if b.normalUV != nil {
+	if b.look.normal != nil {
+		// Tangents or independent normal UVs take an extension record.
 		limit = min(limit, nt3d.MaxMeshTriangles/2)
 	}
 	if b.piece == nil || len(b.piece.Geometry.Indices) >= 3*limit {
@@ -839,9 +944,24 @@ func (b *gltfBuilder) face(tri [3]uint32, back bool) error {
 	}
 	g := &b.piece.Geometry
 	for k, i := range tri {
-		key := i * 2
-		if back {
-			key++
+		key := remapKey{index: i, back: back}
+		var tangent *nt3d.Tangent
+		if b.tangents != nil {
+			t := b.tangents[i]
+			if d := b.world.direction(t.Direction); d.Dot(d) > 0 {
+				t.Direction = d.Normalize()
+			}
+			if b.world.det() < 0 {
+				t.W = -t.W
+			}
+			tangent = &t
+		} else if b.corners != nil {
+			t := b.corners[at[k]]
+			key.variant = b.variants[at[k]]
+			tangent = &t
+		}
+		if tangent != nil && back {
+			tangent.W = -tangent.W // Its normal is negated.
 		}
 		if j, ok := b.remap[key]; ok {
 			g.Indices = append(g.Indices, j)
@@ -871,6 +991,9 @@ func (b *gltfBuilder) face(tri [3]uint32, back bool) error {
 		}
 		if b.uv != nil {
 			g.UV = append(g.UV, nt3d.UV{U: b.uv[i][0], V: b.uv[i][1]})
+		}
+		if tangent != nil {
+			g.Tangents = append(g.Tangents, *tangent)
 		}
 	}
 	return nil

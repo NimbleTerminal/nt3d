@@ -7,6 +7,7 @@ import (
 	"github.com/qmuntal/gltf/modeler"
 	"math"
 	"nimbleterminal.dev/nt3d"
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 	"os"
 	"testing"
 )
@@ -170,5 +171,28 @@ func TestGLTFMorphInterpolation(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestGLTFMorphTangents(t *testing.T) {
+	p := upTriangle
+	p.uv = [][2]float32{{0, 0}, {1, 0}, {0, 1}}
+	p.normals = [][3]float32{{0, 0, 1}, {0, 0, 1}, {0, 0, 1}}
+	doc := gltfDoc(p)
+	normalMapped(t, doc)
+	doc.Meshes[0].Primitives[0].Targets = []gltf.PrimitiveAttributes{{gltf.TANGENT: modeler.WritePosition(doc, [][3]float32{{.5, 0, 0}, {.5, 0, 0}, {.5, 0, 0}})}}
+	m, err := Decode(glb(t, doc), nil)
+	check(t, err)
+	var def *nt3d.Deformation
+	for _, n := range m.Asset.Nodes {
+		if n.Deformation != nil {
+			def = n.Deformation
+		}
+	}
+	if def == nil || len(def.Morphs) != 1 {
+		t.Fatal("morph target lost")
+	}
+	if got := def.Morphs[0].Tangents; len(got) != 3 || !near(got[0], nt3dmath.Vec3{X: .5}) {
+		t.Fatalf("morph tangents %v", got)
 	}
 }

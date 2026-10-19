@@ -510,7 +510,6 @@ func TestGLTFNormalMapOptions(t *testing.T) {
 				normal.Extensions = gltf.Extensions{"KHR_texture_transform": map[string]any{"offset": []float64{.2, 0}}}
 			case "authored tangent":
 				doc.Meshes[0].Primitives[0].Attributes[gltf.TANGENT] = modeler.WriteTangent(doc, [][4]float32{{1, 0, 0, 1}, {1, 0, 0, 1}, {1, 0, 0, 1}})
-				wantWarning = "authored tangents"
 			}
 			m, err := Decode(glb(t, doc), nil)
 			check(t, err)
@@ -519,7 +518,15 @@ func TestGLTFNormalMapOptions(t *testing.T) {
 			if wantWarning != "" && !strings.Contains(strings.Join(m.Warnings, ";"), wantWarning) {
 				t.Fatalf("warnings %v lack %q", m.Warnings, wantWarning)
 			}
-			if wantWarning == "" || kind == "authored tangent" {
+			if kind == "authored tangent" {
+				if len(g.Tangents) != 3 || !near(g.Tangents[0].Direction, nt3dmath.Vec3{X: 1}) || g.Tangents[0].W != 1 {
+					t.Fatalf("authored tangents %v", g.Tangents)
+				}
+				if strings.Contains(strings.Join(m.Warnings, ";"), "tangent") {
+					t.Fatalf("authored tangents warned: %v", m.Warnings)
+				}
+			}
+			if wantWarning == "" {
 				if g.Material == nil || g.Material.NormalMap == nil {
 					t.Fatal("normal map missing")
 				}
@@ -538,4 +545,109 @@ func TestGLTFNormalMapOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+// normalMapped gives doc one normal-mapped material and its primitives
+// that material.
+func normalMapped(t *testing.T, doc *gltf.Document) {
+	t.Helper()
+	img, err := modeler.WriteImage(doc, "normal", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{128, 128, 255, 255})))
+	check(t, err)
+	doc.Textures = []*gltf.Texture{{Source: gltf.Index(img)}}
+	doc.Materials = []*gltf.Material{{NormalTexture: &gltf.NormalTexture{Index: gltf.Index(0)}}}
+	for _, p := range doc.Meshes[0].Primitives {
+		p.Material = gltf.Index(0)
+	}
+}
+
+func TestGLTFTangents(t *testing.T) {
+	up := upTriangle
+	up.uv = [][2]float32{{0, 0}, {1, 0}, {0, 1}}
+	up.normals = [][3]float32{{0, 0, 1}, {0, 0, 1}, {0, 0, 1}}
+	t.Run("generated", func(t *testing.T) {
+		doc := gltfDoc(up)
+		normalMapped(t, doc)
+		m, err := Decode(glb(t, doc), nil)
+		check(t, err)
+		g := m.Objects[0].Geometry
+		if len(g.Tangents) != 3 {
+			t.Fatalf("generated %d tangents: %v", len(g.Tangents), m.Warnings)
+		}
+		for _, tan := range g.Tangents {
+			if !near(tan.Direction, nt3dmath.Vec3{X: 1}) || tan.W != 1 {
+				t.Fatalf("generated tangent %v", tan)
+			}
+		}
+		if strings.Contains(strings.Join(m.Warnings, ";"), "tangent") {
+			t.Fatalf("generation warned: %v", m.Warnings)
+		}
+	})
+	t.Run("mirrored node", func(t *testing.T) {
+		doc := gltfDoc(up)
+		normalMapped(t, doc)
+		doc.Meshes[0].Primitives[0].Attributes[gltf.TANGENT] = modeler.WriteTangent(doc, [][4]float32{{1, 0, 0, 1}, {1, 0, 0, 1}, {1, 0, 0, 1}})
+		doc.Nodes[0].Scale = [3]float64{1, 1, -1}
+		m, err := Decode(glb(t, doc), nil)
+		check(t, err)
+		if len(m.Objects[0].Geometry.Tangents) != 3 {
+			t.Fatal("authored tangents lost")
+		}
+		for _, tan := range m.Objects[0].Geometry.Tangents {
+			if !near(tan.Direction, nt3dmath.Vec3{X: 1}) || tan.W != -1 {
+				t.Fatalf("mirrored tangent %v", tan)
+			}
+		}
+	})
+	t.Run("double sided", func(t *testing.T) {
+		doc := gltfDoc(up)
+		normalMapped(t, doc)
+		doc.Materials[0].DoubleSided = true
+		m, err := Decode(glb(t, doc), nil)
+		check(t, err)
+		g := m.Objects[0].Geometry
+		if len(g.Tangents) != len(g.Vertices) || len(g.Vertices) != 6 {
+			t.Fatalf("%d tangents for %d vertices", len(g.Tangents), len(g.Vertices))
+		}
+		for i, v := range g.Vertices {
+			want := float32(1)
+			if v.Normal.Y > 0 { // The back copy; the front faces -Y.
+				want = -1
+			}
+			if g.Tangents[i].W != want {
+				t.Fatalf("vertex %d (normal %v) W %v", i, v.Normal, g.Tangents[i].W)
+			}
+		}
+	})
+	t.Run("seam split", func(t *testing.T) {
+		p := prim{positions: [][3]float32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 0}}, indices: []uint16{0, 1, 2, 1, 3, 2}, uv: [][2]float32{{0, 0}, {1, 0}, {0, 1}, {0, 0}}, normals: [][3]float32{{0, 0, 1}, {0, 0, 1}, {0, 0, 1}, {0, 0, 1}}}
+		doc := gltfDoc(p)
+		normalMapped(t, doc)
+		m, err := Decode(glb(t, doc), nil)
+		check(t, err)
+		g := m.Objects[0].Geometry
+		if len(g.Vertices) != 6 || len(g.Tangents) != 6 {
+			t.Fatalf("%d vertices, %d tangents, want the seam split", len(g.Vertices), len(g.Tangents))
+		}
+		for f, want := range []float32{1, -1} {
+			for k := range 3 {
+				if w := g.Tangents[g.Indices[3*f+k]].W; w != want {
+					t.Fatalf("face %d corner %d W %v, want %v", f, k, w, want)
+				}
+			}
+		}
+		check(t, g.Validate())
+	})
+	t.Run("bad tangent", func(t *testing.T) {
+		doc := gltfDoc(up)
+		normalMapped(t, doc)
+		doc.Meshes[0].Primitives[0].Attributes[gltf.TANGENT] = modeler.WriteTangent(doc, [][4]float32{{1, 0, 0, 1}, {1, 0, 0, 1}})
+		m, err := Decode(glb(t, doc), nil)
+		check(t, err)
+		if !strings.Contains(strings.Join(m.Warnings, ";"), "unreadable tangents") {
+			t.Fatalf("warnings %v", m.Warnings)
+		}
+		if len(m.Objects[0].Geometry.Tangents) != 3 {
+			t.Fatal("tangents not generated after bad data")
+		}
+	})
 }

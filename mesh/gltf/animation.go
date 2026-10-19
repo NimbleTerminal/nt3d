@@ -143,7 +143,7 @@ func (d *gltfDecoder) sceneAsset() error {
 			for _, target := range p.Targets {
 				mt := nt3d.MorphTarget{}
 				for key, index := range target {
-					if key != gltf.POSITION && key != gltf.NORMAL {
+					if key != gltf.POSITION && key != gltf.NORMAL && key != gltf.TANGENT {
 						continue
 					}
 					a, err := d.accessor(index, key)
@@ -158,10 +158,13 @@ func (d *gltfDecoder) sceneAsset() error {
 					for i, x := range v {
 						vs[i] = vec(x)
 					}
-					if key == gltf.POSITION {
+					switch key {
+					case gltf.POSITION:
 						mt.Positions = vs
-					} else {
+					case gltf.NORMAL:
 						mt.Normals = vs
+					default:
+						mt.Tangents = vs
 					}
 				}
 				morphs = append(morphs, mt)
@@ -275,6 +278,12 @@ func (d *gltfDecoder) sceneAsset() error {
 									v = v.Scale(-1)
 								}
 								out.Normals = append(out.Normals, v)
+							}
+							if len(mt.Tangents) > 0 && len(g.Tangents) > 0 {
+								if int(o.index) >= len(mt.Tangents) {
+									return fmt.Errorf("nt3dmesh: short morph tangent")
+								}
+								out.Tangents = append(out.Tangents, mt.Tangents[o.index])
 							}
 						}
 						def.Morphs = append(def.Morphs, out)
