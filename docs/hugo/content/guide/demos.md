@@ -97,6 +97,12 @@ The first three presets demonstrate [environment skies and diffuse image-based l
 
 `task cloud`. A galaxy of up to a million opaque pixel points, grouped once into [clusters](../clustering/) of 256. Each frame keeps the clusters in view and thins the far ones: every point within six units, a spread half within twelve, a quarter within twenty-four, and one point for a whole cluster beyond, so zooming out stays quick in all three renderers. `l` switches the clustering off to compare, `n` cycles 100,000, 300,000, and 1,000,000 points, and `-` and `=` zoom. The status line counts the clusters and points drawn.
 
+## AABB tree
+
+<img class="poster" src="../../posters/aabb.png" alt="Colored boxes above a dark floor, one white, inside nested wireframe boxes">
+
+`task aabb`. Scattered boxes indexed by a [dynamic AABB tree](../spatial-index/). Click a box: a ray from the camera through the click runs the tree's own ray cast, the nearest box turns white, and its ancestors draw as nested wireframes, bright and warm at the leaf, cool and dim at the root. `h` switches between the picked box's path, the whole tree, and none; `a` sets the boxes drifting, updating the tree every frame so you can watch ancestors stretch and the path change as it rebalances; `n` cycles 50, 150, and 500 boxes; `b` adds a box and `x` removes the picked one. The status line gives the leaf's depth and the tree's node count.
+
 ## In a browser
 
 The [gallery](https://nimbleterminal.github.io/nt3d/) is online. To build and serve it yourself:

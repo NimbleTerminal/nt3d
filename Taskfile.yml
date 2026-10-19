@@ -6,7 +6,7 @@ env:
 
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
-  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb
 
 tasks:
   default:
@@ -69,7 +69,7 @@ tasks:
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb
       - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
       - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -86,6 +86,7 @@ tasks:
       - go -C examples/demos build -mod=readonly -o ../../dist/web/animate/app.wasm ./cmd/animate
       - go -C examples/demos build -mod=readonly -o ../../dist/web/characters/app.wasm ./cmd/characters
       - go -C examples/demos build -mod=readonly -o ../../dist/web/cloud/app.wasm ./cmd/cloud
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/aabb/app.wasm ./cmd/aabb
   web-assets:
     cmds:
       - go -C examples/demos tool booba-assets ../../dist/web/terrain/
@@ -104,6 +105,7 @@ tasks:
       - go -C examples/demos tool booba-assets ../../dist/web/animate/
       - go -C examples/demos tool booba-assets ../../dist/web/characters/
       - go -C examples/demos tool booba-assets ../../dist/web/cloud/
+      - go -C examples/demos tool booba-assets ../../dist/web/aabb/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -240,6 +242,11 @@ tasks:
     deps: [{task: build:demo, vars: {NAME: cloud}}]
     cmds:
       - bin/nt3d-cloud {{.CLI_ARGS}}
+  aabb:
+    desc: Click boxes to see their place in a dynamic AABB tree
+    deps: [{task: build:demo, vars: {NAME: aabb}}]
+    cmds:
+      - bin/nt3d-aabb {{.CLI_ARGS}}
 
   gaussians:
     desc: Gaussian splatting demo

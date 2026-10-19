@@ -33,7 +33,7 @@ The **[guide](https://nimbleterminal.github.io/nt3d/docs/)** covers it all, from
 To run the demos yourself:
 
 ```sh
-task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, particles, cloud, dynamic, procedural
+task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, particles, cloud, aabb, dynamic, procedural
 task build-web && task serve   # all of them in a browser, at http://localhost:8768
 ```
 
@@ -67,4 +67,5 @@ WebGPU compute. `task cloud` zooms through a million points; see the
 A dynamic AABB tree lives in `nimbleterminal.dev/nt3d/aabbtree` (`nt3daabbtree`):
 a generic spatial index (`Tree[T]`) over moving boxed objects with insert,
 remove, update, overlap, and ray-cast queries, independent of the scene
-and renderers; see the [spatial index guide](docs/hugo/content/guide/spatial-index.md).
+and renderers. `task aabb` shows a clicked box's ancestors as nested
+wireframes; see the [spatial index guide](docs/hugo/content/guide/spatial-index.md).
