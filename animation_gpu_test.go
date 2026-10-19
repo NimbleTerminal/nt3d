@@ -35,6 +35,7 @@ func testGPUSkinMatchesCPU(t *testing.T, texture, normal, point bool) {
 		if normal {
 			m.NormalMap = testNormalMap(t, color.NRGBA{218, 128, 218, 255})
 			m.NormalStrength = 1
+			n.deformation.base.Tangents = []Tangent{{Direction: nt3dmath.Vec3{X: 1}, W: 1}, {Direction: nt3dmath.Vec3{X: 1}, W: 1}, {Direction: nt3dmath.Vec3{X: 1}, W: 1}}
 		}
 		n.deformation.base.Material = m
 		n.geometry.Material = m

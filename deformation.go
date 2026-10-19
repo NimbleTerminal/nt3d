@@ -7,8 +7,9 @@ import (
 	"slices"
 )
 
-// MorphTarget contains object-space deltas, one per vertex. Normals may be omitted.
-type MorphTarget struct{ Positions, Normals []nt3dmath.Vec3 }
+// MorphTarget contains object-space deltas, one per vertex. Normals and
+// Tangents (deltas of Geometry.Tangents' directions) may be omitted.
+type MorphTarget struct{ Positions, Normals, Tangents []nt3dmath.Vec3 }
 
 // Influence is a vertex's four joint indices and nonnegative weights.
 // SetDeformation normalizes weights. A zero sum leaves the vertex unskinned.
@@ -30,13 +31,14 @@ type Deformation struct {
 	Influences []Influence
 }
 type deformationState struct {
-	morphed        []Vertex
-	sourceRevision uint64
-	base           Geometry
-	definition     Deformation
-	palette        []nt3dmath.Mat4
-	weights        []float32
-	revision       uint64
+	morphed         []Vertex
+	morphedTangents []Tangent
+	sourceRevision  uint64
+	base            Geometry
+	definition      Deformation
+	palette         []nt3dmath.Mat4
+	weights         []float32
+	revision        uint64
 }
 
 // posedGeometry is immutable metadata for the GPU deformation path.
@@ -66,17 +68,17 @@ func (s *Scene) SetDeformation(id NodeID, d Deformation) error {
 		d.Weights = make([]float32, len(d.Morphs))
 	}
 	for i, m := range d.Morphs {
-		if len(m.Positions) != 0 && len(m.Positions) != count || len(m.Normals) != 0 && len(m.Normals) != count {
+		if len(m.Positions) != 0 && len(m.Positions) != count || len(m.Normals) != 0 && len(m.Normals) != count || len(m.Tangents) != 0 && len(m.Tangents) != count {
 			return fmt.Errorf("nt3d: morph vertex count mismatch")
 		}
-		for _, vs := range [][]nt3dmath.Vec3{m.Positions, m.Normals} {
+		for _, vs := range [][]nt3dmath.Vec3{m.Positions, m.Normals, m.Tangents} {
 			for _, v := range vs {
 				if !finiteVec(v) {
 					return fmt.Errorf("nt3d: non-finite morph")
 				}
 			}
 		}
-		d.Morphs[i] = MorphTarget{slices.Clone(m.Positions), slices.Clone(m.Normals)}
+		d.Morphs[i] = MorphTarget{slices.Clone(m.Positions), slices.Clone(m.Normals), slices.Clone(m.Tangents)}
 	}
 	for _, w := range d.Weights {
 		if !validFloat(w) {
@@ -197,9 +199,16 @@ func (s *Scene) UpdateDeformations() error {
 		source.Material = n.geometry.Material
 		source.Outline = n.geometry.Outline
 		if !weightsDirty {
-			source.Vertices = d.morphed
+			source.Vertices, source.Tangents = d.morphed, d.morphedTangents
 		} else if len(def.Morphs) > 0 {
 			source.Vertices = slices.Clone(source.Vertices)
+			morphTangents := false
+			for _, m := range def.Morphs {
+				morphTangents = morphTangents || len(m.Tangents) > 0 && len(source.Tangents) > 0
+			}
+			if morphTangents {
+				source.Tangents = slices.Clone(source.Tangents)
+			}
 			for i := range source.Vertices {
 				v := &source.Vertices[i]
 				for k, m := range def.Morphs {
@@ -213,15 +222,27 @@ func (s *Scene) UpdateDeformations() error {
 					if len(m.Normals) > 0 {
 						v.Normal = v.Normal.Add(m.Normals[i].Scale(w))
 					}
+					if morphTangents && len(m.Tangents) > 0 {
+						source.Tangents[i].Direction = source.Tangents[i].Direction.Add(m.Tangents[i].Scale(w))
+					}
 				}
 			}
 		}
 		posed := source
 		posed.Vertices = slices.Clone(source.Vertices)
+		// Tangents turn with their joints as directions, as the GPU skin
+		// does; a morph may also have changed their length.
+		if len(palette) > 0 || len(source.Tangents) > 0 && weightsDirty {
+			posed.Tangents = slices.Clone(source.Tangents)
+		}
 		for i, v := range source.Vertices {
+			var tangent Tangent
+			if len(posed.Tangents) > 0 {
+				tangent = posed.Tangents[i]
+			}
 			if len(palette) > 0 {
 				in := def.Influences[i]
-				var p, normal nt3dmath.Vec3
+				var p, normal, direction nt3dmath.Vec3
 				sum := float32(0)
 				for k, w := range in.Weights {
 					if w == 0 {
@@ -230,23 +251,30 @@ func (s *Scene) UpdateDeformations() error {
 					m := palette[in.Joints[k]]
 					p = p.Add(m.Point(v.Position).Scale(w))
 					normal = normal.Add(m.Direction(v.Normal).Scale(w))
+					direction = direction.Add(m.Direction(tangent.Direction).Scale(w))
 					sum += w
 				}
 				if sum > 0 {
-					v.Position, v.Normal = p, normal
+					v.Position, v.Normal, tangent.Direction = p, normal, direction
 				}
 			}
 			if v.Normal.Dot(v.Normal) > 0 {
 				v.Normal = v.Normal.Normalize()
 			}
 			posed.Vertices[i] = v
+			if len(posed.Tangents) > 0 {
+				if tangent.Direction.Dot(tangent.Direction) > 0 {
+					tangent.Direction = tangent.Direction.Normalize()
+				}
+				posed.Tangents[i] = tangent
+			}
 		}
 		posed.Bounds = GeometryBounds(posed)
 		if err := posed.Validate(); err != nil {
 			return err
 		}
 		s.changed(true, false)
-		d.morphed = source.Vertices
+		d.morphed, d.morphedTangents = source.Vertices, source.Tangents
 		if weightsDirty {
 			d.sourceRevision = s.revision
 		}

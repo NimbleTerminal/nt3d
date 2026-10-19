@@ -335,3 +335,41 @@ func TestAuthoredTangentShading(t *testing.T) {
 		t.Fatalf("rotated frame did not follow the instance: %d", r)
 	}
 }
+
+func TestDeformedTangents(t *testing.T) {
+	s := NewScene()
+	joint, err := s.Add(Root, "joint")
+	check(t, err)
+	g := tangentQuad(t)
+	id, err := s.SetGeometry("mesh", g)
+	check(t, err)
+	in := make([]Influence, len(g.Vertices))
+	for i := range in {
+		in[i].Weights[0] = 1
+	}
+	check(t, s.SetDeformation(id, Deformation{Skeleton: &Skeleton{Joints: []NodeID{joint}}, Influences: in}))
+	check(t, s.SetTransform(joint, nt3dmath.RotationZ(math.Pi/2)))
+	f, err := s.Frame(DefaultCamera(), 80, 80)
+	check(t, err)
+	if tan := f.Geometry[0].Tangents[0]; !nearVec(tan.Direction, nt3dmath.Vec3{Y: 1}, 1e-5) || tan.W != 1 {
+		t.Fatalf("skinned tangent %v", tan)
+	}
+	f.Lighting = Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{Y: 1}}}}
+	if r := at(softwareRender(f), 40, 40).R; r < 180 {
+		t.Fatalf("skinned frame did not follow the joint: %d", r)
+	}
+
+	id, err = s.SetGeometry("morphed", g)
+	check(t, err)
+	deltas := make([]nt3dmath.Vec3, len(g.Vertices))
+	for i := range deltas {
+		deltas[i] = nt3dmath.Vec3{X: -2}
+	}
+	check(t, s.SetDeformation(id, Deformation{Morphs: []MorphTarget{{Tangents: deltas}}, Weights: []float32{1}}))
+	f, err = s.Frame(DefaultCamera(), 80, 80)
+	check(t, err)
+	if tan := f.Geometry[1].Tangents[1]; !nearVec(tan.Direction, nt3dmath.Vec3{X: -1}, 1e-5) || tan.W != 1 {
+		t.Fatalf("morphed tangent %v", tan)
+	}
+	wantError(t, s.SetDeformation(id, Deformation{Morphs: []MorphTarget{{Tangents: deltas[:3]}}}), "morph vertex count mismatch")
+}

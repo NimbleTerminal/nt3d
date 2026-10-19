@@ -87,10 +87,16 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 		if mapped(geom) {
 			slot = 7
 		}
+		// A normal-mapped mesh's extension records, its tangents, are posed
+		// after its primary ones.
+		records := len(geom.Indices)
+		if extended(geom) {
+			records *= 2
+		}
 		if node.skin == nil {
 			skin := &gpuSkin{}
 			node.skin = skin
-			sizes := []uint64{uint64(len(geom.Indices)) * 48, uint64(len(geom.Indices)) * 32, uint64(len(p.palette)) * 64}
+			sizes := []uint64{uint64(records) * 48, uint64(len(geom.Indices)) * 32, uint64(len(p.palette)) * 64}
 			ptrs := []**wgpu.Buffer{&skin.source, &skin.influences, &skin.palette}
 			for k, ptr := range ptrs {
 				b, err := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: sizes[k], Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
@@ -126,7 +132,7 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 		if skin.sourceRevision != p.sourceRevision {
 			source := p.source
 			source.Material = geom.Material
-			data := geometryData(source)[slot][:len(geom.Indices)*48]
+			data := geometryData(source)[slot][:records*48]
 			if err := dev.Queue().WriteBuffer(skin.source, 0, data); err != nil {
 				return err
 			}
@@ -151,7 +157,7 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 		}
 		pass.SetPipeline(g.skinPipeline)
 		pass.SetBindGroup(0, skin.bind, nil)
-		pass.Dispatch(uint32((len(geom.Indices)+63)/64), 1, 1)
+		pass.Dispatch(uint32((records+63)/64), 1, 1)
 		if err = pass.End(); err != nil {
 			return err
 		}
