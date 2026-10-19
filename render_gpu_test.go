@@ -1032,3 +1032,24 @@ func TestGPUDropShadowsMatchSoftware(t *testing.T) {
 		}
 	}
 }
+
+// The GPU keeps a distant cutout as dense as software does, from the same
+// chain, and samples FullSize at level 0 whatever the anisotropy.
+func TestGPUCutoutMipsMatchSoftware(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	for _, m := range []Material{{}, {FullSize: true}} {
+		f := strandFloor(t, m, 40)
+		f.Anisotropy = 0 // MaxAnisotropy, which cutouts and FullSize ignore.
+		img, err := r.Render(f)
+		check(t, err)
+		sw := softwareRender(f)
+		g, s := drawnShare(img, farTop, farBottom), drawnShare(sw, farTop, farBottom)
+		if g < .1 || math.Abs(g-s) > .1*s {
+			t.Fatalf("FullSize %v: far pixels drawn: GPU %.3f, software %.3f", m.FullSize, g, s)
+		}
+		if n, s := drawnShare(img, .85, 1), drawnShare(sw, .85, 1); math.Abs(n-s) > .05*s {
+			t.Fatalf("FullSize %v: near pixels drawn: GPU %.3f, software %.3f", m.FullSize, n, s)
+		}
+	}
+}

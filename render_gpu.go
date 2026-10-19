@@ -691,10 +691,10 @@ func (g *gpuRenderer) drawTexturedOffset(pass *wgpu.RenderPassEncoder, f Frame, 
 	if t := g.procedural[src]; t != nil {
 		pass.SetBindGroup(2, t.target.BindGroup(), nil)
 	} else {
-		pass.SetBindGroup(2, g.textures[textureKey{src, f.Geometry[d.index].Material.Repeat, f.anisotropy()}].BindGroup(), nil)
+		pass.SetBindGroup(2, g.textures[baseKey(f.Geometry[d.index].Material, f.anisotropy())].BindGroup(), nil)
 	}
 	m := f.Geometry[d.index].Material
-	pass.SetBindGroup(3, g.textures[textureKey{normalMap(m), m.NormalRepeat, f.anisotropy()}].BindGroup(), nil)
+	pass.SetBindGroup(3, g.textures[textureKey{src: normalMap(m), repeat: m.NormalRepeat, aniso: f.anisotropy()}].BindGroup(), nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count, FirstVertex: first})
 }
 

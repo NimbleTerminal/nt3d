@@ -53,16 +53,29 @@ func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGr
 }
 
 // textureKey is an uploaded texture: an image texture, by its sampler's
-// addressing, repeating or clamped, and anisotropy.
-type textureBinding struct {
-	src    *Texture
-	repeat bool
+// addressing, repeating or clamped, and anisotropy, and by its chain: a
+// cutout uploads the texture's coverage-preserving chain, with no
+// anisotropy, whose taps would average its alpha thin again; a FullSize
+// material uploads level 0 alone, with no anisotropy, so the sampler takes
+// one tap of it whatever the gradients say.
+type textureKey struct {
+	src              *Texture
+	repeat           bool
+	aniso            int
+	cutout, fullSize bool
 }
 
-type textureKey struct {
-	src    *Texture
-	repeat bool
-	aniso  int
+// baseKey is the upload a material's base texture needs in a frame of the
+// given anisotropy.
+func baseKey(m *Material, aniso int) textureKey {
+	key := textureKey{src: baseMap(m), repeat: m.Repeat, aniso: aniso}
+	switch {
+	case m.FullSize:
+		key.fullSize, key.aniso = true, 1
+	case m.Cutout:
+		key.cutout, key.aniso = true, 1
+	}
+	return key
 }
 
 // prepareTextures runs outside GPU callbacks: ntgpuimage owns allocation,
@@ -74,27 +87,33 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 	used := make(map[textureKey]bool)
 	var sampledLayout *wgpu.BindGroupLayout
 	for _, geom := range f.Geometry {
-		var bindings []textureBinding
+		var keys []textureKey
 		if mapped(geom) && len(geom.Indices) > 0 {
-			bindings = append(bindings, textureBinding{baseMap(geom.Material), geom.Material.Repeat}, textureBinding{normalMap(geom.Material), geom.Material.NormalRepeat})
+			keys = append(keys, baseKey(geom.Material, f.anisotropy()), textureKey{src: normalMap(geom.Material), repeat: geom.Material.NormalRepeat, aniso: f.anisotropy()})
 		}
 		if geom.PointStyle.Texture != nil && len(geom.Points) > 0 {
-			bindings = append(bindings, textureBinding{geom.PointStyle.Texture, false})
+			keys = append(keys, textureKey{src: geom.PointStyle.Texture, aniso: f.anisotropy()})
 		}
-		for _, binding := range bindings {
-			src := binding.src
+		for _, key := range keys {
+			src := key.src
 			if src.shader != "" {
 				sampledLayout = g.procedural[src].target.BindGroupLayout()
 				continue
 			}
-			key := textureKey{src, binding.repeat, f.anisotropy()}
 			used[key] = true
 			t := g.textures[key]
 			if t == nil {
 				// Color textures decode sRGB; normal maps keep linear vector data.
 				// Both use the software renderer's mip chain and hardware repeat.
+				chain := src.levels()
+				if key.cutout {
+					chain = src.cutoutLevels()
+				}
+				if key.fullSize {
+					chain = chain[:1]
+				}
 				var levels []image.Image
-				for _, level := range src.levels() {
+				for _, level := range chain {
 					levels = append(levels, level)
 				}
 				options := ntgpuimage.TextureOptions{SRGB: !src.data, Anisotropy: uint16(key.aniso)}
@@ -170,6 +189,6 @@ func (g *gpuRenderer) drawSprite(pass *wgpu.RenderPassEncoder, f Frame, d gpuDra
 	style := f.Geometry[d.index].PointStyle
 	pass.SetPipeline(g.spritePipelines[style.Blend])
 	pass.SetBindGroup(0, d.set.binds[0], nil)
-	pass.SetBindGroup(2, g.textures[textureKey{style.Texture, false, f.anisotropy()}].BindGroup(), nil)
+	pass.SetBindGroup(2, g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].BindGroup(), nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
 }

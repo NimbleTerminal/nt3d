@@ -27,7 +27,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
 // position (whose distance from the camera, not affine, is found per
 // fragment) and normal, and the instance's specular strength and exponent
 // (its normal matrix's spare column).
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32> };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32>, @location(11) @interpolate(flat) full:f32 };
 // eyeDistance is a world point's distance from the camera, as fog measures
 // it: straight, or along the view for orthographic cameras.
 fn eyeDistance(world:vec3<f32>)->f32 {
@@ -246,6 +246,8 @@ fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  // Image textures repeat through their samplers; procedural ones (flagged in
  // the instance record) are drawn each frame, clamped, and wrapped by hand.
  o.repeat=select(0.0,1.0,(flags&1u)!=0u && instances[ii].normal[3].z>0.5);
+ // A procedural cutout samples full size: its device chain averages alpha.
+ o.full=select(0.0,1.0,instances[ii].normal[3].z>0.5);
  // Edge-on cutouts fade out as the surface turns to face the viewer.
  if (flags&2u)!=0u && dot(p.b.xyz,p.b.xyz)>0.0 {
   let inst=instances[ii];
@@ -261,7 +263,7 @@ fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
 @vertex fn vs_texture_back(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return mapOutput(vi,ii,-1.0);}
 // sampleMap samples a texture, in linear light (textures are sRGB): through
 // its sampler, filtering across mip levels by the coordinates' change from
-// pixel to pixel (gx, gy; zero takes full size, as cutouts do). A procedural
+// pixel to pixel (gx, gy; zero takes full size, as shadows do). A procedural
 // texture that repeats is wrapped by hand, at full size: its sampler clamps,
 // and wrapping the coordinate alone would blend tiles' edges with clamped
 // texels, showing a seam. Explicit derivatives are allowed where materials
@@ -311,11 +313,14 @@ fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
  return vec4<f32>(finishNormal(o,mapColor(t.rgb)*o.color.rgb,n),t.a*o.cut);
 }
-// Cutout materials skip texels under their threshold, sampled full size so
-// distance does not average the cut away; what remains is opaque.
+// Cutout materials skip texels under their threshold; what remains is
+// opaque. An image cutout is uploaded with its coverage-preserving chain,
+// sampled trilinearly (its sampler has no anisotropy), so distance does
+// not average the cut away; a procedural one samples full size.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
- let t=sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat);
+ let k=1.0-o.full;
+ let t=sampleMap(o.uv,dpdx(o.uv)*k,dpdy(o.uv)*k,o.repeat);
  if t.a<o.cut {discard;}
  return vec4<f32>(finishNormal(o,mapColor(t.rgb)*o.color.rgb,n),1.0);
 }
