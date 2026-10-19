@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -476,5 +477,56 @@ func TestFixturesMatchReference(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// A version 4 stream declared small whose frame expands to far more is
+// refused without decoding the lot: the table's sizes bound the memory.
+func TestStreamsDecodeNoMoreThanDeclared(t *testing.T) {
+	one := []splat{{alpha: 255, scale: [3]uint8{160, 160, 160}, rotation: [4]float32{0, 0, 0, 1}}}
+	data := encodeSPZ(t, 4, one)
+	header := append([]byte{}, data[:16]...)
+	// Replace the positions stream (declared 9 bytes) with 32 MiB of zeros
+	// in a frame that does not state its size, and keep the others.
+	enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var huge bytes.Buffer
+	w := enc
+	w.Reset(&huge)
+	if _, err := w.Write(make([]byte, 32<<20)); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	streams := [][]byte{nil, {255}, {128, 128, 128}, {160, 160, 160}, {0, 0, 0, 0x40}}
+	out := append([]byte{}, header[:15]...)
+	out = append(out, 5)
+	out = binary.LittleEndian.AppendUint32(out, 32)
+	out = append(out, make([]byte, 12)...)
+	dec, _ := zstd.NewWriter(nil)
+	var compressed [][]byte
+	for i, s := range streams {
+		c := huge.Bytes()
+		if i > 0 {
+			c = dec.EncodeAll(s, nil)
+		}
+		compressed = append(compressed, c)
+		out = binary.LittleEndian.AppendUint64(out, uint64(len(c)))
+		out = binary.LittleEndian.AppendUint64(out, [5]uint64{9, 1, 3, 3, 4}[i])
+	}
+	for _, c := range compressed {
+		out = append(out, c...)
+	}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, err = Decode(out, nil)
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		t.Fatal("an overlong stream decoded")
+	}
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 4<<20 {
+		t.Fatalf("decoding a 9-byte stream allocated %d MiB", grew>>20)
 	}
 }

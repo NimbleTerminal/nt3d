@@ -221,7 +221,14 @@ func readStreams(data []byte, budget int64) (header, [6][]byte, error) {
 	if total > uint64(budget) {
 		return header{}, arrays, fmt.Errorf("%w: SPZ decompresses to %d bytes", nt3dmesh.ErrTooLarge, total)
 	}
-	dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(uint64(budget)))
+	// The decoder may not grow a stream past the largest the table
+	// declares, whatever its frame holds; a frame also needs its window,
+	// small for a small stream, so the bound has a floor.
+	largest := uint64(1 << 20)
+	for _, i := range expected {
+		largest = max(largest, sizes[i])
+	}
+	dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(largest))
 	if err != nil {
 		return header{}, arrays, err
 	}
