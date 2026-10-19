@@ -173,6 +173,15 @@ func (o *Options) orient(m *Model) {
 	if o == nil || o.Up != YUp {
 		return
 	}
+	m.OrientYUp()
+}
+
+// OrientYUp turns a Y-up model to Z-up, as Options.Up YUp does: (x, y, z)
+// becomes (x, -z, y) for every vertex, normal, point, Gaussian axis, line,
+// arrow, and box, and Gaussian spherical harmonics turn with them through
+// GaussianSHTransform. A decoder of a format that states its axes calls it
+// itself.
+func (m *Model) OrientYUp() {
 	turn := func(v nt3dmath.Vec3) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v.X, Y: -v.Z, Z: v.Y} }
 	for i := range m.Objects {
 		g := &m.Objects[i].Geometry
