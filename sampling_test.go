@@ -120,7 +120,7 @@ func TestSamplingMatchesReference(t *testing.T) {
 							t.Fatalf("%v data=%v repeat=%v aniso=%d uv=%v: %v != %v", size, data, repeat, aniso, uv, got, want)
 						}
 						for _, lod := range []float32{0, .001, .99, 1, 1.5, 2.99, 3, 20} {
-							got, want = tex.sampleLinear(uv, repeat, lod), tex.referenceSampleLinear(uv, repeat, lod)
+							got, want = tex.sampleLinear(uv, repeat, lod, false), tex.referenceSampleLinear(uv, repeat, lod)
 							if got != want {
 								t.Fatalf("LOD %v: %v != %v", lod, got, want)
 							}

@@ -105,7 +105,7 @@ func TestPickCutoutMatchesPixels(t *testing.T) {
 	for i := range 3000 {
 		u := float32(i) / 3000
 		g := Geometry{Indices: []uint32{0, 1, 2}, UV: []UV{{U: u}, {U: u}, {U: u}}, Material: front.Material}
-		if cut, drawn := cutAt(&g, 0, 0, 0), tex.sampleLinear(UV{U: u}, false, 0)[3] >= .4; cut == drawn {
+		if cut, drawn := cutAt(&g, 0, 0, 0), tex.sampleLinear(UV{U: u}, false, 0, false)[3] >= .4; cut == drawn {
 			t.Fatalf("at u=%v the pick cuts %v, the renderers draw %v", u, cut, drawn)
 		}
 	}

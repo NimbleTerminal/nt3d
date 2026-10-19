@@ -114,6 +114,8 @@ type Texture struct {
 	parameters    [4]float32
 	mipOnce       sync.Once
 	mips          []*image.NRGBA // Level 0 and its mipmaps, built when first sampled.
+	cutOnce       sync.Once
+	cutMips       []*image.NRGBA // The chain cutouts sample: alpha rank-matched to level 0.
 }
 
 // levels is the texture's mip chain: level 0, then each half the size down
@@ -136,12 +138,126 @@ func (t *Texture) levels() []*image.NRGBA {
 	return t.mips
 }
 
+// cutoutLevels is the chain cutout materials sample: the levels of levels(),
+// with the alpha of each level below the first rank-matched to level 0's,
+// so that the share of texels at or above any threshold stays about what
+// it is at full size. A box average alone blends a strand's alpha with the
+// transparent texels around it, so far off it falls under the threshold
+// and the strand vanishes; sampled full size instead, it shimmers. Rank
+// matching keeps the box average's shapes (it is a monotone remap of each
+// level's alpha) and re-widens them to the coverage they had. It preserves
+// coverage at every threshold at once, which fur needs: its layers cut one
+// texture at a different threshold each, and EdgeOn raises the threshold
+// as a surface turns. Colors keep their alpha-weighted average.
+//
+// The chain preserves how much shows, not exactly where: a thin strand far
+// off is a somewhat wider, shorter one. It is for alpha that is tested,
+// not blended; a level of few texels can only approximate the coverage (a
+// 1×1 level is all or nothing: it shows when level 0 covers at least
+// half); and the match is over the whole texture, not region by region.
+// An opaque texture shares the ordinary chain, whose alpha it would leave
+// as it is.
+func (t *Texture) cutoutLevels() []*image.NRGBA {
+	t.cutOnce.Do(func() {
+		levels := t.levels()
+		base := levels[0]
+		opaque := true
+		for i := 3; i < len(base.Pix); i += 4 {
+			if base.Pix[i] != 255 {
+				opaque = false
+				break
+			}
+		}
+		if opaque {
+			t.cutMips = levels
+			return
+		}
+		t.cutMips = make([]*image.NRGBA, len(levels))
+		t.cutMips[0] = base
+		for i := 1; i < len(levels); i++ {
+			t.cutMips[i] = rankMatchAlpha(levels[i], base)
+		}
+	})
+	return t.cutMips
+}
+
+// rankMatchAlpha is a copy of level whose alpha distribution matches
+// base's: the texel at rank r among level's gets the alpha at rank r among
+// base's. Texels rank by alpha, then by the alpha of their eight neighbors
+// (clamped at the edges), so of two texels alike the one nearer a shape's
+// middle ranks higher, and a level of few distinct values is not stuck
+// with their few shares; texels alike in both take the midpoint of their
+// group's ranks, and the smallest base alpha whose cumulative share exceeds
+// the rank, so a tie falls toward showing. Colors are untouched.
+func rankMatchAlpha(level, base *image.NRGBA) *image.NRGBA {
+	var baseHist [256]int
+	for i := 3; i < len(base.Pix); i += 4 {
+		baseHist[base.Pix[i]]++
+	}
+	// cumulative[b] is the share of base's texels with alpha at most b.
+	var cumulative [256]float64
+	total := float64(len(base.Pix) / 4)
+	sum := 0
+	for b := range cumulative {
+		sum += baseHist[b]
+		cumulative[b] = float64(sum) / total
+	}
+	w, h := level.Rect.Dx(), level.Rect.Dy()
+	alpha := func(x, y int) int {
+		return int(level.Pix[max(0, min(h-1, y))*level.Stride+max(0, min(w-1, x))*4+3])
+	}
+	// A texel's key orders it by alpha, then by its neighbors' (0 to 2040).
+	const neighbors = 8*255 + 1
+	keys := make([]int32, w*h)
+	hist := make([]int32, 256*neighbors)
+	for y := range h {
+		for x := range w {
+			around := 0
+			for dy := -1; dy <= 1; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					if dx != 0 || dy != 0 {
+						around += alpha(x+dx, y+dy)
+					}
+				}
+			}
+			k := int32(alpha(x, y)*neighbors + around)
+			keys[y*w+x] = k
+			hist[k]++
+		}
+	}
+	remap := make([]uint8, len(hist))
+	n := float64(w * h)
+	below, b := 0, 0
+	for k, count := range hist {
+		if count == 0 {
+			continue
+		}
+		rank := float64(2*below+int(count)) / (2 * n)
+		for b < 255 && cumulative[b] <= rank {
+			b++
+		}
+		remap[k] = uint8(b)
+		below += int(count)
+	}
+	out := &image.NRGBA{Pix: make([]byte, len(level.Pix)), Stride: level.Stride, Rect: level.Rect}
+	copy(out.Pix, level.Pix)
+	for y := range h {
+		for x := range w {
+			out.Pix[y*level.Stride+x*4+3] = remap[keys[y*w+x]]
+		}
+	}
+	return out
+}
+
 // sampleLinear samples linear-light color and alpha, 0 to 1, at uv: filtered
 // bilinearly within a level, as sampleWrap is, but in linear light, and
 // blended between the two levels nearest lod (zero is full size), as the
-// GPU's trilinear filtering does.
-func (t *Texture) sampleLinear(uv UV, repeat bool, lod float32) [4]float32 {
+// GPU's trilinear filtering does. A cutout samples cutoutLevels.
+func (t *Texture) sampleLinear(uv UV, repeat bool, lod float32, cutout bool) [4]float32 {
 	levels := t.levels()
+	if cutout {
+		levels = t.cutoutLevels()
+	}
 	lod = max(0, min(lod, float32(len(levels)-1)))
 	l0 := int(lod)
 	c := sampleLevelData(levels[l0], uv, repeat, t.data)
@@ -181,12 +297,12 @@ func (t *Texture) sampleFootprint(uv, dx, dy UV, repeat bool, aniso int) [4]floa
 		lod = float32(math.Log2(step))
 	}
 	if n == 1 {
-		return t.sampleLinear(uv, repeat, lod)
+		return t.sampleLinear(uv, repeat, lod, false)
 	}
 	var sum [4]float32
 	for i := range n {
 		f := (float64(i)+.5)/float64(n) - .5
-		c := t.sampleLinear(UV{uv.U + float32(mu*f), uv.V + float32(mv*f)}, repeat, lod)
+		c := t.sampleLinear(UV{uv.U + float32(mu*f), uv.V + float32(mv*f)}, repeat, lod, false)
 		for k := range sum {
 			sum[k] += c[k]
 		}

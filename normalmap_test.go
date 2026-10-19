@@ -67,7 +67,7 @@ func TestNormalMapDataAndOwnership(t *testing.T) {
 		t.Fatal("normal map aliases source")
 	}
 	for lod := float32(0); lod < 4; lod++ {
-		c := n.sampleLinear(UV{.5, .5}, false, lod)
+		c := n.sampleLinear(UV{.5, .5}, false, lod, false)
 		if abs(c[0]-128.0/255) > 1e-5 || c[2] != 1 || c[3] != 1 {
 			t.Fatalf("normal data gamma/alpha corruption at mip %v: %v", lod, c)
 		}

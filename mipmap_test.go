@@ -94,7 +94,7 @@ func TestTextureLevels(t *testing.T) {
 	if len(levels) != 3 || levels[2].Rect.Dx() != 1 || levels[2].Rect.Dy() != 1 {
 		t.Fatalf("%d levels", len(levels))
 	}
-	if c := tex.sampleLinear(UV{.5, .5}, false, 1.5); math.Abs(float64(c[0]-1)) > 1e-6 || c[3] != 1 {
+	if c := tex.sampleLinear(UV{.5, .5}, false, 1.5, false); math.Abs(float64(c[0]-1)) > 1e-6 || c[3] != 1 {
 		t.Fatalf("white between levels: %v", c)
 	}
 	shader, err := NewShaderTexture("fn nt3dTexture(uv: vec2<f32>) -> vec4<f32> { return vec4<f32>(1.0); }", img)

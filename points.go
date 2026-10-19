@@ -179,5 +179,5 @@ func (s PointStyle) spriteRect(p Point) [4]float32 {
 func (s PointStyle) spriteSample(p Point, u, v float32) [4]float32 {
 	rect := s.spriteRect(p)
 	dx, dy := .5/float32(s.Texture.width), .5/float32(s.Texture.height)
-	return s.Texture.sampleLinear(UV{max(rect[0]+dx, min(rect[0]+rect[2]-dx, rect[0]+u*rect[2])), max(rect[1]+dy, min(rect[1]+rect[3]-dy, rect[1]+v*rect[3]))}, false, 0)
+	return s.Texture.sampleLinear(UV{max(rect[0]+dx, min(rect[0]+rect[2]-dx, rect[0]+u*rect[2])), max(rect[1]+dy, min(rect[1]+rect[3]-dy, rect[1]+v*rect[3]))}, false, 0, false)
 }

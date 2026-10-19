@@ -342,7 +342,7 @@ func rasterShadowTriangle(m *shadowMap, corners [3]clipCorner, material *Materia
 				sum := a + b + c
 				a, b, c = a/sum, b/sum, c/sum
 				u, v, w := corners[0].uv, corners[1].uv, corners[2].uv
-				if material.Texture.sampleLinear(UV{a*u.U + b*v.U + c*w.U, a*u.V + b*v.V + c*w.V}, material.Repeat, 0)[3] < material.threshold() {
+				if material.Texture.sampleLinear(UV{a*u.U + b*v.U + c*w.U, a*u.V + b*v.V + c*w.V}, material.Repeat, 0, false)[3] < material.threshold() {
 					continue
 				}
 			}

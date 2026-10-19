@@ -260,7 +260,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 					// the GPU's derivatives find it.
 					var tex [4]float32
 					if cutout {
-						tex = material.Texture.sampleLinear(uv, material.Repeat, 0)
+						tex = material.Texture.sampleLinear(uv, material.Repeat, 0, false)
 					} else {
 						tex = material.Texture.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.Repeat, aniso)
 					}

@@ -187,7 +187,7 @@ func cutAt(g *Geometry, tri int, u, w float32) bool {
 	// Sampled and compared as the renderers sample a cutout: filtered at
 	// full size, against the threshold itself, so a click goes through
 	// where the picture does.
-	return m.Texture.sampleLinear(uv, m.Repeat, 0)[3] < m.threshold()
+	return m.Texture.sampleLinear(uv, m.Repeat, 0, false)[3] < m.threshold()
 }
 func rayBox(r nt3dmath.Ray, b Box) (float32, bool) {
 	lo, hi := float32(0), float32(math.Inf(1))
