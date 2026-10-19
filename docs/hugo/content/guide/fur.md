@@ -30,6 +30,8 @@ Fur is light on memory. An untextured mesh's fur repeats a tile of 64 strands, s
 
 Short strands show most at the lower layers, which makes fur look darker deeper in, as real fur does.
 
+Every layer samples the texture's [coverage-preserving mipmaps](../materials/#cutout-mipmaps), so a distant coat stays as dense as a near one instead of thinning away; `m` in the demo compares it with full-size sampling.
+
 ## Wind
 
 `FurCoat.Sway(shell, v)` is a node transform that bends the fur, as wind or gravity would. A uniform sway moves a whole layer, so animating it uploads no geometry.

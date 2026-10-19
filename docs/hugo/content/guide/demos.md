@@ -63,7 +63,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 <img class="poster" src="../../posters/fur.png" alt="Spot the cow covered in black-and-white fur">
 
-`task fur`. Spot the cow in [shell fur](../fur/) colored by its own texture, swaying in the wind by moving nodes alone. `s` cycles the shell count, so you can watch layers become strands; `l` changes the length, `f` toggles the [fins](../fur/#fins), `a` the wind, `x` supersamples, and `e` cycles post effects.
+`task fur`. Spot the cow in [shell fur](../fur/) colored by its own texture, swaying in the wind by moving nodes alone. `s` cycles the shell count, so you can watch layers become strands; `l` changes the length, `f` toggles the [fins](../fur/#fins), `m` the [coverage-preserving mipmaps](../materials/#cutout-mipmaps), `a` the wind, `x` supersamples, and `e` cycles post effects.
 
 ## Mipmaps
 

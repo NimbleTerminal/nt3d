@@ -29,8 +29,6 @@ move to Done with their commit; git history has the details.
   keep all their markers in one geometry, already one upload and draw,
   and sharing them means instancing shaders that index primitives by
   instance today.
-- [ ] **Coverage-preserving alpha mips for cutouts**: fur and leaves sample
-  full size today, since averaging alpha thins them in the distance.
 - [ ] **Outline follow-ups**: sharp-crease edges, world-unit widths, and seamless
   contours for meshes with split normals.
 - [ ] **Order-independent transparency**: only if scenes hit the sorting
@@ -67,6 +65,10 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **Coverage-preserving alpha mips for cutouts**: a chain per cutout texture
+  whose alpha is rank-matched to full size, sampled trilinearly by both
+  renderers; `Material.FullSize` for comparing, `m` in the fur demo
+  (`5f112e3`…`4f14aa2`).
 - **Clustered LOD selection (`nt3dclod`)**: median-split clusters with a
   progressive item order, CPU and WebGPU compute selection (frustum culling,
   distance levels, indirect draw arguments) that agree, the point cloud demo

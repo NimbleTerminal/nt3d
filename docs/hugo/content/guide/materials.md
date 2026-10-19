@@ -26,13 +26,19 @@ A tiled floor running to the horizon packs many texels into each distant pixel, 
 
 <img class="poster" src="../../posters/mipmaps.png" alt="A checkered floor running to the horizon, fading to an even gray, with an orange sphere">
 
-The [mipmaps demo](../demos/#mipmaps) lets you turn them off to compare. Shader textures get them too, from the picture the shader draws each frame. Cutouts sample full size, since averaging their alpha would thin fur and leaves away in the distance.
+The [mipmaps demo](../demos/#mipmaps) lets you turn them off to compare. Shader textures get them too, from the picture the shader draws each frame. `Material.FullSize` samples a texture full size, without its mipmaps, for comparing or for a texture that must never blur.
+
+### Cutout mipmaps
+
+Averaging a cutout's alpha would thin it: far off, a strand's texels blend with the transparent texels around them, fall under the threshold, and the strand vanishes or sparkles. So a cutout samples mipmaps of its own, whose alpha is *rank-matched* to the full-size texture: at each level, the texel at a given rank takes the alpha of the texel at that rank in the full-size image, as a renderer samples it, so the share of texels above any threshold stays about what it is at full size. One chain serves every threshold at once, which [fur](../fur/) needs, since each of its layers cuts the same texture at its own height. Distant fur and leaves keep their density instead of thinning, and stop shimmering. Cutouts filter between levels but take no anisotropic taps, which would average them thin again.
+
+The chain preserves how much shows, not exactly where: a thin strand far off becomes a somewhat wider, shorter one. Thresholds of one half and above hold within a few percent; below that a coarse level shows a little more, never less. It suits alpha that is tested, not blended (transparent materials keep the ordinary chain), and a level whose texels are wider than the shapes can only approximate them. Shader cutouts sample full size, as the GPU averages the chain of the picture it draws.
 
 ## Transparency and cutouts
 
 `Material.Transparent` blends a mesh over what lies behind it, by the vertex colors' alpha times the texture's. Transparent meshes are drawn after everything opaque, farthest first, each with its back faces before its front ones, so a glass sphere shows its far side through its near one. Meshes that intersect each other, or the overlapping layers of one curved mesh, can still blend out of order. Wireframe and picking treat transparent surfaces as solid. Press `t` in the [shapes demo](../demos/#shape-builders) to see it.
 
-`Material.Cutout` instead cuts holes: texels with alpha under `Threshold` (one half by default) aren't drawn at all, and the rest are solid. It's how leaves, fences, and [fur](../fur/) are made, and it can't be combined with `Transparent`. Picking passes through the holes.
+`Material.Cutout` instead cuts holes: texels with alpha under `Threshold` (one half by default) aren't drawn at all, and the rest are solid. It's how leaves, fences, and [fur](../fur/) are made, and it can't be combined with `Transparent`. Picking passes through the holes. Far off, cutouts keep their density through [mipmaps of their own](#cutout-mipmaps).
 
 `Material.EdgeOn` shows a cutout only where the surface turns edge-on to the viewer, fading it out as the surface comes to face the camera. Fur uses it to fill in silhouettes. Wireframe and picking leave edge-on surfaces out.
 
