@@ -85,7 +85,7 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 		}
 		t := &proceduralTexture{aniso: f.anisotropy()}
 		var err error
-		t.target, err = g.r.NewTexture(src.width, src.height, ntgpuimage.TextureOptions{RenderTarget: true, SRGB: true, Anisotropy: uint16(t.aniso)})
+		t.target, err = g.r.NewTexture(src.width, src.height, ntgpuimage.TextureOptions{RenderTarget: true, SRGB: true, Mipmaps: true, Anisotropy: uint16(t.aniso)})
 		if err != nil {
 			return err
 		}

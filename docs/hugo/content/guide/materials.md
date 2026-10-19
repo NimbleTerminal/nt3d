@@ -26,7 +26,7 @@ A tiled floor running to the horizon packs many texels into each distant pixel, 
 
 <img class="poster" src="../../posters/mipmaps.png" alt="A checkered floor running to the horizon, fading to an even gray, with an orange sphere">
 
-The [mipmaps demo](../demos/#mipmaps) lets you turn them off to compare. Shader textures don't have mipmaps yet, and cutouts sample full size, since averaging their alpha would thin fur and leaves away in the distance.
+The [mipmaps demo](../demos/#mipmaps) lets you turn them off to compare. Shader textures get them too, from the picture the shader draws each frame. Cutouts sample full size, since averaging their alpha would thin fur and leaves away in the distance.
 
 ## Transparency and cutouts
 

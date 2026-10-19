@@ -99,8 +99,8 @@ func TestTextureLevels(t *testing.T) {
 	}
 	shader, err := NewShaderTexture("fn nt3dTexture(uv: vec2<f32>) -> vec4<f32> { return vec4<f32>(1.0); }", img)
 	check(t, err)
-	if len(shader.levels()) != 1 {
-		t.Fatal("procedural textures have no mipmaps on the GPU, so none in software")
+	if len(shader.levels()) != 3 {
+		t.Fatal("shader textures mip their fallback, as the GPU mips the picture it draws")
 	}
 	// The mip level is log2 of how many texels a pixel step crosses.
 	if lod := textureLOD(tex, UV{0, 0}, UV{4. / 5, 0}, UV{0, 0}); math.Abs(float64(lod-2)) > 1e-5 {

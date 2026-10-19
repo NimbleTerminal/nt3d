@@ -118,15 +118,12 @@ type Texture struct {
 
 // levels is the texture's mip chain: level 0, then each half the size down
 // to 1×1, averaged in linear light by ntgpuimage.MipChain, the chain the GPU
-// uploads too, so both renderers sample the same levels. Procedural
-// textures have level 0 only, as the GPU renders them each frame.
+// uploads too, so both renderers sample the same levels. A shader texture
+// mips its fallback image here, as the GPU mips the picture it draws.
 func (t *Texture) levels() []*image.NRGBA {
 	t.mipOnce.Do(func() {
 		base := &image.NRGBA{Pix: t.pixels, Stride: t.width * 4, Rect: image.Rect(0, 0, t.width, t.height)}
 		t.mips = []*image.NRGBA{base}
-		if t.shader != "" {
-			return
-		}
 		chain, err := ntgpuimage.MipChain(base, ntgpuimage.MipOptions{SRGB: !t.data, AlphaWeighted: !t.data})
 		if err != nil {
 			return

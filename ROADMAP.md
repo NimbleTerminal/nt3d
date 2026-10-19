@@ -29,9 +29,8 @@ move to Done with their commit; git history has the details.
   keep all their markers in one geometry, already one upload and draw,
   and sharing them means instancing shaders that index primitives by
   instance today.
-- [ ] **Mipmap follow-ups**: procedural textures (needs `ntgpuimage`
-  render-target mips); coverage-preserving alpha mips for cutouts (fur and
-  leaves sample full size today).
+- [ ] **Coverage-preserving alpha mips for cutouts**: fur and leaves sample
+  full size today, since averaging alpha thins them in the distance.
 - [ ] **Outline follow-ups**: sharp-crease edges, world-unit widths, and seamless
   contours for meshes with split normals.
 - [ ] **Order-independent transparency**: only if scenes hit the sorting
