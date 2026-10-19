@@ -20,12 +20,15 @@
 // value is copied on each hit.
 //
 // Programming errors panic rather than return errors, like an out-of-range
-// slice index: a stale or never-issued ID, or bounds that are not finite
-// or whose minimum exceeds the maximum. The zero AABB is a point at the
-// origin and is accepted. Boxes that touch on a face, edge, or corner
-// overlap. A ray's Direction need not be unit length; the reported t is in
-// units of it, only hits at t ≥ 0 are reported, and a box containing the
-// origin reports t = 0.
+// slice index: a never-issued ID, a removed ID not yet reused, or bounds
+// that are not finite or whose minimum exceeds the maximum. Removed IDs are
+// reused by later inserts, often the very next one, so a stale ID can name
+// a new leaf; callers that keep IDs past Remove must clear them. The zero
+// AABB is a point at the origin and is accepted. Boxes that touch on a
+// face, edge, or corner overlap. A ray's Direction need not be unit
+// length; the reported t is in units of it, only hits at t ≥ 0 are
+// reported, a box containing the origin reports t = 0, and a ray with a
+// NaN or infinite component meets nothing.
 //
 // A typical use stores pointers to the caller's objects:
 //

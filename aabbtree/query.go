@@ -46,9 +46,10 @@ func overlaps(alo, ahi, blo, bhi nt3dmath.Vec3) bool {
 // parallel to that slab. Children nearer the origin are visited first, so
 // hits arrive roughly near to far, but the order is not guaranteed across
 // the whole tree: a nearest-hit search keeps the smallest t seen and
-// continues. fn must not modify the tree.
+// continues. A ray with a NaN or infinite component meets nothing. fn must
+// not modify the tree.
 func (t *Tree[T]) RayCast(ray nt3dmath.Ray, fn func(id ID, value T, t float32) bool) {
-	if t.root == null {
+	if t.root == null || !finite(ray.Origin) || !finite(ray.Direction) {
 		return
 	}
 	origin := [3]float32{ray.Origin.X, ray.Origin.Y, ray.Origin.Z}
@@ -80,6 +81,10 @@ func (t *Tree[T]) RayCast(ray nt3dmath.Ray, fn func(id ID, value T, t float32) b
 			stack = append(stack, n.child2)
 		}
 	}
+}
+
+func finite(v nt3dmath.Vec3) bool {
+	return nt3dmath.IsFinite(float64(v.X)) && nt3dmath.IsFinite(float64(v.Y)) && nt3dmath.IsFinite(float64(v.Z))
 }
 
 // slab returns where a ray enters a box, clamped to zero for an origin

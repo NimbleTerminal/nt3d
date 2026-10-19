@@ -215,3 +215,22 @@ func TestRayCastNearFirst(t *testing.T) {
 		t.Fatalf("first hit was box %d", first)
 	}
 }
+
+func TestRayCastNonFinite(t *testing.T) {
+	tr := New[int]()
+	for i := range 10 {
+		tr.Insert(unit(float32(i)*2, 0, 0), i)
+	}
+	nan, inf := float32(math.NaN()), float32(math.Inf(-1))
+	for _, ray := range []nt3dmath.Ray{
+		{Origin: nt3dmath.Vec3{X: nan}, Direction: nt3dmath.Vec3{X: 1}},
+		{Origin: nt3dmath.Vec3{Y: .5, Z: .5}, Direction: nt3dmath.Vec3{X: nan}},
+		{Origin: nt3dmath.Vec3{Y: 50}, Direction: nt3dmath.Vec3{X: 1, Y: nan}},
+		{Origin: nt3dmath.Vec3{X: inf, Y: .5, Z: .5}, Direction: nt3dmath.Vec3{X: 1}},
+	} {
+		tr.RayCast(ray, func(_ ID, v int, d float32) bool {
+			t.Fatalf("ray %v hit leaf %d at t %g", ray, v, d)
+			return true
+		})
+	}
+}
