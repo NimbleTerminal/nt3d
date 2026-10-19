@@ -27,6 +27,7 @@ view := nt3dwidget.New(scene, 80, 24) // a Bubble Tea model you can drag to orbi
 ## What it does
 
 - **A scene graph** of named nodes with transforms, visibility, and shared geometry, so a forest of a thousand trees costs one mesh.
+- **Clustered level of detail** for point clouds and other large sets: cluster once, then cull and thin by distance each frame, on the CPU or in WebGPU compute.
 - **Three renderers** that agree: WebGPU, a software rasterizer that draws the same picture, and wireframe for any terminal.
 - **Materials**: textures with mipmaps, transparency, cutouts, highlights, fog, shader-generated textures, and shell fur.
 - **Mesh files**: STL, OBJ, 3MF, PLY, and glTF, read safely within memory and size limits.

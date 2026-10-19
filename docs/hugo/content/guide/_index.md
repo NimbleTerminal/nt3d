@@ -13,6 +13,8 @@ How to build scenes with nt3d, render them, and show them in a terminal.
 - [Fur](fur/)
 - [Mesh files](meshes/)
 - [Rendering](rendering/)
+- [Particles and sprites](particles/)
+- [Clustering and LOD](clustering/)
 - [Picking](picking/)
 - [The widget](widget/)
 - [Demos](demos/)
