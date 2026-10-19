@@ -35,6 +35,7 @@ tasks:
     desc: Explicit hardware GPU tests (fail if no GPU is available)
     cmds:
       - go test -mod=readonly -tags webgpu -run TestGPU -count=1 -v .
+      - go test -mod=readonly -tags webgpu -run TestGPU -count=1 -v ./clod
       - go -C examples/demos test -mod=readonly -tags webgpu -run TestGPU -count=1 -v ./internal/demo
   vet:
     cmds:
