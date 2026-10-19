@@ -2,6 +2,7 @@
 package nt3dmesh
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 )
@@ -34,5 +35,17 @@ func TestRegisterFormat(t *testing.T) {
 	}
 	if _, err := Decode(nil, "none", nil); err == nil {
 		t.Fatal("unknown format decoded")
+	}
+	// A format may recognize its content by a function, as a compressed
+	// container needs, rather than a fixed prefix.
+	RegisterFormatSniff("zipped", []string{".zp"}, func(data []byte) bool { return bytes.HasPrefix(data, []byte{0x1f, 0x8b}) && len(data) > 4 }, func([]byte, *Options) (*Model, error) { return nil, errors.New("zipped") })
+	if f, _ := FormatOf("a.bin", []byte{0x1f, 0x8b, 8, 0, 0, 0}); f != "zipped" {
+		t.Fatalf("gzip content: %q", f)
+	}
+	if f, _ := FormatOf("a.bin", []byte{0x1f, 0x8b}); f != "" {
+		t.Fatalf("too short for the sniff: %q", f)
+	}
+	if f, _ := FormatOf("b.ZP", nil); f != "zipped" {
+		t.Fatalf("extension: %q", f)
 	}
 }

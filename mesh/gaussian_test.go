@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"nimbleterminal.dev/nt3d"
+	"nimbleterminal.dev/nt3d/math"
 	"strings"
 	"testing"
 )
@@ -123,5 +124,32 @@ func TestGaussianPLYThinAxes(t *testing.T) {
 	values[7] = -1000
 	if _, err := DecodePLY(gaussianFile("ascii", values), nil); err == nil {
 		t.Fatal("underflowed axis accepted")
+	}
+}
+
+// GaussianPoint builds the point DecodeGaussianPLY builds from the same
+// values, and refuses what it refuses.
+func TestGaussianPointHelper(t *testing.T) {
+	values := []float32{1, 2, 3, 0, 1, -1, 0, 0, -1, -2, 2, 0, 0, 0}
+	m, err := DecodePLY(gaussianFile("ascii", values), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := m.Objects[0].Geometry.Points[0]
+	got, err := GaussianPoint(nt3dmath.Vec3{X: 1, Y: 2, Z: 3}, [4]float64{2, 0, 0, 0}, [3]float64{0, -1, -2}, [3]float64{0, 1, -1}, .5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("helper %+v\nPLY    %+v", got, want)
+	}
+	if _, err := GaussianPoint(nt3dmath.Vec3{}, [4]float64{}, [3]float64{}, [3]float64{}, 1); err == nil {
+		t.Fatal("zero quaternion accepted")
+	}
+	if _, err := GaussianPoint(nt3dmath.Vec3{}, [4]float64{1, 0, 0, 0}, [3]float64{17, 0, 0}, [3]float64{}, 1); err == nil {
+		t.Fatal("scale of e^17 accepted")
+	}
+	if _, err := GaussianPoint(nt3dmath.Vec3{X: float32(math.NaN())}, [4]float64{1, 0, 0, 0}, [3]float64{}, [3]float64{}, 1); err == nil {
+		t.Fatal("non-finite position accepted")
 	}
 }

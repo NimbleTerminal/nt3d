@@ -20,7 +20,7 @@ import (
 type registration struct {
 	format     Format
 	extensions []string
-	magic      string
+	sniff      func([]byte) bool // Nil when the format has no content check.
 	decode     func([]byte, *Options) (*Model, error)
 }
 
@@ -35,13 +35,24 @@ var (
 // formats registered earlier, are chosen first. It is meant to be called
 // from init functions.
 func RegisterFormat(f Format, extensions []string, magic string, decode func(data []byte, o *Options) (*Model, error)) {
+	var sniff func([]byte) bool
+	if magic != "" {
+		sniff = func(data []byte) bool { return bytes.HasPrefix(data, []byte(magic)) }
+	}
+	RegisterFormatSniff(f, extensions, sniff, decode)
+}
+
+// RegisterFormatSniff is RegisterFormat for a format whose content is
+// recognized by a function rather than a fixed prefix, as a compressed
+// container's is; sniff may be nil for a format known by extension alone.
+func RegisterFormatSniff(f Format, extensions []string, sniff func(data []byte) bool, decode func(data []byte, o *Options) (*Model, error)) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	lower := make([]string, len(extensions))
 	for i, e := range extensions {
 		lower[i] = strings.ToLower(e)
 	}
-	registry = append(registry, registration{f, lower, magic, decode})
+	registry = append(registry, registration{f, lower, sniff, decode})
 }
 
 // registeredExtension chooses a registered format by a file's extension.
@@ -57,12 +68,12 @@ func registeredExtension(name string) (Format, bool) {
 	return "", false
 }
 
-// registeredMagic chooses a registered format by its content's prefix.
+// registeredMagic chooses a registered format by its content.
 func registeredMagic(data []byte) (Format, bool) {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 	for _, r := range registry {
-		if r.magic != "" && bytes.HasPrefix(data, []byte(r.magic)) {
+		if r.sniff != nil && r.sniff(data) {
 			return r.format, true
 		}
 	}

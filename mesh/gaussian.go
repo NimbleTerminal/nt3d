@@ -4,6 +4,7 @@ package nt3dmesh
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image/color"
 	"math"
@@ -26,6 +27,46 @@ func gaussianPLY(elements []plyElement) bool {
 		}
 	}
 	return false
+}
+
+// GaussianPoint is a splat as the Gaussian decoders build one: at position,
+// with one-sigma axes from a w, x, y, z quaternion (normalized here) and
+// the logarithms of its three scales (scales must lie within [1e-20, 1e6]),
+// its DC spherical harmonic coefficients as a clamped sRGB8 color (the 3DGS
+// convention, 0.5 + 0.2820948·dc), and an opacity, 0 to 1, as alpha.
+// Decoders share it so a splat reads the same from any format.
+func GaussianPoint(position nt3dmath.Vec3, rotation [4]float64, logScales [3]float64, dc [3]float64, opacity float64) (nt3d.Point, error) {
+	for _, v := range append(append(append(rotation[:], logScales[:]...), dc[:]...), opacity) {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return nt3d.Point{}, errors.New("nt3dmesh: non-finite Gaussian value")
+		}
+	}
+	p := nt3d.Point{Position: position, Radius: 1}
+	if !validCoordinate(p.Position.X, p.Position.Y, p.Position.Z) {
+		return nt3d.Point{}, errors.New("nt3dmesh: invalid Gaussian position")
+	}
+	w, x, y, z := rotation[0], rotation[1], rotation[2], rotation[3]
+	norm := math.Hypot(math.Hypot(w, x), math.Hypot(y, z))
+	if norm == 0 || math.IsInf(norm, 0) {
+		return nt3d.Point{}, errors.New("nt3dmesh: invalid Gaussian quaternion")
+	}
+	w /= norm
+	x /= norm
+	y /= norm
+	z /= norm
+	axes := [3][3]float64{{1 - 2*(y*y+z*z), 2 * (x*y + w*z), 2 * (x*z - w*y)}, {2 * (x*y - w*z), 1 - 2*(x*x+z*z), 2 * (y*z + w*x)}, {2 * (x*z + w*y), 2 * (y*z - w*x), 1 - 2*(x*x+y*y)}}
+	for k, a := range axes {
+		s := math.Exp(logScales[k])
+		if s < 1e-20 || s > 1e6 {
+			return nt3d.Point{}, errors.New("nt3dmesh: Gaussian scale outside [1e-20,1e6]")
+		}
+		p.GaussianAxes[k] = nt3dmath.Vec3{X: float32(a[0] * s), Y: float32(a[1] * s), Z: float32(a[2] * s)}
+	}
+	channel := func(k int) uint8 {
+		return uint8(math.Round(255 * max(0, min(1, .5+.28209479177387814*dc[k]))))
+	}
+	p.Color = color.RGBA{R: channel(0), G: channel(1), B: channel(2), A: uint8(math.Round(255 * opacity))}
+	return p, nil
 }
 
 // DecodeGaussianPLY reads uncompressed 3DGS PLY (ASCII or either binary byte
@@ -109,31 +150,14 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 					return nil, r.errorf("non-finite %s", name)
 				}
 			}
-			p := nt3d.Point{Position: nt3dmath.Vec3{X: float32(values["x"]), Y: float32(values["y"]), Z: float32(values["z"])}, Radius: 1}
-			if !validCoordinate(p.Position.X, p.Position.Y, p.Position.Z) {
-				return nil, r.errorf("invalid Gaussian position")
+			p, err := GaussianPoint(nt3dmath.Vec3{X: float32(values["x"]), Y: float32(values["y"]), Z: float32(values["z"])},
+				[4]float64{values["rot_0"], values["rot_1"], values["rot_2"], values["rot_3"]},
+				[3]float64{values["scale_0"], values["scale_1"], values["scale_2"]},
+				[3]float64{values["f_dc_0"], values["f_dc_1"], values["f_dc_2"]},
+				1/(1+math.Exp(-values["opacity"])))
+			if err != nil {
+				return nil, r.errorf("%v", err)
 			}
-			w, x, y, z := values["rot_0"], values["rot_1"], values["rot_2"], values["rot_3"]
-			norm := math.Hypot(math.Hypot(w, x), math.Hypot(y, z))
-			if norm == 0 || math.IsInf(norm, 0) {
-				return nil, r.errorf("invalid Gaussian quaternion")
-			}
-			w /= norm
-			x /= norm
-			y /= norm
-			z /= norm
-			axes := [3][3]float64{{1 - 2*(y*y+z*z), 2 * (x*y + w*z), 2 * (x*z - w*y)}, {2 * (x*y - w*z), 1 - 2*(x*x+z*z), 2 * (y*z + w*x)}, {2 * (x*z + w*y), 2 * (y*z - w*x), 1 - 2*(x*x+y*y)}}
-			for k, a := range axes {
-				s := math.Exp(values[fmt.Sprintf("scale_%d", k)])
-				if s < 1e-20 || s > 1e6 {
-					return nil, r.errorf("Gaussian scale outside [1e-20,1e6]")
-				}
-				p.GaussianAxes[k] = nt3dmath.Vec3{X: float32(a[0] * s), Y: float32(a[1] * s), Z: float32(a[2] * s)}
-			}
-			channel := func(k int) uint8 {
-				return uint8(math.Round(255 * max(0, min(1, .5+.28209479177387814*values[fmt.Sprintf("f_dc_%d", k)]))))
-			}
-			p.Color = color.RGBA{R: channel(0), G: channel(1), B: channel(2), A: uint8(math.Round(255 / (1 + math.Exp(-values["opacity"]))))}
 			coefficients := make([]nt3dsh.RGB, count)
 			for channel := 0; channel < 3; channel++ {
 				coefficients[0][channel] = float32(values[fmt.Sprintf("f_dc_%d", channel)])
