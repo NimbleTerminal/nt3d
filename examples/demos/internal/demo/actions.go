@@ -62,6 +62,8 @@ func (d *demo) sceneKeys() (string, keys) {
 		return "animation", keys{[]key.Binding{bind("a", "a", "pause")}}
 	case d.particles != nil:
 		return "particles", keys{[]key.Binding{bind("b", "b", "blend"), bind("s", "s", "shape"), bind("t", "t", "sprites"), bind("n", "n", "count"), bind("a", "a", "pause")}}
+	case d.cloud != nil:
+		return "cloud", keys{[]key.Binding{bind("l", "l", "LOD"), bind("n", "n", "count"), bind("-", "-", "zoom out"), bind("=", "=", "zoom in")}}
 	case d.lights != nil:
 		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("h", "h", "SH rotation"), bind("e", "e", "highlights"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("b", "b", "lift"), bind("a", "a", "pause")}}
 	case d.forest != nil:

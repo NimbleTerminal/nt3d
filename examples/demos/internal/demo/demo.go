@@ -51,6 +51,7 @@ type demo struct {
 	forest            *forestScene
 	lights            *lightScene
 	particles         *particleScene
+	cloud             *cloudScene
 }
 
 type shadowMode int
@@ -105,11 +106,12 @@ const (
 	sceneAnimation
 	sceneAnimate
 	sceneCharacters
+	sceneCloud
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil
+	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil
 }
 
 type quitMsg struct{}
@@ -181,6 +183,17 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(v)
 		elapsed := now.Sub(d.lastPhase).Seconds()
 		d.lastPhase = now
+		if d.cloud != nil {
+			// The cloud reselects for the view the last frame saw, paused or not.
+			changed, err := d.stepCloud()
+			if err != nil {
+				d.status = err.Error()
+			}
+			if changed {
+				return d, tea.Batch(d.view.Refresh(), phaseTick())
+			}
+			return d, phaseTick()
+		}
 		if !d.animate || (!d.procedural && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil) {
 			return d, phaseTick()
 		}
@@ -359,6 +372,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.cycleLightPreset()
 				break
 			}
+			if d.cloud != nil {
+				err = d.toggleCloudLOD()
+				break
+			}
 			if d.fur != nil {
 				d.fur.length = (d.fur.length + 1) % len(furLengths)
 				err = d.growFur()
@@ -422,6 +439,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.toggleNormalMap()
 				break
 			}
+			if d.cloud != nil {
+				err = d.cycleCloudCount()
+				break
+			}
 			if d.particles != nil {
 				err = d.cycleParticleCount()
 				break
@@ -441,6 +462,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "v":
 			d.hidden = !d.hidden
 			err = d.scene.SetVisible(d.group, !d.hidden)
+		case "-", "_", "=", "+":
+			if d.cloud == nil {
+				_, cmd := d.view.Update(msg)
+				return d, cmd
+			}
+			d.zoomCloud(v.String() == "=" || v.String() == "+")
 		case "1":
 			return d, d.view.SetRenderMode(nt3d.WebGPU)
 		case "2":
@@ -485,6 +512,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	}
 	if d.particles != nil {
 		f.Background = color.RGBA{16, 14, 20, 255} // Night, so the fire glows.
+	}
+	if d.cloud != nil {
+		d.captureCloudView(f)
 	}
 	if d.mipmaps != nil && d.mipmaps.mode == mipOnly {
 		f.Anisotropy = 1
@@ -532,6 +562,11 @@ func (d *demo) View() tea.View {
 	}
 	if d.particles != nil {
 		v.Content = d.zones.Scan(d.particlesView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.cloud != nil {
+		v.Content = d.zones.Scan(d.cloudView(v.Content))
 		v.AltScreen = true
 		return v
 	}
@@ -697,6 +732,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupParticles(); err != nil {
 			return err
 		}
+	case sceneCloud:
+		if err = d.setupCloud(); err != nil {
+			return err
+		}
 	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
@@ -742,6 +781,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	case sceneParticles:
 		camera.Alpha, camera.Distance, camera.Projection = 14, 4.6, nt3d.Perspective
 		camera.Target = nt3dmath.Vec3{Z: .9}
+	case sceneCloud:
+		camera.Alpha, camera.Distance, camera.Projection = 32, 9, nt3d.Perspective
 	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))
