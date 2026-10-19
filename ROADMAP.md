@@ -68,7 +68,7 @@ move to Done with their commit; git history has the details.
 - **Coverage-preserving alpha mips for cutouts**: a chain per cutout texture
   whose alpha is rank-matched to full size, sampled trilinearly by both
   renderers; `Material.FullSize` for comparing, `m` in the fur demo
-  (`5f112e3`…`4f14aa2`).
+  (`5f112e3`…`29e8691`).
 - **Clustered LOD selection (`nt3dclod`)**: median-split clusters with a
   progressive item order, CPU and WebGPU compute selection (frustum culling,
   distance levels, indirect draw arguments) that agree, the point cloud demo
