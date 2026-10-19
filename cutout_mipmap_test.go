@@ -233,3 +233,16 @@ func TestCutoutShaderTextureIsFullSize(t *testing.T) {
 		t.Fatal("a shader cutout differs from the same picture sampled full size")
 	}
 }
+
+// The cutout chain is built once, at first sample or upload; this is what
+// a large texture costs.
+func BenchmarkCutoutLevels(b *testing.B) {
+	img := strandImage(2048, 8, 4)
+	for b.Loop() {
+		tex, err := NewTexture(img)
+		if err != nil {
+			b.Fatal(err)
+		}
+		tex.cutoutLevels()
+	}
+}

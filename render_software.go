@@ -260,11 +260,12 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 					// pixel right and a pixel down, as the GPU's derivatives
 					// find it. Cutouts sample their own chain at that level,
 					// trilinearly, with no anisotropic taps, which would
-					// average their alpha thin again; FullSize materials and
-					// shader cutouts sample level 0.
+					// average their alpha thin again; FullSize materials, shader
+					// cutouts, and outline hulls (as the GPU's outline pass does)
+					// sample level 0.
 					var tex [4]float32
 					switch {
-					case cutout && (fullSize || material.Texture.shader != ""):
+					case cutout && (fullSize || hull || material.Texture.shader != ""):
 						tex = material.Texture.sampleLinear(uv, material.Repeat, 0, true)
 					case cutout:
 						lod := textureLOD(material.Texture, uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1))

@@ -186,18 +186,20 @@ func (t *Texture) cutoutLevels() []*image.NRGBA {
 		}
 		t.cutMips = make([]*image.NRGBA, len(levels))
 		t.cutMips[0] = base
+		want := bilinearAlphaShares(base)
 		for i := 1; i < len(levels); i++ {
-			t.cutMips[i] = rankMatchAlpha(levels[i], base)
+			t.cutMips[i] = rankMatchAlpha(levels[i], want)
 		}
 	})
 	return t.cutMips
 }
 
 // rankMatchAlpha is a copy of level whose alpha, as a renderer samples it,
-// is distributed as base's: the sample at rank r among level's gets the
-// alpha at rank r among base's. Samples are what a renderer sees, taken
-// bilinearly at sixteen phases over every texel (bilinearAlphaShares), not
-// the texels themselves: the taps average a coarse level's narrow shapes
+// is distributed as want, the bilinearAlphaShares of level 0: the sample
+// at rank r among level's gets the alpha at rank r among level 0's.
+// Samples are what a renderer sees, taken bilinearly at sixteen phases
+// over every texel (bilinearAlphaShares), not the texels themselves: the
+// taps average a coarse level's narrow shapes
 // toward their surroundings, so the texels are matched to the wanted
 // distribution read nearer its mean, spread past the target by about what
 // the taps contract them, trying a few spreads and keeping the one whose
@@ -210,8 +212,7 @@ func (t *Texture) cutoutLevels() []*image.NRGBA {
 // take the midpoint of their group's ranks, and the smallest base alpha
 // whose cumulative share exceeds the rank, so a tie falls toward showing.
 // Colors are untouched.
-func rankMatchAlpha(level, base *image.NRGBA) *image.NRGBA {
-	want := bilinearAlphaShares(base)
+func rankMatchAlpha(level *image.NRGBA, want [256]float64) *image.NRGBA {
 	keys, hist := alphaRankKeys(level)
 	mean := 0.0
 	for b, share := range want {

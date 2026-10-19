@@ -1053,3 +1053,31 @@ func TestGPUCutoutMipsMatchSoftware(t *testing.T) {
 		}
 	}
 }
+
+// An outlined distant cutout's hull samples level 0 on both renderers, as
+// the outline passes do, so the two agree but for a few pixels.
+func TestGPUOutlinedCutoutMatchesSoftware(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	tex, err := NewTexture(strandImage(128, 8, 4))
+	check(t, err)
+	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 32, Rings: 16, Material: &Material{Texture: tex, Cutout: true, Repeat: true, Unlit: true, Threshold: .3}})
+	check(t, err)
+	for i := range sphere.UV {
+		sphere.UV[i].U *= 24
+		sphere.UV[i].V *= 12
+	}
+	sphere.Outline = OutlineStyle{Width: 3, Color: color.RGBA{20, 200, 40, 255}}
+	s := NewScene()
+	_, err = s.SetGeometry("sphere", sphere)
+	check(t, err)
+	camera := DefaultCamera()
+	camera.Projection, camera.Distance = Perspective, 5
+	f, err := s.Frame(camera, 160, 120)
+	check(t, err)
+	img, err := r.Render(f)
+	check(t, err)
+	if n := changed(img, softwareRender(f), 0, 1); n > f.Width*f.Height/100 {
+		t.Fatalf("GPU and software differ in %d pixels", n)
+	}
+}
