@@ -467,6 +467,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "v":
 			d.hidden = !d.hidden
 			err = d.scene.SetVisible(d.group, !d.hidden)
+		case "c":
+			if d.meshes != nil && d.meshes.capture {
+				return d, d.fitMeshes()
+			}
+			_, cmd := d.view.Update(msg)
+			return d, cmd
 		case "-", "_", "=", "+":
 			if d.cloud == nil {
 				_, cmd := d.view.Update(msg)
@@ -793,7 +799,9 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))
 	defer d.view.Close()
 	switch kind {
-	case sceneMeshes, sceneLarge, sceneAnimation, sceneGaussians:
+	case sceneMeshes:
+		d.fitMeshes()
+	case sceneLarge, sceneAnimation, sceneGaussians:
 		d.view.Fit()
 		if kind == sceneAnimation {
 			camera := d.view.Camera()

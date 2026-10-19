@@ -4,8 +4,11 @@ package demo
 import (
 	"fmt"
 	"image/color"
+	"math"
 	"path/filepath"
+	"slices"
 
+	"charm.land/bubbletea/v2"
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
@@ -16,6 +19,7 @@ func MeshesMain() { mainDemo(false, sceneMeshes) }
 
 type meshScene struct {
 	hasSH, dcOnly bool
+	capture       bool // A splat capture, framed on its subject rather than its bounds.
 	nodes         []nt3d.NodeID
 	sources       []nt3d.Geometry // As built or read, per node.
 	normals       int             // Index into meshNormals.
@@ -54,7 +58,13 @@ func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 		if err != nil {
 			return err
 		}
-		fit, _, _ := m.Bounds().Normalization()
+		// A capture's bounds are its shell of background splats; its
+		// subject, the dense middle, is what fills the cell.
+		box := m.Bounds()
+		if framing, ok := splatFraming(m); ok {
+			box, d.meshes.capture = framing, true
+		}
+		fit, _, _ := box.Normalization()
 		offset := nt3dmath.Translation(nt3dmath.Vec3{X: spacing * (float32(i) - float32(len(files)-1)/2)})
 		if err = d.scene.SetTransform(group, offset.Mul(fit)); err != nil {
 			return err
@@ -216,4 +226,57 @@ func (d *demo) meshesView(content string) string {
 	}
 	return fmt.Sprintf("nt3d meshes · %s · s normals · t glass · e highlights · b outlines · d fog · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · %s · %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
 		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], glass, shine, outlines, d.status)
+}
+
+// splatFraming is the box a splat capture is framed by: a cube around the
+// median position of its splats, three quarters of their median distance
+// from it to a side (the camera sits a few cells back, so the subject in
+// the middle of a capture fills the view) rather than the shell of sky and
+// ground splats around it, which the bounds would frame. A model with
+// anything but Gaussian splats has none.
+func splatFraming(m *nt3dmesh.Model) (nt3dmath.AABB, bool) {
+	var xs, ys, zs []float32
+	for _, o := range m.Objects {
+		g := o.Geometry
+		if g.PointStyle.Shape != nt3d.GaussianPoint || len(g.Vertices) > 0 || len(g.Lines) > 0 || len(g.Boxes) > 0 {
+			return nt3dmath.AABB{}, false
+		}
+		for _, p := range g.Points {
+			xs, ys, zs = append(xs, p.Position.X), append(ys, p.Position.Y), append(zs, p.Position.Z)
+		}
+	}
+	if len(xs) == 0 {
+		return nt3dmath.AABB{}, false
+	}
+	median := func(v []float32) float32 {
+		sorted := slices.Clone(v)
+		slices.Sort(sorted)
+		return sorted[len(sorted)/2]
+	}
+	center := nt3dmath.Vec3{X: median(xs), Y: median(ys), Z: median(zs)}
+	distances := make([]float32, len(xs))
+	for i := range xs {
+		d := nt3dmath.Vec3{X: xs[i], Y: ys[i], Z: zs[i]}.Sub(center)
+		distances[i] = float32(math.Sqrt(float64(d.Dot(d))))
+	}
+	half := .75 * median(distances)
+	if half <= 0 {
+		return nt3dmath.AABB{}, false
+	}
+	var box nt3dmath.AABB
+	box.Include(center.Sub(nt3dmath.Vec3{X: half, Y: half, Z: half}))
+	box.Include(center.Add(nt3dmath.Vec3{X: half, Y: half, Z: half}))
+	return box, true
+}
+
+// fitMeshes frames the meshes scene: the widget fits the scene's bounds,
+// but a splat capture's bounds are its shell, so the capture takes the
+// default view of the cell its subject was fitted to.
+func (d *demo) fitMeshes() tea.Cmd {
+	if d.meshes == nil || !d.meshes.capture {
+		return d.view.Fit()
+	}
+	camera := d.view.Camera()
+	camera.Target, camera.Distance = nt3dmath.Vec3{}, 4.3
+	return d.view.SetCamera(camera)
 }
