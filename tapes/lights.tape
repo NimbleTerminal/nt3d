@@ -6,8 +6,9 @@ Hide
 Type "bin/nt3d-lights"
 Enter
 Wait+Screen@60s /fps/
-# The poster shows the last preset, eight lights in a ring.
-Type "llll"
+# The poster shows the last preset, eight lights in a ring, two presets
+# on from the opening lamps.
+Type "ll"
 Sleep 1s
 Show
 Sleep 3s
@@ -19,7 +20,8 @@ Screenshot dist/tapes/lights-2.png
 Sleep 0.4s
 Screenshot dist/tapes/lights-3.png
 Sleep 2s
-# Then a tour of the others: the default, sun and sky, lamps, and night.
+# Then a tour of the others, from the top: sky and key, sky IBL, image
+# IBL, and the SH studio.
 Type "l"
 Sleep 2s
 Type "l"

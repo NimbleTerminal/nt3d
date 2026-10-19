@@ -108,6 +108,12 @@ var lightShapes = []struct {
 
 func (d *demo) setupLights() error {
 	d.lights = &lightScene{ranged: true, normal: true}
+	// Open on the three orbiting lamps.
+	for i, p := range lightPresets {
+		if p.name == "lamps" {
+			d.lights.preset = i
+		}
+	}
 	// The floor is two triangles: a point light's bright spot on it is
 	// found per pixel, where no vertex is.
 	const s = 3

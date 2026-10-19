@@ -307,3 +307,14 @@ func TestSHLightRotationPreset(t *testing.T) {
 		t.Fatal("rotating SH changed no lighting")
 	}
 }
+
+// The demo opens on the three orbiting lamps.
+func TestLightsStartOnLamps(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	if name := lightPresets[d.lights.preset].name; name != "lamps" {
+		t.Fatalf("initial preset %q, want lamps", name)
+	}
+}
