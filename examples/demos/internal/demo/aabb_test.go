@@ -222,3 +222,33 @@ func TestAABBAddRemoveCycle(t *testing.T) {
 		t.Fatalf("show path: %v, %d vertices", a.show, len(hierarchyLines(t, d)))
 	}
 }
+
+func TestAABBPickRay(t *testing.T) {
+	cam := nt3d.DefaultCamera()
+	cam.Alpha, cam.Distance, cam.Projection = 30, 15, nt3d.Perspective
+	hit := nt3dmath.Vec3{X: 1, Y: 2, Z: .5}
+	ray := aabbPickRay(cam, hit)
+	if ray.Origin != cam.Eye() {
+		t.Fatalf("perspective ray starts at %v, not the eye %v", ray.Origin, cam.Eye())
+	}
+	if want := hit.Sub(cam.Eye()); ray.Direction != want {
+		t.Fatalf("perspective ray direction %v, want %v", ray.Direction, want)
+	}
+
+	cam.Projection = nt3d.Orthographic
+	ray = aabbPickRay(cam, hit)
+	view := cam.Target.Sub(cam.Eye()).Normalize()
+	dir := ray.Direction.Normalize()
+	if d := dir.Dot(view); d < .9999 {
+		t.Fatalf("orthographic ray direction %v is not the view direction %v", dir, view)
+	}
+	// The origin lies behind the hit along the view direction, on the ray.
+	back := hit.Sub(ray.Origin)
+	if along := back.Dot(view); along < float32(cam.Distance) {
+		t.Fatalf("origin only %g behind the hit", along)
+	}
+	off := back.Sub(view.Scale(back.Dot(view)))
+	if off.Dot(off) > 1e-6 {
+		t.Fatalf("hit is %v off the orthographic ray", off)
+	}
+}

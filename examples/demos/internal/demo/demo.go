@@ -240,13 +240,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return d, nil
 	case nt3dwidget.PickMsg:
 		if d.aabb != nil {
-			// The tree picks: a ray from the eye through the clicked point.
+			// The tree picks, along the ray the click travels.
 			var err error
 			if v.Hit == nil {
 				err = d.clearAABBPick()
 			} else {
-				eye := d.view.Camera().Eye()
-				err = d.pickAABB(nt3dmath.Ray{Origin: eye, Direction: v.Hit.Position.Sub(eye)})
+				err = d.pickAABB(aabbPickRay(d.view.Camera(), v.Hit.Position))
 			}
 			if err != nil {
 				d.status = err.Error()

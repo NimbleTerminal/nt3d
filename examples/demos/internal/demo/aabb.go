@@ -353,3 +353,16 @@ func (d *demo) aabbView(content string) string {
 	return fmt.Sprintf("nt3d AABB tree · click a box · h hierarchy · a drift · n count · b add · x remove · 1/2/3 backend · q quit\n%s\n%s · %s · %s · %d boxes, %d nodes · %s · drag orbit · wheel zoom · r rotate · %s",
 		content, d.rendering(), a.show, pick, len(a.boxes), 2*len(a.boxes)-1, drift, d.status)
 }
+
+// aabbPickRay is the ray a click at world point hit travels along: from
+// the eye through the point in perspective, or along the view direction
+// from well behind the point in orthographic projection, where every pick
+// ray is parallel.
+func aabbPickRay(c nt3d.Camera, hit nt3dmath.Vec3) nt3dmath.Ray {
+	eye := c.Eye()
+	if c.Projection == nt3d.Perspective {
+		return nt3dmath.Ray{Origin: eye, Direction: hit.Sub(eye)}
+	}
+	view := c.Target.Sub(eye).Normalize()
+	return nt3dmath.Ray{Origin: hit.Sub(view.Scale(2 * float32(c.Distance))), Direction: view}
+}
