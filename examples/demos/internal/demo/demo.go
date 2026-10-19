@@ -52,6 +52,7 @@ type demo struct {
 	lights            *lightScene
 	particles         *particleScene
 	cloud             *cloudScene
+	aabb              *aabbScene
 }
 
 type shadowMode int
@@ -107,11 +108,12 @@ const (
 	sceneAnimate
 	sceneCharacters
 	sceneCloud
+	sceneAABB
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil
+	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil && d.aabb == nil
 }
 
 type quitMsg struct{}
@@ -194,7 +196,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, phaseTick()
 		}
-		if !d.animate || (!d.procedural && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil) {
+		if !d.animate || (!d.procedural && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil) {
 			return d, phaseTick()
 		}
 		d.animationTime += elapsed
@@ -217,6 +219,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.stepLights()
 		case d.particles != nil:
 			err = d.stepParticles()
+		case d.aabb != nil:
+			err = d.stepAABB()
 		default:
 			err = d.updatePlasma()
 		}
@@ -235,6 +239,20 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d.status = "GPU failed · 2 renders in software"
 		return d, nil
 	case nt3dwidget.PickMsg:
+		if d.aabb != nil {
+			// The tree picks: a ray from the eye through the clicked point.
+			var err error
+			if v.Hit == nil {
+				err = d.clearAABBPick()
+			} else {
+				eye := d.view.Camera().Eye()
+				err = d.pickAABB(nt3dmath.Ray{Origin: eye, Direction: v.Hit.Position.Sub(eye)})
+			}
+			if err != nil {
+				d.status = err.Error()
+			}
+			return d, d.view.Refresh()
+		}
 		d.status = "no hit"
 		if v.Hit != nil {
 			d.status = fmt.Sprintf("%s #%d at %.2f %.2f %.2f", v.Hit.Name, v.Hit.Index, v.Hit.Position.X, v.Hit.Position.Y, v.Hit.Position.Z)
@@ -254,6 +272,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.animate = !d.animate
 			d.lastPhase = time.Now()
 		case "h":
+			if d.aabb != nil {
+				err = d.cycleAABBShow()
+				break
+			}
 			if d.meshes != nil && d.meshes.hasSH {
 				d.meshes.dcOnly = !d.meshes.dcOnly
 				err = d.rebuildMeshes()
@@ -295,6 +317,14 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.fog = !d.fog
 			return d, d.view.Refresh()
 		case "b", "x":
+			if d.aabb != nil {
+				if v.String() == "b" {
+					_, err = d.addAABBBox()
+				} else {
+					err = d.removePickedAABB()
+				}
+				break
+			}
 			if d.lights != nil && v.String() == "b" {
 				d.lights.lift = !d.lights.lift
 				err = d.buildLightShapes()
@@ -440,6 +470,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			d.toggleIndexing()
 		case "n":
+			if d.aabb != nil {
+				err = d.cycleAABBCount()
+				break
+			}
 			if d.lights != nil {
 				err = d.toggleNormalMap()
 				break
@@ -578,6 +612,11 @@ func (d *demo) View() tea.View {
 	}
 	if d.cloud != nil {
 		v.Content = d.zones.Scan(d.cloudView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.aabb != nil {
+		v.Content = d.zones.Scan(d.aabbView(v.Content))
 		v.AltScreen = true
 		return v
 	}
@@ -747,6 +786,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupCloud(); err != nil {
 			return err
 		}
+	case sceneAABB:
+		if err = d.setupAABB(); err != nil {
+			return err
+		}
 	default:
 		d.procedural = *procedural
 		if err = d.loadTextures(); err != nil {
@@ -794,6 +837,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Target = nt3dmath.Vec3{Z: .9}
 	case sceneCloud:
 		camera.Alpha, camera.Distance, camera.Projection = 32, 9, nt3d.Perspective
+	case sceneAABB:
+		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
 	}
 	camera.AutoRotate = proceduralDefault
 	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))
