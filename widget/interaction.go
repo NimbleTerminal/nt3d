@@ -4,14 +4,18 @@ package nt3dwidget
 import (
 	tea "charm.land/bubbletea/v2"
 	"nimbleterminal.dev/nt3d"
+	"nimbleterminal.dev/nt3d/math"
 	picture "nimbleterminal.dev/ntpicture"
 	"time"
 )
 
-// PickMsg is emitted on a click. Hit is nil when no primitive is hit.
+// PickMsg is emitted on a click. Hit is nil when no primitive is hit. Ray
+// is the click's world-space ray, from the camera through the clicked
+// cell's center, for scenes that pick their own way.
 type PickMsg struct {
 	ModelID uint64
 	Hit     *nt3d.Hit
+	Ray     nt3dmath.Ray
 }
 
 func (m *Model) Pick(x, y int) *nt3d.Hit {
@@ -25,6 +29,13 @@ func (m *Model) Pick(x, y int) *nt3d.Hit {
 	px, py := (float32(x)+.5)*float32(cw), (float32(y)+.5)*float32(ch)
 	return m.scene.Pick(m.camera, f, px, py, float32(cw)*.6)
 }
+
+// clickRay is the world-space ray through a cell's center.
+func (m *Model) clickRay(x, y int) nt3dmath.Ray {
+	cw, ch := m.pic.CellPixelSize()
+	return m.camera.RayFromPixel((float32(x)+.5)*float32(cw), (float32(y)+.5)*float32(ch), m.width*cw, m.height*ch)
+}
+
 func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 	z := m.zones.Get(m.zoneID)
 	event := msg.Mouse()
@@ -35,9 +46,9 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 		click := m.drag && !m.moved
 		m.drag = false
 		if click && inside {
-			hit := m.Pick(x, y)
+			hit, ray := m.Pick(x, y), m.clickRay(x, y)
 			id := m.id
-			return func() tea.Msg { return PickMsg{id, hit} }
+			return func() tea.Msg { return PickMsg{id, hit, ray} }
 		}
 		return nil
 	case tea.MouseClickMsg:
