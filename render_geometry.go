@@ -82,7 +82,8 @@ type transformState struct {
 	unlit               bool
 	world               nt3dmath.Mat4
 	specular, shininess float32
-	procedural          bool // Its texture is drawn each frame: wrapped by hand.
+	procedural          bool   // Its texture is drawn each frame: wrapped by hand.
+	extension           uint32 // Where its mesh's extension records start: its index count, or 0.
 }
 
 // gpuDraw draws a run of a geometry's instances.
@@ -156,7 +157,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					return err
 				}
 			}
-			if len(geom.NormalUV) > 0 && mapped(geom) {
+			if extended(geom) {
 				node.batches[7].count = uint32(len(geom.Indices))
 			}
 			if geom.PointStyle.Blend == AlphaBlend && len(geom.Points) > 0 {
@@ -320,13 +321,16 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 		if mapped(f.Geometry[i]) {
 			states[k].procedural = baseMap(f.Geometry[i].Material).shader != ""
 		}
+		if extended(f.Geometry[i]) {
+			states[k].extension = uint32(len(f.Geometry[i].Indices))
+		}
 	}
 	if slices.Equal(states, s.last) {
 		return nil
 	}
 	data := make([]byte, 0, instanceRecordSize*len(states))
 	for _, st := range states {
-		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.procedural, true, st.outline, st.unlit)...)
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.procedural, true, st.outline, st.unlit, st.extension)...)
 	}
 	s.last = states
 	return dev.Queue().WriteBuffer(s.transform, 0, data)
@@ -335,8 +339,11 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 // transformRecord is an instance's world and normal matrices. The normal
 // matrix only turns directions, so its last column is free: it carries the
 // material's specular strength and exponent, whether its texture is
-// procedural, and whether the node shows.
-func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedural, visible bool, outline OutlineStyle, unlit bool) []byte {
+// procedural, and whether the node shows. Its last row is free too: the
+// unlit flag, and where the mesh's extension records start (its index
+// count; the shader cannot trust arrayLength, which Metal reports from
+// the allocation, not the binding).
+func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
@@ -347,7 +354,7 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedura
 		normal[15] = 1
 	}
 	// The normal matrix's unused last row carries the unlit flag.
-	normal[3], normal[7], normal[11] = 0, 0, 0
+	normal[3], normal[7], normal[11] = 0, float32(extension), 0
 	if unlit {
 		normal[3] = 1
 	}
@@ -361,7 +368,7 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Materi
 	if m != nil && m.Specular > 0 && !m.Unlit {
 		specular, shininess = m.Specular, m.shininess()
 	}
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, 0))
 }
 
 // sortPoints orders a geometry's alpha points farthest first for the view
@@ -471,10 +478,11 @@ func geometryData(geom Geometry) (data [9][]byte) {
 		if mapped(geom) {
 			// The texture gives color, so the color slot carries the cutout
 			// threshold (or a transparent vertex's opacity), flags (1 repeat,
-			// 2 edge-on, 4 tint), and, for a tint, the vertex color as a
-			// 24-bit integer, which a float holds exactly.
+			// 2 edge-on, 4 tint, 8 extension records follow), and, for a
+			// tint, the vertex color as a 24-bit integer, which a float
+			// holds exactly.
 			m, flags, cut := geom.Material, 0, geom.Material.threshold()
-			if len(geom.NormalUV) > 0 {
+			if extended(geom) {
 				flags |= 8
 			}
 			if blended {
@@ -500,10 +508,21 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			vertex(1, v, opacity)
 		}
 	}
-	if len(geom.NormalUV) > 0 && mapped(geom) {
+	// A normal-mapped mesh with tangents or independent normal UVs has an
+	// extension record for each index after the primary ones: the normal
+	// map's coordinates, and the tangent frame with its handedness in w
+	// (zero without tangents).
+	if extended(geom) {
 		for _, i := range geom.Indices {
-			uv := geom.NormalUV[i]
-			data[7] = appendFloats(data[7], uv.U, uv.V, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+			uv := geom.UV[i]
+			if len(geom.NormalUV) > 0 {
+				uv = geom.NormalUV[i]
+			}
+			var t Tangent
+			if len(geom.Tangents) > 0 {
+				t = geom.Tangents[i]
+			}
+			data[7] = appendFloats(data[7], uv.U, uv.V, 0, 0, t.Direction.X, t.Direction.Y, t.Direction.Z, t.W, 0, 0, 0, 0)
 		}
 	}
 	for _, b := range geom.Boxes {
