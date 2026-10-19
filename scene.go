@@ -243,6 +243,7 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	g = cloneGeometry(g)
 	g.posed = nil
 	g.Bounds = GeometryBounds(g)
+	generateTangentsOnUpload(&g)
 	n.deformation = nil
 	n.geometry, n.shared, n.pickIndex = &g, nil, nil
 	s.changed(true, true)
@@ -274,6 +275,7 @@ func NewSharedGeometry(g Geometry) (*SharedGeometry, error) {
 	g = cloneGeometry(g)
 	g.posed = nil
 	g.Bounds = GeometryBounds(g)
+	generateTangentsOnUpload(&g)
 	return &SharedGeometry{geometry: g, id: nextRevision.Add(1)}, nil
 }
 
