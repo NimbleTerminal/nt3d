@@ -113,11 +113,8 @@ func (d *demo) setupMipmaps() error {
 // mipFloor lays the floor: 80 units across, its texture tiled 160 times.
 func (d *demo) mipFloor() error {
 	m := &nt3d.Material{Texture: d.mipmaps.textures[d.mipmaps.pattern], Repeat: true}
-	if d.mipmaps.mode == mipFull {
-		// A cutout that cuts nothing samples full size, as every texture
-		// did before mipmaps.
-		m.Cutout, m.Threshold = true, .01
-	}
+	// FullSize samples full size, as every texture did before mipmaps.
+	m.FullSize = d.mipmaps.mode == mipFull
 	floor, err := nt3d.BuildHeightfield(nt3d.Heightfield{NX: 2, NY: 2, MinX: -40, MaxX: 40, MinY: -40, MaxY: 40, Heights: make([]float32, 4), Material: m,
 		UV: []nt3d.UV{{U: 0, V: 0}, {U: 160, V: 0}, {U: 0, V: 160}, {U: 160, V: 160}}})
 	if err != nil {

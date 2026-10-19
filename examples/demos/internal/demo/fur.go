@@ -26,7 +26,8 @@ var (
 type furScene struct {
 	fins           nt3d.NodeID // Zero when fins are off.
 	noFins         bool
-	effect         int // Index into effects.
+	fullSize       bool // Shells and fins sample full size, as before cutout mipmaps.
+	effect         int  // Index into effects.
 	base           nt3d.Geometry
 	coat           *nt3d.FurCoat
 	nodes          []nt3d.NodeID
@@ -99,6 +100,9 @@ func (d *demo) growFur() error {
 		return err
 	}
 	for k, g := range shells {
+		if k > 0 { // The skin is opaque; the shells are cutouts.
+			g.Material.FullSize = d.fur.fullSize
+		}
 		id, err := d.scene.SetGeometry(fmt.Sprintf("fur shell %d", k), g)
 		if err != nil {
 			return err
@@ -115,6 +119,7 @@ func (d *demo) growFur() error {
 		if err != nil {
 			return err
 		}
+		fins.Material.FullSize = d.fur.fullSize
 		if d.fur.fins, err = d.scene.SetGeometry("fur fins", fins); err != nil {
 			return err
 		}
@@ -149,10 +154,13 @@ func (d *demo) cycleEffect() tea.Cmd {
 }
 
 func (d *demo) furView(content string) string {
-	fins := "fins"
+	fins, mips := "fins", "mipmaps"
 	if d.fur.noFins {
 		fins = "no fins"
 	}
-	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · f fins · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s · supersample %d× · %s · %s",
-		content, d.rendering(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, d.view.Supersample(), effects[d.fur.effect].name, d.status)
+	if d.fur.fullSize {
+		mips = "full size"
+	}
+	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · f fins · m mipmaps · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s · %s · supersample %d× · %s · %s",
+		content, d.rendering(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, mips, d.view.Supersample(), effects[d.fur.effect].name, d.status)
 }

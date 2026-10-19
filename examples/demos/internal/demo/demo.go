@@ -269,6 +269,11 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.cycleFiltering()
 				break
 			}
+			if d.fur != nil {
+				d.fur.fullSize = !d.fur.fullSize
+				err = d.growFur()
+				break
+			}
 			if d.dynamic == nil {
 				return d, nil
 			}

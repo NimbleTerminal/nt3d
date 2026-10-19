@@ -71,7 +71,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.mipmaps != nil:
 		return "mipmaps", keys{[]key.Binding{bind("m", "m", "filtering"), bind("t", "t", "texture"), bind("x", "x", "supersample")}}
 	case d.fur != nil:
-		return "fur", keys{[]key.Binding{bind("a", "a", "wind"), bind("s", "s", "shells"), bind("l", "l", "length"), bind("f", "f", "fins"), bind("x", "x", "supersample"), bind("e", "e", "effect")}}
+		return "fur", keys{[]key.Binding{bind("a", "a", "wind"), bind("s", "s", "shells"), bind("l", "l", "length"), bind("f", "f", "fins"), bind("m", "m", "mipmaps"), bind("x", "x", "supersample"), bind("e", "e", "effect")}}
 	case d.large != nil:
 		return "dense-mesh", keys{[]key.Binding{bind("i", "i", "pick index"), bind("n", "n", "turn")}}
 	case d.models != nil:
