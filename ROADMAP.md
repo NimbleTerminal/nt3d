@@ -62,6 +62,9 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **Dynamic AABB tree (`nt3daabbtree`)**: a generic `Tree[T]` spatial index
+  with insert, remove, update, inclusive overlap and near-first ray queries,
+  Box2D-style balancing, and the spatial index guide (`d419650`…`2784ca9`).
 - **Tangent frames for normal maps**: authored `Geometry.Tangents` (glTF
   `TANGENT`), MikkTSpace-compatible generation at scene upload and in the
   glTF loader (per corner, splitting vertices), skinned and morphed frames

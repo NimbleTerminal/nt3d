@@ -63,3 +63,8 @@ cluster a large set of points, instances, or labels once, then each frame
 select the clusters in view and how much of each to draw, on the CPU or in
 WebGPU compute. `task cloud` zooms through a million points; see the
 [clustering guide](docs/hugo/content/guide/clustering.md).
+
+A dynamic AABB tree lives in `nimbleterminal.dev/nt3d/aabbtree` (`nt3daabbtree`):
+a generic spatial index (`Tree[T]`) over moving boxed objects with insert,
+remove, update, overlap, and ray-cast queries, independent of the scene
+and renderers; see the [spatial index guide](docs/hugo/content/guide/spatial-index.md).

@@ -19,10 +19,10 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go clod/*.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
+      - gofmt -w *.go aabbtree/*.go clod/*.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go clod/*.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
+      - test -z "$(gofmt -l *.go aabbtree/*.go clod/*.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...
