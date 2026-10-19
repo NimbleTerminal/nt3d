@@ -68,7 +68,7 @@ move to Done with their commit; git history has the details.
 
 - **SPZ Gaussian splats**: Niantic's compressed format, versions 2 to 4, in
   `nt3dmesh/spz`; point limits from the WebGPU binding (`MaxPoints`,
-  `MaxGaussians`) and big clouds split into slabs (`552bee4`…`3477fac`).
+  `MaxGaussians`) and big clouds split into slabs (`552bee4`…`b7febd6`).
 - **Coverage-preserving alpha mips for cutouts**: a chain per cutout texture
   whose alpha is rank-matched to full size, sampled trilinearly by both
   renderers; `Material.FullSize` for comparing, `m` in the fur demo
