@@ -70,8 +70,8 @@ move to Done with their commit; git history has the details.
 
 - **Clustered LOD selection (`nt3dclod`)**: median-split clusters with a
   progressive item order, CPU and WebGPU compute selection (frustum culling,
-  distance levels, indirect draw arguments) that agree, and the point cloud
-  demo of a million points.
+  distance levels, indirect draw arguments) that agree, the point cloud demo
+  of a million points, and the clustering guide (`cdc18b0`…`7ec5cbd`).
 
 - **Shared spherical harmonics**: `nt3dsh` provides degree 0–3 real SH,
   projection, rotation, diffuse convolution, and a shared Go/WGSL basis.
