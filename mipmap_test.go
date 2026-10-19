@@ -10,7 +10,7 @@ import (
 
 // checkerFloor is a floor tiled 400 times with a black and white checker,
 // seen from low over it, so its far half packs many texels into each pixel.
-// Full is sampled full size, as without mipmaps: a cutout that cuts nothing.
+// Full is sampled full size, as without mipmaps.
 func checkerFloor(t *testing.T, full bool) Frame {
 	t.Helper()
 	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
@@ -26,9 +26,7 @@ func checkerFloor(t *testing.T, full bool) Frame {
 	tex, err := NewTexture(img)
 	check(t, err)
 	m := &Material{Texture: tex, Repeat: true, Unlit: true}
-	if full {
-		m.Cutout, m.Threshold = true, .01
-	}
+	m.FullSize = full
 	floor, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -20, MaxX: 20, MinY: -20, MaxY: 20, Heights: make([]float32, 4), Material: m,
 		UV: []UV{{0, 0}, {200, 0}, {0, 200}, {200, 200}}})
 	check(t, err)

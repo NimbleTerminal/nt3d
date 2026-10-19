@@ -183,6 +183,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 	raster := func(a, b, c *clipCorner, material *Material, side int) {
 		textured := material != nil && material.Texture != nil
 		cutout := textured && material.Cutout
+		fullSize := textured && material.FullSize && material.Texture.shader == ""
 		hull := side < 0
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
 		back := side == backFaces || hull
@@ -254,14 +255,23 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 				}
 				if textured {
 					uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
-					// Cutouts sample full size; other textures the mip level
-					// for how far their texels spread across a pixel, found
-					// from the coordinates a pixel right and a pixel down, as
-					// the GPU's derivatives find it.
+					// Textures sample the mip level for how far their texels
+					// spread across a pixel, found from the coordinates a
+					// pixel right and a pixel down, as the GPU's derivatives
+					// find it. Cutouts sample their own chain at that level,
+					// trilinearly, with no anisotropic taps, which would
+					// average their alpha thin again; FullSize materials and
+					// shader cutouts sample level 0.
 					var tex [4]float32
-					if cutout {
+					switch {
+					case cutout && (fullSize || material.Texture.shader != ""):
+						tex = material.Texture.sampleLinear(uv, material.Repeat, 0, true)
+					case cutout:
+						lod := textureLOD(material.Texture, uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1))
+						tex = material.Texture.sampleLinear(uv, material.Repeat, lod, true)
+					case fullSize:
 						tex = material.Texture.sampleLinear(uv, material.Repeat, 0, false)
-					} else {
+					default:
 						tex = material.Texture.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.Repeat, aniso)
 					}
 					if cutout && tex[3] < q0*a.cut+q1*b.cut+q2*c.cut {

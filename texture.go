@@ -24,11 +24,20 @@ type UV struct{ U, V float32 }
 // can cut shapes out of a triangle, as leaves, lace, and fur do; what remains
 // is opaque and depth tested as usual, with no blending. Without Cutout,
 // alpha is ignored. Varying Threshold over copies of one texture reveals
-// different parts of it, as fur's layers do.
+// different parts of it, as fur's layers do. A cutout samples mipmaps of
+// its own, whose alpha keeps the share of texels above any threshold about
+// what it is at full size (see Texture.cutoutLevels), so far off it stays
+// as dense as near by instead of thinning away; it filters between levels
+// but takes no anisotropic taps, which would average it thin again.
 //
 // Repeat tiles the texture: UVs outside [0, 1] wrap, and filtering blends
 // across tile edges, so a texture made to tile shows no seams. Without it,
 // UVs clamp to the texture's edge.
+//
+// FullSize samples the texture full size, without its mipmaps, as every
+// cutout did before they had mipmaps of their own: far texels shimmer, so
+// it is for comparing, or for a texture that must never blur. It applies
+// to Texture only, not NormalMap, and shader textures ignore it.
 //
 // Tint multiplies the texture by the vertex colors, so one gray texture can
 // take many colors. EdgeOn shows a cutout texture only where the surface
@@ -66,6 +75,7 @@ type Material struct {
 	Cutout         bool
 	Threshold      float32
 	Repeat         bool
+	FullSize       bool
 	Tint           bool
 	EdgeOn         bool
 	Transparent    bool
@@ -151,12 +161,14 @@ func (t *Texture) levels() []*image.NRGBA {
 // as a surface turns. Colors keep their alpha-weighted average.
 //
 // The chain preserves how much shows, not exactly where: a thin strand far
-// off is a somewhat wider, shorter one. It is for alpha that is tested,
-// not blended; a level of few texels can only approximate the coverage (a
-// 1×1 level is all or nothing: it shows when level 0 covers at least
-// half); and the match is over the whole texture, not region by region.
-// An opaque texture shares the ordinary chain, whose alpha it would leave
-// as it is.
+// off is a somewhat wider, shorter one. Thresholds from one half up hold
+// within a few percent; below it a coarse level shows a little more, never
+// less, as its edge ramps cover more of the low range. It is for alpha
+// that is tested, not blended; a level whose texels are wider than the
+// shapes can only approximate the coverage (a 1×1 level is all or
+// nothing: it shows when level 0 covers more than half); and the match is
+// over the whole texture, not region by region. An opaque texture shares
+// the ordinary chain, whose alpha it would leave as it is.
 func (t *Texture) cutoutLevels() []*image.NRGBA {
 	t.cutOnce.Do(func() {
 		levels := t.levels()
@@ -181,35 +193,102 @@ func (t *Texture) cutoutLevels() []*image.NRGBA {
 	return t.cutMips
 }
 
-// rankMatchAlpha is a copy of level whose alpha distribution matches
-// base's: the texel at rank r among level's gets the alpha at rank r among
-// base's. Texels rank by alpha, then by the alpha of their eight neighbors
-// (clamped at the edges), so of two texels alike the one nearer a shape's
-// middle ranks higher, and a level of few distinct values is not stuck
-// with their few shares; texels alike in both take the midpoint of their
-// group's ranks, and the smallest base alpha whose cumulative share exceeds
-// the rank, so a tie falls toward showing. Colors are untouched.
+// rankMatchAlpha is a copy of level whose alpha, as a renderer samples it,
+// is distributed as base's: the sample at rank r among level's gets the
+// alpha at rank r among base's. Samples are what a renderer sees, taken
+// bilinearly at sixteen phases over every texel (bilinearAlphaShares), not
+// the texels themselves: the taps average a coarse level's narrow shapes
+// toward their surroundings, so the texels are matched to the wanted
+// distribution read nearer its mean, spread past the target by about what
+// the taps contract them, trying a few spreads and keeping the one whose
+// samples come nearest the target between the extremes (the shares of
+// exactly transparent and opaque samples differ anyway, as a coarse level
+// has proportionally more edges). Texels rank by alpha, then by the alpha
+// of their eight neighbors (clamped at the edges), so of two texels alike
+// the one nearer a shape's middle ranks higher, and a level of few
+// distinct values is not stuck with their few shares; texels alike in both
+// take the midpoint of their group's ranks, and the smallest base alpha
+// whose cumulative share exceeds the rank, so a tie falls toward showing.
+// Colors are untouched.
 func rankMatchAlpha(level, base *image.NRGBA) *image.NRGBA {
-	var baseHist [256]int
-	for i := 3; i < len(base.Pix); i += 4 {
-		baseHist[base.Pix[i]]++
+	want := bilinearAlphaShares(base)
+	keys, hist := alphaRankKeys(level)
+	mean := 0.0
+	for b, share := range want {
+		previous := 0.0
+		if b > 0 {
+			previous = want[b-1]
+		}
+		mean += float64(b) * (share - previous)
 	}
-	// cumulative[b] is the share of base's texels with alpha at most b.
-	var cumulative [256]float64
-	total := float64(len(base.Pix) / 4)
+	var best *image.NRGBA
+	least := math.Inf(1)
+	for _, spread := range []float64{1, .9, .8, .7, .6, .5, .4} {
+		var target [256]float64
+		for b := range target {
+			at := max(0, min(255, mean+spread*(float64(b)-mean)))
+			lo := int(at)
+			target[b] = want[lo]
+			if lo < 255 {
+				target[b] += (want[lo+1] - want[lo]) * (at - float64(lo))
+			}
+		}
+		target[255] = 1
+		out := remapAlpha(level, keys, hist, target)
+		got := bilinearAlphaShares(out)
+		miss := 0.0
+		for b := 1; b < 255; b++ {
+			miss += math.Abs(got[b] - want[b])
+		}
+		if miss < least {
+			best, least = out, miss
+		}
+	}
+	return best
+}
+
+// bilinearAlphaShares is the cumulative distribution of an image's alpha
+// as a renderer samples it: shares[b] is the share of samples with alpha
+// at most b, among samples filtered bilinearly at sixteen phases over
+// every texel, clamped at the edges.
+func bilinearAlphaShares(img *image.NRGBA) (shares [256]float64) {
+	w, h := img.Rect.Dx(), img.Rect.Dy()
+	alpha := func(x, y int) float64 {
+		return float64(img.Pix[max(0, min(h-1, y))*img.Stride+max(0, min(w-1, x))*4+3])
+	}
+	phases := [4]float64{0, .25, .5, .75}
+	var hist [256]int
+	for y := range h {
+		for x := range w {
+			a00, a10, a01, a11 := alpha(x, y), alpha(x+1, y), alpha(x, y+1), alpha(x+1, y+1)
+			for _, fy := range phases {
+				for _, fx := range phases {
+					top, bottom := a00+(a10-a00)*fx, a01+(a11-a01)*fx
+					hist[int(math.Round(top+(bottom-top)*fy))]++
+				}
+			}
+		}
+	}
+	total := float64(w * h * len(phases) * len(phases))
 	sum := 0
-	for b := range cumulative {
-		sum += baseHist[b]
-		cumulative[b] = float64(sum) / total
+	for b := range shares {
+		sum += hist[b]
+		shares[b] = float64(sum) / total
 	}
-	w, h := level.Rect.Dx(), level.Rect.Dy()
+	return shares
+}
+
+// alphaRankKeys orders an image's texels for rankMatchAlpha: each texel's
+// key is its alpha, then the sum of its eight neighbors' (0 to 2040), and
+// hist counts the texels of each key.
+func alphaRankKeys(img *image.NRGBA) (keys []int32, hist []int32) {
+	w, h := img.Rect.Dx(), img.Rect.Dy()
 	alpha := func(x, y int) int {
-		return int(level.Pix[max(0, min(h-1, y))*level.Stride+max(0, min(w-1, x))*4+3])
+		return int(img.Pix[max(0, min(h-1, y))*img.Stride+max(0, min(w-1, x))*4+3])
 	}
-	// A texel's key orders it by alpha, then by its neighbors' (0 to 2040).
 	const neighbors = 8*255 + 1
-	keys := make([]int32, w*h)
-	hist := make([]int32, 256*neighbors)
+	keys = make([]int32, w*h)
+	hist = make([]int32, 256*neighbors)
 	for y := range h {
 		for x := range w {
 			around := 0
@@ -225,25 +304,33 @@ func rankMatchAlpha(level, base *image.NRGBA) *image.NRGBA {
 			hist[k]++
 		}
 	}
+	return keys, hist
+}
+
+// remapAlpha is a copy of img whose texels, ranked by keys, take the
+// smallest alpha whose cumulative target share exceeds their rank, the
+// midpoint of their key's group.
+func remapAlpha(img *image.NRGBA, keys, hist []int32, target [256]float64) *image.NRGBA {
 	remap := make([]uint8, len(hist))
-	n := float64(w * h)
+	n := float64(len(keys))
 	below, b := 0, 0
 	for k, count := range hist {
 		if count == 0 {
 			continue
 		}
 		rank := float64(2*below+int(count)) / (2 * n)
-		for b < 255 && cumulative[b] <= rank {
+		for b < 255 && target[b] <= rank {
 			b++
 		}
 		remap[k] = uint8(b)
 		below += int(count)
 	}
-	out := &image.NRGBA{Pix: make([]byte, len(level.Pix)), Stride: level.Stride, Rect: level.Rect}
-	copy(out.Pix, level.Pix)
+	w, h := img.Rect.Dx(), img.Rect.Dy()
+	out := &image.NRGBA{Pix: make([]byte, len(img.Pix)), Stride: img.Stride, Rect: img.Rect}
+	copy(out.Pix, img.Pix)
 	for y := range h {
 		for x := range w {
-			out.Pix[y*level.Stride+x*4+3] = remap[keys[y*w+x]]
+			out.Pix[y*img.Stride+x*4+3] = remap[keys[y*w+x]]
 		}
 	}
 	return out
@@ -402,7 +489,7 @@ func wrapTexel(i, n int) int {
 // are filtered in linear light, and mipmapped, so surfaces seen far off or
 // at a slant average their texels rather than shimmer. Alpha is kept for
 // Cutout and Transparent materials; others draw every texel opaque. Cutouts
-// sample full size, as averaged alpha would thin them in the distance.
+// sample mipmaps of their own, whose alpha keeps their coverage.
 func NewTexture(src image.Image) (*Texture, error) {
 	if src == nil || (reflect.ValueOf(src).Kind() == reflect.Ptr && reflect.ValueOf(src).IsNil()) {
 		return nil, fmt.Errorf("nt3d: nil texture image")
