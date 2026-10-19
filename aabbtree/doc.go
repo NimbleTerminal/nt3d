@@ -13,7 +13,8 @@
 // (Box2D-style surface-area insertion with rotations), so a sequence of
 // thousands to tens of thousands of inserts, removes, and updates stays
 // fast. The same sequence of operations always builds the same tree and
-// reports query results in the same order.
+// reports query results in the same order, on every platform: the cost
+// arithmetic avoids fused multiply-adds.
 //
 // T should be a pointer, an index, or another small value: the tree copies
 // it on Insert and hands a copy to every callback, so a large struct by

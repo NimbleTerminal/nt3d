@@ -2,6 +2,7 @@
 package nt3daabbtree
 
 import (
+	"math"
 	"math/rand/v2"
 	"testing"
 	"time"
@@ -28,28 +29,42 @@ func perfScene() (tr *Tree[int], bs []nt3dmath.AABB, ids []ID, queries []nt3dmat
 	return
 }
 
+// fastest times f three times and returns the quickest, so a scheduler
+// stall on a busy test runner does not count against either side.
+func fastest(f func()) time.Duration {
+	best := time.Duration(math.MaxInt64)
+	for range 3 {
+		start := time.Now()
+		f()
+		best = min(best, time.Since(start))
+	}
+	return best
+}
+
 func TestFasterThanLinear(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing")
 	}
 	tr, bs, _, queries, rays := perfScene()
 
-	start := time.Now()
 	treeHits := 0
-	for _, q := range queries {
-		tr.QueryOverlap(q, func(ID, int) bool { treeHits++; return true })
-	}
-	treeOverlap := time.Since(start)
-	start = time.Now()
+	treeOverlap := fastest(func() {
+		treeHits = 0
+		for _, q := range queries {
+			tr.QueryOverlap(q, func(ID, int) bool { treeHits++; return true })
+		}
+	})
 	linearHits := 0
-	for _, q := range queries {
-		for _, b := range bs {
-			if overlaps(b.Min, b.Max, q.Min, q.Max) {
-				linearHits++
+	linearOverlap := fastest(func() {
+		linearHits = 0
+		for _, q := range queries {
+			for _, b := range bs {
+				if overlaps(b.Min, b.Max, q.Min, q.Max) {
+					linearHits++
+				}
 			}
 		}
-	}
-	linearOverlap := time.Since(start)
+	})
 	if treeHits != linearHits {
 		t.Fatalf("overlap: tree found %d, linear %d", treeHits, linearHits)
 	}
@@ -58,22 +73,22 @@ func TestFasterThanLinear(t *testing.T) {
 		t.Fatalf("overlap: tree %v is not clearly faster than linear %v", treeOverlap, linearOverlap)
 	}
 
-	start = time.Now()
-	treeHits = 0
-	for _, r := range rays {
-		tr.RayCast(r, func(ID, int, float32) bool { treeHits++; return true })
-	}
-	treeRay := time.Since(start)
-	start = time.Now()
-	linearHits = 0
-	for _, r := range rays {
-		for _, b := range bs {
-			if _, ok := rayBox(r, b); ok {
-				linearHits++
+	treeRay := fastest(func() {
+		treeHits = 0
+		for _, r := range rays {
+			tr.RayCast(r, func(ID, int, float32) bool { treeHits++; return true })
+		}
+	})
+	linearRay := fastest(func() {
+		linearHits = 0
+		for _, r := range rays {
+			for _, b := range bs {
+				if _, ok := rayBox(r, b); ok {
+					linearHits++
+				}
 			}
 		}
-	}
-	linearRay := time.Since(start)
+	})
 	if treeHits != linearHits {
 		t.Fatalf("ray: tree found %d, linear %d", treeHits, linearHits)
 	}

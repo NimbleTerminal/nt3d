@@ -115,10 +115,14 @@ func (t *Tree[T]) release(i int32) {
 	t.free = i
 }
 
-// area is the surface area of a box, the insertion cost measure.
+// area is the surface area of a box, the insertion cost measure. The
+// conversions round each product before it is summed, which stops the
+// compiler fusing a multiply and add on platforms that can: fused results
+// differ in the last bit, which would break near-ties differently and so
+// build different trees on arm64 and amd64.
 func area(lo, hi nt3dmath.Vec3) float32 {
 	d := hi.Sub(lo)
-	return 2 * (d.X*d.Y + d.Y*d.Z + d.Z*d.X)
+	return 2 * (float32(d.X*d.Y) + float32(d.Y*d.Z) + float32(d.Z*d.X))
 }
 
 func union(alo, ahi, blo, bhi nt3dmath.Vec3) (lo, hi nt3dmath.Vec3) {
@@ -145,8 +149,9 @@ func (t *Tree[T]) insertLeaf(leaf int32) {
 		combined := area(clo, chi)
 		// Cost of making a new parent for this node and the leaf.
 		cost := 2 * combined
-		// Every descent below also enlarges this node.
-		inheritance := 2 * (combined - current)
+		// Every descent below also enlarges this node. The conversion keeps
+		// the sum below from fusing, as in area.
+		inheritance := float32(2 * (combined - current))
 		cost1 := t.descentCost(c1, lo, hi) + inheritance
 		cost2 := t.descentCost(c2, lo, hi) + inheritance
 		if cost < cost1 && cost < cost2 {
