@@ -65,7 +65,7 @@ move to Done with their commit; git history has the details.
 - **Tangent frames for normal maps**: authored `Geometry.Tangents` (glTF
   `TANGENT`), MikkTSpace-compatible generation at scene upload and in the
   glTF loader (per corner, splitting vertices), skinned and morphed frames
-  on both renderers, the per-triangle basis as fallback (`76c4cb0`…`0b4bd86`).
+  on both renderers, the per-triangle basis as fallback (`76c4cb0`…`6c500b5`).
 - **SPZ Gaussian splats**: Niantic's compressed format, versions 2 to 4, in
   `nt3dmesh/spz`; point limits from the WebGPU binding (`MaxPoints`,
   `MaxGaussians`) and big clouds split into slabs (`552bee4`…`b7febd6`).
