@@ -17,8 +17,9 @@ move to Done with their commit; git history has the details.
   leaves the device; hierarchical levels that draw an interior node as one
   aggregate; per-frame rebuilds cheap enough for moving particles;
   hysteresis at range boundaries so clusters do not flicker between levels.
-- [ ] **Gaussian splatting follow-ups**: GPU sorting, compressed formats,
-  large-scene performance, and ordering across overlapping geometry.
+- [ ] **Gaussian splatting follow-ups**: GPU sorting, SOG and PlayCanvas
+  compressed PLY, large-scene performance, and ordering across overlapping
+  geometry (including the slabs a big cloud is split into).
 
 - [ ] **Normal-map follow-ups** — authored tangent frames and MikkTSpace-compatible
   generation. Independent normal UV sets and glTF texture transforms are supported. The renderer uses
@@ -65,6 +66,9 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **SPZ Gaussian splats**: Niantic's compressed format, versions 2 to 4, in
+  `nt3dmesh/spz`; point limits from the WebGPU binding (`MaxPoints`,
+  `MaxGaussians`) and big clouds split into slabs (`552bee4`…`3477fac`).
 - **Coverage-preserving alpha mips for cutouts**: a chain per cutout texture
   whose alpha is rank-matched to full size, sampled trilinearly by both
   renderers; `Material.FullSize` for comparing, `m` in the fur demo

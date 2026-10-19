@@ -102,14 +102,18 @@ Hand-built frames don't cull unless you set `Frame.Cull`, and then each geometry
 ## 3D Gaussian splatting
 
 `nt3dmesh.DecodePLY` automatically recognizes uncompressed 3DGS PLY files;
-`nt3dmesh.DecodeGaussianPLY` explicitly requires them. `ReadFile` also works.
-The result is ordinary scene geometry, so orbit, pan, zoom, node transforms,
-visibility, fog, and renderer switching work as usual:
+`nt3dmesh.DecodeGaussianPLY` explicitly requires them. Niantic's compressed
+SPZ format, about ten times smaller, decodes through `nt3d/mesh/spz` (or the
+`formats` package), which registers `.spz` with `ReadFile`. The result is
+ordinary scene geometry, so orbit, pan, zoom, node transforms, visibility,
+fog, and renderer switching work as usual:
 
 ```go
-model, err := nt3dmesh.ReadFile("scene.ply", nil)
-// Handle err, then install the cloud (standard 3DGS has one object).
-id, err := scene.SetGeometry("splats", model.Objects[0].Geometry)
+model, err := nt3dmesh.ReadFile("scene.spz", nil)
+// Handle err, then install the cloud: one object, or slabs of a big one.
+for i, o := range model.Objects {
+	id, err := scene.SetGeometry(fmt.Sprintf("splats %d", i), o.Geometry)
+}
 ```
 
 Try `task gaussians`, or the **Gaussian splatting** gallery demo. Its original,
@@ -134,6 +138,20 @@ bits. Wireframe uses clamped sRGB8 DC color. Normals and unrelated scalar
 properties are ignored. Incomplete SH bands, nonfinite coefficients,
 compressed PLY, `.splat`, and exposure metadata are not supported. Invalid/nonfinite attributes, zero quaternions, missing
 properties, and activated scales outside `[1e-20, 1e6]` are rejected.
+
+### SPZ
+
+`nt3dspz.Decode` reads SPZ versions 2 and 3 (one gzip stream) and 4 (zstd
+streams), unpacking its 24-bit positions, byte opacities, colors, log scales,
+and quaternions (three signed bytes, or the "smallest three" packing from
+version 3) into the same points the PLY decoder makes, and its byte SH into
+`GaussianSH` for degrees 0 to 3. SPZ stores right-up-back coordinates, so
+the decoder turns them to Z-up itself and ignores `Options.Up`; the Y-down
+PLY captures need `--up=-y` in the demos, an SPZ of the same scene needs
+nothing. Degree-4 SH and version 1 are refused; the optional extensions
+block (a named coordinate system, quantization notes) and the antialiased
+flag are ignored. `Options.MaxBytes` bounds the decompressed size. Niantic's
+samples, at 786k and 933k splats, open as two slabs each.
 
 ### Rendering and limits
 

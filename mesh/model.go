@@ -10,8 +10,13 @@
 // Faces keep their file's winding; normals the file omits are computed flat.
 // An object with more triangles than one geometry may hold
 // (nt3d.MaxMeshTriangles, the largest buffer every WebGPU device binds) is
-// split into consecutive Objects with the same Name, Material, and Part.
+// split into consecutive Objects with the same Name, Material, and Part, as
+// a point cloud past nt3d.MaxPoints or nt3d.MaxGaussians is (PointPieces).
 // Units are whatever the file uses; nothing is normalized.
+//
+// STL, OBJ, 3MF, PLY (meshes, point clouds, and 3DGS Gaussian splats), and
+// Stanford .conf are built in; glTF and SPZ register themselves from
+// nt3dmesh/gltf and nt3dmesh/spz, or all at once from nt3dmesh/formats.
 package nt3dmesh
 
 import (
@@ -162,9 +167,11 @@ type Options struct {
 	// Parts chooses which 3MF build items to assemble, by index into
 	// Model.Parts; nil assembles all. The triangle limit applies to those chosen.
 	Parts []bool
-	// MaxBytes limits unpacked 3MF data and Gaussian PLY input bytes. Zero uses DefaultMaxBytes.
+	// MaxBytes limits unpacked 3MF data, Gaussian PLY input bytes, and
+	// decompressed SPZ. Zero uses DefaultMaxBytes.
 	MaxBytes int64
-	// Up is the file's up axis. Files do not say, so the caller must.
+	// Up is the file's up axis. Most files do not say, so the caller must;
+	// SPZ states its axes, and ignores Up.
 	Up Up
 }
 
