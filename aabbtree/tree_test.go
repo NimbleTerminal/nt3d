@@ -156,3 +156,143 @@ func TestInsertPanics(t *testing.T) {
 	}
 	check(t, tr)
 }
+
+func TestRemove(t *testing.T) {
+	tr := New[int]()
+	bs := boxes(1000, 2)
+	ids := make([]ID, len(bs))
+	for i, b := range bs {
+		ids[i] = tr.Insert(b, i)
+	}
+	removed := 0
+	for i := 0; i < len(ids); i += 3 {
+		tr.Remove(ids[i])
+		removed++
+		if removed%100 == 0 {
+			check(t, tr)
+		}
+	}
+	if tr.Len() != len(ids)-removed {
+		t.Fatalf("Len %d, want %d", tr.Len(), len(ids)-removed)
+	}
+	check(t, tr)
+	for i, id := range ids {
+		if i%3 == 0 {
+			mustPanic(t, "unknown id", func() { tr.Bounds(id) })
+			continue
+		}
+		if got := tr.Bounds(id); got.Min != bs[i].Min || got.Max != bs[i].Max || tr.Value(id) != i {
+			t.Fatalf("survivor %d changed: %v %d", i, got, tr.Value(id))
+		}
+	}
+	for i, id := range ids {
+		if i%3 != 0 {
+			tr.Remove(id)
+		}
+	}
+	if tr.Len() != 0 || tr.Height() != 0 {
+		t.Fatalf("after removing all: Len %d Height %d", tr.Len(), tr.Height())
+	}
+	check(t, tr)
+	for i, b := range boxes(10, 3) {
+		tr.Insert(b, i)
+	}
+	if tr.Len() != 10 {
+		t.Fatalf("Len %d after reinserting", tr.Len())
+	}
+	check(t, tr)
+}
+
+func TestUpdate(t *testing.T) {
+	tr := New[int]()
+	bs := boxes(500, 4)
+	ids := make([]ID, len(bs))
+	for i, b := range bs {
+		ids[i] = tr.Insert(b, i)
+	}
+	moved := boxes(500, 5)
+	for i, id := range ids {
+		tr.Update(id, moved[i])
+	}
+	if tr.Len() != 500 {
+		t.Fatalf("Len %d", tr.Len())
+	}
+	check(t, tr)
+	for i, id := range ids {
+		if got := tr.Bounds(id); got.Min != moved[i].Min || got.Max != moved[i].Max {
+			t.Fatalf("leaf %d: Bounds %v, want %v", i, got, moved[i])
+		}
+		if tr.Value(id) != i {
+			t.Fatalf("leaf %d: Value %d", i, tr.Value(id))
+		}
+	}
+	mustPanic(t, "invalid bounds", func() {
+		tr.Update(ids[0], nt3dmath.AABB{Min: nt3dmath.Vec3{X: float32(math.NaN())}})
+	})
+	if got := tr.Bounds(ids[0]); got.Min != moved[0].Min {
+		t.Fatal("a rejected update changed the leaf")
+	}
+	check(t, tr)
+}
+
+func TestStaleID(t *testing.T) {
+	tr := New[string]()
+	a := tr.Insert(unit(0, 0, 0), "a")
+	tr.Insert(unit(5, 0, 0), "b")
+	tr.Remove(a)
+	mustPanic(t, "unknown id", func() { tr.Remove(a) })
+	mustPanic(t, "unknown id", func() { tr.Update(a, unit(1, 1, 1)) })
+	mustPanic(t, "unknown id", func() { tr.Value(a) })
+	tr.Insert(unit(10, 0, 0), "c")
+	tr.Insert(unit(15, 0, 0), "d")
+	interior := -1
+	for i, n := range tr.nodes {
+		if n.height > 0 {
+			interior = i
+			break
+		}
+	}
+	if interior < 0 {
+		t.Fatal("no interior node")
+	}
+	mustPanic(t, "unknown id", func() { tr.Remove(ID(interior)) })
+	if tr.Len() != 3 {
+		t.Fatalf("Len %d", tr.Len())
+	}
+	check(t, tr)
+}
+
+// exercise feeds a seeded mix of inserts, removes, and updates to tr and
+// returns the live IDs.
+func exercise(tr *Tree[int], seed uint64) []ID {
+	r := rand.New(rand.NewPCG(seed, 3))
+	var ids []ID
+	for i, b := range boxes(2000, seed) {
+		ids = append(ids, tr.Insert(b, i))
+	}
+	for range 500 {
+		k := r.IntN(len(ids))
+		tr.Remove(ids[k])
+		ids[k] = ids[len(ids)-1]
+		ids = ids[:len(ids)-1]
+	}
+	for _, b := range boxes(500, seed+1) {
+		tr.Update(ids[r.IntN(len(ids))], b)
+	}
+	return ids
+}
+
+func TestDeterministic(t *testing.T) {
+	a, b := New[int](), New[int]()
+	exercise(a, 9)
+	exercise(b, 9)
+	if a.root != b.root || len(a.nodes) != len(b.nodes) {
+		t.Fatalf("roots %d %d, sizes %d %d", a.root, b.root, len(a.nodes), len(b.nodes))
+	}
+	for i := range a.nodes {
+		if a.nodes[i] != b.nodes[i] {
+			t.Fatalf("node %d differs: %+v vs %+v", i, a.nodes[i], b.nodes[i])
+		}
+	}
+	check(t, a)
+}

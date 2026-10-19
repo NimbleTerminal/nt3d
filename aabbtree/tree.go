@@ -252,3 +252,50 @@ func (t *Tree[T]) rotate(iA, iUp, iKeep int32) int32 {
 	up.height = 1 + max(a.height, stay.height)
 	return iUp
 }
+
+// Remove deletes the leaf and drops its value. It panics if id does not
+// name a leaf. The ID may be reused by a later Insert.
+func (t *Tree[T]) Remove(id ID) {
+	leaf := t.leaf(id)
+	t.removeLeaf(leaf)
+	t.release(leaf)
+	t.count--
+}
+
+// Update moves or resizes the leaf, keeping its ID and value. It panics if
+// id does not name a leaf or bounds is invalid (see Insert); a rejected
+// update leaves the tree unchanged.
+func (t *Tree[T]) Update(id ID, bounds nt3dmath.AABB) {
+	leaf := t.leaf(id)
+	validate(bounds)
+	t.removeLeaf(leaf)
+	t.nodes[leaf].min, t.nodes[leaf].max = bounds.Min, bounds.Max
+	t.insertLeaf(leaf)
+}
+
+// removeLeaf unlinks a leaf without releasing its node: its parent is
+// replaced by its sibling, and the ancestors refit.
+func (t *Tree[T]) removeLeaf(leaf int32) {
+	if leaf == t.root {
+		t.root = null
+		return
+	}
+	parent := t.nodes[leaf].parent
+	grand := t.nodes[parent].parent
+	sibling := t.nodes[parent].child1
+	if sibling == leaf {
+		sibling = t.nodes[parent].child2
+	}
+	t.nodes[sibling].parent = grand
+	if grand == null {
+		t.root = sibling
+	} else {
+		if t.nodes[grand].child1 == parent {
+			t.nodes[grand].child1 = sibling
+		} else {
+			t.nodes[grand].child2 = sibling
+		}
+	}
+	t.release(parent)
+	t.refit(grand)
+}
