@@ -190,7 +190,8 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		directTexture := textured && !linear && material.Unlit && !material.Tint && !fogged && !blended && !hull
 		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && !material.Unlit
 		var tangent, bitangent nt3dmath.Vec3
-		if normalMapped {
+		framed := normalMapped && a.tangentW != 0
+		if normalMapped && !framed {
 			tangent, bitangent = normalBasis(a, b, c)
 		}
 		specular := material != nil && material.Specular > 0 && !material.Unlit
@@ -313,7 +314,17 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 						if normalMapped {
 							uv := UV{q0*a.normalUV.U + q1*b.normalUV.U + q2*c.normalUV.U, q0*a.normalUV.V + q1*b.normalUV.V + q2*c.normalUV.V}
 							sample := material.NormalMap.sampleFootprint(uv, normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.NormalRepeat, aniso)
-							n = perturbNormal(n, tangent, bitangent, sample, material.NormalStrength)
+							t, bt := tangent, bitangent
+							if framed {
+								// The vertices' frame, interpolated as the
+								// normal is; W × (N × T) is its bitangent.
+								t = a.tangent.Scale(q0).Add(b.tangent.Scale(q1)).Add(c.tangent.Scale(q2))
+								bt = n.Cross(t)
+								if q0*a.tangentW+q1*b.tangentW+q2*c.tangentW < 0 {
+									bt = bt.Scale(-1)
+								}
+							}
+							n = perturbNormal(n, t, bt, sample, material.NormalStrength)
 						}
 						rig.lightNormal(&rgb, n, p, geometric)
 						if specular {
@@ -340,7 +351,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 	// crosses the near plane is cut there, as the GPU does, not discarded.
 	// side chooses the faces drawn, and how: opaque front faces, or a
 	// transparent geometry's back or front faces.
-	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv, normalUV []UV, material *Material, side int, outline OutlineStyle) {
+	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv, normalUV []UV, tangents []Tangent, material *Material, side int, outline OutlineStyle) {
 		hull := side < 0
 		back := side == backFaces || hull
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
@@ -353,6 +364,14 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			}
 			if len(normalUV) > 0 {
 				corners[k].normalUV = normalUV[i]
+			}
+			if len(tangents) > 0 {
+				// Tangents turn with positions, not as normals do; a back
+				// face's negated normal turns the handedness instead.
+				corners[k].tangent, corners[k].tangentW = world.Direction(tangents[i].Direction), tangents[i].W
+				if side == backFaces {
+					corners[k].tangentW = -tangents[i].W
+				}
 			}
 			if hull {
 				expandOutline(&corners[k], normals.Direction(vertices[i].Normal), &f, outline.Width*px)
@@ -557,13 +576,13 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		}
 		if !transparent(&f.Geometry[gi]) {
 			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Material, opaqueFaces, OutlineStyle{})
+				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{})
 			}
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, opaqueFaces, OutlineStyle{})
+				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, nil, opaqueFaces, OutlineStyle{})
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
@@ -595,7 +614,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			material.Unlit = true
 		}
 		for i := 0; i+2 < len(g.Indices); i += 3 {
-			tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, &material, side, g.Outline)
+			tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, &material, side, g.Outline)
 		}
 	}
 	for gi := range f.Geometry {
@@ -694,7 +713,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			normals := inverse.Transpose()
 			for _, side := range []int{backFaces, frontFaces} {
 				for i := 0; i+2 < len(g.Indices); i += 3 {
-					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Material, side, OutlineStyle{})
+					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{})
 				}
 			}
 		}

@@ -2,6 +2,7 @@
 package nt3d
 
 import (
+	"image/color"
 	"math"
 	"strings"
 	"testing"
@@ -280,5 +281,57 @@ func TestSceneGeneratesTangents(t *testing.T) {
 	f = frame(t, s)
 	if len(f.Geometry[len(f.Geometry)-1].Tangents) != 4 {
 		t.Fatal("shared geometry tangents not generated")
+	}
+}
+
+func TestAuthoredTangentShading(t *testing.T) {
+	f := normalFrame(t)
+	g := &f.Geometry[0]
+	for range g.Vertices {
+		g.Tangents = append(g.Tangents, Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1})
+	}
+	red := func() uint8 { return at(softwareRender(f), 40, 40).R }
+	if r := red(); r < 180 {
+		t.Fatalf("authored +X tangent did not tilt toward the light: %d", r)
+	}
+	for i := range g.Tangents {
+		g.Tangents[i].Direction = nt3dmath.Vec3{X: -1}
+	}
+	if r := red(); r > 3 {
+		t.Fatalf("authored -X tangent ignored: %d", r)
+	}
+	// A map tilted +Y under a +Y light: the handedness picks the bitangent.
+	g.Material.NormalMap = testNormalMap(t, color.NRGBA{128, 218, 218, 255})
+	f.Lighting.Lights[0].Direction = nt3dmath.Vec3{Y: 1}
+	for i := range g.Tangents {
+		g.Tangents[i] = Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1}
+	}
+	if r := red(); r < 180 {
+		t.Fatalf("W +1 did not tilt toward the light: %d", r)
+	}
+	for i := range g.Tangents {
+		g.Tangents[i].W = -1
+	}
+	if r := red(); r > 3 {
+		t.Fatalf("W -1 ignored: %d", r)
+	}
+	// A tangent along the normal leaves it unperturbed.
+	for i := range g.Tangents {
+		g.Tangents[i] = Tangent{Direction: nt3dmath.Vec3{Z: 1}, W: 1}
+	}
+	flat := softwareRender(f)
+	g.Material.NormalStrength = 0
+	if got, want := at(softwareRender(f), 40, 40), at(flat, 40, 40); got != want {
+		t.Fatalf("parallel tangent perturbed: %v, want %v", want, got)
+	}
+	g.Material.NormalStrength = 1
+	// The frame turns with the instance.
+	for i := range g.Tangents {
+		g.Tangents[i] = Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1}
+	}
+	g.Material.NormalMap = testNormalMap(t, color.NRGBA{218, 128, 218, 255})
+	f.Instances = []Instance{{World: nt3dmath.RotationZ(math.Pi / 2), Visible: true}}
+	if r := red(); r < 180 {
+		t.Fatalf("rotated frame did not follow the instance: %d", r)
 	}
 }
