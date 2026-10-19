@@ -91,6 +91,12 @@ The first three presets demonstrate [environment skies and diffuse image-based l
 
 `task particles`. A fire of soft points sized in world units, glowing [additively](../rendering/#how-it-looks), rises into smoke blended by alpha, sorted back to front every frame, while dust drifts through in pixel-sized points. Every point moves every frame through [`SetNodePoints`](../particles/), keeping its GPU buffers and using fixed bounds. `t` switches to a generated four-frame sprite atlas. `b` changes the blending, `s` makes the points hard or soft, `n` changes the count (1,000, 10,000, or 100,000), and `a` pauses them.
 
+## Point cloud
+
+<img class="poster" src="../../posters/cloud.png" alt="A spiral galaxy of a million colored points on black">
+
+`task cloud`. A galaxy of up to a million opaque pixel points, grouped once into [clusters](../clustering/) of 256. Each frame keeps the clusters in view and thins the far ones: every point within six units, a spread half within twelve, a quarter within twenty-four, and one point for a whole cluster beyond, so zooming out stays quick in all three renderers. `l` switches the clustering off to compare, `n` cycles 100,000, 300,000, and 1,000,000 points, and `-` and `=` zoom. The status line counts the clusters and points drawn.
+
 ## In a browser
 
 The [gallery](https://nimbleterminal.github.io/nt3d/) is online. To build and serve it yourself:

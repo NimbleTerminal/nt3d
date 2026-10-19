@@ -3,6 +3,7 @@ package nt3dclod_test
 
 import (
 	"math"
+	"math/rand/v2"
 	"slices"
 	"testing"
 
@@ -208,4 +209,26 @@ func TestGather(t *testing.T) {
 	if !slices.Equal(got, []int{30, 10}) {
 		t.Fatal(got)
 	}
+}
+
+func BenchmarkSelect1M(b *testing.B) {
+	r := rand.New(rand.NewPCG(9, 7))
+	positions := make([]nt3dmath.Vec3, 1_000_000)
+	for i := range positions {
+		positions[i] = nt3dmath.Vec3{X: float32(r.Float64()*10 - 5), Y: float32(r.Float64()*10 - 5), Z: float32(r.Float64()*10 - 5)}
+	}
+	s, err := nt3dclod.Build(positions, nt3dclod.Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	v := view(nt3d.Camera{Alpha: 25, Beta: 40, Distance: 7, Projection: nt3d.Perspective, ResumeAfter: 1}, 960, 640, 2)
+	var out nt3dclod.Selection
+	b.ResetTimer()
+	for b.Loop() {
+		if err := s.Select(v, levels, &out); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ReportMetric(float64(len(s.Clusters)), "clusters")
+	b.ReportMetric(float64(len(out.Items)), "items")
 }

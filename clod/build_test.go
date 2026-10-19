@@ -242,3 +242,13 @@ func TestRefitKeepsOrderUpdatesBounds(t *testing.T) {
 		t.Fatal("refit with a different count succeeded")
 	}
 }
+
+func BenchmarkBuild1M(b *testing.B) {
+	positions := cube(1_000_000, 9)
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := Build(positions, Options{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

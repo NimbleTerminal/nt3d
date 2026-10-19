@@ -12,6 +12,11 @@ move to Done with their commit; git history has the details.
 
 ## Rendering
 
+- [ ] **Clustered LOD follow-ups**: draw points straight from `nt3dclod.GPU`'s
+  item and indirect buffers in the GPU renderer, so a selection never
+  leaves the device; hierarchical levels that draw an interior node as one
+  aggregate; per-frame rebuilds cheap enough for moving particles;
+  hysteresis at range boundaries so clusters do not flicker between levels.
 - [ ] **Gaussian splatting follow-ups**: GPU sorting, compressed formats,
   large-scene performance, and ordering across overlapping geometry.
 
@@ -54,12 +59,19 @@ move to Done with their commit; git history has the details.
 
 ## Housekeeping
 
+- [ ] **Re-record the cloud poster** with `task tapes -- cloud`; `web/assets/cloud.png`
+  is a `--snapshot` of the demo for now.
 - [ ] **`.gitignore` root snapshots** (such as a stray `out.png`).
 - [ ] **Report the shader translator bug upstream**: WGSL functions named
   `texture…` are miscompiled (an empty body, and the call turned into a
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **Clustered LOD selection (`nt3dclod`)**: median-split clusters with a
+  progressive item order, CPU and WebGPU compute selection (frustum culling,
+  distance levels, indirect draw arguments) that agree, and the point cloud
+  demo of a million points.
 
 - **Shared spherical harmonics**: `nt3dsh` provides degree 0–3 real SH,
   projection, rotation, diffuse convolution, and a shared Go/WGSL basis.
