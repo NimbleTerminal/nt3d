@@ -27,7 +27,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
 // position (whose distance from the camera, not affine, is found per
 // fragment) and normal, and the instance's specular strength and exponent
 // (its normal matrix's spare column).
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32>, @location(11) @interpolate(flat) full:f32, @location(12) tangent:vec4<f32> };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32>, @location(11) @interpolate(flat) full:f32, @location(12) tangent:vec4<f32>, @location(13) @interpolate(flat) framed:f32 };
 // eyeDistance is a world point's distance from the camera, as fog measures
 // it: straight, or along the view for orthographic cameras.
 fn eyeDistance(world:vec3<f32>)->f32 {
@@ -234,7 +234,8 @@ fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
 @group(2) @binding(1) var mapSampler: sampler;
 // Textured records carry the cutout threshold, or a transparent vertex's
 // opacity, where color would be; it reaches the fragment in cut.
-// Flags: 1 repeat, 2 edge-on, 4 tint, whose color is a 24-bit integer.
+// Flags: 1 repeat, 2 edge-on, 4 tint, whose color is a 24-bit integer, 8
+// an extension record follows, 16 it carries a tangent frame.
 // (Helpers named texture... are taken for WGSL builtins by the shader
 // translator, hence mapOutput.)
 fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
@@ -245,7 +246,7 @@ fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  // vertex's tangent frame: turned by the world matrix (not the normal
  // matrix: tangents turn as positions do), its handedness in w, negated
  // for a back face, whose normal is.
- o.tangent=vec4<f32>(0.0);
+ o.tangent=vec4<f32>(0.0);o.framed=select(0.0,1.0,(flags&16u)!=0u);
  if (flags&8u)!=0u {let e=items[u32(instances[ii].normal[1].w)+vi];o.normalUV=e.a.xy;o.tangent=vec4<f32>((instances[ii].world*vec4<f32>(e.b.xyz,0.0)).xyz,e.b.w*side);}
  if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}
  // Image textures repeat through their samplers; procedural ones (flagged in
@@ -300,7 +301,7 @@ fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec
  // (A select inside the product miscompiles to Metal; the sign is a branch.)
  var sign=1.0;if o.tangent.w<0.0 {sign=-1.0;}
  var raw=o.tangent.xyz;var b=cross(n,raw)*sign;
- if abs(o.tangent.w)<=0.5 {
+ if o.framed<0.5 {
   let det=gx.x*gy.y-gx.y*gy.x;
   if abs(det)<=1e-8*max(max(abs(gx.x*gy.y),abs(gx.y*gy.x)),1e-30) {return o.normal;}
   raw=(px*gy.y-py*gx.y)/det;

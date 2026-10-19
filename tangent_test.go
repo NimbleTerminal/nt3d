@@ -373,3 +373,26 @@ func TestDeformedTangents(t *testing.T) {
 	}
 	wantError(t, s.SetDeformation(id, Deformation{Morphs: []MorphTarget{{Tangents: deltas[:3]}}}), "morph vertex count mismatch")
 }
+
+// Faces are neighbors only across an edge they wind opposite ways, as
+// MikkTSpace pairs them: a face wound the other way, even with its UVs
+// mirrored to keep its handedness, does not share a group.
+func TestGenerateTangentsWindingNeighbors(t *testing.T) {
+	var g Geometry
+	for _, p := range [][2]float32{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
+		g.Vertices = append(g.Vertices, Vertex{Position: nt3dmath.Vec3{X: p[0], Y: p[1]}, Normal: nt3dmath.Vec3{Z: 1}, Color: white})
+	}
+	g.UV = []UV{{0, 0}, {1, 0}, {0, 1}, {0, 0}}
+	// The second face runs the shared edge 1→2 the same way as the first.
+	g.Indices = []uint32{0, 1, 2, 1, 2, 3}
+	out, err := GenerateTangents(g)
+	check(t, err)
+	for _, i := range []int{1, 2} {
+		if !nearVec(out.Tangents[i].Direction, nt3dmath.Vec3{X: 1}, 1e-5) {
+			t.Fatalf("vertex %d averaged across a fold: %v", i, out.Tangents[i])
+		}
+	}
+	if !nearVec(out.Tangents[3].Direction, nt3dmath.Vec3{Y: -1}, 1e-5) {
+		t.Fatalf("second face's own frame %v", out.Tangents[3])
+	}
+}

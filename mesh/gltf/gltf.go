@@ -862,9 +862,10 @@ func (b *gltfBuilder) triangles(v []uint32) error {
 }
 
 // generateTangents finds a frame for each corner of the triangle list,
-// MikkTSpace-compatibly, in the primitive's space with its authored
-// normals (or each face's own), then places it by world. A mirrored
-// placement turns the handedness, as it does the faces.
+// MikkTSpace-compatibly under glTF's image-up convention, in the
+// primitive's space with its authored normals (or each face's own), then
+// places it by world. A mirrored placement turns the handedness, as it
+// does the faces.
 func (b *gltfBuilder) generateTangents(v []uint32, mirror bool) {
 	uv := b.normalUV
 	if uv == nil {
@@ -899,7 +900,10 @@ func (b *gltfBuilder) generateTangents(v []uint32, mirror bool) {
 		if d := b.world.direction(c.Direction); d.Dot(d) > 0 {
 			c.Direction = d.Normalize()
 		}
-		if mirror {
+		// glTF's green points up the image, against V, where MikkTSpace
+		// takes V as up: the handedness turns, as authored frames (Blender's,
+		// found with V up) have it. A mirrored placement turns it back.
+		if !mirror {
 			c.W = -c.W
 		}
 		frames := seen[v[k]]

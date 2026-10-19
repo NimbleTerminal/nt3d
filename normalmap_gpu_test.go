@@ -13,7 +13,7 @@ import (
 func TestGPUNormalMaps(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
-	for i, kind := range []string{"normal only", "base color", "zero", "mirrored", "degenerate", "transparent", "unlit", "transform", "cutout", "mip", "independent", "independent cutout", "authored", "authored flipped", "authored w", "authored independent", "authored transform", "authored parallel", "authored transparent", "independent bright"} {
+	for i, kind := range []string{"normal only", "base color", "zero", "mirrored", "degenerate", "transparent", "unlit", "transform", "cutout", "mip", "independent", "independent cutout", "authored", "authored flipped", "authored w", "authored independent", "authored transform", "authored parallel", "authored transparent", "independent bright", "authored mixed"} {
 		t.Run(kind, func(t *testing.T) {
 			f := normalFrame(t)
 			f.Revision = uint64(i + 1)
@@ -52,6 +52,12 @@ func TestGPUNormalMaps(t *testing.T) {
 				for j := range f.Geometry[0].UV {
 					f.Geometry[0].UV[j].U = 1 - f.Geometry[0].UV[j].U
 				}
+			case "authored mixed":
+				// Handedness differs across the quad: both renderers use the
+				// vertices' frame with the interpolated sign, all the way.
+				m.NormalMap = testNormalMap(t, color.NRGBA{128, 218, 218, 255})
+				f.Lighting.Lights[0].Direction = nt3dmath.Vec3{Y: 1}
+				f.Geometry[0].Tangents[0].W, f.Geometry[0].Tangents[1].W = -1, -1
 			case "authored transparent":
 				m.Transparent = true
 				for j := range f.Geometry[0].Vertices {
@@ -103,7 +109,12 @@ func TestGPUNormalMaps(t *testing.T) {
 			if (kind == "independent bright" || kind == "authored") && at(got, 40, 40).R < 180 {
 				t.Fatalf("%s: GPU did not tilt toward the light: %v", kind, at(got, 40, 40))
 			}
-			for _, p := range [][2]int{{40, 40}, {38, 39}, {45, 42}} {
+			pixels := [][2]int{{40, 40}, {38, 39}, {45, 42}}
+			if kind == "authored mixed" {
+				// Off the line where the sign crosses zero.
+				pixels = [][2]int{{40, 30}, {40, 50}, {38, 35}, {45, 46}}
+			}
+			for _, p := range pixels {
 				if !closeRGB(at(got, p[0], p[1]), at(want, p[0], p[1]), 4) {
 					t.Fatalf("%s at %v GPU %v software %v", kind, p, at(got, p[0], p[1]), at(want, p[0], p[1]))
 				}

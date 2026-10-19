@@ -190,7 +190,10 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		directTexture := textured && !linear && material.Unlit && !material.Tint && !fogged && !blended && !hull
 		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && !material.Unlit
 		var tangent, bitangent nt3dmath.Vec3
-		framed := normalMapped && a.tangentW != 0
+		// A mesh with frames has one at every corner, so any nonzero
+		// handedness (lerped at a cut edge, they can cancel at one corner
+		// only) says so; the pixel's sign is interpolated, as on the GPU.
+		framed := normalMapped && (a.tangentW != 0 || b.tangentW != 0 || c.tangentW != 0)
 		if normalMapped && !framed {
 			tangent, bitangent = normalBasis(a, b, c)
 		}

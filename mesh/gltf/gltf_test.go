@@ -573,8 +573,10 @@ func TestGLTFTangents(t *testing.T) {
 		if len(g.Tangents) != 3 {
 			t.Fatalf("generated %d tangents: %v", len(g.Tangents), m.Warnings)
 		}
+		// V grows up this triangle, so its image hangs upside down: a
+		// left-handed frame under glTF's image-up convention.
 		for _, tan := range g.Tangents {
-			if !near(tan.Direction, nt3dmath.Vec3{X: 1}) || tan.W != 1 {
+			if !near(tan.Direction, nt3dmath.Vec3{X: 1}) || tan.W != -1 {
 				t.Fatalf("generated tangent %v", tan)
 			}
 		}
@@ -609,9 +611,9 @@ func TestGLTFTangents(t *testing.T) {
 			t.Fatalf("%d tangents for %d vertices", len(g.Tangents), len(g.Vertices))
 		}
 		for i, v := range g.Vertices {
-			want := float32(1)
+			want := float32(-1)
 			if v.Normal.Y > 0 { // The back copy; the front faces -Y.
-				want = -1
+				want = 1
 			}
 			if g.Tangents[i].W != want {
 				t.Fatalf("vertex %d (normal %v) W %v", i, v.Normal, g.Tangents[i].W)
@@ -628,7 +630,7 @@ func TestGLTFTangents(t *testing.T) {
 		if len(g.Vertices) != 6 || len(g.Tangents) != 6 {
 			t.Fatalf("%d vertices, %d tangents, want the seam split", len(g.Vertices), len(g.Tangents))
 		}
-		for f, want := range []float32{1, -1} {
+		for f, want := range []float32{-1, 1} {
 			for k := range 3 {
 				if w := g.Tangents[g.Indices[3*f+k]].W; w != want {
 					t.Fatalf("face %d corner %d W %v, want %v", f, k, w, want)
@@ -650,4 +652,26 @@ func TestGLTFTangents(t *testing.T) {
 			t.Fatal("tangents not generated after bad data")
 		}
 	})
+}
+
+// Generated frames agree with authored ones under glTF's convention: a
+// quad textured upright (V down the image as Y rises) carries +X, W +1.
+func TestGLTFGeneratedMatchesAuthored(t *testing.T) {
+	p := prim{positions: [][3]float32{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}, indices: []uint16{0, 1, 2, 0, 2, 3}, uv: [][2]float32{{0, 1}, {1, 1}, {1, 0}, {0, 0}}, normals: [][3]float32{{0, 0, 1}, {0, 0, 1}, {0, 0, 1}, {0, 0, 1}}}
+	doc := gltfDoc(p)
+	normalMapped(t, doc)
+	generated, err := Decode(glb(t, doc), nil)
+	check(t, err)
+	doc.Meshes[0].Primitives[0].Attributes[gltf.TANGENT] = modeler.WriteTangent(doc, [][4]float32{{1, 0, 0, 1}, {1, 0, 0, 1}, {1, 0, 0, 1}, {1, 0, 0, 1}})
+	authored, err := Decode(glb(t, doc), nil)
+	check(t, err)
+	g, a := generated.Objects[0].Geometry, authored.Objects[0].Geometry
+	if len(g.Tangents) != 4 || len(a.Tangents) != 4 {
+		t.Fatalf("%d generated, %d authored tangents", len(g.Tangents), len(a.Tangents))
+	}
+	for i := range g.Tangents {
+		if !near(g.Tangents[i].Direction, a.Tangents[i].Direction) || g.Tangents[i].W != a.Tangents[i].W {
+			t.Fatalf("vertex %d: generated %v, authored %v", i, g.Tangents[i], a.Tangents[i])
+		}
+	}
 }

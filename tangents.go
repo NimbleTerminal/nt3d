@@ -167,8 +167,9 @@ func cornerTangents(corners []tangentCorner) []Tangent {
 		}
 	}
 	// Faces are neighbors across an edge they share, by welded corners,
-	// in either direction: the first unpaired face found takes the edge.
-	type edge struct{ a, b int }
+	// run opposite ways (consistent winding): the first unpaired face
+	// found takes the edge.
+	type edge struct{ a, b int } // Directed, as the face runs it.
 	type slot struct{ face, k int }
 	edges := map[edge][]slot{}
 	for f := range faces {
@@ -176,8 +177,7 @@ func cornerTangents(corners []tangentCorner) []Tangent {
 			continue
 		}
 		for k := range 3 {
-			a, b := welded[3*f+k], welded[3*f+(k+1)%3]
-			e := edge{min(a, b), max(a, b)}
+			e := edge{welded[3*f+k], welded[3*f+(k+1)%3]}
 			edges[e] = append(edges[e], slot{f, k})
 		}
 	}
@@ -189,8 +189,7 @@ func cornerTangents(corners []tangentCorner) []Tangent {
 			if faces[f].neighbor[k] >= 0 {
 				continue
 			}
-			a, b := welded[3*f+k], welded[3*f+(k+1)%3]
-			for _, s := range edges[edge{min(a, b), max(a, b)}] {
+			for _, s := range edges[edge{welded[3*f+(k+1)%3], welded[3*f+k]}] {
 				if s.face != f && faces[s.face].neighbor[s.k] < 0 {
 					faces[f].neighbor[k], faces[s.face].neighbor[s.k] = s.face, f
 					break

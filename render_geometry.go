@@ -478,12 +478,16 @@ func geometryData(geom Geometry) (data [9][]byte) {
 		if mapped(geom) {
 			// The texture gives color, so the color slot carries the cutout
 			// threshold (or a transparent vertex's opacity), flags (1 repeat,
-			// 2 edge-on, 4 tint, 8 extension records follow), and, for a
+			// 2 edge-on, 4 tint, 8 extension records follow, 16 they carry
+			// tangent frames), and, for a
 			// tint, the vertex color as a 24-bit integer, which a float
 			// holds exactly.
 			m, flags, cut := geom.Material, 0, geom.Material.threshold()
 			if extended(geom) {
 				flags |= 8
+				if len(geom.Tangents) > 0 {
+					flags |= 16
+				}
 			}
 			if blended {
 				cut = opacity

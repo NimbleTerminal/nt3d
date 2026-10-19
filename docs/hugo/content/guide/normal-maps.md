@@ -98,6 +98,13 @@ gets one side's frame: give each side its own vertices, as the glTF loader
 does by splitting them. `GenerateCornerTangents` is the per-corner form for
 loaders. Neither keeps MikkTSpace's magnitudes or a stored bitangent.
 
+nt3d's own frames follow the UVs: on the per-triangle basis and in
+`GenerateTangents` alike, the map's green points toward growing V, which is
+down the image (its first row is V 0). A map whose green points up the
+image, as glTF's and Blender's do, wants `W` negated, as the glTF loader
+does for the frames it generates; a mesh with frames of mixed handedness
+uses the sign interpolated at each pixel on both renderers.
+
 The frame is interpolated across each triangle like the normal, projected
 onto the interpolated normal at the pixel, and normalized. Tangents turn
 with positions, not as normals do: instance transforms, `TransformGeometry`
@@ -128,9 +135,10 @@ triangle limit; the glTF loader splits these meshes automatically.
 
 Authored `TANGENT` attributes are used as they are, with their `W`. Without
 them, the loader generates frames per corner from the primitive's positions,
-normals, and the normal map's coordinates (after any texture transform), and
-splits a vertex whose corners disagree, matching MikkTSpace exactly; morph
-targets' `TANGENT` deltas are read too. Mirrored nodes and the back copies of
+normals, and the normal map's coordinates (after any texture transform), with
+`W` negated for glTF's image-up green so they agree with authored ones, and
+splits a vertex whose corners disagree, as MikkTSpace would; morph targets'
+`TANGENT` deltas are read too. Mirrored nodes and the back copies of
 double-sided faces get their handedness flipped.
 
 `Model.Warnings` reports cases that cannot be represented:
