@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 	"math/rand/v2"
+	"strings"
 
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/aabbtree"
@@ -66,12 +67,12 @@ func (b aabbBox) name() string { return fmt.Sprintf("box %d", b.index) }
 
 var aabbPalette = []color.RGBA{{238, 133, 64, 255}, {160, 119, 224, 255}, {234, 196, 83, 255}, {84, 170, 196, 255}, {120, 190, 96, 255}, {220, 96, 120, 255}}
 
-// aabbHalf is the half width of the floor; boxes stay within it.
+// aabbHalf is the half width of the floor. Boxes drift a unit about homes
+// at most aabbHalf-1.3 out, so the widest, .6, stays over it.
 const aabbHalf = 5.5
 
 func (d *demo) setupAABB() error {
 	d.aabb = &aabbScene{count: 1}
-	d.animate = false // Boxes sit still until a sets them drifting.
 	floor, err := nt3d.BuildHeightfield(nt3d.Heightfield{NX: 2, NY: 2, MinX: -aabbHalf, MaxX: aabbHalf, MinY: -aabbHalf, MaxY: aabbHalf, Heights: []float32{0, 0, 0, 0}, Color: color.RGBA{58, 62, 74, 255}})
 	if err != nil {
 		return err
@@ -105,7 +106,7 @@ func (d *demo) plantAABB() error {
 	a.rng = rand.New(rand.NewPCG(5, 17))
 	nearest, best := -1, float32(math.Inf(1))
 	for range aabbCounts[a.count] {
-		b, err := d.addAABBBox()
+		b, err := d.placeAABBBox()
 		if err != nil {
 			return err
 		}
@@ -119,13 +120,22 @@ func (d *demo) plantAABB() error {
 	return d.drawHierarchy()
 }
 
-// addAABBBox scatters one more box and indexes it. It returns the box.
+// addAABBBox scatters one more box, indexes it, and redraws. It returns the box.
 func (d *demo) addAABBBox() (aabbBox, error) {
+	b, err := d.placeAABBBox()
+	if err != nil {
+		return b, err
+	}
+	return b, d.drawHierarchy()
+}
+
+// placeAABBBox scatters one more box and indexes it, without redrawing.
+func (d *demo) placeAABBBox() (aabbBox, error) {
 	a := d.aabb
 	r := a.rng
 	b := aabbBox{
 		index: a.serial,
-		home:  nt3dmath.Vec3{X: (r.Float32()*2 - 1) * (aabbHalf - 1.2), Y: (r.Float32()*2 - 1) * (aabbHalf - 1.2), Z: .8 + r.Float32()*2.4},
+		home:  nt3dmath.Vec3{X: (r.Float32()*2 - 1) * (aabbHalf - 1.3), Y: (r.Float32()*2 - 1) * (aabbHalf - 1.3), Z: .8 + r.Float32()*2.4},
 		size:  nt3dmath.Vec3{X: .2 + r.Float32()*.4, Y: .2 + r.Float32()*.4, Z: .2 + r.Float32()*.4},
 		color: aabbPalette[a.serial%len(aabbPalette)],
 		phase: r.Float64() * 2 * math.Pi,
@@ -145,7 +155,7 @@ func (d *demo) addAABBBox() (aabbBox, error) {
 	}
 	b.id = a.tree.Insert(aabbWorld(center, b.size), b.index)
 	a.boxes = append(a.boxes, b)
-	return b, d.drawHierarchy()
+	return b, nil
 }
 
 func aabbGeometry(b aabbBox, c color.RGBA) nt3d.Geometry {
@@ -339,6 +349,12 @@ func boxEdges(b nt3dmath.AABB, inflate float32, c color.RGBA) []nt3d.Vertex {
 }
 
 func (d *demo) aabbView(content string) string {
+	return "nt3d AABB tree · click a box · h hierarchy · a drift · n count · b add · x remove · 1/2/3 backend · q quit\n" + content + "\n" + d.rendering() + " · " + d.aabbStatus()
+}
+
+// aabbStatus is the status line after the renderer: what the wireframes
+// show, the pick, the counts, the drift, any message, then the camera hints.
+func (d *demo) aabbStatus() string {
 	a := d.aabb
 	pick := "click a box"
 	if a.hasPick {
@@ -350,19 +366,9 @@ func (d *demo) aabbView(content string) string {
 	if d.animate {
 		drift = "drifting"
 	}
-	return fmt.Sprintf("nt3d AABB tree · click a box · h hierarchy · a drift · n count · b add · x remove · 1/2/3 backend · q quit\n%s\n%s · %s · %s · %d boxes, %d nodes · %s · drag orbit · wheel zoom · r rotate · %s",
-		content, d.rendering(), a.show, pick, len(a.boxes), 2*len(a.boxes)-1, drift, d.status)
-}
-
-// aabbPickRay is the ray a click at world point hit travels along: from
-// the eye through the point in perspective, or along the view direction
-// from well behind the point in orthographic projection, where every pick
-// ray is parallel.
-func aabbPickRay(c nt3d.Camera, hit nt3dmath.Vec3) nt3dmath.Ray {
-	eye := c.Eye()
-	if c.Projection == nt3d.Perspective {
-		return nt3dmath.Ray{Origin: eye, Direction: hit.Sub(eye)}
+	parts := []string{a.show.String(), pick, fmt.Sprintf("%d boxes, %d nodes", len(a.boxes), max(0, 2*len(a.boxes)-1)), drift}
+	if d.status != "" {
+		parts = append(parts, d.status)
 	}
-	view := c.Target.Sub(eye).Normalize()
-	return nt3dmath.Ray{Origin: hit.Sub(view.Scale(2 * float32(c.Distance))), Direction: view}
+	return strings.Join(append(parts, "drag orbit · wheel zoom · r rotate"), " · ")
 }

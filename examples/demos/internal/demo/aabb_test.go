@@ -3,11 +3,14 @@ package demo
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/aabbtree"
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/widget"
+	"nimbleterminal.dev/ntpicture"
 )
 
 func newAABBDemo(t *testing.T) *demo {
@@ -93,7 +96,7 @@ func TestAABBPickAndPath(t *testing.T) {
 	column := aabbWorld(nt3dmath.Vec3{X: center.X, Y: center.Y, Z: 50}, nt3dmath.Vec3{Z: 100})
 	top, topZ := -1, float32(-1)
 	a.tree.QueryOverlap(column, func(_ nt3daabbtree.ID, i int) bool {
-		if z := aabbCenter(a.boxes[i], 0).Z; z > topZ {
+		if z := aabbCenter(a.boxes[i], 0).Z + a.boxes[i].size.Z/2; z > topZ {
 			top, topZ = i, z
 		}
 		return true
@@ -223,32 +226,63 @@ func TestAABBAddRemoveCycle(t *testing.T) {
 	}
 }
 
-func TestAABBPickRay(t *testing.T) {
-	cam := nt3d.DefaultCamera()
-	cam.Alpha, cam.Distance, cam.Projection = 30, 15, nt3d.Perspective
-	hit := nt3dmath.Vec3{X: 1, Y: 2, Z: .5}
-	ray := aabbPickRay(cam, hit)
-	if ray.Origin != cam.Eye() {
-		t.Fatalf("perspective ray starts at %v, not the eye %v", ray.Origin, cam.Eye())
+// Every box, drifting for two minutes, stays over the floor and above it.
+func TestAABBDriftStaysOnFloor(t *testing.T) {
+	d := newAABBDemo(t)
+	for _, b := range d.aabb.boxes {
+		for i := range 240 {
+			w := aabbWorld(aabbCenter(b, float64(i)*.5), b.size)
+			if w.Min.X < -aabbHalf || w.Max.X > aabbHalf || w.Min.Y < -aabbHalf || w.Max.Y > aabbHalf || w.Min.Z < 0 {
+				t.Fatalf("box %d leaves the floor at t=%g: %v", b.index, float64(i)*.5, w)
+			}
+		}
 	}
-	if want := hit.Sub(cam.Eye()); ray.Direction != want {
-		t.Fatalf("perspective ray direction %v, want %v", ray.Direction, want)
-	}
+}
 
-	cam.Projection = nt3d.Orthographic
-	ray = aabbPickRay(cam, hit)
-	view := cam.Target.Sub(cam.Eye()).Normalize()
-	dir := ray.Direction.Normalize()
-	if d := dir.Dot(view); d < .9999 {
-		t.Fatalf("orthographic ray direction %v is not the view direction %v", dir, view)
+func TestAABBStatus(t *testing.T) {
+	d := newAABBDemo(t)
+	a := d.aabb
+	d.status = "boom"
+	s := d.aabbStatus()
+	if !strings.Contains(s, "150 boxes, 299 nodes") || !strings.Contains(s, "leaf at depth") {
+		t.Fatalf("status %q", s)
 	}
-	// The origin lies behind the hit along the view direction, on the ray.
-	back := hit.Sub(ray.Origin)
-	if along := back.Dot(view); along < float32(cam.Distance) {
-		t.Fatalf("origin only %g behind the hit", along)
+	if strings.Index(s, "boom") > strings.Index(s, "drag orbit") {
+		t.Fatalf("the message comes after the hints: %q", s)
 	}
-	off := back.Sub(view.Scale(back.Dot(view)))
-	if off.Dot(off) > 1e-6 {
-		t.Fatalf("hit is %v off the orthographic ray", off)
+	for len(a.boxes) > 0 {
+		if err := d.selectAABB(a.boxes[0].id); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.removePickedAABB(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s := d.aabbStatus(); !strings.Contains(s, "0 boxes, 0 nodes") {
+		t.Fatalf("empty status %q", s)
+	}
+}
+
+// A click's message picks along its ray: a box when it meets one, nothing otherwise.
+func TestAABBPickMsg(t *testing.T) {
+	d := newAABBDemo(t)
+	a := d.aabb
+	session := ntpicture.NewTerminalSession(ntpicture.TerminalOptions{Kitty: ntpicture.KittyCapabilityUnsupported})
+	defer session.Close()
+	d.view = nt3dwidget.New(d.scene, 20, 8, nt3dwidget.WithRenderMode(nt3dwidget.Software), nt3dwidget.WithTerminalSession(session))
+	defer d.view.Close()
+	if err := d.clearAABBPick(); err != nil {
+		t.Fatal(err)
+	}
+	center := aabbCenter(a.boxes[7], 0)
+	ray := nt3dmath.Ray{Origin: nt3dmath.Vec3{X: center.X, Y: center.Y, Z: center.Z}, Direction: nt3dmath.Vec3{X: 1e-3}}
+	// From inside box 7, a ray meets it at t = 0 before anything else.
+	d.Update(nt3dwidget.PickMsg{ModelID: d.view.ID(), Ray: ray})
+	if !a.hasPick || a.picked != a.boxes[7].id {
+		t.Fatalf("picked %v %d, want %d", a.hasPick, a.picked, a.boxes[7].id)
+	}
+	d.Update(nt3dwidget.PickMsg{ModelID: d.view.ID(), Ray: nt3dmath.Ray{Origin: nt3dmath.Vec3{Z: 50}, Direction: nt3dmath.Vec3{Z: 1}}})
+	if a.hasPick {
+		t.Fatal("a click into empty space kept the pick")
 	}
 }

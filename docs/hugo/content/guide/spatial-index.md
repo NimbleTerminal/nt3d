@@ -5,6 +5,8 @@ weight: 48
 
 # Spatial index
 
+[Try the AABB tree demo](../demos/#aabb-tree) with `task aabb`: click a box to see its ancestors in the tree as nested wireframes, and set the boxes drifting to watch the tree update.
+
 `nimbleterminal.dev/nt3d/aabbtree` (`nt3daabbtree`) is a dynamic AABB tree: a spatial index over a changing set of boxed objects that answers "which objects overlap this box?" and "which objects does this ray meet?" in logarithmic time. It is independent of scenes and renderers; you hand it bounds and a value of your own type, and it hands them back from queries. It is not a collision solver, and the static triangle hierarchy that [picking](../picking/) uses stays as it is.
 
 ```go

@@ -240,14 +240,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return d, nil
 	case nt3dwidget.PickMsg:
 		if d.aabb != nil {
-			// The tree picks, along the ray the click travels.
-			var err error
-			if v.Hit == nil {
-				err = d.clearAABBPick()
-			} else {
-				err = d.pickAABB(aabbPickRay(d.view.Camera(), v.Hit.Position))
-			}
-			if err != nil {
+			// The tree picks along the click's ray; nothing met clears.
+			if err := d.pickAABB(v.Ray); err != nil {
 				d.status = err.Error()
 			}
 			return d, d.view.Refresh()
@@ -681,7 +675,7 @@ func mapImage(topo bool) *image.RGBA {
 }
 func run(proceduralDefault bool, kind sceneMode) error {
 	procedural := flag.Bool("procedural", proceduralDefault, "generate plasma textures with a GPU shader (CPU image fallback)")
-	animate := flag.Bool("animate", true, "animate the scene or procedural phase (a toggles pause)")
+	animate := flag.Bool("animate", kind != sceneAABB, "animate the scene or procedural phase (a toggles pause); the AABB demo starts still")
 	mode := flag.String("render-mode", "gpu", "gpu, software, or wireframe")
 	shDC := flag.Bool("sh-dc", false, "show only DC Gaussian color (h toggles full SH)")
 	snapshot := flag.String("snapshot", "", "write a PNG without opening a terminal")
