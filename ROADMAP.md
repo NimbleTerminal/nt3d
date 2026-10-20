@@ -37,6 +37,12 @@ move to Done with their commit; git history has the details.
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
   exact rendering means subdividing them.
 
+## Spatial index
+
+- [ ] **AABB tree follow-ups**: `RayCast` slab-tests each leaf twice (once
+  to order the children, again when popped); a test for negative-zero ray
+  directions, which the slab test handles through `1/-0 = -Inf`.
+
 ## Robustness
 
 - [ ] **Test a real GPU running out of memory**; failure reporting is only
@@ -62,6 +68,12 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **`v0.3.1`**: adopted `ntpicture` `v0.1.1`, `ntcanvas` `v0.1.1`, and
+  `go-booba` `v0.10.2` for the web demos (wheel events as SGR mouse buttons,
+  OSC 52 clipboard from wasm) (`0350219`, `5a0a3b8`).
+- **`v0.3.0`** (`18023bb`): the AABB tree, tangent frames, SPZ splats, cutout
+  mips, mipmapped shader textures, and clustered LOD below; the widget's
+  `PickMsg` carries the click's world ray (`be53a91`).
 - **Dynamic AABB tree (`nt3daabbtree`)**: a generic `Tree[T]` spatial index
   with insert, remove, update, inclusive overlap and near-first ray queries,
   Box2D-style balancing, and the spatial index guide (`d419650`…`2784ca9`);
