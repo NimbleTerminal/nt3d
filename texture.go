@@ -64,6 +64,14 @@ type UV struct{ U, V float32 }
 // stay round on coarse meshes. It needs the frame's camera (Frame.Eye),
 // which Scene.Frame supplies; unlit materials and wireframe have none.
 type Material struct {
+	// FlowMap advects NormalMap using Geometry.UV to sample a vertex flow field.
+	// FlowPhase is time in cycles (e.g. seconds / period). Two offset phases
+	// crossfade to avoid a reset jump. FlowStrength scales UV displacement per
+	// cycle; zero disables advection. FlowRepeat controls field sampling.
+	FlowMap                 *FlowMap
+	FlowPhase, FlowStrength float32
+	FlowRepeat              bool
+
 	// Transmission mixes the opaque scene behind this surface into its shading,
 	// 0..1. Transmissive meshes draw after opaque geometry and write depth before
 	// transparent meshes and particles. They cannot also be Transparent, Cutout,

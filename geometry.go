@@ -191,6 +191,12 @@ func validateGeometry(g Geometry) error {
 			return fmt.Errorf("nt3d: transmission requires a lit, non-blended surface")
 		}
 
+		if !validFloat(m.FlowPhase, m.FlowStrength) || m.FlowStrength < 0 {
+			return fmt.Errorf("nt3d: flow phase must be finite and strength nonnegative")
+		}
+		if m.FlowMap != nil && (m.FlowMap.texture == nil || m.NormalMap == nil) {
+			return fmt.Errorf("nt3d: flow requires a valid flow map and normal map")
+		}
 		if !validFloat(m.NormalStrength) {
 			return fmt.Errorf("nt3d: non-finite normal strength")
 		}
@@ -271,10 +277,10 @@ func validateGeometry(g Geometry) error {
 
 // extended reports whether a geometry's mesh needs the GPU's extension
 // record for each index, beside its primary one: a normal-mapped mesh
-// with tangents or independent normal UVs. Such meshes hold at most half
+// with tangents, independent normal UVs, or a flow field. Such meshes hold at most half
 // the triangles of others (MaxMeshTriangles/2).
 func extended(g Geometry) bool {
-	return g.Material != nil && g.Material.NormalMap != nil && (len(g.NormalUV) > 0 || len(g.Tangents) > 0)
+	return g.Material != nil && g.Material.NormalMap != nil && (len(g.NormalUV) > 0 || len(g.Tangents) > 0 || g.Material.FlowMap != nil)
 }
 
 // boxVertices uses outward counterclockwise faces, matching the GPU box shader.

@@ -322,7 +322,8 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 						geometric := n
 						if normalMapped {
 							uv := UV{q0*a.normalUV.U + q1*b.normalUV.U + q2*c.normalUV.U, q0*a.normalUV.V + q1*b.normalUV.V + q2*c.normalUV.V}
-							sample := material.NormalMap.sampleFootprint(uv, normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.NormalRepeat, aniso)
+							flow := UV{q0*a.flow.U + q1*b.flow.U + q2*c.flow.U, q0*a.flow.V + q1*b.flow.V + q2*c.flow.V}
+							sample := flowNormalSample(material, uv, normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), flow, aniso)
 							t, bt := tangent, bitangent
 							if framed {
 								// The vertices' frame, interpolated as the
@@ -376,6 +377,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			if len(uv) > 0 {
 				corners[k].uv = uv[i]
 				corners[k].normalUV = uv[i]
+				corners[k].flow = materialFlow(material, uv[i])
 			}
 			if len(normalUV) > 0 {
 				corners[k].normalUV = normalUV[i]

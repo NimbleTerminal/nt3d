@@ -533,6 +533,15 @@ func geometryData(geom Geometry) (data [9][]byte) {
 	// map's coordinates, and the tangent frame with its handedness in w
 	// (zero without tangents).
 	if extended(geom) {
+		// Flow is fixed in the rest UV field. Resolve it once per vertex, not once
+		// per repeated triangle index, when streaming a large animated grid.
+		var flows []UV
+		if geom.Material.FlowMap != nil {
+			flows = make([]UV, len(geom.Vertices))
+			for i := range flows {
+				flows[i] = materialFlow(geom.Material, geom.UV[i])
+			}
+		}
 		for _, i := range geom.Indices {
 			uv := geom.UV[i]
 			if len(geom.NormalUV) > 0 {
@@ -542,7 +551,11 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			if len(geom.Tangents) > 0 {
 				t = geom.Tangents[i]
 			}
-			data[7] = appendFloats(data[7], uv.U, uv.V, 0, 0, t.Direction.X, t.Direction.Y, t.Direction.Z, t.W, 0, 0, 0, 0)
+			flow := UV{}
+			if flows != nil {
+				flow = flows[i]
+			}
+			data[7] = appendFloats(data[7], uv.U, uv.V, flow.U, flow.V, t.Direction.X, t.Direction.Y, t.Direction.Z, t.W, 0, 0, 0, 0)
 		}
 	}
 	for _, b := range geom.Boxes {

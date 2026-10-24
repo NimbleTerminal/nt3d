@@ -161,3 +161,19 @@ physical glass. Reflections still come from the environment.
 Capture textures are private renderer resources. GPU and software share these
 material controls; procedural texture shaders remain independent of the scene.
 See [Water](../water/) for the complete example.
+
+### Flow-driven normal maps
+
+`Material.FlowMap` takes an immutable `NewFlowMap(image)` field. Red/green
+encode signed normal-UV displacement; 127/128 are neutral. The field is sampled
+at `Geometry.UV` vertices, then interpolated per fragment. `FlowRepeat` wraps
+the field rather than clamping it. Use independent `Geometry.NormalUV` for
+ripple tiling.
+
+Set `FlowStrength` to the displacement scale per cycle and animate `FlowPhase`
+in cycles. Two offset phases crossfade to avoid a discontinuity on reset;
+zero strength disables flow. A flow map requires a normal map. It adds no
+texture bindings and works in GPU and software, including normal-driven
+reflection and refraction. Small field details require correspondingly dense
+mesh vertices. Flow changes shading, not geometry or simulation velocities.
+See [Water](../water/) for a shoreline example and tiled mesh API.
