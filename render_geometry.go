@@ -73,11 +73,12 @@ func (s *instanceSet) release() {
 	}
 }
 
-// Two matrices and the outline color/width.
-const instanceRecordSize = 144
+// Two matrices, outline color/width, and two optical parameter vectors.
+const instanceRecordSize = 176
 
 // transformState is what an instance's transform record holds.
 type transformState struct {
+	optics                            [8]float32
 	outline                           OutlineStyle
 	unlit                             bool
 	world                             nt3dmath.Mat4
@@ -313,6 +314,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	states := make([]transformState, len(members))
 	for k, i := range members {
 		states[k].world = instance(f, i).World
+		states[k].optics = opticalParams(f.Geometry[i].Material, f.Geometry[i].PointStyle)
 		states[k].outline = f.Geometry[i].Outline
 		states[k].unlit = f.Geometry[i].Material != nil && f.Geometry[i].Material.Unlit
 		if m := f.Geometry[i].Material; m != nil && m.Specular > 0 && !m.Unlit {
@@ -333,7 +335,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	}
 	data := make([]byte, 0, instanceRecordSize*len(states))
 	for _, st := range states {
-		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.extension)...)
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.extension, st.optics)...)
 	}
 	s.last = states
 	return dev.Queue().WriteBuffer(s.transform, 0, data)
@@ -346,7 +348,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 // unlit flag, reflection F0, and where the mesh's extension records start (its index
 // count; the shader cannot trust arrayLength, which Metal reports from
 // the allocation, not the binding).
-func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32) []byte {
+func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32, optics ...[8]float32) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
@@ -363,7 +365,12 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 	}
 	data := append(floats(world[:]...), floats(normal[:]...)...)
 	c := outline.Color
-	return appendFloats(data, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, outline.Width)
+	data = appendFloats(data, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, outline.Width)
+	var o [8]float32
+	if len(optics) > 0 {
+		o = optics[0]
+	}
+	return appendFloats(data, o[:]...)
 }
 
 func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {

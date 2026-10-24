@@ -90,5 +90,5 @@ func (g *gpuRenderer) updateReflection(dev *wgpu.Device, e *Environment) (err er
 }
 
 func (g *gpuRenderer) sceneLightingBind(dev *wgpu.Device, depth *wgpu.TextureView, r *reflectionTexture) (*wgpu.BindGroup, error) {
-	return dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.shadowLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: depth}, {Binding: 1, TextureView: r.view}, {Binding: 2, Sampler: r.sampler}}})
+	return dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.shadowLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: depth}, {Binding: 1, TextureView: r.view}, {Binding: 2, Sampler: r.sampler}, {Binding: 3, TextureView: g.screen.colorView}, {Binding: 4, TextureView: g.screen.depthView}}})
 }

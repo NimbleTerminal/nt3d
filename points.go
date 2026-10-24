@@ -11,6 +11,11 @@ import (
 // PointStyle is how a geometry's points are drawn. The zero value is hard
 // discs, radius in pixels, opaque.
 type PointStyle struct {
+	// SoftDistance fades blended particles as their view-space depth approaches
+	// the scene surface, in world units. Zero disables intersection fading.
+	// Includes transmissive surfaces; ignored for opaque points and wireframe.
+	SoftDistance float32
+
 	// Texture draws square camera-facing sprites, tinted by Point.Color.
 	// It replaces the disc shape. Opaque sprites cut out alpha below 0.5;
 	// blended sprites multiply texture alpha by Point.Color.A.
@@ -63,6 +68,10 @@ const (
 const MaxPointPixels = 256
 
 func validPointStyle(s PointStyle) error {
+	if !validFloat(s.SoftDistance) || s.SoftDistance < 0 {
+		return fmt.Errorf("nt3d: soft particle distance must be finite and nonnegative")
+	}
+
 	if s.Shape > GaussianPoint || s.Units > WorldUnits || s.Blend > AdditiveBlend {
 		return fmt.Errorf("nt3d: unknown point style")
 	}

@@ -1,12 +1,14 @@
 @group(1) @binding(0) var shadowMap: texture_depth_2d_array;
 @group(1) @binding(1) var reflectionMap: texture_2d<f32>;
 @group(1) @binding(2) var reflectionSampler: sampler;
+@group(1) @binding(3) var sceneColor: texture_2d<f32>;
+@group(1) @binding(4) var sceneDepth: texture_depth_2d;
 struct Light { a: vec4<f32>, b: vec4<f32> };
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,9>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,9>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6>, inverse:mat4x4<f32> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
-struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32> };
+struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, absorption:vec4<f32>, optics:vec4<f32> };
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
 // Points have records of their own, five words each: position, radius
 // (negative in world units), and color as RGBA8. Alpha points are drawn in
@@ -29,7 +31,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
 // position (whose distance from the camera, not affine, is found per
 // fragment) and normal, and the instance's specular strength and exponent
 // (its normal matrix's spare column).
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32>, @location(11) @interpolate(flat) full:f32, @location(12) tangent:vec4<f32>, @location(13) @interpolate(flat) framed:f32, @location(14) @interpolate(flat) reflectivity:f32 };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32>, @location(11) @interpolate(flat) full:f32, @location(12) tangent:vec4<f32>, @location(13) @interpolate(flat) framed:f32, @location(14) @interpolate(flat) absorption:vec4<f32>, @location(15) @interpolate(flat) optics:vec4<f32> };
 // eyeDistance is a world point's distance from the camera, as fog measures
 // it: straight, or along the view for orthographic cameras.
 fn eyeDistance(world:vec3<f32>)->f32 {
@@ -40,9 +42,9 @@ fn worldPosition(pos:vec3<f32>,index:f32)->vec3<f32> {return (instances[u32(inde
 fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
  var o: Out; o.clip=clipPosition(pos,color.w);
  let inst=instances[u32(color.w)];
- o.world=worldPosition(pos,color.w);
+ o.world=worldPosition(pos,color.w);o.absorption=vec4<f32>(inst.absorption.xyz,0.0);o.optics=vec4<f32>(inst.absorption.w,inst.optics.xy,0.0);
  if dot(normal,normal)>0.0 {
-  o.normal=normalize((inst.normal*vec4<f32>(normal,0.0)).xyz);o.spec=inst.normal[3].xy;o.reflectivity=inst.normal[2].w;
+  o.normal=normalize((inst.normal*vec4<f32>(normal,0.0)).xyz);o.spec=inst.normal[3].xy;o.absorption.w=inst.normal[2].w;
  }
  o.color=vec4<f32>(decode(color.rgb),1.0);o.uv=vec2<f32>(0.0);o.point=0.0;return o;
 }
@@ -114,7 +116,8 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
  if dot(o.normal,o.normal)>0.0 {
   let n=normalize(shadeNormal);
   c*=illuminate(n,o.world,normalize(o.normal));
-  if o.reflectivity>0.0 && u.viewport.w>0.5 {
+  if o.optics.x>0.0 {c=transmit(o,c,n);}
+  if o.absorption.w>0.0 && u.viewport.w>0.5 {
    var view=-u.forward.xyz;
    if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
    let reflected=reflect(-view,n);
@@ -122,7 +125,7 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
    let uv=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,clamp(acos(clamp(reflected.z,-1.0,1.0))/3.14159265359,half,1.0-half));
    var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
    if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
-   let fresnel=o.reflectivity+(1.0-o.reflectivity)*pow(1.0-clamp(dot(n,view),0.0,1.0),5.0);
+   let fresnel=o.absorption.w+(1.0-o.absorption.w)*pow(1.0-clamp(dot(n,view),0.0,1.0),5.0);
    c=mix(c,sky*u.ground.w,fresnel);
   }
   if o.spec.x>0.0 {
@@ -238,10 +241,10 @@ let p=items[ii];var o=output(p.a.xyz+corners[vi]*p.b.xyz,normals[vi/6u],p.color)
 // distance from the center over the radius. Alpha points fog as surfaces
 // do; additive ones fade out with fog instead, adding less.
 fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
-@fragment fn fs_point_alpha(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(finish(o,o.color.rgb),o.cut);}
-@fragment fn fs_point_alpha_soft(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(finish(o,o.color.rgb),o.cut*softness(o));}
-@fragment fn fs_point_add(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(o.color.rgb,o.cut*(1.0-fogAmount(o.world)));}
-@fragment fn fs_point_add_soft(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(o.color.rgb,o.cut*softness(o)*(1.0-fogAmount(o.world)));}
+@fragment fn fs_point_alpha(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(finish(o,o.color.rgb),(o.cut*softIntersection(o)));}
+@fragment fn fs_point_alpha_soft(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(finish(o,o.color.rgb),(o.cut*softIntersection(o))*softness(o));}
+@fragment fn fs_point_add(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(o.color.rgb,(o.cut*softIntersection(o))*(1.0-fogAmount(o.world)));}
+@fragment fn fs_point_add_soft(o:Out)->@location(0) vec4<f32> {if dot(o.uv,o.uv)>1.0 {discard;} return vec4<f32>(o.color.rgb,(o.cut*softIntersection(o))*softness(o)*(1.0-fogAmount(o.world)));}
 
 @group(2) @binding(0) var mapTexture: texture_2d<f32>;
 @group(2) @binding(1) var mapSampler: sampler;
@@ -415,7 +418,7 @@ fn outlineOutput(input:Out,vi:u32,ii:u32)->Out {
   o.clip=vec4<f32>(o.clip.xy+normalize(direction)*inst.outline.w*2.0/u.viewport.xy*o.clip.w,o.clip.zw);
  }
  o.color=vec4<f32>(decode(inst.outline.rgb),o.color.a);
- o.normal=vec3<f32>(0.0);o.normalStrength=0.0;
+ o.normal=vec3<f32>(0.0);o.normalStrength=0.0;o.optics=vec4<f32>(0.0);
  if inst.outline.w<=0.0 {o.clip=vec4<f32>(0.0,0.0,2.0,1.0);}
  return o;
 }
@@ -448,10 +451,10 @@ fn spriteSample(o:Out)->vec4<f32> {
  return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),1.0);
 }
 @fragment fn fs_sprite_alpha(o:Out)->@location(0) vec4<f32> {
- let t=spriteSample(o);return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),t.a*o.cut);
+ let t=spriteSample(o);return vec4<f32>(finish(o,mapColor(t.rgb)*o.color.rgb),t.a*(o.cut*softIntersection(o)));
 }
 @fragment fn fs_sprite_add(o:Out)->@location(0) vec4<f32> {
- let t=spriteSample(o);return vec4<f32>(mapColor(t.rgb)*o.color.rgb,t.a*o.cut*(1.0-fogAmount(o.world)));
+ let t=spriteSample(o);return vec4<f32>(mapColor(t.rgb)*o.color.rgb,t.a*(o.cut*softIntersection(o))*(1.0-fogAmount(o.world)));
 }
 
 // Covariance axes share the sprite auxiliary buffer. Project each axis by
@@ -479,7 +482,7 @@ fn spriteSample(o:Out)->vec4<f32> {
 }
 @fragment fn fs_gaussian(o:Out)->@location(0) vec4<f32> {
  let r2=dot(o.uv,o.uv);if r2>1.0 {discard;}
- return vec4<f32>(finish(o,o.color.rgb),min(0.99,o.cut)*exp(-4.5*r2));
+ return vec4<f32>(finish(o,o.color.rgb),min(0.99,o.cut)*softIntersection(o)*exp(-4.5*r2));
 }
 
 // Header: 3x3 SH-from-local transform, coefficient stride/count, reserved.
@@ -496,4 +499,52 @@ fn gaussianSHColor(index:u32,world:vec3<f32>)->vec3<f32> {
  var rgb=vec3<f32>(0.5);
  for(var k=0u;k<count;k++) {let at=12u+(index*stride+k)*3u;rgb+=nt3dSHBasis(k,direction)*vec3<f32>(gaussianSH[at],gaussianSH[at+1u],gaussianSH[at+2u]);}
  return decode(max(rgb,vec3<f32>(0.0)));
+}
+
+// Immutable opaque color and depth. Depth is refreshed after transmission for
+// particles. Texture loads keep this portable to unfilterable HDR targets.
+fn sceneWorld(pixel:vec2<f32>,depth:f32)->vec3<f32> {
+ let size=vec2<f32>(textureDimensions(sceneDepth));
+ let p=u.inverse*vec4<f32>(pixel/size*vec2<f32>(2.0,-2.0)+vec2<f32>(-1.0,1.0),depth,1.0);
+ if abs(p.w)<1e-8 {return vec3<f32>(0.0);}
+ return p.xyz/p.w;
+}
+fn sceneGap(pixel:vec2<f32>,z:f32,back:f32)->f32 {
+ if back>=1.0 {return 1000.0;}
+ if back<=z {return 0.0;}
+ return min(1000.0,length(sceneWorld(pixel,back)-sceneWorld(pixel,z)));
+}
+fn softIntersection(o:Out)->f32 {
+ if o.optics.z<=0.0 {return 1.0;}
+ let back=textureLoad(sceneDepth,vec2<i32>(o.clip.xy),0);
+ if back>=1.0 {return 1.0;}
+ return clamp(sceneGap(o.clip.xy,o.clip.z,back)/o.optics.z,0.0,1.0);
+}
+fn transmit(o:Out,base:vec3<f32>,n:vec3<f32>)->vec3<f32> {
+ let size=vec2<f32>(textureDimensions(sceneDepth));
+ let here=vec2<i32>(o.clip.xy);
+ let depth=textureLoad(sceneDepth,here,0);
+ let thickness=sceneGap(o.clip.xy,o.clip.z,depth);
+ let direction=vec2<f32>(dot(n,normalize(u.skyRight.xyz)),-dot(n,normalize(u.skyUp.xyz)));
+ let offset=direction*o.optics.y*size.y*min(1.0,thickness);
+ var pixel=o.clip.xy+offset;
+ if any(pixel<vec2<f32>(0.5)) || any(pixel>size-vec2<f32>(0.5)) {pixel=o.clip.xy;}
+ // Reject foreground at every tap of the bilinear footprint.
+ let lo=vec2<i32>(floor(pixel-vec2<f32>(0.5)));
+ let hi=vec2<i32>(size)-vec2<i32>(1);
+ var blocked=false;
+ for(var y=0;y<2;y++) {for(var x=0;x<2;x++) {
+  if textureLoad(sceneDepth,clamp(lo+vec2<i32>(x,y),vec2<i32>(0),hi),0)<=o.clip.z {blocked=true;}
+ }}
+ if blocked {pixel=o.clip.xy;}
+ let origin=vec2<i32>(floor(pixel-vec2<f32>(0.5)));
+ let weight=fract(pixel-vec2<f32>(0.5));
+ let a=textureLoad(sceneColor,clamp(origin,vec2<i32>(0),hi),0).rgb;
+ let b=textureLoad(sceneColor,clamp(origin+vec2<i32>(1,0),vec2<i32>(0),hi),0).rgb;
+ let c=textureLoad(sceneColor,clamp(origin+vec2<i32>(0,1),vec2<i32>(0),hi),0).rgb;
+ let d=textureLoad(sceneColor,clamp(origin+vec2<i32>(1,1),vec2<i32>(0),hi),0).rgb;
+ let behind=mix(mix(a,b,weight.x),mix(c,d,weight.x),weight.y);
+ let back=textureLoad(sceneDepth,vec2<i32>(pixel),0);
+ let attenuation=exp(-o.absorption.xyz*sceneGap(pixel,o.clip.z,back));
+ return mix(base,behind,o.optics.x*attenuation);
 }

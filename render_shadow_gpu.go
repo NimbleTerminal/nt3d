@@ -161,7 +161,7 @@ func (g *gpuRenderer) drawShadowFace(f Frame, encoder *wgpu.CommandEncoder, face
 	hasCutout := false
 	for _, d := range g.draws {
 		geom := &f.Geometry[d.index]
-		if !transparent(geom) {
+		if !transparent(geom) && !transmitting(geom) {
 			if b := d.geom.batches[1]; b.count > 0 {
 				pass.SetPipeline(g.shadowPipelines[0])
 				pass.SetBindGroup(1, g.noShadow.bind, nil)

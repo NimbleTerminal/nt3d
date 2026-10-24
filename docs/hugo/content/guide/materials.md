@@ -128,3 +128,36 @@ The render target and its mipmaps are linear data, without sRGB conversion.
 `NormalRepeat` chooses tiling or clamping. Software renders the supplied image,
 which should evaluate the same pattern and parameters. The [water demo](../water/)
 uses this path for periodic ripple normals.
+
+### Scene transmission
+
+Lit materials can sample the opaque scene behind their surface:
+
+```go
+material := &nt3d.Material{
+    Transmission: .94,
+    Refraction:   .018,
+    Absorption:   nt3dmath.Vec3{X: .85, Y: .28, Z: .12},
+    Reflectivity: .02,
+}
+```
+
+`Transmission` is a 0–1 mix. `Refraction` is a 0–1 screen offset measured in
+fractions of viewport height, directed by the projected shading normal;
+normal maps affect it. Zero gives undistorted transmission. `Absorption` is
+nonnegative RGB extinction per world unit: each channel is attenuated by
+`exp(-coefficient * distance)` toward the lit surface color. Distance is the
+view-ray segment to opaque geometry, capped at 1000 world units; missing depth
+uses that cap. Use `Linear` rendering for attenuation in linear light.
+
+Transmissive meshes write depth after the opaque scene is captured and before
+ordinary transparency. They require normals and cannot use `Transparent`,
+`Cutout`, `EdgeOn`, or `Unlit`. Like transparent meshes, their triangles do not
+cast shadow maps. Offscreen and foreground distortion samples fall
+back to the original pixel. Only the opaque scene is captured, so stacked
+transmissive layers and transparent objects behind them are not composited as
+physical glass. Reflections still come from the environment.
+
+Capture textures are private renderer resources. GPU and software share these
+material controls; procedural texture shaders remain independent of the scene.
+See [Water](../water/) for the complete example.

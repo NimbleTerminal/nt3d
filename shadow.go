@@ -151,7 +151,7 @@ func buildShadowFace(f *Frame, drawn []bool, view shadowView) *shadowMap {
 				rasterShadowTriangle(m, [3]clipCorner{polygon[0], polygon[k], polygon[k+1]}, material)
 			}
 		}
-		if !transparent(&g) {
+		if !transparent(&g) && !transmitting(&g) {
 			for i := 0; i+2 < len(g.Indices); i += 3 {
 				tri(g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material)
 			}

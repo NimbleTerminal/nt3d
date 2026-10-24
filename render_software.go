@@ -75,6 +75,11 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 // depth is exactly Width*Height values and is reset even on equal-area resizes.
 func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []float32) {
 	px := float32(scale)
+	inverseScene, _ := inverseProjection(f.Matrix)
+	var opaqueColor []byte
+	var opaqueDepth []float32
+	right, up, _ := f.skyBasis()
+	right, up = right.Normalize(), up.Normalize()
 	img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
 	for i := range depth {
 		depth[i] = noDepth
@@ -202,7 +207,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		// A triangle with normals is lit; unlit ones have none.
 		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
 		// Whether pixels need the world point, and so perspective weights.
-		located := fogged || lit && (specular || reflective || rig.points || rig.shadow != nil)
+		located := fogged || lit && (specular || reflective || material != nil && material.Transmission > 0 || rig.points || rig.shadow != nil)
 		hasNormal := material != nil && material.NormalMap != nil
 		perspective := blended || textured || lit || fogged || hasNormal
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
@@ -331,6 +336,9 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 							n = perturbNormal(n, t, bt, sample, material.NormalStrength)
 						}
 						rig.lightNormal(&rgb, n, p, geometric)
+						if material != nil && material.Transmission > 0 && opaqueColor != nil {
+							transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
+						}
 						if reflective {
 							reflectEnvironment(&rgb, f.Environment, material.Reflectivity, f.EnvironmentStrength, n, f.viewAt(p), linear)
 						}
@@ -516,6 +524,10 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			for sy := loY; sy <= hiY; sy++ {
 				for sx := loX; sx <= hiX; sx++ {
 					dx, dy := float32(sx)+.5-x, float32(sy)+.5-y
+					pixelAlpha := alpha
+					if style.Blend != OpaqueBlend && style.SoftDistance > 0 && depth[sy*f.Width+sx] < 1 {
+						pixelAlpha *= min(1, sceneGap(inverseScene, float32(sx)+.5, float32(sy)+.5, z, depth[sy*f.Width+sx], f.Width, f.Height)/style.SoftDistance)
+					}
 					if style.Texture != nil {
 						if dx < -radius || dx >= radius || dy < -radius || dy >= radius {
 							continue
@@ -532,7 +544,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 							}
 							tinted[k] *= v
 						}
-						opacity := alpha * tex[3]
+						opacity := pixelAlpha * tex[3]
 						if style.Blend == AdditiveBlend {
 							add(sx, sy, z, tinted, opacity*(1-f.Fog.amount(distance)))
 						} else {
@@ -560,9 +572,9 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 					case OpaqueBlend:
 						put(sx, sy, z, c)
 					case AlphaBlend:
-						blend(sx, sy, z, rgb, alpha*softness(style.Shape, d2/(radius*radius)))
+						blend(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
 					default:
-						add(sx, sy, z, rgb, alpha*softness(style.Shape, d2/(radius*radius)))
+						add(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
 					}
 				}
 			}
@@ -581,7 +593,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		if !blendedPoints(&f.Geometry[gi]) {
 			drawPoints(&f.Geometry[gi], inst, &local.Matrix)
 		}
-		if !transparent(&f.Geometry[gi]) {
+		if !transparent(&f.Geometry[gi]) && !transmitting(&f.Geometry[gi]) {
 			for i := 0; i+2 < len(g.Indices); i += 3 {
 				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{})
 			}
@@ -706,6 +718,25 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 				if polygon[0].w > 0 && polygon[k].w > 0 && polygon[k+1].w > 0 {
 					rasterDisc(&polygon[0], &polygon[k], &polygon[k+1])
 				}
+			}
+		}
+	}
+	// Capture opaque color and depth once. Transmitters write scene depth but
+	// never sample one another, independent of geometry submission order.
+	if needsSceneSnapshot(f) {
+		opaqueColor = append([]byte(nil), img.Pix...)
+		opaqueDepth = append([]float32(nil), depth...)
+		for gi := range f.Geometry {
+			g := &f.Geometry[gi]
+			if !drawn[gi] || !transmitting(g) {
+				continue
+			}
+			inst := instance(f, gi)
+			m := f.Matrix.Mul(inst.World)
+			inv, _ := inst.World.InverseAffine()
+			normals := inv.Transpose()
+			for i := 0; i+2 < len(g.Indices); i += 3 {
+				tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{})
 			}
 		}
 	}

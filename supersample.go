@@ -126,7 +126,7 @@ func (g *gpuRenderer) prepareTarget(f Frame) error {
 		if t.color, t.colorView, err = texture("nt3d scene", sceneFormat, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
 			return err
 		}
-		if t.depth, t.depthView, err = texture("nt3d scene depth", gputypes.TextureFormatDepth24Plus, wgpu.TextureUsageRenderAttachment); err != nil {
+		if t.depth, t.depthView, err = texture("nt3d scene depth", gputypes.TextureFormatDepth32Float, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
 			t.releaseTextures()
 			return err
 		}

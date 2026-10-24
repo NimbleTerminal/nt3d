@@ -64,6 +64,21 @@ type UV struct{ U, V float32 }
 // stay round on coarse meshes. It needs the frame's camera (Frame.Eye),
 // which Scene.Frame supplies; unlit materials and wireframe have none.
 type Material struct {
+	// Transmission mixes the opaque scene behind this surface into its shading,
+	// 0..1. Transmissive meshes draw after opaque geometry and write depth before
+	// transparent meshes and particles. They cannot also be Transparent, Cutout,
+	// EdgeOn, or Unlit. Only the opaque scene is sampled, not other transmitters.
+	// Like transparent meshes, transmissive triangles do not cast shadow maps.
+	Transmission float32
+	// Refraction offsets the scene lookup along the shading normal projected into
+	// screen space, in fractions of viewport height (0..1). Zero is undistorted.
+	// Offscreen and foreground samples fall back to the undistorted lookup.
+	Refraction float32
+	// Absorption is the nonnegative RGB extinction coefficient per world unit.
+	// Beer-Lambert attenuation mixes transmitted light toward the lit surface color.
+	// It uses the view-ray distance to opaque geometry, capped at 1000 world units.
+	Absorption nt3dmath.Vec3
+
 	// Reflectivity is the environment reflection at normal incidence (F0), 0..1.
 	// Zero disables reflections; .02 suits water and 1 is a mirror. Schlick
 	// Fresnel increases reflection toward grazing angles. Requires an Environment;
@@ -91,6 +106,10 @@ type Material struct {
 // transparent reports whether a geometry's triangles are blended.
 func transparent(g *Geometry) bool {
 	return g.Material != nil && g.Material.Transparent && len(g.Indices) > 0
+}
+
+func transmitting(g *Geometry) bool {
+	return g.Material != nil && g.Material.Transmission > 0 && len(g.Indices) > 0
 }
 
 // edgeOn reports whether a geometry is drawn only edge-on, so that wireframe

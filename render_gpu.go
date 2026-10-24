@@ -34,7 +34,7 @@ func sceneShaderSource() string {
 // MaxLights lights of two vec4s each, shadow matrix and lookup params,
 // nine diffuse environment coefficients, three sky camera basis vectors, and
 // six light-view matrices (one used for a directional light).
-const uniformSize = 160 + 16 + MaxLights*32 + 80 + 192 + 6*64
+const uniformSize = 160 + 16 + MaxLights*32 + 80 + 192 + 6*64 + 64
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -44,6 +44,7 @@ type gpuBatch struct {
 }
 
 type gpuRenderer struct {
+	screen                 sceneSnapshot
 	reflection             reflectionTexture
 	environmentSource      *Environment
 	environmentTexture     *gpuimage.Texture
@@ -116,7 +117,7 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}}})
+		g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}, {Binding: 3, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 4, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}}})
 		if err != nil {
 			return err
 		}
@@ -160,7 +161,7 @@ func (g *gpuRenderer) setup() (err error) {
 			if i == 0 {
 				layout = g.pointLayout
 			}
-			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
+			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
 			if err != nil {
 				return err
 			}
@@ -192,6 +193,9 @@ func (g *gpuRenderer) setup() (err error) {
 		}
 		g.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
 		if err != nil {
+			return err
+		}
+		if err = g.prepareSnapshot(dev, 1, 1); err != nil {
 			return err
 		}
 		if err = g.updateReflection(dev, nil); err != nil {
@@ -356,11 +360,18 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		}
 		ub = append(ub, floats(matrix[:]...)...)
 	}
+	inverse, _ := inverseProjection(f.Matrix)
+	ub = append(ub, floats(inverse[:]...)...)
 	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
 		if err := g.drawProcedural(frame); err != nil {
 			return err
 		}
 		dev := frame.Device
+		if needsSceneSnapshot(f) {
+			if err := g.prepareSnapshot(dev, g.target.w, g.target.h); err != nil {
+				return err
+			}
+		}
 		if err := g.prepareOutlines(dev, f); err != nil {
 			return err
 		}
@@ -459,6 +470,48 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 						pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.count})
 					}
 				}
+				// Freeze opaque color/depth, then transmit from that immutable snapshot.
+				if needsSceneSnapshot(f) {
+					if err := pass.End(); err != nil {
+						return err
+					}
+					if err = g.captureScene(encoder); err != nil {
+						return err
+					}
+					pass, err = g.resumeScene(encoder, color, depth, shadowBind)
+					if err != nil {
+						return err
+					}
+					transmitted := false
+					for _, d := range g.draws {
+						if !transmitting(&f.Geometry[d.index]) {
+							continue
+						}
+						transmitted = true
+						if b := d.geom.batches[1]; b.count > 0 {
+							pass.SetPipeline(g.pipelines[1])
+							pass.SetBindGroup(0, d.set.binds[1], nil)
+							pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
+						}
+						if d.geom.batches[7].count > 0 {
+							pass.SetPipeline(g.texturePipeline)
+							g.drawTextured(pass, f, d)
+						}
+					}
+					if transmitted {
+						if err := pass.End(); err != nil {
+							return err
+						}
+						// Particles see the transmissive surface depth as well as opaque geometry.
+						if err = g.captureScene(encoder); err != nil {
+							return err
+						}
+						pass, err = g.resumeScene(encoder, color, depth, shadowBind)
+						if err != nil {
+							return err
+						}
+					}
+				}
 				// Then blend them, farthest first, back faces before front.
 				for _, index := range f.blendOrder(drawn) {
 					d := g.draws[g.blendDraw[index]]
@@ -495,7 +548,7 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 			}
 			if i == 2 {
 				for _, d := range g.draws {
-					if transparent(&f.Geometry[d.index]) || d.geom.batches[7].count == 0 {
+					if transparent(&f.Geometry[d.index]) || transmitting(&f.Geometry[d.index]) || d.geom.batches[7].count == 0 {
 						continue
 					}
 					if f.Geometry[d.index].Material.Cutout {
@@ -513,7 +566,7 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 			for _, d := range g.draws {
 				b := d.geom.batches[i]
 				switch {
-				case b.count == 0 || i == 1 && transparent(&f.Geometry[d.index]) || i == 0 && blendedPoints(&f.Geometry[d.index]):
+				case b.count == 0 || i == 1 && (transparent(&f.Geometry[d.index]) || transmitting(&f.Geometry[d.index])) || i == 0 && blendedPoints(&f.Geometry[d.index]):
 				case i == 0 && f.Geometry[d.index].PointStyle.Texture != nil:
 					g.drawSprite(pass, f, d)
 				case i == 1:
@@ -537,7 +590,7 @@ func blendPipeline(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.S
 		cull = gputypes.CullModeBack
 	}
 	blend := gputypes.BlendStateAlpha()
-	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "transparent " + vertex, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: cull}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
+	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "transparent " + vertex, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: cull}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
 }
 
 // pointPipeline draws blended points, depth tested without writing depth:
@@ -548,7 +601,7 @@ func pointPipeline(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.S
 		blend.Color = gputypes.BlendComponent{SrcFactor: gputypes.BlendFactorSrcAlpha, DstFactor: gputypes.BlendFactorOne, Operation: gputypes.BlendOperationAdd}
 		blend.Alpha = gputypes.BlendComponent{SrcFactor: gputypes.BlendFactorZero, DstFactor: gputypes.BlendFactorOne, Operation: gputypes.BlendOperationAdd}
 	}
-	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: fragment, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
+	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: fragment, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
 }
 
 func (g *gpuRenderer) Close() error {
@@ -657,6 +710,7 @@ func (g *gpuRenderer) Close() error {
 		g.noShadow.release()
 		g.shadowTarget.release()
 		g.reflection.release()
+		g.screen.release()
 		if g.shadowLayout != nil {
 			g.shadowLayout.Release()
 		}

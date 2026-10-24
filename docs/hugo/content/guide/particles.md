@@ -53,3 +53,15 @@ Sprites use bilinear filtering at full texture resolution, clamped to texel cent
 - `AdditiveBlend` adds tinted color times that combined alpha.
 
 All modes respect nearer opaque surfaces and fog, with matching GPU/software linear-light and supersampling behavior. Blended sprites do not write depth; intersecting emitters retain the existing geometry-level sorting limitations. Picking tests the square and its texture alpha; wireframe retains point dots.
+
+## Soft intersections
+
+Set `PointStyle.SoftDistance` to a positive distance in world units to fade
+blended particles near the scene's depth surface. For example, `.16` gives
+water spray a soft intersection over a 16 cm view-ray gap when one world unit
+is a meter. Alpha and additive discs, sprites, and Gaussians support this in
+both GPU and software. Opaque points and wireframe ignore the setting.
+
+The scene depth includes opaque and transmissive surfaces, so spray fades
+against refractive water. Ordinary transparent meshes do not write depth and
+cannot soften particles. Zero preserves the existing hard depth intersection.

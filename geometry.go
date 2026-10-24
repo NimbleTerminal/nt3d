@@ -184,6 +184,13 @@ func validateGeometry(g Geometry) error {
 		return fmt.Errorf("nt3d: invalid texture or missing UVs")
 	}
 	if m := g.Material; m != nil {
+		if !validFloat(m.Transmission, m.Refraction, m.Absorption.X, m.Absorption.Y, m.Absorption.Z) || m.Transmission < 0 || m.Transmission > 1 || m.Refraction < 0 || m.Refraction > 1 || m.Absorption.X < 0 || m.Absorption.Y < 0 || m.Absorption.Z < 0 {
+			return fmt.Errorf("nt3d: invalid transmission, refraction, or absorption")
+		}
+		if m.Transmission > 0 && (m.Transparent || m.Cutout || m.EdgeOn || m.Unlit) {
+			return fmt.Errorf("nt3d: transmission requires a lit, non-blended surface")
+		}
+
 		if !validFloat(m.NormalStrength) {
 			return fmt.Errorf("nt3d: non-finite normal strength")
 		}

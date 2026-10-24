@@ -35,7 +35,7 @@ func (g *gpuRenderer) prepareOutlines(dev *wgpu.Device, f Frame) error {
 			g.outlinePipelines[kind], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 				Label: "outline hull", Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: vertex},
 				Primitive:    gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeFront},
-				DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth24Plus, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual},
+				DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual},
 				Multisample:  gputypes.DefaultMultisampleState(),
 				Fragment:     &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}},
 			})
