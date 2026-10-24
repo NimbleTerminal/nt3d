@@ -241,3 +241,18 @@ func TestWireframeOutlinesDenseMeshes(t *testing.T) {
 		t.Fatalf("no outline:\n%s", strings.Join(rows, "\n"))
 	}
 }
+
+func TestWireframeDormantParticles(t *testing.T) {
+	for _, blend := range []PointBlend{OpaqueBlend, AlphaBlend, AdditiveBlend} {
+		s := NewScene()
+		_, err := s.SetGeometry("point", Geometry{Points: []Point{{Position: nt3dmath.Vec3{Z: .5}, Radius: .1}}, PointStyle: PointStyle{Blend: blend, Units: WorldUnits}})
+		check(t, err)
+		f := frame(t, s)
+		f.Matrix = nt3dmath.Identity()
+		wire, err := RenderWireframe(f, 8, 4)
+		check(t, err)
+		if strings.Contains(wire, "•") != (blend == OpaqueBlend) {
+			t.Fatalf("incorrect dormant point visibility for blend %v: %q", blend, wire)
+		}
+	}
+}

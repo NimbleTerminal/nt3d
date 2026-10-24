@@ -80,6 +80,9 @@ func wireRender(f Frame, cols, rows int) string {
 		step := max(1, (len(g.Points)+1999)/2000)
 		for i := 0; i < len(g.Points); i += step {
 			p := g.Points[i]
+			if g.PointStyle.Blend != OpaqueBlend && p.Color.A == 0 {
+				continue
+			}
 			x, y, _, ok := local.Matrix.Project(p.Position, cols, rows)
 			if ok {
 				c.SetGrapheme(ntcanvas.Point{X: int(x), Y: int(y)}, "•", ntcanvas.CellStyle{})
