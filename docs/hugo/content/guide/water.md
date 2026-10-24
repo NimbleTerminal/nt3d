@@ -68,7 +68,7 @@ water, convert world queries into that local system and transform samples back.
 ## The water demo
 
 Run `task water`, or open Water in the browser gallery. Three waves displace an
-81 × 81 grid. Each frame updates its positions, analytic normals, and bounds,
+81 × 81 grid split into four tiles. Each frame updates its positions, analytic normals, and bounds,
 then replaces that node's geometry. GPU, software, wireframe, picking, and
 shadows consequently use the same mesh; there is no GPU-only displacement.
 World queries evaluate the continuous surface, while the grid is its triangle
@@ -99,6 +99,8 @@ buoyancy or fluid feedback. Wakes and spray are visual effects. This code lives 
 | `f` | Cycle wake + spray, wake only, spray only, and hidden |
 | `t` | Toggle refraction and depth-dependent absorption |
 | `h` | Toggle spray intersection fading |
+| `v` | Cycle shore foam + flow, shore foam, flow, and neither |
+| `m` | Toggle 10×10 / 30×30 water extents |
 | `a` | Pause waves and craft together |
 | `1` / `2` / `3` | GPU / software / wireframe |
 
@@ -174,3 +176,69 @@ in front of the water fall back to the original pixel to avoid foreground leaks.
 Only opaque geometry is refracted: multiple glass/water layers do not refract
 one another, and transparent objects behind water are not captured. Transmission
 is an open-surface approximation, not Snell-law ray tracing or volumetric transport.
+
+## Shorelines and flow
+
+A curved terrain bank intersects the water through the existing depth buffer.
+The shoreline foam samples terrain height at each displaced water vertex and
+covers the shallow depth band with a textured transparent mesh. It follows the
+waves without changing the analytic surface used by the craft. `v` compares
+foam and flow independently; it keeps the terrain and craft simulation intact.
+The craft uses an arcade bank constraint to stay clear of dry land.
+
+`NewFlowMap(image)` snapshots an authored red/green vector field. Red controls
+normal-map U and green controls V; 0 encodes −1, 255 encodes +1, and 127/128
+are neutral. Blue and alpha are ignored. In this demo the field bends along
+the bank and grows stronger across the channel. Material controls are:
+
+```go
+material.FlowMap = flow
+material.FlowStrength = .7     // normal-UV displacement scale per cycle
+material.FlowPhase = float32(math.Mod(seconds / 3, 1))
+material.FlowRepeat = false   // clamp the field at its borders
+```
+
+The field is sampled at mesh vertices using `Geometry.UV`, then interpolated
+across triangles. Use enough mesh vertices to resolve changes in the field.
+`NormalUV` independently sets ripple tiling. Two advection phases crossfade
+through their resets, avoiding periodic jumps. `FlowStrength: 0` restores the
+original normals. GPU and software use the same sampled field and phase math.
+Flow only affects normal shading, including reflection and refraction; it does
+not move the craft, mesh, or wake particles. Camera/reflection/soft-spray
+keyboard controls remain available even when absent from the compact touch bar.
+
+## Larger water meshes
+
+`BuildWaveTiles` creates bounded tiles from one global rest grid:
+
+```go
+tiles, err := nt3d.BuildWaveTiles(nt3d.WaveGrid{
+    NX: 161, NY: 161, TileCells: 40,
+    MinX: -15, MaxX: 15, MinY: -15, MaxY: 15,
+    NormalTileSize: 2.5,
+    Material: material,
+})
+if err != nil { return err }
+for i, tile := range tiles {
+    if err := tile.Update(surface, seconds); err != nil { return err }
+    if err := scene.SetNodeGeometry(nodes[i], tile.Geometry); err != nil { return err }
+}
+```
+
+Create one scene node per tile before the update loop. `Update` reuses vertex,
+tangent, and index storage, updates exact bounds, and evaluates identical global
+coordinates at shared edges. Neighboring tiles match positions, normals, UVs,
+and tangents exactly, including partially filled edge tiles. Base UVs span the
+whole field; normal UVs are anchored to world XY. `RestBounds()` supplies the
+undisplaced tile extent for application bookkeeping.
+
+The default demo uses four 40×40-cell tiles over 10×10 units. `m` switches to
+sixteen tiles over 30×30 units (161×161 global vertices), adjusts the camera,
+and expands the craft/effect limits. Shrinking while the craft is outside the
+smaller patch clamps it back inside and clears the displaced wake/spray.
+
+This is finite tiled geometry, not an infinite ocean or an LOD system. Separate
+nodes allow render-time frustum culling; the demo still updates every tile on
+the CPU. Applications can schedule updates or stream tiles as needed. The
+builder caps allocation at 1024 tiles and 1,048,576 vertices including borders;
+`TileCells` defaults to 32 and must be 1–128.

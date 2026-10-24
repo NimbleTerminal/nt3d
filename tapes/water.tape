@@ -1,4 +1,4 @@
-# Waves, wakes, scene refraction, absorption, and soft spray.
+# Shoreline foam, flowing normals, tiled water, and scene optics.
 Output dist/tapes/water.gif
 Output dist/tapes/water.txt
 Source tapes/common.tape
@@ -16,6 +16,22 @@ Sleep 0.4s
 Screenshot dist/tapes/water-2.png
 Sleep 0.4s
 Screenshot dist/tapes/water-3.png
+# Shore foam and flow comparisons at the same wave time.
+Type "v"
+Sleep 1s
+Screenshot dist/tapes/water-no-flow.png
+Type "v"
+Sleep 1s
+Screenshot dist/tapes/water-no-shore.png
+Type "vv"
+Type "m"
+Sleep 2s
+Screenshot dist/tapes/water-large.png
+Type "3"
+Sleep 1s
+Screenshot dist/tapes/water-large-wire.png
+Type "1m"
+Sleep 1s
 Type "f"
 Sleep 1s
 Screenshot dist/tapes/water-wake.png

@@ -4,7 +4,6 @@ package demo
 import (
 	"fmt"
 	"image/color"
-	"math"
 
 	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
@@ -14,11 +13,14 @@ import (
 func WaterMain() { mainDemo(false, sceneWater) }
 
 type waterScene struct {
+	tiles                []waterTile
+	extent               float64
+	large                bool
+	shoreMode            int
 	ripples, reflections bool
 	optics, softSpray    bool
 	surface              *nt3d.WaveSurface
 	grid                 nt3d.Geometry
-	rest                 []nt3dmath.Vec3
 	mesh, float          nt3d.NodeID
 	craft                waterCraft
 	effects              waterEffects
@@ -34,35 +36,15 @@ func (d *demo) setupWater() error {
 	if err != nil {
 		return err
 	}
-	g, err := nt3d.BuildHeightfield(nt3d.Heightfield{NX: 81, NY: 81, MinX: -5, MaxX: 5, MinY: -5, MaxY: 5,
-		Sampler: func(float32, float32) float32 { return 0 }, Color: color.RGBA{28, 127, 155, 255},
-		Material: &nt3d.Material{Specular: .8, Shininess: 64}})
-	if err != nil {
-		return err
-	}
-	w := &waterScene{surface: surface, grid: g, rest: make([]nt3dmath.Vec3, len(g.Vertices))}
-	for i, vertex := range g.Vertices {
-		w.rest[i] = vertex.Position
-	}
+	g := nt3d.Geometry{Material: &nt3d.Material{Specular: .8, Shininess: 64}}
+	w := &waterScene{surface: surface, grid: g}
 	w.craft = waterCraft{x: 0, y: -2.7, speed: 4.5, autopilot: true}
 	w.ripples, w.reflections = true, true
 	w.optics, w.softSpray = true, true
 	w.grid.Material.Reflectivity = .02
 	w.grid.Material.NormalStrength = 1
 	w.grid.Material.NormalRepeat = true
-	w.grid.Tangents = make([]nt3d.Tangent, len(g.Vertices))
-	for i := range w.grid.UV {
-		w.grid.UV[i].U *= 4
-		w.grid.UV[i].V *= 4
-	}
 	d.water = w
-	w.mesh, err = d.scene.SetGeometry("water", g)
-	if err != nil {
-		return err
-	}
-	if err = d.scene.Reparent(w.mesh, d.group); err != nil {
-		return err
-	}
 	hull, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 1.5, Y: .7, Z: .23}, Color: color.RGBA{242, 148, 48, 255}, Material: &nt3d.Material{Specular: .25, Shininess: 24}})
 	if err != nil {
 		return err
@@ -89,11 +71,8 @@ func (d *demo) setupWater() error {
 	if err = d.setupWaterEffects(); err != nil {
 		return err
 	}
-	if err = d.setupWaterBed(); err != nil {
-		return err
-	}
 	d.scene.SetEnvironment(waterEnvironment())
-	return d.stepWater()
+	return d.rebuildWaterTiles()
 }
 
 func (d *demo) stepWater() error {
@@ -118,16 +97,7 @@ func (d *demo) stepWater() error {
 	if w.reflections {
 		w.grid.Material.Reflectivity = .02
 	}
-	for i, p := range w.rest {
-		s, err := w.surface.Sample(float64(p.X), float64(p.Y), d.animationTime)
-		if err != nil {
-			return err
-		}
-		w.grid.Vertices[i].Position, w.grid.Vertices[i].Normal = s.Position, s.Normal
-		w.grid.Tangents[i] = nt3d.Tangent{Direction: s.TangentX.Normalize(), W: -1}
-	}
-	w.grid.Bounds = nt3d.GeometryBounds(w.grid)
-	if err := d.scene.SetNodeGeometry(w.mesh, w.grid); err != nil {
+	if err := d.stepWaterTiles(w.grid.Material); err != nil {
 		return err
 	}
 	if !w.moored {
@@ -185,25 +155,6 @@ func (d *demo) waterView(content string) string {
 	if d.water.craft.autopilot {
 		pilot = "autopilot"
 	}
-	return "water · w/s speed · j/l steer · space auto · n ripples · e sky · f wake/spray · t optics · h soft · a pause · q quit\n" + content +
-		fmt.Sprintf("\n%s · %s · %s · %s · %.1f m/s · %s · %d drops · %s", d.rendering(), state, pilot, flight, d.water.craft.speed, d.water.effects.modeName(), d.water.effects.live, d.status)
-}
-
-// A sloping, patterned bottom makes refraction and depth-dependent color visible.
-func (d *demo) setupWaterBed() error {
-	g, err := nt3d.BuildHeightfield(nt3d.Heightfield{NX: 41, NY: 41, MinX: -5, MaxX: 5, MinY: -5, MaxY: 5, Sampler: func(x, y float32) float32 { return -.65 - .16*(x+5) + .06*float32(math.Sin(float64(y)*2)) }, Color: color.RGBA{190, 172, 125, 255}})
-	if err != nil {
-		return err
-	}
-	for i := range g.Vertices {
-		p := g.Vertices[i].Position
-		if (int(math.Floor(float64(p.X+5)*2))+int(math.Floor(float64(p.Y+5)*2)))%2 == 0 {
-			g.Vertices[i].Color = color.RGBA{117, 132, 112, 255}
-		}
-	}
-	id, err := d.scene.SetGeometry("seabed", g)
-	if err != nil {
-		return err
-	}
-	return d.scene.Reparent(id, d.group)
+	return "water · w/s speed · j/l steer · space auto · v shore/flow · m size · f wake/spray · t optics · a pause · q quit\n" + content +
+		fmt.Sprintf("\n%s · %s · %s · %s · %.1f m/s · %s · %d drops · %s", d.rendering(), state, pilot, flight, d.water.craft.speed, d.water.effects.modeName(), d.water.effects.live, fmt.Sprintf("%s · %d tiles · %s", d.water.shoreName(), len(d.water.tiles), d.status))
 }

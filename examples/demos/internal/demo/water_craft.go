@@ -10,6 +10,8 @@ import (
 // Horizontal handling is deliberately arcade-like. Vertical motion is ballistic
 // whenever the hull outruns the wave beneath it; no jump impulse is injected.
 type waterCraft struct {
+	bound                                    float64
+	shoreline                                bool
 	x, y, z, heading, speed, vz, pitch, roll float64
 	time, support                            float64
 	airborne, ready                          bool
@@ -42,6 +44,9 @@ func (c *waterCraft) advance(surface *nt3d.WaveSurface, until float64) error {
 func (c *waterCraft) advanceEffects(surface *nt3d.WaveSurface, until float64, effects *waterEffects) error {
 	const dt = 1.0 / 120
 	if !c.ready {
+		if c.shoreline {
+			waterBank(c)
+		}
 		h, p, r, err := craftSupport(surface, c.x, c.y, c.heading, c.time)
 		if err != nil {
 			return err
@@ -59,13 +64,20 @@ func (c *waterCraft) advanceEffects(surface *nt3d.WaveSurface, until float64, ef
 		c.y += math.Sin(c.heading) * c.speed * dt
 		// Keep the prototype in its finite water patch. The boundary behaves as a
 		// bumper; it changes heading, never teleports the craft across the surface.
-		if math.Abs(c.x) > 4.1 {
-			c.x = math.Copysign(4.1, c.x)
+		bound := c.bound
+		if bound == 0 {
+			bound = 4.1
+		}
+		if math.Abs(c.x) > bound {
+			c.x = math.Copysign(bound, c.x)
 			c.heading = math.Pi - c.heading
 		}
-		if math.Abs(c.y) > 4.1 {
-			c.y = math.Copysign(4.1, c.y)
+		if math.Abs(c.y) > bound {
+			c.y = math.Copysign(bound, c.y)
 			c.heading = -c.heading
+		}
+		if c.shoreline {
+			waterBank(c)
 		}
 		h, p, r, err := craftSupport(surface, c.x, c.y, c.heading, c.time)
 		if err != nil {
@@ -114,6 +126,23 @@ func (c *waterCraft) pose() nt3dmath.Mat4 {
 func (d *demo) waterKey(key string) (bool, error) {
 	w := d.water
 	switch key {
+	case "v":
+		w.shoreMode = (w.shoreMode + 1) % 4
+		return true, d.stepWater()
+	case "m":
+		w.large = !w.large
+		if err := d.rebuildWaterTiles(); err != nil {
+			return true, err
+		}
+		if d.view != nil {
+			camera := d.view.Camera()
+			camera.Distance = 11
+			if w.large {
+				camera.Distance = 30
+			}
+			d.view.SetCamera(camera)
+		}
+		return true, nil
 	case "t":
 		w.optics = !w.optics
 		return true, d.stepWater()

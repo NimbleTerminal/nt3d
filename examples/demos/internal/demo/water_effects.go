@@ -31,6 +31,7 @@ type sprayDrop struct {
 	live             bool
 }
 type waterEffects struct {
+	extent                  float64
 	stations                [waterWakeCapacity]wakeStation
 	first, count            int
 	drops                   [waterSprayCapacity]sprayDrop
@@ -82,7 +83,7 @@ func (e *waterEffects) step(surface *nt3d.WaveSurface, c *waterCraft, dt, impact
 		}
 		age := c.time - d.born
 		p := dropPosition(*d, c.time)
-		if age >= d.life || math.Abs(float64(p.X)) > 4.7 || math.Abs(float64(p.Y)) > 4.7 {
+		if age >= d.life || math.Abs(float64(p.X)) > e.limit()+.05 || math.Abs(float64(p.Y)) > e.limit()+.05 {
 			d.live = false
 			continue
 		}
@@ -193,7 +194,7 @@ func (e *waterEffects) ribbon(surface *nt3d.WaveSurface, time, side float64) (nt
 			offset := side*spread + (float64(j)-1)*width
 			x, y := s.x-s.dy*offset, s.y+s.dx*offset
 			boundary := math.Max(math.Abs(x), math.Abs(y))
-			if boundary >= 4.65 {
+			if boundary >= e.limit() {
 				visible = false
 				break
 			}
@@ -201,7 +202,7 @@ func (e *waterEffects) ribbon(surface *nt3d.WaveSurface, time, side float64) (nt
 			if err != nil {
 				return g, err
 			}
-			fade := math.Pow(1-age/waterWakeLife, 1.5) * math.Min(1, age/.10) * math.Min(1, s.speed/3) * math.Min(1, (4.65-boundary)/.3)
+			fade := math.Pow(1-age/waterWakeLife, 1.5) * math.Min(1, age/.10) * math.Min(1, s.speed/3) * math.Min(1, (e.limit()-boundary)/.3)
 			alpha := uint8(210 * fade)
 			if j != 1 {
 				alpha = 0
@@ -299,4 +300,11 @@ func (d *demo) drawWaterEffects() error {
 		return err
 	}
 	return d.scene.SetVisible(e.spray, e.mode == 0 || e.mode == 2)
+}
+
+func (e *waterEffects) limit() float64 {
+	if e.extent > 0 {
+		return e.extent
+	}
+	return 4.65
 }
