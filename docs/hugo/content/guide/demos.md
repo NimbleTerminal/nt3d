@@ -39,6 +39,12 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 `task dynamic`. Boxes orbit a deforming wave above a textured floor. The wave changes its vertices and even its triangles each step; the boxes only change their transforms. `m` holds the wave so you can watch transform-only animation, `b` adds a box, `x` removes the oldest, `a` pauses, and `v` toggles visibility.
 
+## Water
+
+<img class="poster" src="../../posters/water.png" alt="An orange float riding teal waves">
+
+`task water`. A craft rides three [Gerstner waves](../water/), launching off crests and landing under gravity. It starts on autopilot; `w`/`s` change speed, `j`/`l` steer, and Space toggles autopilot. Four surface probes drive its contact pose. `n` toggles procedural ripple normals, `e` sky reflections, and `a` pauses the shared clock. GPU and software share surface geometry and material behavior; wireframe shows the large waves and craft motion.
+
 ## Shape builders
 
 <img class="poster" src="../../posters/shapes.png" alt="A textured cube, golden torus, purple cone, orange cylinder, and green globe in a row">

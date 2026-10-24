@@ -33,7 +33,7 @@ The **[guide](https://nimbleterminal.github.io/nt3d/docs/)** covers it all, from
 To run the demos yourself:
 
 ```sh
-task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, particles, cloud, aabb, dynamic, procedural
+task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, particles, cloud, aabb, dynamic, procedural, water
 task build-web && task serve   # all of them in a browser, at http://localhost:8768
 ```
 
@@ -69,3 +69,9 @@ a generic spatial index (`Tree[T]`) over moving boxed objects with insert,
 remove, update, overlap, and ray-cast queries, independent of the scene
 and renderers. `task aabb` shows a clicked box's ancestors as nested
 wireframes; see the [spatial index guide](docs/hugo/content/guide/spatial-index.md).
+
+Shared Gerstner waves (`WaveSurface`) provide displaced positions, analytic normals,
+and velocities, plus world-coordinate queries for floating objects. Run `task water`
+to drive a craft over waves and launch off crests, with procedural ripple normals
+and Fresnel sky reflections; see the
+[water guide](docs/hugo/content/guide/water.md).

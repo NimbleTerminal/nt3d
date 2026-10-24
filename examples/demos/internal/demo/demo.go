@@ -53,6 +53,7 @@ type demo struct {
 	particles         *particleScene
 	cloud             *cloudScene
 	aabb              *aabbScene
+	water             *waterScene
 }
 
 type shadowMode int
@@ -109,11 +110,12 @@ const (
 	sceneCharacters
 	sceneCloud
 	sceneAABB
+	sceneWater
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil && d.aabb == nil
+	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil
 }
 
 type quitMsg struct{}
@@ -196,7 +198,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, phaseTick()
 		}
-		if !d.animate || (!d.procedural && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil) {
+		if !d.animate || (!d.procedural && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil) {
 			return d, phaseTick()
 		}
 		d.animationTime += elapsed
@@ -219,6 +221,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.stepLights()
 		case d.particles != nil:
 			err = d.stepParticles()
+		case d.water != nil:
+			err = d.stepWater()
 		case d.aabb != nil:
 			err = d.stepAABB()
 		default:
@@ -252,6 +256,14 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return d, nil
 	case tea.KeyPressMsg:
+		if d.water != nil {
+			if handled, err := d.waterKey(v.String()); handled {
+				if err != nil {
+					d.status = err.Error()
+				}
+				return d, d.view.Refresh()
+			}
+		}
 		var err error
 		switch v.String() {
 		case "q", "ctrl+c":
@@ -608,6 +620,11 @@ func (d *demo) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
+	if d.water != nil {
+		v.Content = d.zones.Scan(d.waterView(v.Content))
+		v.AltScreen = true
+		return v
+	}
 	if d.aabb != nil {
 		v.Content = d.zones.Scan(d.aabbView(v.Content))
 		v.AltScreen = true
@@ -779,6 +796,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupCloud(); err != nil {
 			return err
 		}
+	case sceneWater:
+		if err = d.setupWater(); err != nil {
+			return err
+		}
 	case sceneAABB:
 		if err = d.setupAABB(); err != nil {
 			return err
@@ -830,6 +851,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Target = nt3dmath.Vec3{Z: .9}
 	case sceneCloud:
 		camera.Alpha, camera.Distance, camera.Projection = 32, 9, nt3d.Perspective
+	case sceneWater:
+		camera.Alpha, camera.Beta, camera.Distance, camera.Projection = 27, 35, 11, nt3d.Perspective
 	case sceneAABB:
 		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
 	}

@@ -39,6 +39,12 @@ func (k keys) ShortHelp() []key.Binding {
 func (k keys) FullHelp() [][]key.Binding {
 	view := viewKeys
 	for _, binding := range k.scene {
+		if binding.Help().Key == "space" {
+			// Water has driving and material controls; keep touch actions within
+			// the transport limit. Camera rotation/projection remain keyboard keys.
+			view = viewKeys[:2]
+			break
+		}
 		if binding.Help().Key == "k" {
 			// Authored camera selection already provides both projections. Keep the
 			// touch message within its 2048-byte limit; the o key still works.
@@ -62,6 +68,8 @@ func (d *demo) sceneKeys() (string, keys) {
 		return "animation", keys{[]key.Binding{bind("a", "a", "pause")}}
 	case d.particles != nil:
 		return "particles", keys{[]key.Binding{bind("b", "b", "blend"), bind("s", "s", "shape"), bind("t", "t", "sprites"), bind("n", "n", "count"), bind("a", "a", "pause")}}
+	case d.water != nil:
+		return "water", keys{[]key.Binding{bind("w", "w", "faster"), bind("s", "s", "slower"), bind("j", "j", "left"), bind("l", "l", "right"), bind(" ", "space", "autopilot"), bind("n", "n", "ripples"), bind("e", "e", "reflections"), bind("a", "a", "pause")}}
 	case d.aabb != nil:
 		return "aabb", keys{[]key.Binding{bind("h", "h", "hierarchy"), bind("a", "a", "drift"), bind("n", "n", "count"), bind("b", "b", "add"), bind("x", "x", "remove")}}
 	case d.cloud != nil:
