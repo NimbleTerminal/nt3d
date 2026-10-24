@@ -30,7 +30,7 @@ func TestGPUWaterMotionAndMaterials(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, key := range []string{"n", "e", "n", "e"} {
+	for _, key := range []string{"n", "e", "n", "e", "f", "f", "f", "f"} {
 		if _, err := d.waterKey(key); err != nil {
 			t.Fatal(err)
 		}

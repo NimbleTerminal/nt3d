@@ -19,6 +19,7 @@ type waterScene struct {
 	rest                 []nt3dmath.Vec3
 	mesh, float          nt3d.NodeID
 	craft                waterCraft
+	effects              waterEffects
 	moored               bool
 }
 
@@ -82,6 +83,9 @@ func (d *demo) setupWater() error {
 	if err = d.scene.Reparent(id, w.float); err != nil {
 		return err
 	}
+	if err = d.setupWaterEffects(); err != nil {
+		return err
+	}
 	d.scene.SetEnvironment(waterEnvironment())
 	return d.stepWater()
 }
@@ -114,10 +118,13 @@ func (d *demo) stepWater() error {
 		return err
 	}
 	if !w.moored {
-		if err := w.craft.advance(w.surface, d.animationTime); err != nil {
+		if err := w.craft.advanceEffects(w.surface, d.animationTime, &w.effects); err != nil {
 			return err
 		}
-		return d.scene.SetTransform(w.float, w.craft.pose())
+		if err := d.scene.SetTransform(w.float, w.craft.pose()); err != nil {
+			return err
+		}
+		return d.drawWaterEffects()
 	}
 	pose, err := waterFloatPose(w.surface, d.animationTime)
 	if err != nil {
@@ -165,6 +172,6 @@ func (d *demo) waterView(content string) string {
 	if d.water.craft.autopilot {
 		pilot = "autopilot"
 	}
-	return "nt3d water · w/s throttle · j/l steer · space autopilot · n ripples · e reflections · a pause · q quit\n" + content +
-		fmt.Sprintf("\n%s · %s · %s · %s · %.1f m/s · %d launches · %s", d.rendering(), state, pilot, flight, d.water.craft.speed, d.water.craft.launches, d.status)
+	return "nt3d water · w/s throttle · j/l steer · space autopilot · n ripples · e reflections · f wake/spray · a pause · q quit\n" + content +
+		fmt.Sprintf("\n%s · %s · %s · %s · %.1f m/s · %s · %d drops · %s", d.rendering(), state, pilot, flight, d.water.craft.speed, d.water.effects.modeName(), d.water.effects.live, d.status)
 }

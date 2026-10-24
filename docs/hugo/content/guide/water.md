@@ -86,7 +86,7 @@ Physics advances in fixed 1/120-second steps, independently of render pacing.
 Pause holds the shared wave and craft clock. Horizontal handling is an arcade
 prototype: speed and steering change directly, and a bumper turns the craft
 back at the finite patch boundary. There is no hull hydrodynamics, force-based
-buoyancy, wake feedback, or splash simulation. This code lives in the demo;
+buoyancy or fluid feedback. Wakes and spray are visual effects. This code lives in the demo;
 `WaveSurface` remains the reusable library API for a game's own physics.
 
 | Key | Action |
@@ -96,6 +96,7 @@ buoyancy, wake feedback, or splash simulation. This code lives in the demo;
 | Space | Toggle autopilot; clears manual turn rate |
 | `n` | Toggle ripple normal detail |
 | `e` | Toggle environment reflections |
+| `f` | Cycle wake + spray, wake only, spray only, and hidden |
 | `a` | Pause waves and craft together |
 | `1` / `2` / `3` | GPU / software / wireframe |
 
@@ -127,3 +128,19 @@ The approach is informed by Catlike Coding's
 [Waves](https://catlikecoding.com/unity/tutorials/flow/waves/),
 [Swimming](https://catlikecoding.com/unity/tutorials/movement/swimming/), and
 [Reflections](https://catlikecoding.com/unity/tutorials/rendering/part-8/) tutorials.
+
+## Wake ribbons and spray
+
+Two textured, transparent mesh ribbons follow the stern's recent path. They
+spread and fade over 3.6 seconds, resample the current wave surface, and break
+when the craft leaves the water or changes direction abruptly. A bounded
+128-station history keeps geometry costs predictable.
+
+Hull contact throws soft point particles, with stronger spray on turns and
+bursts on landing. The existing world-space particle renderer updates a fixed
+384-slot pool. Droplets follow ballistic paths and disappear on water contact
+or expiry. Emission runs on the craft's fixed physics clock; hiding effects
+with `f` continues the simulation, and pausing freezes it.
+
+These effects use the existing transparent geometry and particle infrastructure;
+they do not deform the waves or simulate fluid interaction.

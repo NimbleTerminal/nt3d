@@ -36,6 +36,10 @@ func craftSupport(s *nt3d.WaveSurface, x, y, heading, time float64) (height, pit
 }
 
 func (c *waterCraft) advance(surface *nt3d.WaveSurface, until float64) error {
+	return c.advanceEffects(surface, until, nil)
+}
+
+func (c *waterCraft) advanceEffects(surface *nt3d.WaveSurface, until float64, effects *waterEffects) error {
 	const dt = 1.0 / 120
 	if !c.ready {
 		h, p, r, err := craftSupport(surface, c.x, c.y, c.heading, c.time)
@@ -67,6 +71,7 @@ func (c *waterCraft) advance(surface *nt3d.WaveSurface, until float64) error {
 		if err != nil {
 			return err
 		}
+		impact := 0.0
 		next := c.z + c.vz*dt - .5*9.81*dt*dt
 		if next > h+.001 {
 			if !c.airborne {
@@ -79,6 +84,7 @@ func (c *waterCraft) advance(surface *nt3d.WaveSurface, until float64) error {
 		} else {
 			if c.airborne {
 				c.landings++
+				impact = math.Max(0, (h-c.support)/dt-(c.vz-9.81*dt))
 			}
 			c.airborne = false
 			c.z = h
@@ -88,6 +94,11 @@ func (c *waterCraft) advance(surface *nt3d.WaveSurface, until float64) error {
 			c.roll += (r - c.roll) * blend
 		}
 		c.support = h
+		if effects != nil {
+			if err := effects.step(surface, c, dt, impact, turn); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -103,6 +114,9 @@ func (c *waterCraft) pose() nt3dmath.Mat4 {
 func (d *demo) waterKey(key string) (bool, error) {
 	w := d.water
 	switch key {
+	case "f":
+		w.effects.mode = (w.effects.mode + 1) % 4
+		return true, d.drawWaterEffects()
 	case "n":
 		w.ripples = !w.ripples
 		return true, d.stepWater()

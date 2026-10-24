@@ -7,7 +7,7 @@ Type "bin/nt3d-water --medium direct"
 Enter
 Wait+Screen@60s /fps/
 Show
-Wait+Screen@30s /airborne/
+Sleep 4s
 Type "a"
 Wait+Screen@10s /paused/
 Sleep 0.8s
@@ -16,6 +16,16 @@ Sleep 0.4s
 Screenshot dist/tapes/water-2.png
 Sleep 0.4s
 Screenshot dist/tapes/water-3.png
+Type "f"
+Sleep 1s
+Screenshot dist/tapes/water-wake.png
+Type "f"
+Sleep 1s
+Screenshot dist/tapes/water-spray.png
+Type "f"
+Sleep 1s
+Screenshot dist/tapes/water-no-effects.png
+Type "f"
 # Compare identical geometry with and without the two material contributions.
 Type "n"
 Sleep 1s
