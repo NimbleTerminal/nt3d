@@ -133,7 +133,7 @@ func (d *demo) waterKey(key string) (bool, error) {
 	case "l":
 		w.craft.autopilot = false
 		w.craft.turn = math.Max(-2, w.craft.turn-.35)
-	case " ":
+	case " ", "space":
 		w.craft.autopilot = !w.craft.autopilot
 		w.craft.turn = 0
 	default:

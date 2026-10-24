@@ -54,3 +54,13 @@ func TestWaterCraftFlatAndControls(t *testing.T) {
 		}
 	}
 }
+
+func TestWaterCraftTerminalSpace(t *testing.T) {
+	d := &demo{water: &waterScene{craft: waterCraft{autopilot: false, turn: 1}}}
+	if handled, err := d.waterKey("space"); !handled || err != nil {
+		t.Fatal(handled, err)
+	}
+	if !d.water.craft.autopilot || d.water.craft.turn != 0 {
+		t.Fatal("terminal space did not restore autopilot")
+	}
+}
