@@ -1,4 +1,4 @@
-# Shared waves, crest launches, and procedural water materials.
+# Waves, wakes, scene refraction, absorption, and soft spray.
 Output dist/tapes/water.gif
 Output dist/tapes/water.txt
 Source tapes/common.tape
@@ -26,6 +26,15 @@ Type "f"
 Sleep 1s
 Screenshot dist/tapes/water-no-effects.png
 Type "f"
+# Compare scene transmission and particle intersections at a fixed instant.
+Type "t"
+Sleep 1s
+Screenshot dist/tapes/water-no-optics.png
+Type "t"
+Type "h"
+Sleep 1s
+Screenshot dist/tapes/water-hard-spray.png
+Type "h"
 # Compare identical geometry with and without the two material contributions.
 Type "n"
 Sleep 1s

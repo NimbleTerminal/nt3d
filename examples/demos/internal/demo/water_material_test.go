@@ -35,7 +35,7 @@ func TestWaterMaterialTogglesPreservePose(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := d.scene.Node(d.water.float)
-	for _, key := range []string{"n", "e", "n", "e"} {
+	for _, key := range []string{"n", "e", "n", "e", "t", "h", "t", "h"} {
 		if handled, err := d.waterKey(key); !handled || err != nil {
 			t.Fatal(key, handled, err)
 		}

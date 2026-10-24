@@ -263,8 +263,17 @@ func (d *demo) setupWaterEffects() error {
 			return err
 		}
 	}
-	bounds := e.pointSnapshot(0)
-	return d.scene.SetNodeGeometry(e.spray, nt3d.Geometry{Points: e.points[:], Bounds: bounds, PointStyle: nt3d.PointStyle{Units: nt3d.WorldUnits, Shape: nt3d.SoftPoint, Blend: nt3d.AlphaBlend}})
+	return d.updateWaterSprayStyle()
+}
+
+func (d *demo) updateWaterSprayStyle() error {
+	e := &d.water.effects
+	bounds := e.pointSnapshot(d.water.craft.time)
+	soft := float32(0)
+	if d.water.softSpray {
+		soft = .16
+	}
+	return d.scene.SetNodeGeometry(e.spray, nt3d.Geometry{Points: e.points[:], Bounds: bounds, PointStyle: nt3d.PointStyle{Units: nt3d.WorldUnits, Shape: nt3d.SoftPoint, Blend: nt3d.AlphaBlend, SoftDistance: soft}})
 }
 
 func (d *demo) drawWaterEffects() error {

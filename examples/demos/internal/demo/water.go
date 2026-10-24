@@ -4,6 +4,7 @@ package demo
 import (
 	"fmt"
 	"image/color"
+	"math"
 
 	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
@@ -14,6 +15,7 @@ func WaterMain() { mainDemo(false, sceneWater) }
 
 type waterScene struct {
 	ripples, reflections bool
+	optics, softSpray    bool
 	surface              *nt3d.WaveSurface
 	grid                 nt3d.Geometry
 	rest                 []nt3dmath.Vec3
@@ -44,6 +46,7 @@ func (d *demo) setupWater() error {
 	}
 	w.craft = waterCraft{x: 0, y: -2.7, speed: 4.5, autopilot: true}
 	w.ripples, w.reflections = true, true
+	w.optics, w.softSpray = true, true
 	w.grid.Material.Reflectivity = .02
 	w.grid.Material.NormalStrength = 1
 	w.grid.Material.NormalRepeat = true
@@ -86,6 +89,9 @@ func (d *demo) setupWater() error {
 	if err = d.setupWaterEffects(); err != nil {
 		return err
 	}
+	if err = d.setupWaterBed(); err != nil {
+		return err
+	}
 	d.scene.SetEnvironment(waterEnvironment())
 	return d.stepWater()
 }
@@ -95,6 +101,13 @@ func (d *demo) stepWater() error {
 	normal, err := waterRipples(d.animationTime)
 	if err != nil {
 		return err
+	}
+	w.grid.Material.Transmission, w.grid.Material.Refraction = 0, 0
+	w.grid.Material.Absorption = nt3dmath.Vec3{}
+	if w.optics {
+		w.grid.Material.Transmission = .94
+		w.grid.Material.Refraction = .018
+		w.grid.Material.Absorption = vec(.85, .28, .12)
 	}
 	w.grid.Material.NormalMap = normal
 	w.grid.Material.NormalStrength = 0
@@ -172,6 +185,25 @@ func (d *demo) waterView(content string) string {
 	if d.water.craft.autopilot {
 		pilot = "autopilot"
 	}
-	return "nt3d water · w/s throttle · j/l steer · space autopilot · n ripples · e reflections · f wake/spray · a pause · q quit\n" + content +
+	return "water · w/s speed · j/l steer · space auto · n ripples · e sky · f wake/spray · t optics · h soft · a pause · q quit\n" + content +
 		fmt.Sprintf("\n%s · %s · %s · %s · %.1f m/s · %s · %d drops · %s", d.rendering(), state, pilot, flight, d.water.craft.speed, d.water.effects.modeName(), d.water.effects.live, d.status)
+}
+
+// A sloping, patterned bottom makes refraction and depth-dependent color visible.
+func (d *demo) setupWaterBed() error {
+	g, err := nt3d.BuildHeightfield(nt3d.Heightfield{NX: 41, NY: 41, MinX: -5, MaxX: 5, MinY: -5, MaxY: 5, Sampler: func(x, y float32) float32 { return -.65 - .16*(x+5) + .06*float32(math.Sin(float64(y)*2)) }, Color: color.RGBA{190, 172, 125, 255}})
+	if err != nil {
+		return err
+	}
+	for i := range g.Vertices {
+		p := g.Vertices[i].Position
+		if (int(math.Floor(float64(p.X+5)*2))+int(math.Floor(float64(p.Y+5)*2)))%2 == 0 {
+			g.Vertices[i].Color = color.RGBA{117, 132, 112, 255}
+		}
+	}
+	id, err := d.scene.SetGeometry("seabed", g)
+	if err != nil {
+		return err
+	}
+	return d.scene.Reparent(id, d.group)
 }

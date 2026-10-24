@@ -97,6 +97,8 @@ buoyancy or fluid feedback. Wakes and spray are visual effects. This code lives 
 | `n` | Toggle ripple normal detail |
 | `e` | Toggle environment reflections |
 | `f` | Cycle wake + spray, wake only, spray only, and hidden |
+| `t` | Toggle refraction and depth-dependent absorption |
+| `h` | Toggle spray intersection fading |
 | `a` | Pause waves and craft together |
 | `1` / `2` / `3` | GPU / software / wireframe |
 
@@ -117,7 +119,8 @@ Fresnel blending. Water uses `.02` at normal incidence, rising toward full
 reflection at grazing angles. The procedural cloud panorama supplies both the
 sky and reflections. `e` disables reflection; direct-light highlights remain.
 These reflections show the distant panorama, not the craft or nearby objects.
-There is no roughness prefilter, refraction, or screen-space reflection.
+There is no roughness prefilter or screen-space reflection. Refraction uses the
+opaque scene as described below.
 
 Mesh evaluation runs on the CPU and replaces water geometry and bounds each
 update. This is a modest patch, not a large-ocean performance claim. All
@@ -144,3 +147,30 @@ with `f` continues the simulation, and pausing freezes it.
 
 These effects use the existing transparent geometry and particle infrastructure;
 they do not deform the waves or simulate fluid interaction.
+
+## Refraction, absorption, and soft spray
+
+The patterned seabed slopes from shallow to deep water. `t` compares the lit
+water surface with scene transmission: ripple normals distort the bottom, and
+longer underwater view paths attenuate red light more strongly than green and
+blue. Fresnel sky reflections remain on top. Pause with `a` to compare the same
+waves and craft pose.
+
+The water material uses `Transmission: .94`, `Refraction: .018`, and RGB
+`Absorption: (.85, .28, .12)`. Absorption is a Beer–Lambert coefficient per world
+unit, mixing transmitted light toward the lit water color. This approximates
+the underwater segment seen through the surface; it is not a camera-underwater
+volume or a fluid simulation.
+
+Spray uses `PointStyle.SoftDistance: .16`. Its alpha fades over that world-space
+view-ray distance to the scene surface, including the water. `h` switches back
+to hard intersections without advancing the simulation.
+
+Both GPU and software render opaque geometry first, capture scene color and
+depth, then draw transmissive surfaces and write their depth. Blended ribbons
+and particles draw afterward. Captures use the current frame and render
+resolution, including supersampling. Distorted samples outside the viewport or
+in front of the water fall back to the original pixel to avoid foreground leaks.
+Only opaque geometry is refracted: multiple glass/water layers do not refract
+one another, and transparent objects behind water are not captured. Transmission
+is an open-surface approximation, not Snell-law ray tracing or volumetric transport.

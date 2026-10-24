@@ -114,6 +114,12 @@ func (c *waterCraft) pose() nt3dmath.Mat4 {
 func (d *demo) waterKey(key string) (bool, error) {
 	w := d.water
 	switch key {
+	case "t":
+		w.optics = !w.optics
+		return true, d.stepWater()
+	case "h":
+		w.softSpray = !w.softSpray
+		return true, d.updateWaterSprayStyle()
 	case "f":
 		w.effects.mode = (w.effects.mode + 1) % 4
 		return true, d.drawWaterEffects()

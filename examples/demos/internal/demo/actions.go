@@ -42,7 +42,7 @@ func (k keys) FullHelp() [][]key.Binding {
 		if binding.Help().Key == "space" {
 			// Water has driving and material controls; keep touch actions within
 			// the transport limit. Camera rotation/projection remain keyboard keys.
-			view = viewKeys[:2]
+			view = viewKeys[:0]
 			break
 		}
 		if binding.Help().Key == "k" {
@@ -69,7 +69,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.particles != nil:
 		return "particles", keys{[]key.Binding{bind("b", "b", "blend"), bind("s", "s", "shape"), bind("t", "t", "sprites"), bind("n", "n", "count"), bind("a", "a", "pause")}}
 	case d.water != nil:
-		return "water", keys{[]key.Binding{bind("w", "w", "faster"), bind("s", "s", "slower"), bind("j", "j", "left"), bind("l", "l", "right"), bind(" ", "space", "autopilot"), bind("n", "n", "ripples"), bind("e", "e", "reflections"), bind("f", "f", "wake/spray"), bind("a", "a", "pause")}}
+		return "water", keys{[]key.Binding{bind("w", "w", "faster"), bind("s", "s", "slower"), bind("j", "j", "left"), bind("l", "l", "right"), bind(" ", "space", "autopilot"), bind("n", "n", "ripples"), bind("e", "e", "reflections"), bind("f", "f", "wake/spray"), bind("t", "t", "optics"), bind("h", "h", "soft"), bind("a", "a", "pause")}}
 	case d.aabb != nil:
 		return "aabb", keys{[]key.Binding{bind("h", "h", "hierarchy"), bind("a", "a", "drift"), bind("n", "n", "count"), bind("b", "b", "add"), bind("x", "x", "remove")}}
 	case d.cloud != nil:
