@@ -78,12 +78,12 @@ const instanceRecordSize = 144
 
 // transformState is what an instance's transform record holds.
 type transformState struct {
-	outline             OutlineStyle
-	unlit               bool
-	world               nt3dmath.Mat4
-	specular, shininess float32
-	procedural          bool   // Its texture is drawn each frame: wrapped by hand.
-	extension           uint32 // Where its mesh's extension records start: its index count, or 0.
+	outline                           OutlineStyle
+	unlit                             bool
+	world                             nt3dmath.Mat4
+	specular, shininess, reflectivity float32
+	procedural                        bool   // Its texture is drawn each frame: wrapped by hand.
+	extension                         uint32 // Where its mesh's extension records start: its index count, or 0.
 }
 
 // gpuDraw draws a run of a geometry's instances.
@@ -318,6 +318,9 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 		if m := f.Geometry[i].Material; m != nil && m.Specular > 0 && !m.Unlit {
 			states[k].specular, states[k].shininess = m.Specular, m.shininess()
 		}
+		if m := f.Geometry[i].Material; m != nil && !m.Unlit {
+			states[k].reflectivity = m.Reflectivity
+		}
 		if mapped(f.Geometry[i]) {
 			states[k].procedural = baseMap(f.Geometry[i].Material).shader != ""
 		}
@@ -330,7 +333,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	}
 	data := make([]byte, 0, instanceRecordSize*len(states))
 	for _, st := range states {
-		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.procedural, true, st.outline, st.unlit, st.extension)...)
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.extension)...)
 	}
 	s.last = states
 	return dev.Queue().WriteBuffer(s.transform, 0, data)
@@ -340,10 +343,10 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 // matrix only turns directions, so its last column is free: it carries the
 // material's specular strength and exponent, whether its texture is
 // procedural, and whether the node shows. Its last row is free too: the
-// unlit flag, and where the mesh's extension records start (its index
+// unlit flag, reflection F0, and where the mesh's extension records start (its index
 // count; the shader cannot trust arrayLength, which Metal reports from
 // the allocation, not the binding).
-func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32) []byte {
+func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
@@ -354,7 +357,7 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedura
 		normal[15] = 1
 	}
 	// The normal matrix's unused last row carries the unlit flag.
-	normal[3], normal[7], normal[11] = 0, float32(extension), 0
+	normal[3], normal[7], normal[11] = 0, float32(extension), reflectivity
 	if unlit {
 		normal[3] = 1
 	}
@@ -364,11 +367,14 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess float32, procedura
 }
 
 func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {
-	var specular, shininess float32
+	var specular, shininess, reflectivity float32
 	if m != nil && m.Specular > 0 && !m.Unlit {
 		specular, shininess = m.Specular, m.shininess()
 	}
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, 0))
+	if m != nil && !m.Unlit {
+		reflectivity = m.Reflectivity
+	}
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, 0))
 }
 
 // sortPoints orders a geometry's alpha points farthest first for the view
@@ -483,6 +489,9 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			// tint, the vertex color as a 24-bit integer, which a float
 			// holds exactly.
 			m, flags, cut := geom.Material, 0, geom.Material.threshold()
+			if m.NormalRepeat {
+				flags |= 32
+			}
 			if extended(geom) {
 				flags |= 8
 				if len(geom.Tangents) > 0 {

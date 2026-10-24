@@ -67,7 +67,7 @@ choice for one frame. In a widget, set these fields in a frame decorator; use
 Environment lighting uses nine degree-two RGB spherical-harmonic coefficients,
 with cosine convolution, for broad directional diffuse illumination. It is a cheap,
 low-frequency approximation: it does not reproduce small bright light sources,
-cast environment shadows, or provide glossy/specular reflections. Existing
+cast environment shadows, or capture sharp reflections. Existing
 directional and point lights still provide highlights and mapped shadows.
 Unlit materials, points, lines, and overlays remain unlit. Prefer the default
 linear-light frames for physically meaningful color blending.
@@ -92,3 +92,19 @@ Try `task lights` or the **Lights** web gallery: it starts with **sky and key**,
 Press `h` to select the SH studio environment and rotate it in 30-degree steps.
 The image preset is an original generated warm/cool panorama, with no downloaded
 assets. `1`, `2`, and `3` compare GPU, software, and wireframe; drag to orbit.
+
+## Reflections
+
+`Material.Reflectivity` samples the panorama along the reflected view direction.
+It is the normal-incidence reflectance F0, in [0,1]: zero explicitly disables
+reflection, `.02` suits water, and `1` is a mirror. Schlick Fresnel increases
+reflection toward grazing angles, blending it with the lit base color. Direct
+specular highlights are added afterward. Normal maps affect both contributions.
+
+GPU and software share panorama orientation, seam wrapping, pole clamping, and
+color-space behavior. `EnvironmentStrength` scales reflected light too;
+`EnvironmentBackgroundOnly` disables it along with diffuse environment light.
+Without an environment, reflectivity has no effect.
+
+This is a sharp distant-sky reflection. It does not reflect nearby geometry
+or prefilter rough surfaces. `Shininess` controls direct highlights only.

@@ -64,6 +64,11 @@ type UV struct{ U, V float32 }
 // stay round on coarse meshes. It needs the frame's camera (Frame.Eye),
 // which Scene.Frame supplies; unlit materials and wireframe have none.
 type Material struct {
+	// Reflectivity is the environment reflection at normal incidence (F0), 0..1.
+	// Zero disables reflections; .02 suits water and 1 is a mirror. Schlick
+	// Fresnel increases reflection toward grazing angles. Requires an Environment;
+	// ignored for Unlit materials. Reflections sample the distant sky, not objects.
+	Reflectivity float32
 	// NormalMap is created with NewNormalMap and uses Geometry.UV. NormalStrength
 	// scales tangent X/Y; set 1 for normal detail, 0 to disable. NormalRepeat
 	// controls its sampler independently of the base-color texture.

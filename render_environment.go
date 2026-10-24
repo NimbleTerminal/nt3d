@@ -8,6 +8,9 @@ import (
 )
 
 func (g *gpuRenderer) prepareEnvironment(f Frame) error {
+	if err := g.r.Do(func(dev *wgpu.Device) error { return g.updateReflection(dev, f.Environment) }); err != nil {
+		return err
+	}
 	if g.environmentSource != f.Environment {
 		if g.environmentTexture != nil {
 			if err := g.environmentTexture.Close(); err != nil {

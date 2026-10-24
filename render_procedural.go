@@ -8,6 +8,7 @@ import (
 	"github.com/gogpu/wgpu"
 	"math"
 	"nimbleterminal.dev/ntgpuimage"
+	"strings"
 )
 
 // Explicit UVs avoid naga's Metal indexed-array arithmetic issue.
@@ -51,8 +52,12 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 	}
 	used := make(map[*Texture]bool)
 	for _, geom := range f.Geometry {
-		if textured(geom) && len(geom.Indices) > 0 && geom.Material.Texture.shader != "" {
-			used[geom.Material.Texture] = true
+		if mapped(geom) && len(geom.Indices) > 0 {
+			for _, src := range []*Texture{baseMap(geom.Material), normalMap(geom.Material)} {
+				if src.shader != "" {
+					used[src] = true
+				}
+			}
 		}
 	}
 	// Recycle only snapshots absent from this frame. Multiple parameter variants
@@ -74,7 +79,7 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 			continue
 		}
 		for old, t := range spare {
-			if old.shader == src.shader && old.width == src.width && old.height == src.height && t.aniso == f.anisotropy() {
+			if old.data == src.data && old.shader == src.shader && old.width == src.width && old.height == src.height && t.aniso == f.anisotropy() {
 				g.procedural[src] = t
 				delete(spare, old)
 				break
@@ -85,12 +90,23 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 		}
 		t := &proceduralTexture{aniso: f.anisotropy()}
 		var err error
-		t.target, err = g.r.NewTexture(src.width, src.height, ntgpuimage.TextureOptions{RenderTarget: true, SRGB: true, Mipmaps: true, Anisotropy: uint16(t.aniso)})
+		options := ntgpuimage.TextureOptions{RenderTarget: true, SRGB: !src.data, Mipmaps: true, Anisotropy: uint16(t.aniso)}
+		if src.data {
+			options.AddressModeU = gputypes.AddressModeRepeat
+			options.AddressModeV = gputypes.AddressModeRepeat
+		}
+		t.target, err = g.r.NewTexture(src.width, src.height, options)
 		if err != nil {
 			return err
 		}
 		err = g.r.Do(func(dev *wgpu.Device) (err error) {
-			t.shader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d procedural texture", WGSL: src.shader + proceduralQuad})
+			quad := proceduralQuad
+			format := gputypes.TextureFormatRGBA8UnormSrgb
+			if src.data {
+				format = gputypes.TextureFormatRGBA8Unorm
+				quad = strings.Replace(quad, "return vec4<f32>(nt3d_decode(clamp(c.rgb, vec3<f32>(0.0), vec3<f32>(1.0))), c.a);", "return vec4<f32>(clamp(c.rgb, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);", 1)
+			}
+			t.shader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d procedural texture", WGSL: src.shader + quad})
 			if err != nil {
 				return err
 			}
@@ -113,7 +129,7 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 			t.pipeline, err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 				Layout:      t.layout,
 				Vertex:      wgpu.VertexState{Module: t.shader, EntryPoint: "nt3d_texture_vertex"},
-				Fragment:    &wgpu.FragmentState{Module: t.shader, EntryPoint: "nt3d_texture_fragment", Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8UnormSrgb, WriteMask: gputypes.ColorWriteMaskAll}}},
+				Fragment:    &wgpu.FragmentState{Module: t.shader, EntryPoint: "nt3d_texture_fragment", Targets: []gputypes.ColorTargetState{{Format: format, WriteMask: gputypes.ColorWriteMaskAll}}},
 				Primitive:   gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
 				Multisample: gputypes.DefaultMultisampleState(),
 			})

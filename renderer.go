@@ -73,9 +73,9 @@ type Frame struct {
 	DynamicLines []Vertex // World-space pairs, depth-tested with a small positive bias.
 	Overlays     []OverlayRect
 	CellText     []CellText
-	// Environment supplies a distant sky and adds diffuse image-based light.
+	// Environment supplies a distant sky, diffuse light, and material reflections.
 	// Nil preserves the solid Background. EnvironmentStrength scales the light;
-	// zero means 1. EnvironmentBackgroundOnly disables its lighting contribution.
+	// zero means 1. EnvironmentBackgroundOnly disables diffuse light and reflections.
 	Environment               *Environment
 	EnvironmentStrength       float32
 	EnvironmentBackgroundOnly bool

@@ -71,7 +71,7 @@ func (g *gpuRenderer) makeShadowTarget(dev *wgpu.Device, size, layers int) (t sh
 		}
 		t.faces = append(t.faces, v)
 	}
-	t.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.shadowLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: t.view}}})
+	t.bind, err = g.sceneLightingBind(dev, t.view, &g.reflection)
 
 	return
 }

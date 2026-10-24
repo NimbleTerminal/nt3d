@@ -103,3 +103,25 @@ func perturbNormal(n, t, b nt3dmath.Vec3, c [4]float32, strength float32) nt3dma
 	}
 	return out.Normalize()
 }
+
+// NewShaderNormalMap creates a linear-data procedural normal map with zero
+// parameters. The shader has the same nt3dTexture entry point as a color shader,
+// but returns encoded tangent-space XYZ in RGB; alpha is ignored.
+func NewShaderNormalMap(source string, fallback image.Image) (*Texture, error) {
+	return NewShaderNormalMapWithParameters(source, [4]float32{}, fallback)
+}
+
+// NewShaderNormalMapWithParameters generates normal data on the GPU and uses
+// the supplied matching image in software. Filtering and mipmaps remain linear;
+// no sRGB conversion is applied. Use SetNormalMap to advance immutable snapshots.
+func NewShaderNormalMapWithParameters(source string, parameters [4]float32, fallback image.Image) (*Texture, error) {
+	t, err := NewShaderTextureWithParameters(source, parameters, fallback)
+	if err != nil {
+		return nil, err
+	}
+	t.data = true
+	for i := 3; i < len(t.pixels); i += 4 {
+		t.pixels[i] = 255
+	}
+	return t, nil
+}

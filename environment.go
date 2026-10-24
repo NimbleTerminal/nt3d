@@ -10,7 +10,7 @@ import (
 	"nimbleterminal.dev/nt3d/sh"
 )
 
-// Environment is an immutable distant sky and diffuse image-based light.
+// Environment is an immutable distant sky, diffuse light, and reflection source.
 // Construct one with NewEnvironment or GradientEnvironment and share it between
 // scenes. It does not contribute geometry, bounds, picking, or shadow casters.
 type Environment struct {
@@ -23,7 +23,8 @@ type Environment struct {
 // NewEnvironment snapshots an sRGB equirectangular image (normally 2:1).
 // +Z is up (top row); the image center faces +X, and U increases toward +Y.
 // Alpha is ignored. Dimensions have the same limits as NewTexture.
-// Lighting uses a low-frequency diffuse approximation, without specular IBL.
+// Diffuse lighting uses a low-frequency approximation; reflective materials
+// sample the panorama directly, without roughness filtering.
 func NewEnvironment(src image.Image) (*Environment, error) {
 	t, err := NewTexture(src)
 	if err != nil {

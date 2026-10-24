@@ -1,4 +1,6 @@
 @group(1) @binding(0) var shadowMap: texture_depth_2d_array;
+@group(1) @binding(1) var reflectionMap: texture_2d<f32>;
+@group(1) @binding(2) var reflectionSampler: sampler;
 struct Light { a: vec4<f32>, b: vec4<f32> };
 struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,9>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
@@ -27,7 +29,7 @@ fn clipPosition(pos:vec3<f32>,index:f32)->vec4<f32> {
 // position (whose distance from the camera, not affine, is found per
 // fragment) and normal, and the instance's specular strength and exponent
 // (its normal matrix's spare column).
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32>, @location(11) @interpolate(flat) full:f32, @location(12) tangent:vec4<f32>, @location(13) @interpolate(flat) framed:f32 };
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec4<f32>, @location(1) uv: vec2<f32>, @location(2) @interpolate(flat) point: f32, @location(3) @interpolate(flat) repeat: f32, @location(4) cut: f32, @location(5) world: vec3<f32>, @location(6) normal: vec3<f32>, @location(7) @interpolate(flat) spec: vec2<f32>, @location(8) @interpolate(flat) normalStrength:f32, @location(9) @interpolate(flat) rect:vec4<f32>, @location(10) normalUV:vec2<f32>, @location(11) @interpolate(flat) full:f32, @location(12) tangent:vec4<f32>, @location(13) @interpolate(flat) framed:f32, @location(14) @interpolate(flat) reflectivity:f32 };
 // eyeDistance is a world point's distance from the camera, as fog measures
 // it: straight, or along the view for orthographic cameras.
 fn eyeDistance(world:vec3<f32>)->f32 {
@@ -40,7 +42,7 @@ fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
  let inst=instances[u32(color.w)];
  o.world=worldPosition(pos,color.w);
  if dot(normal,normal)>0.0 {
-  o.normal=normalize((inst.normal*vec4<f32>(normal,0.0)).xyz);o.spec=inst.normal[3].xy;
+  o.normal=normalize((inst.normal*vec4<f32>(normal,0.0)).xyz);o.spec=inst.normal[3].xy;o.reflectivity=inst.normal[2].w;
  }
  o.color=vec4<f32>(decode(color.rgb),1.0);o.uv=vec2<f32>(0.0);o.point=0.0;return o;
 }
@@ -112,6 +114,17 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
  if dot(o.normal,o.normal)>0.0 {
   let n=normalize(shadeNormal);
   c*=illuminate(n,o.world,normalize(o.normal));
+  if o.reflectivity>0.0 && u.viewport.w>0.5 {
+   var view=-u.forward.xyz;
+   if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
+   let reflected=reflect(-view,n);
+   let half=0.5/f32(textureDimensions(reflectionMap).y);
+   let uv=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,clamp(acos(clamp(reflected.z,-1.0,1.0))/3.14159265359,half,1.0-half));
+   var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
+   if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
+   let fresnel=o.reflectivity+(1.0-o.reflectivity)*pow(1.0-clamp(dot(n,view),0.0,1.0),5.0);
+   c=mix(c,sky*u.ground.w,fresnel);
+  }
   if o.spec.x>0.0 {
    var view=-u.forward.xyz;
    if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
@@ -241,7 +254,7 @@ fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
 fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
- var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;o.normalStrength=p.color.w;o.normalUV=o.uv;
+ var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;o.normalStrength=p.color.w;o.normalUV=o.uv;o.rect.x=select(0.0,1.0,(flags&32u)!=0u);
  // The extension record carries the normal map's coordinates and the
  // vertex's tangent frame: turned by the world matrix (not the normal
  // matrix: tangents turn as positions do), its handedness in w, negated
@@ -311,7 +324,9 @@ fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec
  if dot(projected,projected)<1e-12 || dot(b,b)<1e-12 {return o.normal;}
  let tangent=normalize(projected);var bitangent=cross(n,tangent);
  if dot(bitangent,b)<0.0 {bitangent=-bitangent;}
- let sample=textureSampleGrad(normalTexture,normalSampler,o.normalUV,gx,gy).rgb*2.0-1.0;
+ var uv=o.normalUV;
+ if o.rect.x<0.5 {let half=vec2<f32>(0.5)/vec2<f32>(textureDimensions(normalTexture));uv=clamp(uv,half,vec2<f32>(1.0)-half);}
+ let sample=textureSampleGrad(normalTexture,normalSampler,uv,gx,gy).rgb*2.0-1.0;
  let result=tangent*sample.x*o.normalStrength+bitangent*sample.y*o.normalStrength+n*sample.z;
  if dot(result,result)<1e-12 {return o.normal;}
  return normalize(result);

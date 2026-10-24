@@ -197,11 +197,12 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		if normalMapped && !framed {
 			tangent, bitangent = normalBasis(a, b, c)
 		}
+		reflective := material != nil && material.Reflectivity > 0 && !material.Unlit && f.Environment != nil && !f.EnvironmentBackgroundOnly
 		specular := material != nil && material.Specular > 0 && !material.Unlit
 		// A triangle with normals is lit; unlit ones have none.
 		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
 		// Whether pixels need the world point, and so perspective weights.
-		located := fogged || lit && (specular || rig.points || rig.shadow != nil)
+		located := fogged || lit && (specular || reflective || rig.points || rig.shadow != nil)
 		hasNormal := material != nil && material.NormalMap != nil
 		perspective := blended || textured || lit || fogged || hasNormal
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
@@ -330,6 +331,9 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 							n = perturbNormal(n, t, bt, sample, material.NormalStrength)
 						}
 						rig.lightNormal(&rgb, n, p, geometric)
+						if reflective {
+							reflectEnvironment(&rgb, f.Environment, material.Reflectivity, f.EnvironmentStrength, n, f.viewAt(p), linear)
+						}
 						if specular {
 							s := rig.highlightNormal(material, n, p, f.viewAt(p), geometric)
 							for k := range rgb {

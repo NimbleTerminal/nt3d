@@ -44,6 +44,7 @@ type gpuBatch struct {
 }
 
 type gpuRenderer struct {
+	reflection             reflectionTexture
 	environmentSource      *Environment
 	environmentTexture     *gpuimage.Texture
 	environmentPipeline    *wgpu.RenderPipeline
@@ -115,7 +116,7 @@ func (g *gpuRenderer) setup() (err error) {
 		if err != nil {
 			return err
 		}
-		g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}}})
+		g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}}})
 		if err != nil {
 			return err
 		}
@@ -191,6 +192,9 @@ func (g *gpuRenderer) setup() (err error) {
 		}
 		g.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
 		if err != nil {
+			return err
+		}
+		if err = g.updateReflection(dev, nil); err != nil {
 			return err
 		}
 		g.noShadow, err = g.makeShadowTarget(dev, 1, 1)
@@ -317,7 +321,11 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	for i, l := range rig.lights {
 		copy(lights[i*8:], []float32{l.v.X, l.v.Y, l.v.Z, float32(l.kind), l.color[0], l.color[1], l.color[2], l.rng})
 	}
-	ub = append(ub, floats(rig.ground[0], rig.ground[1], rig.ground[2], 0)...)
+	environmentStrength := f.EnvironmentStrength
+	if environmentStrength == 0 {
+		environmentStrength = 1
+	}
+	ub = append(ub, floats(rig.ground[0], rig.ground[1], rig.ground[2], environmentStrength)...)
 	ub = append(ub, floats(lights[:]...)...)
 	drawn := f.drawn(1)
 	size := shadowMapSize
@@ -648,6 +656,7 @@ func (g *gpuRenderer) Close() error {
 		}
 		g.noShadow.release()
 		g.shadowTarget.release()
+		g.reflection.release()
 		if g.shadowLayout != nil {
 			g.shadowLayout.Release()
 		}
@@ -694,7 +703,11 @@ func (g *gpuRenderer) drawTexturedOffset(pass *wgpu.RenderPassEncoder, f Frame, 
 		pass.SetBindGroup(2, g.textures[baseKey(f.Geometry[d.index].Material, f.anisotropy())].BindGroup(), nil)
 	}
 	m := f.Geometry[d.index].Material
-	pass.SetBindGroup(3, g.textures[textureKey{src: normalMap(m), repeat: m.NormalRepeat, aniso: f.anisotropy()}].BindGroup(), nil)
+	if t := g.procedural[normalMap(m)]; t != nil {
+		pass.SetBindGroup(3, t.target.BindGroup(), nil)
+	} else {
+		pass.SetBindGroup(3, g.textures[textureKey{src: normalMap(m), repeat: m.NormalRepeat, aniso: f.anisotropy()}].BindGroup(), nil)
+	}
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count, FirstVertex: first})
 }
 

@@ -55,6 +55,10 @@ GPU and software perturb diffuse, specular, and environment lighting. See
 
 `Material.Specular` (0 to 1) adds a white highlight where the surface reflects the light toward the camera, and `Shininess` (1 to 1024, default 32) sets how tight it is. It's worked out per pixel, so highlights stay round even on coarse meshes. Boxes, unlit materials, and wireframe have none.
 
+`Material.Reflectivity` adds [environment reflections](../environment/#reflections).
+Zero disables them; `.02` suits water and `1` makes a mirror. Normal maps also
+perturb reflection direction. Unlit materials ignore reflections.
+
 ## Shader textures
 
 A texture can be drawn by a WGSL shader each frame, on the GPU, with an ordinary image as its fallback for software rendering:
@@ -111,3 +115,16 @@ keeps its existing edge logic. World-unit widths are not supported yet.
 Try the [shapes demo](https://nimbleterminal.github.io/nt3d/shapes/): press
 `b` to toggle outlines (also available in the [characters demo](https://nimbleterminal.github.io/nt3d/characters/)), `s` to compare normal styles, and `1` / `2` to compare
 GPU and software.
+
+### Procedural normal maps
+
+`NewShaderNormalMap(source, fallback)` and
+`NewShaderNormalMapWithParameters(source, parameters, fallback)` use the same
+`nt3dTexture` WGSL entry point, returning tangent-space XYZ encoded into RGB
+in [0,1]. Alpha is ignored. Assign the result to `NormalMap`, set
+`NormalStrength: 1`, and animate with `Scene.SetNormalMap`.
+
+The render target and its mipmaps are linear data, without sRGB conversion.
+`NormalRepeat` chooses tiling or clamping. Software renders the supplied image,
+which should evaluate the same pattern and parameters. The [water demo](../water/)
+uses this path for periodic ripple normals.
