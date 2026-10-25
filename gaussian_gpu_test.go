@@ -7,13 +7,29 @@ import (
 	"testing"
 )
 
+// gaussianModes names the two Gaussian record layouts the GPU tests run:
+// compact (the default) and precise.
+var gaussianModes = []struct {
+	name    string
+	precise bool
+}{{"compact", false}, {"precise", true}}
+
 func TestGPUGaussiansMatchSoftware(t *testing.T) {
+	for _, mode := range gaussianModes {
+		t.Run(mode.name, func(t *testing.T) {
+			testGPUGaussiansMatchSoftware(t, mode.precise)
+		})
+	}
+}
+
+func testGPUGaussiansMatchSoftware(t *testing.T, precise bool) {
 	r := &gpuRenderer{}
 	defer r.Close()
 	for _, linear := range []bool{false, true} {
 		for _, ss := range []int{1, 2} {
 			for _, perspective := range []bool{false, true} {
 				g := gaussianGeometry()
+				g.PointStyle.Precise = precise
 				p := g.Points[0]
 				p.Position.X = .1
 				p.Position.Z = .7
@@ -48,8 +64,17 @@ func TestGPUGaussiansMatchSoftware(t *testing.T) {
 }
 
 func TestGPUGaussianTransformsUpdatesAndClipping(t *testing.T) {
+	for _, mode := range gaussianModes {
+		t.Run(mode.name, func(t *testing.T) {
+			testGPUGaussianTransformsUpdatesAndClipping(t, mode.precise)
+		})
+	}
+}
+
+func testGPUGaussianTransformsUpdatesAndClipping(t *testing.T, precise bool) {
 	s := NewScene()
 	g := gaussianGeometry()
+	g.PointStyle.Precise = precise
 	id, err := s.SetGeometry("splat", g)
 	check(t, err)
 	transform := nt3dmath.RotationZ(.6).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 2, Y: .7, Z: 1}))
@@ -89,6 +114,23 @@ func TestGPUGaussianTransformsUpdatesAndClipping(t *testing.T) {
 }
 
 func TestGPUGaussianSHMatchesSoftware(t *testing.T) {
+	for _, mode := range gaussianModes {
+		t.Run(mode.name, func(t *testing.T) {
+			testGPUGaussianSHMatchesSoftware(t, mode.precise)
+		})
+	}
+}
+
+func testGPUGaussianSHMatchesSoftware(t *testing.T, precise bool) {
+	// Compact records clamp band coefficients to ±1, as SPZ does, so the
+	// test geometry's must lie within it for the frames to compare.
+	for i, c := range shGaussianGeometry(3).GaussianSH[1:] {
+		for _, v := range c {
+			if v < -1 || v > 1 {
+				t.Fatalf("band coefficient %d is %v, outside ±1", i+1, v)
+			}
+		}
+	}
 	r := &gpuRenderer{}
 	defer r.Close()
 	for degree := 0; degree <= 3; degree++ {
@@ -98,6 +140,7 @@ func TestGPUGaussianSHMatchesSoftware(t *testing.T) {
 					s := NewScene()
 					g := shGaussianGeometry(degree)
 					g.PointStyle.SHDCOnly = dc
+					g.PointStyle.Precise = precise
 					id, err := s.SetGeometry("SH", g)
 					check(t, err)
 					check(t, s.SetTransform(id, nt3dmath.RotationZ(.8).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 1.7, Y: .8, Z: 1}))))

@@ -467,17 +467,30 @@ fn spriteSample(o:Out)->vec4<f32> {
  let t=spriteSample(o);return vec4<f32>(mapColor(t.rgb)*o.color.rgb,t.a*(o.cut*softIntersection(o))*(1.0-fogAmount(o.world)));
 }
 
-// Covariance axes share the sprite auxiliary buffer. Project each axis by
-// the homogeneous Jacobian, then use a Cholesky factor for the ellipse.
+// Covariance axes share the sprite auxiliary buffer, or for compact records
+// (the SH header's flag) are nine halves, two a word, six words a splat.
+// Project each axis by the homogeneous Jacobian, then use a Cholesky factor
+// for the ellipse.
+@group(0) @binding(7) var<storage,read> compactAxes:array<u32>;
 @vertex fn vs_gaussian(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
- let index=order[run.start+ii];let p=points[index];let axes=items[index];
+ let index=order[run.start+ii];let p=points[index];
+ let compact=gaussianSH[11]>0.5;
+ var vectors:array<vec3<f32>,3>;
+ if compact {
+  let at=index*6u;
+  let h0=unpack2x16float(compactAxes[at]);let h1=unpack2x16float(compactAxes[at+1u]);let h2=unpack2x16float(compactAxes[at+2u]);
+  let h3=unpack2x16float(compactAxes[at+3u]);let h4=unpack2x16float(compactAxes[at+4u]);
+  vectors=array<vec3<f32>,3>(vec3<f32>(h0.x,h0.y,h1.x),vec3<f32>(h1.y,h2.x,h2.y),vec3<f32>(h3.x,h3.y,h4.x));
+ } else {
+  let axes=items[index];
+  vectors=array<vec3<f32>,3>(axes.a.xyz,axes.b.xyz,axes.color.xyz);
+ }
  var o=pointOutput(vi,index);
  if gaussianSH[9]>0.0 {o.color=vec4<f32>(gaussianSHColor(index,o.world),1.0);}
  let m=u.matrix*instances[0].world;
  let center=m*vec4<f32>(p.x,p.y,p.z,1.0);
  if center.w<=0.0 || center.z<0.0 || center.z>center.w {o.clip=vec4<f32>(2.0,2.0,2.0,1.0);return o;}
  var cov=vec3<f32>(0.3,0.0,0.3);
- let vectors=array<vec3<f32>,3>(axes.a.xyz,axes.b.xyz,axes.color.xyz);
  for(var k=0u;k<3u;k++) {
   let d=m*vec4<f32>(vectors[k],0.0);
   let s=(d.xy-center.xy/center.w*d.w)/center.w*u.viewport.xy*0.5;
@@ -495,9 +508,13 @@ fn spriteSample(o:Out)->vec4<f32> {
  return vec4<f32>(finish(o,o.color.rgb),min(0.99,o.cut)*softIntersection(o)*exp(-4.5*r2));
 }
 
-// Header: 3x3 SH-from-local transform, coefficient stride/count, reserved.
-// Coefficients are packed RGB floats in point-major order.
+// Header: 3x3 SH-from-local transform, coefficient stride/count, and the
+// layout flag (1 compact, 0 precise). Precise coefficients follow it as
+// packed RGB floats in point-major order; compact ones are bytes in the same
+// order at binding 8, SPZ-quantized.
 @group(0) @binding(5) var<storage,read> gaussianSH:array<f32>;
+@group(0) @binding(8) var<storage,read> compactSH:array<u32>;
+fn compactSHByte(at:u32)->f32 {return f32((compactSH[at/4u]>>(8u*(at%4u)))&255u);}
 fn gaussianSHColor(index:u32,world:vec3<f32>)->vec3<f32> {
  var ray=u.forward.xyz;if u.eye.w>0.5 {ray=world-u.eye.xyz;}
  let n=instances[0].normal;
@@ -507,7 +524,18 @@ fn gaussianSHColor(index:u32,world:vec3<f32>)->vec3<f32> {
  if rayLength>0.0 {direction=d/rayLength;}
  let stride=u32(gaussianSH[9]);let count=u32(gaussianSH[10]);
  var rgb=vec3<f32>(0.5);
- for(var k=0u;k<count;k++) {let at=12u+(index*stride+k)*3u;rgb+=nt3dSHBasis(k,direction)*vec3<f32>(gaussianSH[at],gaussianSH[at+1u],gaussianSH[at+2u]);}
+ let compact=gaussianSH[11]>0.5;
+ for(var k=0u;k<count;k++) {
+  if compact {
+   let at=(index*stride+k)*3u;
+   let b=vec3<f32>(compactSHByte(at),compactSHByte(at+1u),compactSHByte(at+2u));
+   var c=(b-128.0)/128.0;
+   if k==0u {c=(b/255.0-0.5)/0.15;}
+   rgb+=nt3dSHBasis(k,direction)*c;
+   continue;
+  }
+  let at=12u+(index*stride+k)*3u;rgb+=nt3dSHBasis(k,direction)*vec3<f32>(gaussianSH[at],gaussianSH[at+1u],gaussianSH[at+2u]);
+ }
  return decode(max(rgb,vec3<f32>(0.0)));
 }
 

@@ -24,8 +24,9 @@ type geometryKey struct {
 // gpuGeometry is a geometry's uploaded primitives and the instance sets that
 // draw them: one set for each draw of the frame, reused across frames.
 type gpuGeometry struct {
-	sh            gpuBatch
-	sprite        gpuBatch
+	sh            gpuBatch // Gaussians' SH header, and their float coefficients when Precise.
+	sprite        gpuBatch // Sprite rects, or Precise Gaussians' float axes.
+	axes, shBytes gpuBatch // Compact Gaussians' half axes and SH bytes.
 	pointRevision uint64
 	skin          *gpuSkin
 	batches       [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
@@ -37,6 +38,8 @@ func (n *gpuGeometry) release() {
 	n.skin.release()
 	releaseBatch(n.sprite)
 	releaseBatch(n.sh)
+	releaseBatch(n.axes)
+	releaseBatch(n.shBytes)
 	for _, b := range n.batches {
 		releaseBatch(b)
 	}
@@ -170,6 +173,16 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				node.release()
 				return err
 			}
+			if compactGaussians(geom.PointStyle) {
+				if err := g.uploadData(dev, &node.axes, compactAxisData(geom.Points), 4); err != nil {
+					node.release()
+					return err
+				}
+				if err := g.uploadData(dev, &node.shBytes, compactSHData(&geom), 4); err != nil {
+					node.release()
+					return err
+				}
+			}
 			g.geometries[keys[i]] = node
 			g.uploads++
 		}
@@ -195,6 +208,11 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			}
 			if node.sprite.buffer != nil {
 				if err := dev.Queue().WriteBuffer(node.sprite.buffer, uint64(first*48), spriteData(geom.PointStyle, geom.Points[first:end])); err != nil {
+					return err
+				}
+			}
+			if node.axes.buffer != nil {
+				if err := dev.Queue().WriteBuffer(node.axes.buffer, uint64(first*24), compactAxisData(geom.Points[first:end])); err != nil {
 					return err
 				}
 			}
@@ -318,6 +336,14 @@ func (g *gpuRenderer) bindPoints(dev *wgpu.Device, node *gpuGeometry, s *instanc
 		sh, shSize = node.sh.buffer, node.sh.size
 	}
 	entries = append(entries, wgpu.BindGroupEntry{Binding: 5, Buffer: sh, Size: shSize}, wgpu.BindGroupEntry{Binding: 6, Buffer: runs, Size: 16})
+	// Compact Gaussians' half axes and SH bytes; zeros for other points.
+	for i, b := range []gpuBatch{node.axes, node.shBytes} {
+		entry := wgpu.BindGroupEntry{Binding: uint32(7 + i), Buffer: g.zeros, Size: 48}
+		if b.buffer != nil {
+			entry.Buffer, entry.Size = b.buffer, b.size
+		}
+		entries = append(entries, entry)
+	}
 	if node.sprite.buffer != nil {
 		entries[1] = wgpu.BindGroupEntry{Binding: 1, Buffer: node.sprite.buffer, Size: node.sprite.size}
 	}
@@ -569,8 +595,10 @@ func geometryData(geom Geometry) (data [9][]byte) {
 // floats, and its color as RGBA8. Other records are twelve floats.
 const pointRecord = 20
 
+// spriteData is a sprite's atlas rect, or a Precise Gaussian's float axes,
+// 48 bytes a point; compact Gaussians have none (compactAxisData).
 func spriteData(style PointStyle, points []Point) []byte {
-	if style.Texture == nil && style.Shape != GaussianPoint {
+	if style.Shape == GaussianPoint && !style.Precise || style.Texture == nil && style.Shape != GaussianPoint {
 		return nil
 	}
 	data := make([]byte, 0, len(points)*48)
@@ -587,6 +615,49 @@ func spriteData(style PointStyle, points []Point) []byte {
 	return data
 }
 
+// compactGaussians reports whether a style's Gaussians upload compact
+// records: half axes and SH bytes in place of floats.
+func compactGaussians(style PointStyle) bool {
+	return style.Shape == GaussianPoint && !style.Precise
+}
+
+// compactAxisData is the compact Gaussians' axes, 24 bytes a splat: the
+// twelve halves of packGaussianAxes, little-endian, which vs_gaussian reads
+// as six words, two halves each, the low half first.
+func compactAxisData(points []Point) []byte {
+	data := make([]byte, 0, len(points)*24)
+	for _, p := range points {
+		for _, h := range packGaussianAxes(p.GaussianAxes) {
+			data = binary.LittleEndian.AppendUint16(data, h)
+		}
+	}
+	return data
+}
+
+// compactSHData is the compact Gaussians' SH, a byte a channel as SPZ stores
+// it (packSHDC for each splat's first coefficient, packSHBand for the rest),
+// in the float coefficients' order and padded to whole words.
+func compactSHData(g *Geometry) []byte {
+	if len(g.GaussianSH) == 0 {
+		return nil
+	}
+	count := gaussianSHCount(g)
+	data := make([]byte, 0, (3*len(g.GaussianSH)+3)&^3)
+	for i, c := range g.GaussianSH {
+		for _, v := range c {
+			if i%count == 0 {
+				data = append(data, packSHDC(v))
+			} else {
+				data = append(data, packSHBand(v))
+			}
+		}
+	}
+	for len(data)%4 != 0 {
+		data = append(data, 0)
+	}
+	return data
+}
+
 func dropShadowData(g *Geometry) []byte {
 	a, b := g.Bounds.Min, g.Bounds.Max
 	fixed := float32(0)
@@ -598,11 +669,19 @@ func dropShadowData(g *Geometry) []byte {
 
 // SH storage is separate from point/axis records so ordinary points pay no
 // extra GPU memory and 500k degree-three splats stay below 128 MiB per buffer.
+// Every Gaussian geometry has the 48-byte header, with or without SH: its
+// last word flags the compact records (1) or the float ones (0), and only
+// Precise geometries' float coefficients follow it.
 func gaussianSHData(g *Geometry) []byte {
-	if len(g.GaussianSH) == 0 {
+	if g.PointStyle.Shape != GaussianPoint || len(g.Points) == 0 {
 		return nil
 	}
-	data := make([]byte, 0, 48+len(g.GaussianSH)*12)
+	compact := compactGaussians(g.PointStyle)
+	size := 48
+	if !compact {
+		size += len(g.GaussianSH) * 12
+	}
+	data := make([]byte, 0, size)
 	m := gaussianSHMatrix(g)
 	data = appendFloats(data, m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10])
 	count := gaussianSHCount(g)
@@ -610,7 +689,14 @@ func gaussianSHData(g *Geometry) []byte {
 	if g.PointStyle.SHDCOnly {
 		active = 1
 	}
-	data = appendFloats(data, float32(count), float32(active), 0)
+	flag := float32(0)
+	if compact {
+		flag = 1
+	}
+	data = appendFloats(data, float32(count), float32(active), flag)
+	if compact {
+		return data
+	}
 	for _, c := range g.GaussianSH {
 		data = appendFloats(data, c[:]...)
 	}
