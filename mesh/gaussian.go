@@ -16,6 +16,30 @@ import (
 
 var gaussianProperties = []string{"x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3"}
 
+// GaussianSH assembles the point-major spherical-harmonic coefficients of one
+// Gaussian from its DC term and its higher-order terms. rest is channel-major:
+// the coefficients of channel 0 (f_rest_0 onward), then channel 1, then channel 2.
+// It must hold 0, 9, 24, or 45 values, and the result has 1 + len(rest)/3
+// coefficients, the first being the DC term. A length that is not a degree's
+// coefficient count, or a non-finite value, is an error.
+func GaussianSH(dc [3]float64, rest []float64) ([]nt3dsh.RGB, error) {
+	count := 1 + len(rest)/3
+	if len(rest)%3 != 0 || nt3dsh.Degree(count) < 0 {
+		return nil, fmt.Errorf("nt3dmesh: Gaussian SH needs 0, 9, 24, or 45 higher-order values, got %d", len(rest))
+	}
+	coefficients := make([]nt3dsh.RGB, count)
+	for channel := 0; channel < 3; channel++ {
+		coefficients[0][channel] = float32(dc[channel])
+		for j := 1; j < count; j++ {
+			coefficients[j][channel] = float32(rest[channel*(count-1)+j-1])
+		}
+	}
+	if !nt3dsh.Valid(coefficients) {
+		return nil, errors.New("nt3dmesh: nonfinite Gaussian SH coefficient")
+	}
+	return coefficients, nil
+}
+
 func gaussianPLY(elements []plyElement) bool {
 	for _, e := range elements {
 		if e.name == "vertex" {
@@ -139,6 +163,7 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 			}
 		}
 		values, lists := map[string]float64{}, map[string][]float64{}
+		restValues := make([]float64, rest)
 		// Append only after reading: a dishonest header cannot trigger a huge allocation.
 		for i := 0; i < e.count; i++ {
 			if err := plyValues(r, e, values, lists); err != nil {
@@ -158,15 +183,12 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 			if err != nil {
 				return nil, r.errorf("%v", err)
 			}
-			coefficients := make([]nt3dsh.RGB, count)
-			for channel := 0; channel < 3; channel++ {
-				coefficients[0][channel] = float32(values[fmt.Sprintf("f_dc_%d", channel)])
-				for j := 1; j < count; j++ {
-					coefficients[j][channel] = float32(values[fmt.Sprintf("f_rest_%d", channel*(count-1)+j-1)])
-				}
+			for j := range restValues {
+				restValues[j] = values[fmt.Sprintf("f_rest_%d", j)]
 			}
-			if !nt3dsh.Valid(coefficients) {
-				return nil, r.errorf("nonfinite Gaussian SH coefficient")
+			coefficients, err := GaussianSH([3]float64{values["f_dc_0"], values["f_dc_1"], values["f_dc_2"]}, restValues)
+			if err != nil {
+				return nil, r.errorf("%v", err)
 			}
 			g.GaussianSH = append(g.GaussianSH, coefficients...)
 			g.Points = append(g.Points, p)

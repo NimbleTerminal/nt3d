@@ -7,6 +7,7 @@ import (
 	"math"
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 	"strings"
 	"testing"
 )
@@ -151,5 +152,30 @@ func TestGaussianPointHelper(t *testing.T) {
 	}
 	if _, err := GaussianPoint(nt3dmath.Vec3{X: float32(math.NaN())}, [4]float64{1, 0, 0, 0}, [3]float64{}, [3]float64{}, 1); err == nil {
 		t.Fatal("non-finite position accepted")
+	}
+}
+
+func TestGaussianSH(t *testing.T) {
+	dc := [3]float64{.1, .2, .3}
+	rest := make([]float64, 9) // degree 1: 3 coefficients × 3 channels, channel-major
+	for i := range rest {
+		rest[i] = float64(i)
+	}
+	sh, err := GaussianSH(dc, rest)
+	if err != nil || len(sh) != 4 || (sh[0] != nt3dsh.RGB{.1, .2, .3}) {
+		t.Fatal(sh, err)
+	}
+	// coefficient j, channel c reads rest[c*3 + j-1]
+	if (sh[1] != nt3dsh.RGB{0, 3, 6}) || (sh[3] != nt3dsh.RGB{2, 5, 8}) {
+		t.Fatal(sh)
+	}
+	if sh, err := GaussianSH(dc, nil); err != nil || len(sh) != 1 {
+		t.Fatal("DC only", sh, err)
+	}
+	if _, err := GaussianSH(dc, make([]float64, 6)); err == nil {
+		t.Fatal("accepted 6 coefficients")
+	}
+	if _, err := GaussianSH(dc, []float64{math.NaN(), 0, 0, 0, 0, 0, 0, 0, 0}); err == nil {
+		t.Fatal("accepted NaN")
 	}
 }
