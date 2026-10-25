@@ -17,8 +17,13 @@ type GerstnerWave struct {
 }
 
 // WaveSurface is an immutable sum of Gerstner waves with mean height Z=0.
+// WithWake optionally adds localized vertical crest/trough disturbances.
 // The zero value is a flat surface. It is safe to sample concurrently.
-type WaveSurface struct{ waves []surfaceWave }
+type WaveSurface struct {
+	waves     []surfaceWave
+	wake      []WakeImpulse
+	wakeLimit float64
+}
 
 type surfaceWave struct{ x, y, k, amplitude, omega, phase float64 }
 
@@ -118,6 +123,13 @@ func (s *WaveSurface) evaluate(x, y, time float64) (p, dx, dy, v [3]float64) {
 		v[0] += a * w.omega * w.x * sin
 		v[1] += a * w.omega * w.y * sin
 		v[2] -= a * w.omega * cos
+	}
+	if len(s.wake) > 0 {
+		h, hx, hy, ht := s.wakeHeight(p[0], p[1], time)
+		p[2] += h
+		dx[2] += hx*dx[0] + hy*dx[1]
+		dy[2] += hx*dy[0] + hy*dy[1]
+		v[2] += ht + hx*v[0] + hy*v[1]
 	}
 	return
 }
