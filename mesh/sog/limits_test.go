@@ -229,10 +229,10 @@ func TestDecodeRejects(t *testing.T) {
 		{"version 3", editMeta(t, bundle, func(m map[string]any) { m["version"] = 3 }), nil, "version 3"},
 		{"count over the images", editMeta(t, bundle, func(m map[string]any) { m["count"] = 577 }), nil, "do not fit"},
 		{"means over centroids", editMeta(t, bundle, swapped), nil, "not 192"},
-		{"bands 2", editMeta(t, bundle, func(m map[string]any) { m["shN"].(map[string]any)["bands"] = 2 }), nil, "bands"},
+		{"bands 2", editMeta(t, bundle, func(m map[string]any) { m["shN"].(map[string]any)["bands"] = 2 }), nil, "for 2 bands"},
 		{"sh0.webp missing", rebundle(t, bundle, func(n string, c []byte) ([]byte, bool) { return c, n != "sh0.webp" }), nil, "sh0.webp"},
 		{"meta.json missing", rebundle(t, bundle, func(n string, c []byte) ([]byte, bool) { return c, n != "meta.json" }), nil, "meta.json"},
-		{"version only", zipOf(t, map[string]string{"meta.json": `{"version":2}`}, "meta.json"), nil, "SOG"},
+		{"version only", zipOf(t, map[string]string{"meta.json": `{"version":2}`}, "meta.json"), nil, "splat count 0"},
 		{"MaxBytes below meta.json", bundle, &nt3dmesh.Options{MaxBytes: 1 << 12}, "meta.json"},
 		// meta.json fits (15086 bytes) but the images do not.
 		{"MaxBytes below the images", bundle, &nt3dmesh.Options{MaxBytes: 16000}, ".webp"},
@@ -242,7 +242,7 @@ func TestDecodeRejects(t *testing.T) {
 			if err == nil || m != nil {
 				t.Fatalf("decoded: %v, %v", m, err)
 			}
-			if !strings.HasPrefix(err.Error(), "nt3dmesh: SOG ") && !errors.Is(err, nt3dmesh.ErrTooLarge) {
+			if !strings.HasPrefix(err.Error(), "nt3dmesh: SOG ") {
 				t.Fatalf("error %q does not start with the package prefix", err)
 			}
 			if !strings.Contains(err.Error(), c.want) {
