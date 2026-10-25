@@ -33,7 +33,7 @@ const fold=65535u;
   if sp.far>sp.near { t=min(1.0,max(0.0,(c.z-sp.near)/(sp.far-sp.near))); }
   if (bitcast<u32>(t)&0x7FFFFFFFu)>0x7F800000u { t=0.0; } // NaN, tested by its bits past fast math.
   let k=65535u-u32(sqrt(t)*65535.0);
-  key=(k>>10u)<<22u | min(sp.slot,4095u)<<10u | (k&1023u);
+  key=(k>>10u)<<22u | min(sp.slot,4094u)<<10u | (k&1023u); // The slot clamps to maxBlendSlots-1, clear of the sentinel.
  }
  keysAll[sp.base+i]=key;
  payloadAll[sp.base+i]=i;

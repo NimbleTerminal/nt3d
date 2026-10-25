@@ -98,24 +98,62 @@ func wordBytes(values []uint32) []byte {
 }
 
 func TestGPURadixSortMatchesCPU(t *testing.T) {
-	const n, sentinels, slots = 100_000, 1_000, 7
 	rng := rand.New(rand.NewPCG(1, 2))
-	keys := make([]uint32, 0, n+sentinels)
-	for i := range n {
+	// 100,000 keys over even slices and seven slots, of nine the buffers
+	// hold, so odd slices and the last two slots are empty runs.
+	var keys []uint32
+	for i := range 100_000 {
 		depth := rng.Uint32N(1024)
 		if i%2 == 0 {
 			depth = rng.Uint32N(8) * 129 // Few depths, so many keys tie.
 		}
-		keys = append(keys, rng.Uint32N(blendSlices)<<22|rng.Uint32N(slots)<<10|depth)
+		keys = append(keys, rng.Uint32N(blendSlices/2)*2<<22|rng.Uint32N(7)<<10|depth)
 	}
-	for range sentinels {
-		i := rng.IntN(len(keys) + 1)
-		keys = slices.Insert(keys, i, 0xFFFFFFFF)
+	withSortDevice(t, func(dev *wgpu.Device, g *gpuRenderer) error {
+		return checkSort(t, dev, &g.sort, withSentinels(rng, keys, 1_000), 9)
+	})
+}
+
+// The last slot's nearest key, 0x0FFFFBFF, differs from the sentinel in
+// the sorted bits, so sentinels still sort after it.
+func TestGPURadixSortLastSlotNearest(t *testing.T) {
+	rng := rand.New(rand.NewPCG(5, 6))
+	var keys []uint32
+	for i := range 20_000 {
+		k := uint32(0x0FFFFBFF)
+		if i%2 == 0 {
+			k = rng.Uint32N(blendSlices)<<22 | rng.Uint32N(maxBlendSlots-1)<<10 | rng.Uint32N(1024)
+		}
+		keys = append(keys, k)
 	}
+	if want := (&blendPlan{}).key(maxBlendSlots-1, 0); want != 0x0FFFFBFF {
+		t.Fatalf("last slot's nearest key %#x, want 0x0FFFFBFF", want)
+	}
+	withSortDevice(t, func(dev *wgpu.Device, g *gpuRenderer) error {
+		return checkSort(t, dev, &g.sort, withSentinels(rng, keys, 3_000), maxBlendSlots)
+	})
+}
+
+// withSentinels inserts n sentinel keys at random places.
+func withSentinels(rng *rand.Rand, keys []uint32, n int) []uint32 {
+	keys = slices.Clone(keys)
+	for range n {
+		keys = slices.Insert(keys, rng.IntN(len(keys)+1), 0xFFFFFFFF)
+	}
+	return keys
+}
+
+// checkSort sorts keys, payload their indices, with buffers for slots, and
+// checks the order and every run against the CPU's.
+func checkSort(t *testing.T, dev *wgpu.Device, s *gpuSort, keys []uint32, slots int) error {
 	total := len(keys)
+	sentinels := 0
 	payload := make([]uint32, total)
-	for i := range payload {
+	for i, k := range keys {
 		payload[i] = uint32(i)
+		if k == 0xFFFFFFFF {
+			sentinels++
+		}
 	}
 	// The stable CPU order, and its runs.
 	want := slices.Clone(payload)
@@ -131,88 +169,91 @@ func TestGPURadixSortMatchesCPU(t *testing.T) {
 	counts := make([]uint32, blendSlices*slots)
 	for _, k := range keys {
 		if k < 1<<28 {
-			counts[(k>>22)*slots+(k>>10)&4095]++
+			counts[int(k>>22)*slots+int(k>>10&4095)]++
 		}
 	}
-	withSortDevice(t, func(dev *wgpu.Device, g *gpuRenderer) error {
-		s := &g.sort
-		if err := s.ensure(dev, total, slots); err != nil {
-			return err
+	if err := s.ensure(dev, total, slots); err != nil {
+		return err
+	}
+	if err := dev.Queue().WriteBuffer(s.keys[0], 0, wordBytes(keys)); err != nil {
+		return err
+	}
+	if err := dev.Queue().WriteBuffer(s.payload[0], 0, wordBytes(payload)); err != nil {
+		return err
+	}
+	enc, err := dev.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "nt3d sort test"})
+	if err != nil {
+		return err
+	}
+	if err := s.encodeSortPasses(dev, enc, total); err != nil {
+		return err
+	}
+	if err := s.encodeRuns(dev, enc, total); err != nil {
+		return err
+	}
+	runs := uint64(blendSlices * slots)
+	start := time.Now()
+	out, err := readBuffers(dev, enc, []*wgpu.Buffer{s.keys[s.final], s.payload[s.final], s.runs, s.args}, []uint64{uint64(total) * 4, uint64(total) * 4, runs * 256, runs * 16})
+	if err != nil {
+		return err
+	}
+	t.Logf("sorted %d keys and built %d runs in %v (submit to readback)", total, runs, time.Since(start))
+	gotKeys, gotPayload := words(out[0]), words(out[1])
+	seen := make([]bool, total)
+	for i, p := range gotPayload {
+		if p >= uint32(total) || seen[p] {
+			return fmt.Errorf("payload %d is %d: not a permutation", i, p)
 		}
-		if err := dev.Queue().WriteBuffer(s.keys[0], 0, wordBytes(keys)); err != nil {
-			return err
+		seen[p] = true
+		if gotKeys[i] != keys[p] {
+			return fmt.Errorf("key %d is %#x, its payload %d's key %#x", i, gotKeys[i], p, keys[p])
 		}
-		if err := dev.Queue().WriteBuffer(s.payload[0], 0, wordBytes(payload)); err != nil {
-			return err
+		if i > 0 && gotKeys[i-1] > gotKeys[i] {
+			return fmt.Errorf("keys %d, %d out of order: %#x > %#x", i-1, i, gotKeys[i-1], gotKeys[i])
 		}
-		enc, err := dev.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "nt3d sort test"})
-		if err != nil {
-			return err
+		if i > 0 && gotKeys[i-1] == gotKeys[i] && gotPayload[i-1] > p {
+			return fmt.Errorf("equal keys at %d, %d lost index order: %d > %d", i-1, i, gotPayload[i-1], p)
 		}
-		if err := s.encodeSortPasses(dev, enc, total); err != nil {
-			return err
+	}
+	for i := total - sentinels; i < total; i++ {
+		if gotKeys[i] != 0xFFFFFFFF {
+			return fmt.Errorf("key %d is %#x, want a sentinel among the last %d", i, gotKeys[i], sentinels)
 		}
-		if err := s.encodeRuns(dev, enc, total); err != nil {
-			return err
-		}
-		runs := uint64(blendSlices * slots)
-		start := time.Now()
-		out, err := readBuffers(dev, enc, []*wgpu.Buffer{s.keys[s.final], s.payload[s.final], s.runs, s.args}, []uint64{uint64(total) * 4, uint64(total) * 4, runs * 256, runs * 16})
-		if err != nil {
-			return err
-		}
-		t.Logf("sorted %d keys and built %d runs in %v (submit to readback)", total, runs, time.Since(start))
-		gotKeys, gotPayload := words(out[0]), words(out[1])
-		seen := make([]bool, total)
-		for i, p := range gotPayload {
-			if p >= uint32(total) || seen[p] {
-				return fmt.Errorf("payload %d is %d: not a permutation", i, p)
+	}
+	if !slices.Equal(gotPayload, want) {
+		return fmt.Errorf("payload differs from the stable CPU order")
+	}
+	at, empty := uint32(0), 0
+	for slice := range blendSlices {
+		for slot := range slots {
+			r := slice*slots + slot
+			rec := out[2][s.runOffset(slice, slot):]
+			args := out[3][s.argsOffset(slice, slot):]
+			gotStart, gotCount := binary.LittleEndian.Uint32(rec), binary.LittleEndian.Uint32(rec[4:])
+			if gotStart != at || gotCount != counts[r] {
+				return fmt.Errorf("run (%d, %d) is %d+%d, want %d+%d", slice, slot, gotStart, gotCount, at, counts[r])
 			}
-			seen[p] = true
-			if gotKeys[i] != keys[p] {
-				return fmt.Errorf("key %d is %#x, its payload %d's key %#x", i, gotKeys[i], p, keys[p])
+			if a := words(args[:16]); a[0] != 6 || a[1] != counts[r] || a[2] != 0 || a[3] != 0 {
+				return fmt.Errorf("run (%d, %d) args %v, want [6 %d 0 0]", slice, slot, a, counts[r])
 			}
-			if i > 0 && gotKeys[i-1] > gotKeys[i] {
-				return fmt.Errorf("keys %d, %d out of order: %#x > %#x", i-1, i, gotKeys[i-1], gotKeys[i])
+			if counts[r] == 0 {
+				empty++
 			}
-			if i > 0 && gotKeys[i-1] == gotKeys[i] && gotPayload[i-1] > p {
-				return fmt.Errorf("equal keys at %d, %d lost index order: %d > %d", i-1, i, gotPayload[i-1], p)
-			}
-		}
-		for i := total - sentinels; i < total; i++ {
-			if gotKeys[i] != 0xFFFFFFFF {
-				return fmt.Errorf("key %d is %#x, want a sentinel among the last %d", i, gotKeys[i], sentinels)
-			}
-		}
-		if !slices.Equal(gotPayload, want) {
-			return fmt.Errorf("payload differs from the stable CPU order")
-		}
-		at := uint32(0)
-		for slice := range blendSlices {
-			for slot := range slots {
-				r := slice*slots + slot
-				rec := out[2][s.runOffset(slice, slot):]
-				args := out[3][s.argsOffset(slice, slot):]
-				gotStart, gotCount := binary.LittleEndian.Uint32(rec), binary.LittleEndian.Uint32(rec[4:])
-				if gotStart != at || gotCount != counts[r] {
-					return fmt.Errorf("run (%d, %d) is %d+%d, want %d+%d", slice, slot, gotStart, gotCount, at, counts[r])
+			for i := at; i < at+counts[r]; i++ {
+				if k := gotKeys[i]; int(k>>22) != slice || int(k>>10&4095) != slot {
+					return fmt.Errorf("run (%d, %d) holds key %#x at %d", slice, slot, k, i)
 				}
-				if a := words(args[:16]); a[0] != 6 || a[1] != counts[r] || a[2] != 0 || a[3] != 0 {
-					return fmt.Errorf("run (%d, %d) args %v, want [6 %d 0 0]", slice, slot, a, counts[r])
-				}
-				for i := at; i < at+counts[r]; i++ {
-					if k := gotKeys[i]; int(k>>22) != slice || int(k>>10&4095) != slot {
-						return fmt.Errorf("run (%d, %d) holds key %#x at %d", slice, slot, k, i)
-					}
-				}
-				at += counts[r]
 			}
+			at += counts[r]
 		}
-		if at != uint32(total-sentinels) {
-			return fmt.Errorf("runs cover %d keys, want %d", at, total-sentinels)
-		}
-		return nil
-	})
+	}
+	if at != uint32(total-sentinels) {
+		return fmt.Errorf("runs cover %d keys, want %d", at, total-sentinels)
+	}
+	if empty == 0 {
+		return fmt.Errorf("no empty runs checked")
+	}
+	return nil
 }
 
 // The key pass quantizes as blendPlan.key does, but for a last bit the

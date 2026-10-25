@@ -812,7 +812,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		}
 		for ; next < len(order) && int(keys[order[next]]>>22) == slice; next++ {
 			k := keys[order[next]]
-			s := &slots[k>>10&(maxBlendSlots-1)]
+			s := &slots[k>>10&4095]
 			drawPoint(s.g, s.inst, &s.m, int(indices[order[next]]), s.step, s.shFromWorld)
 		}
 	}

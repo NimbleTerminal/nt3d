@@ -171,7 +171,6 @@ func (s *gpuSort) ensure(dev *wgpu.Device, points, slots int) error {
 	s.final = sortPasses % 2
 	storage := wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc
 	runs := uint64(blendSlices * slots)
-	changed := false
 	for _, b := range []struct {
 		to    **wgpu.Buffer
 		size  uint64
@@ -190,18 +189,18 @@ func (s *gpuSort) ensure(dev *wgpu.Device, points, slots int) error {
 	} {
 		final := b.to == &s.payload[s.final]
 		did, err := growSort(dev, b.to, b.size, b.usage, b.label)
+		if did {
+			// At once, so a later failure leaves no group over a freed buffer.
+			s.releaseBinds()
+			if final {
+				s.generation++
+			}
+		}
 		if err != nil {
 			return err
 		}
-		if did && final {
-			s.generation++
-		}
-		changed = changed || did
 	}
 	s.capacity, s.slots = points, slots
-	if changed {
-		s.releaseBinds()
-	}
 	return nil
 }
 

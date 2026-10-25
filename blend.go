@@ -61,11 +61,12 @@ func blendBounds(g *Geometry) nt3dmath.AABB {
 }
 
 // blendSlices is how many depth slices a frame's blended work falls into,
-// far to near; maxBlendSlots how many alpha point geometries a frame orders
-// (a key holds the geometry's slot in 12 bits).
+// far to near; maxBlendSlots how many alpha point geometries a frame orders.
+// A key's 12 bits hold 4096 slots, but slot 4095 at the nearest depth would
+// be 0x0FFFFFFF, alike in every sorted bit to the sentinel 0xFFFFFFFF.
 const (
 	blendSlices   = 64
-	maxBlendSlots = 4096
+	maxBlendSlots = 4095
 )
 
 // blendPlan is a frame's blended work: alpha point geometries as slots, in

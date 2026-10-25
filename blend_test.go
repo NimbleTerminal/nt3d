@@ -83,8 +83,12 @@ func TestPlanBlend(t *testing.T) {
 	if !(p.key(0, .25) > p.key(1, .75)) {
 		t.Error("slice does not come before slot")
 	}
-	if k := p.key(4095, .25); k == 0xFFFFFFFF || k>>22 != blendSlices-1 {
+	if k := p.key(maxBlendSlots-1, .25); k == 0xFFFFFFFF || k>>22 != blendSlices-1 || k>>10&4095 != 4094 {
 		t.Errorf("key %#x for the last slot, slice, and depth", k)
+	}
+	// The last slot's nearest key stays clear of the sentinel's sorted bits.
+	if k := p.key(4095, .25); k != p.key(4094, .25) || k == 0x0FFFFFFF {
+		t.Errorf("slot 4095 keyed %#x, want it clamped to 4094", k)
 	}
 	// One depth, near == far: everything is at the far end of 16 bits.
 	same := blendPlan{near: .5, far: .5}
