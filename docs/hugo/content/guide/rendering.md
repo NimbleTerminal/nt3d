@@ -235,14 +235,23 @@ spherical-harmonic channel as one byte at SPZ's quantization, the color byte
 for the first coefficient and `(b-128)/128` for the bands, which clamp to
 ±1 as they do in SPZ. `PointStyle.Precise` keeps the float records the
 software renderer draws, 48-byte axes and 12 bytes a coefficient, for splats
-that must not be quantized. `nt3d.MaxGaussians(n)` gives the most compact
+that must not be quantized. Compact axis components are half floats: magnitudes
+from about 6e-5 to 65504 local units keep 2⁻¹¹ relative precision, a component
+beyond 65504 clamps (which bends the axis), and one below about 3e-8 becomes
+zero. The first coefficient saturates beyond about ±3.33, a base color outside
+roughly −0.44 to 1.44. Scenes in unusual units, like millimetres with 65 m
+background splats or kilometres with millimetre splats, or with extreme colors,
+should set `Precise`. `nt3d.MaxGaussians(n)` gives the most compact
 splats with `n` SH coefficients each (2,796,202 at degree 3, 4,971,026 at
 degree 2, 5,592,405 at degree 0 or 1 or without SH), and
 `nt3d.MaxPreciseGaussians(n)` the most with `Precise` (699,050 at degree 3,
 2,796,202 without SH). A larger cloud is [split into slabs](../meshes/#staying-safe-with-big-or-hostile-files).
+The decoders split at the compact limit; to draw a decoded cloud `Precise`, set
+`PointStyle.Precise` on each object's geometry and pass it through
+`nt3dmesh.PointPieces` again, which re-splits at the precise limit.
 Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
 A compact splat takes 44 GPU bytes (a 20-byte point record and 24 bytes of
-axes) plus 3 bytes per RGB coefficient, 92 bytes at degree 3; a precise one
+axes), plus a 48-byte header per geometry, plus 3 bytes per RGB coefficient, 92 bytes at degree 3; a precise one
 takes 68 plus 12 per coefficient, 260 at degree 3. A million degree-3 splats
 take about 92 MB compact and 260 MB precise. SH uses a separate buffer,
 keeping each storage buffer below WebGPU's 128 MiB baseline even at the hard

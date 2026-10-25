@@ -31,7 +31,11 @@ type PointStyle struct {
 	// float spherical harmonics, as the software renderer draws them. Without
 	// it, the default, the GPU stores half-float axes and byte coefficients at
 	// SPZ's precision, so a geometry holds about four times the splats at
-	// degree 3; see MaxGaussians.
+	// degree 3; see MaxGaussians. Compact axis components are half floats,
+	// from about 6e-5 to 65504 local units; one beyond clamps and one below
+	// about 3e-8 becomes zero. The DC coefficient saturates beyond about ±3.33
+	// and the bands clamp to ±1, as in SPZ. Set Precise for scenes in unusual
+	// units or with extreme colors.
 	Precise bool
 	Shape   PointShape
 	Units   PointUnits
