@@ -32,11 +32,12 @@ var coefficients = [4]int{0, 3, 8, 15}
 // v1Bands maps a v1 centroid image's width to its band count.
 var v1Bands = map[int]int{64 * 3: 1, 64 * 8: 2, 64 * 15: 3}
 
-// loadImages reads and decodes the images m names through open, within
-// budget bytes: each file's length and each image's width × height × 4 count
-// against it. Every size is checked before any pixels are decoded. For a v1
-// shN, it sets m.shN.bands from the centroid image's width.
-func loadImages(m *meta, open func(name string) ([]byte, error), budget int64) (*images, error) {
+// loadImages reads and decodes the images m names through open, which charges
+// each file's length to b; each image's width × height × 4 is charged here.
+// Every size is checked before any pixels are decoded. For a v1 shN, it sets
+// m.shN.bands from the centroid image's width, and its count, when meta.json
+// gave none, to every slot the centroid image holds.
+func loadImages(m *meta, open func(name string) ([]byte, error), b *budget) (*images, error) {
 	names := []string{m.means.low, m.means.high, m.scalesFile, m.quats, m.sh0File}
 	if m.shN != nil {
 		names = append(names, m.shN.centroids, m.shN.labels)
@@ -48,9 +49,6 @@ func loadImages(m *meta, open func(name string) ([]byte, error), budget int64) (
 		if err != nil {
 			return nil, metaErr("%s: %w", name, err)
 		}
-		if budget -= int64(len(data)); budget < 0 {
-			return nil, fmt.Errorf("nt3dmesh: SOG %s: %w", name, nt3dmesh.ErrTooLarge)
-		}
 		c, _, err := image.DecodeConfig(bytes.NewReader(data))
 		if err != nil {
 			return nil, metaErr("%s: %w", name, err)
@@ -58,8 +56,8 @@ func loadImages(m *meta, open func(name string) ([]byte, error), budget int64) (
 		if c.Width < 1 || c.Height < 1 {
 			return nil, metaErr("%s is %d×%d", name, c.Width, c.Height)
 		}
-		if budget -= int64(c.Width) * int64(c.Height) * 4; budget < 0 {
-			return nil, fmt.Errorf("nt3dmesh: SOG %s: %w", name, nt3dmesh.ErrTooLarge)
+		if err := b.take(int64(c.Width)*int64(c.Height)*4, name+" decoded"); err != nil {
+			return nil, metaErr("%w", err)
 		}
 		files[i], configs[i] = data, c
 	}
@@ -83,6 +81,9 @@ func loadImages(m *meta, open func(name string) ([]byte, error), budget int64) (
 		}
 		if c.Width != 64*coefficients[m.shN.bands] {
 			return nil, metaErr("%s width %d is not %d for %d bands", names[5], c.Width, 64*coefficients[m.shN.bands], m.shN.bands)
+		}
+		if m.shN.count == 0 {
+			m.shN.count = 64 * c.Height // v1 without a count: every slot is valid
 		}
 		if c.Height*64 < m.shN.count {
 			return nil, metaErr("%s height %d holds fewer than %d centroids", names[5], c.Height, m.shN.count)

@@ -15,6 +15,11 @@ written by PlayCanvas's reference converter, `@playcanvas/splat-transform`
   converter's compressed PLY writer (`splat-transform ring.ply
   gaussian-ring.compressed.ply`), used by the `mesh` package.
 
+The ring's splats share one scale per axis and one opacity, so the v1
+fixture's scale and opacity ranges are degenerate (`mins == maxs`, bytes 0).
+Per-splat range decoding is covered by the `table.value` unit tests, not by
+the fixture.
+
 Decoding the SOG fixtures must also match the source `gaussian-ring.ply`
 within quantization (the converter reorders the splats).
 

@@ -395,7 +395,7 @@ func readEntry(t *testing.T, bundle []byte, name string) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := entry(z, name, 1<<30)
+	data, err := entry(z, name, &budget{left: 1 << 30})
 	if err != nil {
 		t.Fatal(err)
 	}

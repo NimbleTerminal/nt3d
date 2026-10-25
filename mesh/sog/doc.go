@@ -10,8 +10,9 @@
 //
 // Both versions decode: version 2 (codebooks of 256 values per attribute,
 // named by a "version" field) and the original version 1 (linear ranges per
-// channel, no "version" field). SOG files store the coordinates of the PLY
-// they were made from, so Options.Up applies as it does for PLY. The "model"
-// tag some files carry is ignored. A cloud larger than one geometry holds is
+// channel, no "version" field, and often no shN.count or shN.bands, which the
+// centroid image supplies). SOG files store the coordinates of the PLY they
+// were made from, so Options.Up applies as it does for PLY. The "model" tag
+// some files carry is ignored. A cloud larger than one geometry holds is
 // split as nt3dmesh.PointPieces splits it.
 package nt3dsog

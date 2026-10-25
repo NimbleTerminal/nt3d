@@ -154,6 +154,18 @@ func TestParseMetaV1ShNBands(t *testing.T) {
 	}
 }
 
+// The original v1 exporter wrote no shN.count: it parses as 0, and loadImages
+// fills it in from the centroid image.
+func TestParseMetaV1NoShNCount(t *testing.T) {
+	m, err := parseMeta([]byte(v1JSON(`, "count": 512`, ``)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.shN == nil || m.shN.count != 0 || m.shN.bands != 0 {
+		t.Fatalf("shN = %+v, want count 0, bands 0", m.shN)
+	}
+}
+
 func TestParseMetaNullCodebook(t *testing.T) {
 	data := v2JSON(`"scales": {"codebook": [0,`, `"scales": {"codebook": [null,`)
 	m, err := parseMeta([]byte(data))
@@ -198,7 +210,7 @@ func TestParseMetaRejects(t *testing.T) {
 		"v1 bands 4":          v1JSON(`"count": 512`, `"count": 512, "bands": 4`),
 		"shN count 0":         v2JSON(`"count": 512`, `"count": 0`),
 		"v1 shN count 0":      v1JSON(`"count": 512`, `"count": 0`),
-		"v1 no shN count":     v1JSON(`, "count": 512`, ``),
+		"v2 no shN count":     v2JSON(`"count": 512, `, ``),
 		"shN one file":        v2JSON(`"shN_centroids.webp", "shN_labels.webp"`, `"shN_centroids.webp"`),
 		"v1 sh0 mins of 3":    v1JSON(`"mins": [-1, -1, -1, 0]`, `"mins": [-1, -1, -1]`),
 		"v1 scales no maxs":   v1JSON(`"maxs": [1, 2, 3], "files": ["scales.webp"]`, `"files": ["scales.webp"]`),

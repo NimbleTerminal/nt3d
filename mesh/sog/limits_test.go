@@ -215,6 +215,23 @@ func TestDecodeTolerates(t *testing.T) {
 	})
 }
 
+// A v1 file from the original exporter has no shN.count: every slot of the
+// centroid image counts, as it did for the engine that sampled it.
+func TestDecodeV1NoShNCount(t *testing.T) {
+	v1 := read(t, filepath.Join("testdata", "gaussian-ring.v1.sog"))
+	want := decodeBundle(t, v1)
+	got := decodeBundle(t, editMeta(t, v1, func(m map[string]any) {
+		shn := m["shN"].(map[string]any)
+		if _, ok := shn["count"]; !ok {
+			t.Fatal("fixture's shN has no count")
+		}
+		delete(shn, "count")
+	}))
+	if !reflect.DeepEqual(got.Points, want.Points) || !reflect.DeepEqual(got.GaussianSH, want.GaussianSH) {
+		t.Fatal("v1 without shN.count decodes differently from the fixture")
+	}
+}
+
 func TestDecodeRejects(t *testing.T) {
 	bundle := ring(t)
 	swapped := func(m map[string]any) {
@@ -256,6 +273,59 @@ func TestDecodeRejects(t *testing.T) {
 
 	if sniff(rebundle(t, bundle, func(n string, c []byte) ([]byte, bool) { return c, n != "meta.json" })) {
 		t.Fatal("a zip without meta.json sniffed as SOG")
+	}
+}
+
+// The files and decoded images share one allowance: no entry gets the whole
+// MaxBytes to itself, and meta.json counts.
+func TestBudgetShared(t *testing.T) {
+	bundle := ring(t)
+	z, err := zip.NewReader(bytes.NewReader(bundle), int64(len(bundle)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every file and every decoded image is charged, meta.json included, so
+	// the allowance that just fits is the sum of the two.
+	var need int64
+	files := map[string][]byte{}
+	for _, f := range z.File {
+		data := readEntry(t, bundle, f.Name)
+		files[f.Name] = data
+		need += int64(len(data))
+		if f.Name == "meta.json" {
+			continue
+		}
+		c, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		need += int64(c.Width) * int64(c.Height) * 4
+	}
+	open := func(name string) ([]byte, error) { return files[name], nil }
+	for _, c := range []struct {
+		name string
+		o    *nt3dmesh.Options
+		data []byte
+	}{
+		{"bundle", &nt3dmesh.Options{MaxBytes: need - 1}, bundle},
+		{"unbundled", &nt3dmesh.Options{MaxBytes: need - 1, Open: open}, files["meta.json"]},
+	} {
+		_, err := Decode(c.data, c.o)
+		if !errors.Is(err, nt3dmesh.ErrTooLarge) || !strings.HasPrefix(err.Error(), "nt3dmesh: SOG ") {
+			t.Fatalf("%s, MaxBytes one under %d: %v", c.name, need, err)
+		}
+		c.o.MaxBytes = need
+		if _, err := Decode(c.data, c.o); err != nil {
+			t.Fatalf("%s, MaxBytes %d: %v", c.name, need, err)
+		}
+	}
+
+	// meta.json is charged first: with room for it and no more, the first
+	// image is what fails.
+	meta := int64(len(files["meta.json"]))
+	_, err = Decode(bundle, &nt3dmesh.Options{MaxBytes: meta})
+	if !errors.Is(err, nt3dmesh.ErrTooLarge) || strings.Contains(err.Error(), "meta.json") {
+		t.Fatalf("MaxBytes %d, meta.json's size: %v", meta, err)
 	}
 }
 
@@ -339,8 +409,16 @@ func TestUnpackSynthetic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if g.Points[i] != want {
-			t.Fatalf("splat %d with tag %d: %+v, want %+v", i, tags[i], g.Points[i], want)
+		// unpack sums the squares before subtracting from 1, so d, and the
+		// axes, can differ from want's in the last bits.
+		got := g.Points[i]
+		if got.Position != want.Position || got.Color != want.Color || got.Radius != want.Radius || got.Frame != want.Frame || got.Datum != want.Datum {
+			t.Fatalf("splat %d with tag %d: %+v, want %+v", i, tags[i], got, want)
+		}
+		for k := range 3 {
+			if length(got.GaussianAxes[k].Sub(want.GaussianAxes[k])) > 1e-6*length(want.GaussianAxes[k]) {
+				t.Fatalf("splat %d with tag %d axis %d: %v, want %v", i, tags[i], k, got.GaussianAxes[k], want.GaussianAxes[k])
+			}
 		}
 	}
 	// Tag 10 is the identity orientation: each axis along its own direction.
