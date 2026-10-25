@@ -155,7 +155,7 @@ PLY captures need `--up=-y` in the demos, an SPZ of the same scene needs
 nothing. Degree-4 SH and version 1 are refused; the optional extensions
 block (a named coordinate system, quantization notes) and the antialiased
 flag are ignored. `Options.MaxBytes` bounds the decompressed size. Niantic's
-samples, at 786k and 933k splats, open as two slabs each.
+samples, at 786k and 933k splats, open as one slab each.
 
 ### SOG and compressed PLY
 
@@ -229,19 +229,29 @@ ellipse shape or alpha. Start with **up to 10,000 splats on GPU** and **about
 1,000 in software** for interactive use; these are conservative starting
 budgets, not measured frame-rate guarantees. Coverage, resolution, and
 supersampling matter as much as count. The hard limit is the 128 MiB storage
-binding WebGPU guarantees, per buffer of one geometry: `nt3d.MaxGaussians(n)`
-gives the most splats with `n` SH coefficients each (699,050 at degree 3, 2.8
-million without SH), and a larger cloud is [split into slabs](../meshes/#staying-safe-with-big-or-hostile-files).
+binding WebGPU guarantees, per buffer of one geometry. The GPU stores splats
+compactly by default: axes as half floats (24 bytes a splat) and each
+spherical-harmonic channel as one byte at SPZ's quantization, the color byte
+for the first coefficient and `(b-128)/128` for the bands, which clamp to
+±1 as they do in SPZ. `PointStyle.Precise` keeps the float records the
+software renderer draws, 48-byte axes and 12 bytes a coefficient, for splats
+that must not be quantized. `nt3d.MaxGaussians(n)` gives the most compact
+splats with `n` SH coefficients each (2,796,202 at degree 3, 4,971,026 at
+degree 2, 5,592,405 at degree 0 or 1 or without SH), and
+`nt3d.MaxPreciseGaussians(n)` the most with `Precise` (699,050 at degree 3,
+2,796,202 without SH). A larger cloud is [split into slabs](../meshes/#staying-safe-with-big-or-hostile-files).
 Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
-GPU point/axis records use 68 bytes per splat, plus 12 bytes per RGB
-coefficient (192 extra bytes at degree 3). SH uses a separate buffer, keeping
-each storage buffer below WebGPU's 128 MiB baseline even at the hard count
-limit. The frame-wide sort adds 16 bytes per alpha point drawn in a frame (two
-key and two index buffers), shared by all geometries and kept between frames
-at the most a frame has needed, plus about 17 KiB a geometry for its run
-table. On an Apple M5 Max through Metal, one geometry of a million splats
-(640×360, camera inside a 10×10×2 slab) takes about 18 ms a frame, and 2.5
-million splats about 43 ms, each a whole `Render` call: sort, draw, and
+A compact splat takes 44 GPU bytes (a 20-byte point record and 24 bytes of
+axes) plus 3 bytes per RGB coefficient, 92 bytes at degree 3; a precise one
+takes 68 plus 12 per coefficient, 260 at degree 3. A million degree-3 splats
+take about 92 MB compact and 260 MB precise. SH uses a separate buffer,
+keeping each storage buffer below WebGPU's 128 MiB baseline even at the hard
+count limit. The frame-wide sort adds 16 bytes per alpha point drawn in a
+frame (two key and two index buffers), shared by all geometries and kept
+between frames at the most a frame has needed, plus about 17 KiB a geometry
+for its run table. On an Apple M5 Max through Metal, one geometry of a million
+splats (640×360, camera inside a 10×10×2 slab) takes about 18 ms a frame, and
+2.5 million splats about 43 ms, each a whole `Render` call: sort, draw, and
 reading the image back to the CPU
 (`NT3D_GPU_BENCH=1 go test -tags webgpu -run TestGPUSortMillion -v .`); these
 depend on the GPU and on how much the splats overlap. CPU scene snapshots,

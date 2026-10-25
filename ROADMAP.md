@@ -14,8 +14,8 @@ Nothing queued; the sections below are the open work.
   leaves the device; hierarchical levels that draw an interior node as one
   aggregate; per-frame rebuilds cheap enough for moving particles;
   hysteresis at range boundaries so clusters do not flicker between levels.
-- [ ] **Gaussian splatting follow-ups**: large-scene performance (level of
-  detail and budgets).
+- [ ] **Gaussian splatting follow-ups**: SOG's SH palette on the GPU; level of
+  detail and budgets.
 
 - [ ] **Shared points, lines, and boxes**, only if something needs them
   (particles don't: they are many positions, not many copies): charts
@@ -64,6 +64,12 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Compact GPU splat storage**: Gaussian splats upload as 24-byte half-float
+  axes and one byte per SH channel at SPZ's quantization (bands clamp to ±1),
+  decoded in the shader, so a geometry holds 2,796,202 degree-3 splats instead
+  of 699,050 and Niantic's SPZ samples open as one slab each;
+  `PointStyle.Precise` keeps the float records and `MaxPreciseGaussians`
+  their limit (`75fbc7c`…`8d11e63`).
 - **Global GPU splat sorting**: blended points sort on the GPU every frame
   across every alpha point geometry, to within one of 64 depth slices, with
   transparent meshes and additive points interleaved by slice; the software

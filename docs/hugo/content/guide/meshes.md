@@ -48,7 +48,7 @@ Reading is bounded, so a file can't exhaust your memory:
 - 3MF packages are limited to 4096 entries and `Options.MaxBytes` unpacked (256 MiB by default).
 - Side files, like an OBJ's materials or a glTF's buffers, are read only through `Options.Open`. `ReadFile` confines them to the model's directory; `Decode` without `Open` skips them. Missing ones become `Model.Warnings` rather than errors.
 
-An object bigger than one geometry can hold (`nt3d.MaxMeshTriangles`) is split into consecutive objects that share its name, material, and part. `AddTo` gives each its own node. A point cloud or Gaussian splat larger than one geometry holds (`nt3d.MaxPoints`, or `nt3d.MaxGaussians` for splats with SH) is split the same way, into slabs along its longest axis, by `nt3dmesh.PointPieces`; blended slabs sort together on the GPU, so they blend in order to within a depth slice where they meet.
+An object bigger than one geometry can hold (`nt3d.MaxMeshTriangles`) is split into consecutive objects that share its name, material, and part. `AddTo` gives each its own node. A point cloud or Gaussian splat larger than one geometry holds (`nt3d.MaxPoints`, or for Gaussian splats `nt3d.MaxGaussians`, or `nt3d.MaxPreciseGaussians` with `PointStyle.Precise`) is split the same way, into slabs along its longest axis, by `nt3dmesh.PointPieces`; blended slabs sort together on the GPU, so they blend in order to within a depth slice where they meet.
 
 `Object.Plain` marks vertices the file left uncolored, so a viewer can paint them its own way.
 
