@@ -64,6 +64,12 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **`v0.4.0`** (`8e1e04d`…`72c0fcc`): water, from shared Gerstner wave
+  surfaces with wakes, buoyancy, drag and planing hull forces, flow maps,
+  transmission, refraction and absorption, environment reflections, and soft
+  particles to the water demo's driven craft; then the three splat projects
+  below: SOG and compressed PLY decoding, global GPU splat sorting, and
+  compact GPU splat storage.
 - **Compact GPU splat storage**: Gaussian splats upload as 24-byte half-float
   axes and one byte per SH channel at SPZ's quantization (bands clamp to ±1),
   decoded in the shader, so a geometry holds 2,796,202 degree-3 splats instead
