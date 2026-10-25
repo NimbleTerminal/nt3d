@@ -5,10 +5,7 @@ move to Done with their commit; git history has the details.
 
 ## Next
 
-- [ ] **gloss migration onto `nt3dmesh`** — in progress in gloss. nt3d
-  supports it as needed: `Model.Keep`, `RenderSoftware`, and the 3MF
-  `Model.Summary` so far; a helper
-  turning `RenderSoftware` depth into view distance, if its outlines need one.
+Nothing queued; the sections below are the open work.
 
 ## Rendering
 
@@ -68,6 +65,11 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **gloss on `nt3dmesh`**: gloss decodes STL, OBJ, PLY, and 3MF through
+  `nt3dmesh` (gloss `aa49fd3`, `ef31abc`, `e21ce3f`) and draws its export
+  outlines from `RenderSoftware`'s normalized depth with relative thresholds,
+  so no view-distance helper was needed. nt3d's side was `Model.Keep`,
+  `RenderSoftware`, and the 3MF `Model.Summary`.
 - **`v0.3.1`**: adopted `ntpicture` `v0.1.1`, `ntcanvas` `v0.1.1`, and
   `go-booba` `v0.10.2` for the web demos (wheel events as SGR mouse buttons,
   OSC 52 clipboard from wasm) (`0350219`, `5a0a3b8`).
