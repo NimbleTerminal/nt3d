@@ -77,7 +77,7 @@ type gpuRenderer struct {
 	sorter          pointSorter
 	orderBytes      []byte
 	textures        map[textureKey]*gpuimage.Texture // Image textures, by addressing.
-	procedural      map[*Texture]*proceduralTexture
+	procedural      map[proceduralKey]*proceduralTexture
 	geometries      map[geometryKey]*gpuGeometry
 	nodes           []*gpuGeometry // By frame geometry index.
 	draws           []gpuDraw      // The frame's draws of geometry.
@@ -750,14 +750,14 @@ func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuD
 // The high four vertex bits select a shadow face. Ordinary draws use zero.
 func (g *gpuRenderer) drawTexturedOffset(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, first uint32) {
 	pass.SetBindGroup(0, d.set.binds[7], nil)
-	src := baseMap(f.Geometry[d.index].Material)
-	if t := g.procedural[src]; t != nil {
+	m := f.Geometry[d.index].Material
+	src := baseMap(m)
+	if t := g.procedural[proceduralKey{src, m.Repeat}]; t != nil {
 		pass.SetBindGroup(2, t.target.BindGroup(), nil)
 	} else {
 		pass.SetBindGroup(2, g.textures[baseKey(f.Geometry[d.index].Material, f.anisotropy())].BindGroup(), nil)
 	}
-	m := f.Geometry[d.index].Material
-	if t := g.procedural[normalMap(m)]; t != nil {
+	if t := g.procedural[proceduralKey{normalMap(m), m.NormalRepeat}]; t != nil {
 		pass.SetBindGroup(3, t.target.BindGroup(), nil)
 	} else {
 		pass.SetBindGroup(3, g.textures[textureKey{src: normalMap(m), repeat: m.NormalRepeat, aniso: f.anisotropy()}].BindGroup(), nil)

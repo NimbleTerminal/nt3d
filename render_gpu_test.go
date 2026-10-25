@@ -173,11 +173,11 @@ func TestGPUProceduralParameters(t *testing.T) {
 	if coloredPixels(img, red) < 100 {
 		t.Fatal("initial parameters missing")
 	}
-	resources := r.procedural[first]
+	resources := r.procedural[proceduralKey{src: first}]
 	check(t, s.SetTexture("terrain", second))
 	img, err = r.Render(frame(t, s))
 	check(t, err)
-	if coloredPixels(img, green) < 100 || r.procedural[second] != resources {
+	if coloredPixels(img, green) < 100 || r.procedural[proceduralKey{src: second}] != resources {
 		t.Fatal("parameter update failed to reuse resources")
 	}
 	img, err = r.Render(old)
@@ -192,7 +192,7 @@ func TestGPUProceduralParameters(t *testing.T) {
 	check(t, s.SetTexture("terrain", first))
 	_, err = r.Render(frame(t, s))
 	check(t, err)
-	if len(r.procedural) != 2 || r.procedural[first] == r.procedural[second] {
+	if len(r.procedural) != 2 || r.procedural[proceduralKey{src: first}] == r.procedural[proceduralKey{src: second}] {
 		t.Fatal("simultaneous parameter variants aliased")
 	}
 }

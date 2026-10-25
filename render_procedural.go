@@ -34,6 +34,12 @@ fn nt3d_decode(c: vec3<f32>) -> vec3<f32> {
 }
 `
 
+// Procedural targets own their sampler, so addressing is part of their identity.
+type proceduralKey struct {
+	src    *Texture
+	repeat bool
+}
+
 type proceduralTexture struct {
 	target     *ntgpuimage.Texture
 	aniso      int // The target's sampler's.
@@ -48,25 +54,26 @@ type proceduralTexture struct {
 // Called outside the render callback: NewTexture and Close use the executor.
 func (g *gpuRenderer) prepareProcedural(f Frame) error {
 	if g.procedural == nil {
-		g.procedural = make(map[*Texture]*proceduralTexture)
+		g.procedural = make(map[proceduralKey]*proceduralTexture)
 	}
-	used := make(map[*Texture]bool)
+	used := make(map[proceduralKey]bool)
 	for _, geom := range f.Geometry {
 		if mapped(geom) && len(geom.Indices) > 0 {
-			for _, src := range []*Texture{baseMap(geom.Material), normalMap(geom.Material)} {
-				if src.shader != "" {
-					used[src] = true
+			m := geom.Material
+			for _, key := range []proceduralKey{{baseMap(m), m.Repeat}, {normalMap(m), m.NormalRepeat}} {
+				if key.src.shader != "" {
+					used[key] = true
 				}
 			}
 		}
 	}
 	// Recycle only snapshots absent from this frame. Multiple parameter variants
 	// used by the same frame retain independent targets and uniforms.
-	spare := make(map[*Texture]*proceduralTexture)
-	for src, t := range g.procedural {
-		if !used[src] || t.aniso != f.anisotropy() {
-			spare[src] = t
-			delete(g.procedural, src)
+	spare := make(map[proceduralKey]*proceduralTexture)
+	for key, t := range g.procedural {
+		if !used[key] || t.aniso != f.anisotropy() {
+			spare[key] = t
+			delete(g.procedural, key)
 		}
 	}
 	defer func() {
@@ -74,24 +81,25 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 			g.releaseProcedural(t)
 		}
 	}()
-	for src := range used {
-		if g.procedural[src] != nil {
+	for key := range used {
+		src := key.src
+		if g.procedural[key] != nil {
 			continue
 		}
 		for old, t := range spare {
-			if old.data == src.data && old.shader == src.shader && old.width == src.width && old.height == src.height && t.aniso == f.anisotropy() {
-				g.procedural[src] = t
+			if old.repeat == key.repeat && old.src.data == src.data && old.src.shader == src.shader && old.src.width == src.width && old.src.height == src.height && t.aniso == f.anisotropy() {
+				g.procedural[key] = t
 				delete(spare, old)
 				break
 			}
 		}
-		if g.procedural[src] != nil {
+		if g.procedural[key] != nil {
 			continue
 		}
 		t := &proceduralTexture{aniso: f.anisotropy()}
 		var err error
 		options := ntgpuimage.TextureOptions{RenderTarget: true, SRGB: !src.data, Mipmaps: true, Anisotropy: uint16(t.aniso)}
-		if src.data {
+		if key.repeat {
 			options.AddressModeU = gputypes.AddressModeRepeat
 			options.AddressModeV = gputypes.AddressModeRepeat
 		}
@@ -139,13 +147,14 @@ func (g *gpuRenderer) prepareProcedural(f Frame) error {
 			g.releaseProcedural(t)
 			return err
 		}
-		g.procedural[src] = t
+		g.procedural[key] = t
 	}
 	return nil
 }
 
 func (g *gpuRenderer) drawProcedural(f *ntgpuimage.Frame) error {
-	for src, t := range g.procedural {
+	for key, t := range g.procedural {
+		src := key.src
 		var data [16]byte
 		for i, v := range src.parameters {
 			binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(v))

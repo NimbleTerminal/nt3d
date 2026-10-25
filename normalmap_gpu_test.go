@@ -4,6 +4,7 @@ package nt3d
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 	"strings"
@@ -138,5 +139,70 @@ func TestGPUNormalMaps(t *testing.T) {
 		if r.uploads != uploads {
 			t.Fatal(fmt.Sprint("normal map replacement uploaded geometry: ", r.uploads, uploads))
 		}
+	}
+}
+
+// Minified footprints at the right UV border must use the same addressing
+// for procedural and uploaded normals, including simultaneous shared use.
+func TestGPUProceduralNormalAddressing(t *testing.T) {
+	pixels := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for y := range 64 {
+		for x := range 64 {
+			c := color.NRGBA{218, 128, 218, 255}
+			if x < 32 {
+				c.R = 38
+			}
+			pixels.SetNRGBA(x, y, c)
+		}
+	}
+	uploaded, err := NewNormalMap(pixels)
+	check(t, err)
+	shader, err := NewShaderNormalMap(`fn nt3dTexture(uv:vec2<f32>)->vec4<f32>{return vec4<f32>(select(38.0,218.0,uv.x>=0.5)/255.0,128.0/255.0,218.0/255.0,1.0);}`, pixels)
+	check(t, err)
+	r := &gpuRenderer{}
+	defer r.Close()
+	var border [2]uint8
+	for i, repeat := range []bool{false, true} {
+		f := normalFrame(t)
+		f.Anisotropy = 1
+		f.Revision = uint64(i*2 + 1)
+		g := &f.Geometry[0]
+		g.NormalUV = make([]UV, len(g.UV))
+		for j, uv := range g.UV {
+			g.NormalUV[j] = UV{U: .99 + uv.U*.01, V: uv.V * 16}
+			g.Tangents = append(g.Tangents, Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1})
+		}
+		g.Material.NormalRepeat = repeat
+		g.Material.NormalMap = uploaded
+		want, err := r.Render(f)
+		check(t, err)
+		f.Revision++
+		g.Material.NormalMap = shader
+		got, err := r.Render(f)
+		check(t, err)
+		for _, p := range [][2]int{{40, 40}, {38, 39}, {45, 42}} {
+			// Normal-image mips renormalize vectors; shader targets use
+			// hardware color mips. Compare the constant clamped edge.
+			if !repeat && !closeRGB(at(got, p[0], p[1]), at(want, p[0], p[1]), 4) {
+				t.Fatalf("repeat=%v at %v: shader %v image %v", repeat, p, at(got, p[0], p[1]), at(want, p[0], p[1]))
+			}
+		}
+		border[i] = at(got, 40, 40).R
+		// Both sampler variants must coexist for the same shader in one frame.
+		other := *g
+		m := *g.Material
+		m.NormalRepeat = !repeat
+		other.Material = &m
+		f.Geometry = append(f.Geometry, other)
+		f.Revision++
+		_, err = r.Render(f)
+		check(t, err)
+		clamp, tile := r.procedural[proceduralKey{shader, false}], r.procedural[proceduralKey{shader, true}]
+		if clamp == nil || tile == nil || clamp == tile {
+			t.Fatal("shared normal addressing variants aliased")
+		}
+	}
+	if int(border[0])-int(border[1]) < 10 {
+		t.Fatalf("fixture did not distinguish clamp and repeat: %v", border)
 	}
 }

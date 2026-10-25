@@ -97,7 +97,7 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 		for _, key := range keys {
 			src := key.src
 			if src.shader != "" {
-				sampledLayout = g.procedural[src].target.BindGroupLayout()
+				sampledLayout = g.procedural[proceduralKey{src, key.repeat}].target.BindGroupLayout()
 				continue
 			}
 			used[key] = true
