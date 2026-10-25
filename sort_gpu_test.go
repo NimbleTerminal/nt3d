@@ -539,13 +539,19 @@ func TestGPUSlabsBlendAcrossSeam(t *testing.T) {
 	near.Points, far.Points = cloud.Points[:10000], cloud.Points[10000:]
 	// Seen from the other side (yaw π), the far slab is the near one. A
 	// culling frame trusts the bounds, so each slab draws only in the slices
-	// they span.
-	for _, cull := range []bool{false, true} {
-		for _, yaw := range []float64{0, .5, math.Pi} {
-			f := flatFrame(120, 120, near, far)
-			f.Matrix, f.Cull = alongX(yaw), cull
-			if off := gpuOff(t, r, f); off > 12 {
-				t.Errorf("yaw %g, cull %v: %d pixels differ", yaw, cull, off)
+	// they span. A slab may be Precise while the other is compact, and the
+	// frame's sort orders their records alike.
+	for _, mix := range []string{"compact", "near precise", "far precise"} {
+		n, f := near, far
+		n.PointStyle.Precise = mix == "near precise"
+		f.PointStyle.Precise = mix == "far precise"
+		for _, cull := range []bool{false, true} {
+			for _, yaw := range []float64{0, .5, math.Pi} {
+				fr := flatFrame(120, 120, n, f)
+				fr.Matrix, fr.Cull = alongX(yaw), cull
+				if off := gpuOff(t, r, fr); off > 12 {
+					t.Errorf("%s, yaw %g, cull %v: %d pixels differ", mix, yaw, cull, off)
+				}
 			}
 		}
 	}
