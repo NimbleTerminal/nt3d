@@ -135,12 +135,8 @@ func softness(shape PointShape, r2 float32) float32 {
 // pointSorter orders points back to front, reusing its buffers.
 type pointSorter struct{ keys, order, spareKeys, spareOrder []uint32 }
 
-// sort returns the indices of points, farthest from the viewer first by
-// clip z under m, which grows away from the viewer in both projections;
-// equal depths keep their order. It is a radix sort, a byte a pass, so
-// stable and linear. The slice is the sorter's until its next sort.
-func (s *pointSorter) sort(points []Point, m *nt3dmath.Mat4) []uint32 {
-	n := len(points)
+// buffers sizes the sorter's buffers for n keys.
+func (s *pointSorter) buffers(n int) {
 	grow := func(b []uint32) []uint32 {
 		if cap(b) < n {
 			return make([]uint32, n)
@@ -148,6 +144,14 @@ func (s *pointSorter) sort(points []Point, m *nt3dmath.Mat4) []uint32 {
 		return b[:n]
 	}
 	s.keys, s.order, s.spareKeys, s.spareOrder = grow(s.keys), grow(s.order), grow(s.spareKeys), grow(s.spareOrder)
+}
+
+// sort returns the indices of points, farthest from the viewer first by
+// clip z under m, which grows away from the viewer in both projections;
+// equal depths keep their order. The slice is the sorter's until its next
+// sort.
+func (s *pointSorter) sort(points []Point, m *nt3dmath.Mat4) []uint32 {
+	s.buffers(len(points))
 	for i, p := range points {
 		z := m[2]*p.Position.X + m[6]*p.Position.Y + m[10]*p.Position.Z + m[14]
 		// Float bits ordered as unsigned integers, then reversed: farthest first.
@@ -157,7 +161,25 @@ func (s *pointSorter) sort(points []Point, m *nt3dmath.Mat4) []uint32 {
 		} else {
 			b |= 1 << 31
 		}
-		s.keys[i], s.order[i] = ^b, uint32(i)
+		s.keys[i] = ^b
+	}
+	return s.radix()
+}
+
+// sortKeys returns the indices of keys in ascending order of key; equal
+// keys keep their order. The slice is the sorter's until its next sort; keys
+// are left as they were.
+func (s *pointSorter) sortKeys(keys []uint32) []uint32 {
+	s.buffers(len(keys))
+	copy(s.keys, keys)
+	return s.radix()
+}
+
+// radix sorts s.keys, filled, by a stable radix sort, a byte a pass, so
+// linear, returning the permutation.
+func (s *pointSorter) radix() []uint32 {
+	for i := range s.order {
+		s.order[i] = uint32(i)
 	}
 	keys, order, spareKeys, spareOrder := s.keys, s.order, s.spareKeys, s.spareOrder
 	for shift := 0; shift < 32; shift += 8 {

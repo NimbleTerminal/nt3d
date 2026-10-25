@@ -67,3 +67,52 @@ func TestRenderSoftwareTransparentDepth(t *testing.T) {
 		t.Fatalf("glass wrote depth: %v, floor %v", depthAt(a, 40, 40), depthAt(b, 40, 40))
 	}
 }
+
+// Alpha Gaussians blend in one order across geometries, far to near, whatever
+// the frame's order, and a transparent mesh between them takes its place.
+func TestSoftwareGlobalBlendOrder(t *testing.T) {
+	red, green, blue := color.RGBA{255, 0, 0, 128}, color.RGBA{0, 255, 0, 128}, color.RGBA{0, 0, 255, 128}
+	// One splat, far wider than the frame, so its center pixel has all its alpha.
+	splat := func(z float32, c color.RGBA) Geometry {
+		return styled(PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend},
+			Point{Position: nt3dmath.Vec3{Z: z}, Radius: 1, Color: c, GaussianAxes: [3]nt3dmath.Vec3{{X: 20}, {Y: 20}, {Z: .03}}})
+	}
+	// One geometry's points straddle another's: only a sort across geometries gets it right.
+	straddle := splat(-1, red)
+	straddle.Points = append(straddle.Points, splat(-3, blue).Points...)
+	pane := quad(3, -2.5, color.RGBA{255, 255, 255, 128}, glass, false)
+	render := func(geometry ...Geometry) color.RGBA {
+		f := depthFrame(24, 24, geometry...)
+		f.Background = color.RGBA{255, 255, 255, 255}
+		return at(softwareRender(f), 12, 12)
+	}
+	over := func(layers ...color.RGBA) color.RGBA { // Farthest first.
+		out := white
+		for _, c := range layers {
+			out = mixRGB(c, float32(c.A)/255, out)
+		}
+		return out
+	}
+	want := over(blue, green, red)
+	for name, got := range map[string]color.RGBA{
+		"nearest first":  render(splat(-1, red), splat(-2, green), splat(-3, blue)),
+		"farthest first": render(splat(-3, blue), splat(-2, green), splat(-1, red)),
+		"mixed":          render(splat(-2, green), splat(-3, blue), splat(-1, red)),
+		"straddled":      render(straddle, splat(-2, green)),
+		"straddled last": render(splat(-2, green), straddle),
+	} {
+		if !closeRGB(got, want, 4) {
+			t.Errorf("%s: %v, want %v", name, got, want)
+		}
+	}
+	// A pane between blue and green blends there, whichever geometry comes first.
+	want = over(blue, color.RGBA{255, 255, 255, 128}, green, red)
+	for name, got := range map[string]color.RGBA{
+		"pane first": render(pane, splat(-1, red), splat(-2, green), splat(-3, blue)),
+		"pane last":  render(splat(-1, red), splat(-2, green), splat(-3, blue), pane),
+	} {
+		if !closeRGB(got, want, 4) {
+			t.Errorf("%s: %v, want %v", name, got, want)
+		}
+	}
+}

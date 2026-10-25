@@ -334,5 +334,7 @@ func validateFrame(f Frame) error {
 			return fmt.Errorf("nt3d: invalid instance transform")
 		}
 	}
-	return nil
+	// Alpha points order across geometries, one slot each.
+	_, err := f.planBlend(f.drawn(1))
+	return err
 }

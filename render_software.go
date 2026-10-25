@@ -458,128 +458,130 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		}
 		return max(1, (n+limit-1)/limit)
 	}
-	// drawPoints draws a geometry's points, m taking them to clip space:
-	// discs of their radius on screen, covering the pixels whose centers
-	// they hold, as the GPU's quads do. One whose center is off screen may
-	// still hang into view; only depth clips it. Opaque points draw with the
-	// opaque pass; blended ones after it, alpha points farthest first.
-	// Interactive frames draw every step-th point, and a blended one stands
-	// for step of them, its alpha multiplied (to 1), so a sampled cloud
-	// keeps about its brightness.
-	drawPoints := func(g *Geometry, inst Instance, m *nt3dmath.Mat4) {
+	// pointStep is how many points a geometry's drawing steps over: interactive
+	// frames draw every step-th point, and a blended one stands for step of
+	// them, its alpha multiplied (to 1), so a sampled cloud keeps about its
+	// brightness. Gaussians are never sampled.
+	pointStep := func(g *Geometry) int {
+		if g.PointStyle.Shape == GaussianPoint {
+			return 1
+		}
+		return sampled(len(g.Points), 10000)
+	}
+	// drawPoint draws point i of a geometry, standing for step points, m
+	// taking them to clip space and shFromWorld its spherical harmonics'
+	// directions from world: a disc of its radius on screen, covering the
+	// pixels whose centers it holds, as the GPU's quad does. One whose center
+	// is off screen may still hang into view; only depth clips it.
+	drawPoint := func(g *Geometry, inst Instance, m *nt3dmath.Mat4, i, step int, shFromWorld nt3dmath.Mat4) {
 		style := g.PointStyle
-		inverse, _ := inst.World.InverseAffine()
-		shFromWorld := gaussianSHMatrix(g).Mul(inverse)
-		step := sampled(len(g.Points), 10000)
+		p := g.Points[i]
+		cx, cy, cz, cw := m.Transform(p.Position)
+		if cw <= 0 || cz < 0 || cz > cw {
+			return
+		}
+		x, y, z := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5, cz/cw
+		radius := f.pointRadius(style, p.Radius, cw, px)
+		var ellipse gaussianEllipse
 		if style.Shape == GaussianPoint {
-			step = 1
+			ellipse = projectGaussian(p, m, f.Width, f.Height, px)
+			radius = ellipse.radius
 		}
-		var order []uint32
-		if style.Blend == AlphaBlend {
-			order = new(pointSorter).sort(g.Points, m)
+		distance := f.eyeDistance(inst.World.Point(p.Position))
+		c := p.Color
+		rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
+		if len(g.GaussianSH) > 0 {
+			rgb = f.gaussianColor(g, i, inst.World, shFromWorld)
+			for k := range rgb {
+				rgb[k] *= 255
+			}
 		}
-		for k := 0; k < len(g.Points); k += step {
-			i := k
-			if order != nil {
-				i = int(order[k])
-			}
-			p := g.Points[i]
-			cx, cy, cz, cw := m.Transform(p.Position)
-			if cw <= 0 || cz < 0 || cz > cw {
-				continue
-			}
-			x, y, z := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5, cz/cw
-			radius := f.pointRadius(style, p.Radius, cw, px)
-			var ellipse gaussianEllipse
-			if style.Shape == GaussianPoint {
-				ellipse = projectGaussian(p, m, f.Width, f.Height, px)
-				radius = ellipse.radius
-			}
-			distance := f.eyeDistance(inst.World.Point(p.Position))
-			c := p.Color
-			rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
-			if len(g.GaussianSH) > 0 {
-				rgb = f.gaussianColor(g, i, inst.World, shFromWorld)
-				for k := range rgb {
-					rgb[k] *= 255
+		alpha := min(1, float32(c.A)/255*float32(step))
+		if style.Shape == GaussianPoint {
+			alpha = min(.99, alpha)
+		}
+		if style.Texture == nil {
+			switch style.Blend {
+			case OpaqueBlend:
+				c = fogColor(c, distance)
+			case AlphaBlend:
+				if fogged {
+					fogRGB(&rgb, distance)
 				}
+			case AdditiveBlend:
+				// Fog fades an additive point out, rather than toward its color.
+				alpha *= 1 - f.Fog.amount(distance)
 			}
-			alpha := min(1, float32(c.A)/255*float32(step))
-			if style.Shape == GaussianPoint {
-				alpha = min(.99, alpha)
-			}
-			if style.Texture == nil {
+		}
+		loX, hiX := max(0, int(math.Floor(float64(x-radius)))), min(f.Width-1, int(math.Ceil(float64(x+radius))))
+		loY, hiY := max(0, int(math.Floor(float64(y-radius)))), min(f.Height-1, int(math.Ceil(float64(y+radius))))
+		for sy := loY; sy <= hiY; sy++ {
+			for sx := loX; sx <= hiX; sx++ {
+				dx, dy := float32(sx)+.5-x, float32(sy)+.5-y
+				pixelAlpha := alpha
+				if style.Blend != OpaqueBlend && style.SoftDistance > 0 && depth[sy*f.Width+sx] < 1 {
+					pixelAlpha *= min(1, sceneGap(inverseScene, float32(sx)+.5, float32(sy)+.5, z, depth[sy*f.Width+sx], f.Width, f.Height)/style.SoftDistance)
+				}
+				if style.Texture != nil {
+					if dx < -radius || dx >= radius || dy < -radius || dy >= radius {
+						continue
+					}
+					tex := style.spriteSample(p, (dx/radius+1)*.5, (dy/radius+1)*.5)
+					if style.Blend == OpaqueBlend && tex[3] < .5 {
+						continue
+					}
+					tinted := rgb
+					for k := range tinted {
+						v := tex[k]
+						if !linear {
+							v = float32(encodeSRGB(float64(v)))
+						}
+						tinted[k] *= v
+					}
+					opacity := pixelAlpha * tex[3]
+					if style.Blend == AdditiveBlend {
+						add(sx, sy, z, tinted, opacity*(1-f.Fog.amount(distance)))
+					} else {
+						if fogged {
+							fogRGB(&tinted, distance)
+						}
+						if style.Blend == AlphaBlend {
+							blend(sx, sy, z, tinted, opacity)
+						} else {
+							put(sx, sy, z, color.RGBA{toPixel(tinted[0]), toPixel(tinted[1]), toPixel(tinted[2]), 255})
+						}
+					}
+					continue
+				}
+				d2 := dx*dx + dy*dy
+				if style.Shape == GaussianPoint {
+					u := dx / ellipse.a
+					v := (dy - ellipse.b*u) / ellipse.c
+					d2 = (u*u + v*v) * radius * radius / 9
+				}
+				if d2 > radius*radius {
+					continue
+				}
 				switch style.Blend {
 				case OpaqueBlend:
-					c = fogColor(c, distance)
+					put(sx, sy, z, c)
 				case AlphaBlend:
-					if fogged {
-						fogRGB(&rgb, distance)
-					}
-				case AdditiveBlend:
-					// Fog fades an additive point out, rather than toward its color.
-					alpha *= 1 - f.Fog.amount(distance)
+					blend(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
+				default:
+					add(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
 				}
 			}
-			loX, hiX := max(0, int(math.Floor(float64(x-radius)))), min(f.Width-1, int(math.Ceil(float64(x+radius))))
-			loY, hiY := max(0, int(math.Floor(float64(y-radius)))), min(f.Height-1, int(math.Ceil(float64(y+radius))))
-			for sy := loY; sy <= hiY; sy++ {
-				for sx := loX; sx <= hiX; sx++ {
-					dx, dy := float32(sx)+.5-x, float32(sy)+.5-y
-					pixelAlpha := alpha
-					if style.Blend != OpaqueBlend && style.SoftDistance > 0 && depth[sy*f.Width+sx] < 1 {
-						pixelAlpha *= min(1, sceneGap(inverseScene, float32(sx)+.5, float32(sy)+.5, z, depth[sy*f.Width+sx], f.Width, f.Height)/style.SoftDistance)
-					}
-					if style.Texture != nil {
-						if dx < -radius || dx >= radius || dy < -radius || dy >= radius {
-							continue
-						}
-						tex := style.spriteSample(p, (dx/radius+1)*.5, (dy/radius+1)*.5)
-						if style.Blend == OpaqueBlend && tex[3] < .5 {
-							continue
-						}
-						tinted := rgb
-						for k := range tinted {
-							v := tex[k]
-							if !linear {
-								v = float32(encodeSRGB(float64(v)))
-							}
-							tinted[k] *= v
-						}
-						opacity := pixelAlpha * tex[3]
-						if style.Blend == AdditiveBlend {
-							add(sx, sy, z, tinted, opacity*(1-f.Fog.amount(distance)))
-						} else {
-							if fogged {
-								fogRGB(&tinted, distance)
-							}
-							if style.Blend == AlphaBlend {
-								blend(sx, sy, z, tinted, opacity)
-							} else {
-								put(sx, sy, z, color.RGBA{toPixel(tinted[0]), toPixel(tinted[1]), toPixel(tinted[2]), 255})
-							}
-						}
-						continue
-					}
-					d2 := dx*dx + dy*dy
-					if style.Shape == GaussianPoint {
-						u := dx / ellipse.a
-						v := (dy - ellipse.b*u) / ellipse.c
-						d2 = (u*u + v*v) * radius * radius / 9
-					}
-					if d2 > radius*radius {
-						continue
-					}
-					switch style.Blend {
-					case OpaqueBlend:
-						put(sx, sy, z, c)
-					case AlphaBlend:
-						blend(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
-					default:
-						add(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
-					}
-				}
-			}
+		}
+	}
+	// drawPointsUnsorted draws a geometry's points in their own order: opaque
+	// ones with the opaque pass, additive ones where the blended pass puts
+	// their geometry.
+	drawPointsUnsorted := func(g *Geometry, inst Instance, m *nt3dmath.Mat4) {
+		inverse, _ := inst.World.InverseAffine()
+		shFromWorld := gaussianSHMatrix(g).Mul(inverse)
+		step := pointStep(g)
+		for i := 0; i < len(g.Points); i += step {
+			drawPoint(g, inst, m, i, step, shFromWorld)
 		}
 	}
 	for gi, g := range f.Geometry {
@@ -593,7 +595,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		inverse, _ := inst.World.InverseAffine()
 		normals := inverse.Transpose()
 		if !blendedPoints(&f.Geometry[gi]) {
-			drawPoints(&f.Geometry[gi], inst, &local.Matrix)
+			drawPointsUnsorted(&f.Geometry[gi], inst, &local.Matrix)
 		}
 		if !transparent(&f.Geometry[gi]) && !transmitting(&f.Geometry[gi]) {
 			for i := 0; i+2 < len(g.Indices); i += 3 {
@@ -742,23 +744,59 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			}
 		}
 	}
-	// Transparent triangles and blended points blend over everything
-	// opaque, farthest geometry first: its triangles, then its points.
-	for _, gi := range f.blendOrder(drawn) {
+	// Blended work goes over everything opaque, far to near in depth slices:
+	// each slice's transparent meshes and additive points, then its alpha
+	// points, ordered across geometries by the plan's keys, as the GPU does.
+	// validateFrame refuses a frame with too many alpha geometries; the plan
+	// holds them all regardless.
+	plan, _ := f.planBlend(drawn)
+	type slotDraw struct {
+		g           *Geometry
+		inst        Instance
+		m           nt3dmath.Mat4
+		shFromWorld nt3dmath.Mat4
+		step        int
+	}
+	slots := make([]slotDraw, len(plan.slots))
+	keys, indices := make([]uint32, 0, plan.points), make([]uint32, 0, plan.points)
+	for slot, gi := range plan.slots {
 		g, inst := &f.Geometry[gi], instance(f, gi)
 		m := f.Matrix.Mul(inst.World)
-		if transparent(g) {
-			drawOutline(gi, outlineTransparent)
-			inverse, _ := inst.World.InverseAffine()
-			normals := inverse.Transpose()
-			for _, side := range []int{backFaces, frontFaces} {
-				for i := 0; i+2 < len(g.Indices); i += 3 {
-					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{})
+		inverse, _ := inst.World.InverseAffine()
+		slots[slot] = slotDraw{g, inst, m, gaussianSHMatrix(g).Mul(inverse), pointStep(g)}
+		for i := 0; i < len(g.Points); i += slots[slot].step {
+			_, _, z, w := m.Transform(g.Points[i].Position)
+			if w <= 0 || z < 0 || z > w {
+				continue
+			}
+			keys, indices = append(keys, plan.key(slot, z)), append(indices, uint32(i))
+		}
+	}
+	var sorter pointSorter
+	order := sorter.sortKeys(keys)
+	next := 0 // The first sorted point not yet drawn.
+	for slice, list := range plan.bySlice {
+		for _, gi := range list {
+			g, inst := &f.Geometry[gi], instance(f, gi)
+			m := f.Matrix.Mul(inst.World)
+			if transparent(g) {
+				drawOutline(gi, outlineTransparent)
+				inverse, _ := inst.World.InverseAffine()
+				normals := inverse.Transpose()
+				for _, side := range []int{backFaces, frontFaces} {
+					for i := 0; i+2 < len(g.Indices); i += 3 {
+						tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{})
+					}
 				}
 			}
+			if blendedPoints(g) && g.PointStyle.Blend == AdditiveBlend {
+				drawPointsUnsorted(g, inst, &m)
+			}
 		}
-		if blendedPoints(g) {
-			drawPoints(g, inst, &m)
+		for ; next < len(order) && int(keys[order[next]]>>22) == slice; next++ {
+			k := keys[order[next]]
+			s := &slots[k>>10&(maxBlendSlots-1)]
+			drawPoint(s.g, s.inst, &s.m, int(indices[order[next]]), s.step, s.shFromWorld)
 		}
 	}
 	drawOverlays(img, f)
