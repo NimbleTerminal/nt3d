@@ -48,7 +48,7 @@ type meta struct {
 
 // shN describes the higher-order spherical harmonics.
 type shN struct {
-	count, bands      int // v1 only: bands is 0 until the centroid image says, and count may be too
+	count, bands      int // 0 until the centroid image says, when meta.json did not
 	values            table
 	centroids, labels string
 }
@@ -152,20 +152,17 @@ func parseMeta(data []byte) (*meta, error) {
 	// shN
 	if raw.ShN != nil {
 		s := &shN{bands: raw.ShN.Bands}
-		// The original v1 exporter wrote no count: every palette slot is valid,
-		// which loadImages fills in from the centroid image's height.
+		// The original v1 exporter, and splat-transform's early v2 writers,
+		// wrote no count or bands: every palette slot is valid, and
+		// loadImages fills both in from the centroid image's size.
 		if raw.ShN.Count != nil {
 			s.count = *raw.ShN.Count
 			if s.count < 1 {
 				return nil, metaErr("shN.count %d is not positive", s.count)
 			}
-		} else if v2 {
-			return nil, metaErr("shN.count is missing")
 		}
-		if s.bands < 1 || s.bands > 3 {
-			if v2 || s.bands != 0 {
-				return nil, metaErr("shN.bands %d is not 1, 2, or 3", s.bands)
-			}
+		if s.bands != 0 && (s.bands < 1 || s.bands > 3) {
+			return nil, metaErr("shN.bands %d is not 1, 2, or 3", s.bands)
 		}
 		files, err = fileNames("shN", raw.ShN.Files, 2)
 		if err != nil {

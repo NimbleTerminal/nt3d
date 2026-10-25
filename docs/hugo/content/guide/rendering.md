@@ -174,9 +174,9 @@ SOG's means are 16-bit values in a log domain; scales and DC color are
 256-entry codebooks; quaternions use the "smallest three" packing; opacity is
 sh0's alpha. Higher-order SH is a palette of up to 64k centroid sets, with a
 16-bit label per splat, so SH from a SOG is approximate by construction.
-Version 1 uses linear min/max ranges in place of the codebooks, and its
-files may omit the palette size, in which case every centroid the image holds
-counts. A compressed PLY is chunks of 256 splats that bound their positions, scales, and
+Version 1 uses linear min/max ranges in place of the codebooks. Early
+exports of either version omit the palette size and band count, which the
+centroid image then supplies. A compressed PLY is chunks of 256 splats that bound their positions, scales, and
 optionally colors; each splat packs an 11-10-11 bit position and scale, a
 2-10-10-10 rotation, and 8-bit color and opacity, with optional 8-bit SH in an
 `sh` element. All of it becomes the same points and `GaussianSH` as the PLY

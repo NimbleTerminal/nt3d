@@ -232,6 +232,23 @@ func TestDecodeV1NoShNCount(t *testing.T) {
 	}
 }
 
+func TestDecodeV2NoShNCountOrBands(t *testing.T) {
+	v2 := ring(t)
+	want := decodeBundle(t, v2)
+	got := decodeBundle(t, editMeta(t, v2, func(m map[string]any) {
+		shn := m["shN"].(map[string]any)
+		for _, k := range []string{"count", "bands"} {
+			if _, ok := shn[k]; !ok {
+				t.Fatalf("fixture's shN has no %s", k)
+			}
+			delete(shn, k)
+		}
+	}))
+	if !reflect.DeepEqual(got.Points, want.Points) || !reflect.DeepEqual(got.GaussianSH, want.GaussianSH) {
+		t.Fatal("v2 without shN.count and shN.bands decodes differently from the fixture")
+	}
+}
+
 func TestDecodeRejects(t *testing.T) {
 	bundle := ring(t)
 	swapped := func(m map[string]any) {

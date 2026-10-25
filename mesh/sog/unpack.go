@@ -83,7 +83,7 @@ func loadImages(m *meta, open func(name string) ([]byte, error), b *budget) (*im
 			return nil, metaErr("%s width %d is not %d for %d bands", names[5], c.Width, 64*coefficients[m.shN.bands], m.shN.bands)
 		}
 		if m.shN.count == 0 {
-			m.shN.count = 64 * c.Height // v1 without a count: every slot is valid
+			m.shN.count = 64 * c.Height // No count in meta.json: every slot is valid.
 		}
 		if c.Height*64 < m.shN.count {
 			return nil, metaErr("%s height %d holds fewer than %d centroids", names[5], c.Height, m.shN.count)

@@ -18,6 +18,7 @@ import (
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
+	"nimbleterminal.dev/nt3d/sh"
 )
 
 func read(t *testing.T, name string) []byte {
@@ -180,12 +181,13 @@ func TestSample(t *testing.T) {
 	if name == "" {
 		t.Skip("NT3D_SOG_SAMPLE not set")
 	}
-	m, err := Decode(read(t, name), nil)
+	// ReadFile takes a .sog bundle or a folder's meta.json alike.
+	m, err := nt3dmesh.ReadFile(name, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Objects) == 0 {
-		t.Fatal("no objects")
+	if m.Format != SOG || len(m.Objects) == 0 {
+		t.Fatalf("format %q, %d objects", m.Format, len(m.Objects))
 	}
 	points, sh := 0, 0
 	for _, o := range m.Objects {
@@ -196,9 +198,11 @@ func TestSample(t *testing.T) {
 		points += len(g.Points)
 		sh += len(g.GaussianSH)
 	}
-	if sh != 16*points {
+	per := sh / max(1, points)
+	if sh != per*points || nt3dsh.Degree(per) < 0 {
 		t.Fatalf("%d SH for %d points", sh, points)
 	}
+	t.Logf("%d objects, %d splats, %d SH coefficients each", len(m.Objects), points, per)
 }
 
 // unzip writes the bundle's files into a new directory, as an unbundled
