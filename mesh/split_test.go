@@ -124,6 +124,25 @@ func TestPointPieces(t *testing.T) {
 	}
 }
 
+// A cloud splits at the compact limit by default and at the Precise limit
+// with PointStyle.Precise.
+func TestPointPiecesPrecise(t *testing.T) {
+	defer func(c, p func(int) int) { maxGaussians, maxPreciseGaussians = c, p }(maxGaussians, maxPreciseGaussians)
+	maxGaussians = func(int) int { return 4 }
+	maxPreciseGaussians = func(int) int { return 2 }
+	g := nt3d.Geometry{PointStyle: nt3d.PointStyle{Shape: nt3d.GaussianPoint, Units: nt3d.WorldUnits, Blend: nt3d.AlphaBlend}}
+	for i := range 5 {
+		g.Points = append(g.Points, nt3d.Point{Position: nt3dmath.Vec3{X: float32(i)}, Radius: 1, GaussianAxes: [3]nt3dmath.Vec3{{X: 1}, {Y: 1}, {Z: 1}}})
+	}
+	if n := len(PointPieces(Object{Geometry: g})); n != 2 {
+		t.Fatalf("compact: %d pieces, want 2", n)
+	}
+	g.PointStyle.Precise = true
+	if n := len(PointPieces(Object{Geometry: g})); n != 3 {
+		t.Fatalf("precise: %d pieces, want 3", n)
+	}
+}
+
 // Gaussian PLY and point-cloud PLY over the capacity decode as pieces
 // instead of failing.
 func TestGaussianPLYSplits(t *testing.T) {

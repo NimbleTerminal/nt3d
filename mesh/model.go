@@ -70,17 +70,20 @@ const DefaultMaxTriangles = 4 << 20
 // pieceTriangles is the most triangles one Object holds. Tests lower it.
 var pieceTriangles = nt3d.MaxMeshTriangles
 
-// piecePoints and maxGaussians are the most points, and Gaussian splats
-// with a count of SH coefficients each, one Object holds. Tests lower them.
+// piecePoints, maxGaussians, and maxPreciseGaussians are the most points, and
+// Gaussian splats with a count of SH coefficients each (compact, or Precise),
+// one Object holds. Tests lower them.
 var (
-	piecePoints  = nt3d.MaxPoints
-	maxGaussians = nt3d.MaxGaussians
+	piecePoints         = nt3d.MaxPoints
+	maxGaussians        = nt3d.MaxGaussians
+	maxPreciseGaussians = nt3d.MaxPreciseGaussians
 )
 
 // PointPieces splits a point cloud larger than one geometry holds (see
-// nt3d.MaxPoints and nt3d.MaxGaussians) into consecutive Objects with the
-// object's Name, Material, and Part, each with its own Points, GaussianSH,
-// and Bounds, sharing the rest. The pieces are slabs along the cloud's
+// nt3d.MaxPoints, nt3d.MaxGaussians, and nt3d.MaxPreciseGaussians, by the
+// geometry's PointStyle.Precise) into consecutive Objects with the object's
+// Name, Material, and Part, each with its own Points, GaussianSH, and
+// Bounds, sharing the rest. The pieces are slabs along the cloud's
 // longest axis: blended slabs sort together with every other alpha point
 // geometry to within one of 64 depth slices, so a cloud split into slabs
 // blends in order where the pieces meet. A cloud that fits is returned as
@@ -94,6 +97,9 @@ func PointPieces(o Object) []Object {
 	}
 	if g.PointStyle.Shape == nt3d.GaussianPoint {
 		most = maxGaussians(per)
+		if g.PointStyle.Precise {
+			most = maxPreciseGaussians(per)
+		}
 	}
 	if most <= 0 || len(g.Points) <= most {
 		return []Object{o}

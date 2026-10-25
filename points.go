@@ -27,9 +27,15 @@ type PointStyle struct {
 	Frame uint32
 	// SHDCOnly disables directional coefficients without discarding them.
 	SHDCOnly bool
-	Shape    PointShape
-	Units    PointUnits
-	Blend    PointBlend
+	// Precise keeps a Gaussian geometry's float GPU records: 48-byte axes and
+	// float spherical harmonics, as the software renderer draws them. Without
+	// it, the default, the GPU stores half-float axes and byte coefficients at
+	// SPZ's precision, so a geometry holds about four times the splats at
+	// degree 3; see MaxGaussians.
+	Precise bool
+	Shape   PointShape
+	Units   PointUnits
+	Blend   PointBlend
 }
 
 // PointShape is the shape of a point's disc.
