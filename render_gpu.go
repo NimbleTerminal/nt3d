@@ -84,6 +84,8 @@ type gpuRenderer struct {
 	nodes           []*gpuGeometry // By frame geometry index.
 	draws           []gpuDraw      // The frame's draws of geometry.
 	blendDraw       map[int]int    // A transparent frame geometry's draw.
+	sortedRuns      []sortedRun    // The frame's alpha point slots, resolved once, in plan order.
+	runOffsets      []uint32       // Each slice's run offset for each slot, one dynamic offset apiece.
 	textureUploads  uint64
 	mu              sync.Mutex
 	closed          bool
@@ -400,6 +402,9 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		// The sort's buffers grow before the point bind groups that hold
 		// them are made, and it sorts once the points are on the device.
 		if g.plan.points > 0 {
+			if err := g.initSort(dev); err != nil {
+				return err
+			}
 			if err := g.sort.ensure(dev, g.plan.points, len(g.plan.slots)); err != nil {
 				return err
 			}
@@ -538,12 +543,17 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot bool, encoder *wgpu.CommandEnc
 				// Then blend them, far to near in depth slices: each slice's
 				// transparent meshes and additive points, then its run of every
 				// alpha geometry's sorted points.
+				g.resolveSortedRuns(f)
+				var last *wgpu.RenderPipeline
 				for slice := range blendSlices {
-					for _, index := range g.plan.bySlice[slice] {
-						g.drawBlended(pass, f, g.draws[g.blendDraw[index]])
+					if len(g.plan.bySlice[slice]) > 0 {
+						for _, index := range g.plan.bySlice[slice] {
+							g.drawBlended(pass, f, g.draws[g.blendDraw[index]])
+						}
+						last = nil
 					}
-					for slot, index := range g.plan.slots {
-						g.drawSortedRun(pass, f, g.draws[g.blendDraw[index]], slice, slot)
+					for slot := range g.sortedRuns {
+						last = g.drawSortedRun(pass, g.sortedRuns[slot], slice, slot, last)
 					}
 				}
 			}
@@ -607,26 +617,65 @@ func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 			return
 		}
 		pass.SetPipeline(g.pointBlends[1][geom.PointStyle.Shape])
-		pass.SetBindGroup(0, d.set.binds[0], []uint32{0})
+		pass.SetBindGroup(0, d.set.binds[0], noRunOffset)
 		pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
 	}
 }
 
-// drawSortedRun draws an alpha point geometry's run of the sorted points in
-// a slice, as many as the sort counted there.
-func (g *gpuRenderer) drawSortedRun(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, slice, slot int) {
-	if d.geom.batches[0].count == 0 {
-		return
+// sortedRun is an alpha point geometry's draw resolved for the slice loop:
+// its pipeline and, for sprites, texture bind group. A run with no pipeline
+// has no points.
+type sortedRun struct {
+	d        gpuDraw
+	pipeline *wgpu.RenderPipeline
+	texture  *wgpu.BindGroup
+}
+
+// resolveSortedRuns resolves each of the plan's alpha slots once, and the
+// dynamic offset of each of its runs. The offsets live in a table, one
+// element per draw, since some backends hold the slice a draw is given
+// until the pass is encoded.
+func (g *gpuRenderer) resolveSortedRuns(f Frame) {
+	g.sortedRuns = g.sortedRuns[:0]
+	for _, index := range g.plan.slots {
+		d := g.draws[g.blendDraw[index]]
+		run := sortedRun{d: d}
+		if d.geom.batches[0].count > 0 {
+			style := f.Geometry[d.index].PointStyle
+			if style.Texture != nil {
+				run.pipeline = g.spritePipelines[style.Blend]
+				run.texture = g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].BindGroup()
+			} else {
+				run.pipeline = g.pointBlends[0][style.Shape]
+			}
+		}
+		g.sortedRuns = append(g.sortedRuns, run)
 	}
-	style := f.Geometry[d.index].PointStyle
-	offset := g.sort.runOffset(slice, slot)
-	if style.Texture != nil {
-		g.bindSprite(pass, f, d, offset)
-	} else {
-		pass.SetPipeline(g.pointBlends[0][style.Shape])
-		pass.SetBindGroup(0, d.set.binds[0], []uint32{offset})
+	g.runOffsets = g.runOffsets[:0]
+	for slice := range blendSlices {
+		for slot := range g.sortedRuns {
+			g.runOffsets = append(g.runOffsets, g.sort.runOffset(slice, slot))
+		}
+	}
+}
+
+// drawSortedRun draws a slot's run of the sorted points in a slice, as many
+// as the sort counted there. It sets the pipeline only when it is not last,
+// the pipeline of the draw before, and returns the pipeline now set.
+func (g *gpuRenderer) drawSortedRun(pass *wgpu.RenderPassEncoder, run sortedRun, slice, slot int, last *wgpu.RenderPipeline) *wgpu.RenderPipeline {
+	if run.pipeline == nil {
+		return last
+	}
+	if run.pipeline != last {
+		pass.SetPipeline(run.pipeline)
+	}
+	i := slice*len(g.sortedRuns) + slot
+	pass.SetBindGroup(0, run.d.set.binds[0], g.runOffsets[i:i+1:i+1])
+	if run.texture != nil {
+		pass.SetBindGroup(2, run.texture, nil)
 	}
 	pass.DrawIndirect(g.sort.args, g.sort.argsOffset(slice, slot))
+	return run.pipeline
 }
 
 // blendPipeline draws a transparent mesh's back faces (side 0) or front faces
@@ -822,7 +871,7 @@ func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBat
 	}
 	pass.SetPipeline(g.pipelines[kind])
 	if kind == 0 {
-		pass.SetBindGroup(0, bind, []uint32{0}) // Opaque points: the empty run.
+		pass.SetBindGroup(0, bind, noRunOffset) // Opaque points: the empty run.
 	} else {
 		pass.SetBindGroup(0, bind, nil)
 	}

@@ -185,17 +185,16 @@ func (g *gpuRenderer) setupSprites(dev *wgpu.Device, sampled *wgpu.BindGroupLayo
 	return err
 }
 
-// drawSprite draws a geometry's sprites unsorted: opaque or additive.
+// drawSprite draws a geometry's sprites unsorted: opaque or additive. Its
+// points bind with the empty run at offset 0 of the run table.
 func (g *gpuRenderer) drawSprite(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
-	g.bindSprite(pass, f, d, 0)
+	style := f.Geometry[d.index].PointStyle
+	pass.SetPipeline(g.spritePipelines[style.Blend])
+	pass.SetBindGroup(0, d.set.binds[0], noRunOffset)
+	pass.SetBindGroup(2, g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].BindGroup(), nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
 }
 
-// bindSprite sets a geometry's sprite pipeline, its points bound with the
-// run at offset in the run table, and its texture.
-func (g *gpuRenderer) bindSprite(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, offset uint32) {
-	style := f.Geometry[d.index].PointStyle
-	pass.SetPipeline(g.spritePipelines[style.Blend])
-	pass.SetBindGroup(0, d.set.binds[0], []uint32{offset})
-	pass.SetBindGroup(2, g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].BindGroup(), nil)
-}
+// noRunOffset is the dynamic offset of unsorted points' stand-in run. It is
+// shared and never written.
+var noRunOffset = []uint32{0}
