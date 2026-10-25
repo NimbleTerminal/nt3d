@@ -52,6 +52,7 @@ type gpuRenderer struct {
 	environmentBind        *wgpu.BindGroup
 	skinPipeline           *wgpu.ComputePipeline
 	skinLayout             *wgpu.BindGroupLayout
+	sort                   gpuSort // The frame-wide blended point sort.
 	dropPipeline           *wgpu.RenderPipeline
 	outlinePipelines       [5]*wgpu.RenderPipeline
 	shadowLayout           *wgpu.BindGroupLayout
@@ -641,6 +642,7 @@ func (g *gpuRenderer) Close() error {
 			g.skinLayout.Release()
 			g.skinLayout = nil
 		}
+		g.sort.release()
 		for key, node := range g.geometries {
 			node.release()
 			delete(g.geometries, key)
