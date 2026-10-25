@@ -81,21 +81,26 @@ func (s *WaveSurface) AtWorld(x, y, time float64) (WaveSample, error) {
 		return WaveSample{}, fmt.Errorf("nt3d: non-finite wave query")
 	}
 	u, v := x, y
-	for range 64 {
-		p, dx, dy, velocity := s.evaluate(u, v, time)
+	p, dx, dy, velocity := s.evaluate(u, v, time)
+	// The last iteration's step is checked like the others, so a solve that
+	// lands within tolerance on its final step still succeeds.
+	for iteration := 0; ; iteration++ {
 		rx, ry := p[0]-x, p[1]-y
 		err := math.Hypot(rx, ry)
 		if err <= 1e-7 {
 			return makeWaveSample(p, dx, dy, velocity)
+		}
+		if iteration == 64 {
+			break
 		}
 		det := dx[0]*dy[1] - dy[0]*dx[1]
 		sx, sy := (dy[1]*rx-dy[0]*ry)/det, (dx[0]*ry-dx[1]*rx)/det
 		accepted := false
 		for step := 1.0; step >= 1.0/4096; step *= .5 {
 			nu, nv := u-step*sx, v-step*sy
-			np, _, _, _ := s.evaluate(nu, nv, time)
+			np, ndx, ndy, nvelocity := s.evaluate(nu, nv, time)
 			if math.Hypot(np[0]-x, np[1]-y) < err {
-				u, v, accepted = nu, nv, true
+				u, v, p, dx, dy, velocity, accepted = nu, nv, np, ndx, ndy, nvelocity, true
 				break
 			}
 		}

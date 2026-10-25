@@ -120,12 +120,13 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
   if o.absorption.w>0.0 && u.viewport.w>0.5 {
    var view=-u.forward.xyz;
    if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
-   let reflected=reflect(-view,n);
+   let rn=select(n,-n,dot(n,view)<0.0);
+   let reflected=reflect(-view,rn);
    let half=0.5/f32(textureDimensions(reflectionMap).y);
    let uv=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,clamp(acos(clamp(reflected.z,-1.0,1.0))/3.14159265359,half,1.0-half));
    var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
    if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
-   let fresnel=o.absorption.w+(1.0-o.absorption.w)*pow(1.0-clamp(dot(n,view),0.0,1.0),5.0);
+   let fresnel=o.absorption.w+(1.0-o.absorption.w)*pow(1.0-clamp(dot(rn,view),0.0,1.0),5.0);
    c=mix(c,sky*u.ground.w,fresnel);
   }
   if o.spec.x>0.0 {

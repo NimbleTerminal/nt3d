@@ -17,6 +17,12 @@ func TestEnvironmentReflectionFresnel(t *testing.T) {
 		if math.Abs(float64(face[0])-5.1) > .001 || math.Abs(float64(edge[0])-255) > .001 {
 			t.Fatal(face, edge)
 		}
+		// A back-facing normal shades like its front: never a full mirror.
+		var back [3]float32
+		reflectEnvironment(&back, e, .02, 1, nt3dmath.Vec3{Z: -1}, nt3dmath.Vec3{Z: 1}, linear)
+		if back != face {
+			t.Fatal("back face mirrored the sky", back, face)
+		}
 	}
 	f := normalFrame(t)
 	f.Forward = nt3dmath.Vec3{Z: -1}

@@ -332,6 +332,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	ub = append(ub, floats(rig.ground[0], rig.ground[1], rig.ground[2], environmentStrength)...)
 	ub = append(ub, floats(lights[:]...)...)
 	drawn := f.drawn(1)
+	snapshot := needsSceneSnapshot(f, drawn)
 	size := shadowMapSize
 	if i := shadowCaster(f.Lighting); i >= 0 && f.Lighting.Lights[i].Kind == PointLight {
 		size = pointShadowMapSize
@@ -367,7 +368,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 			return err
 		}
 		dev := frame.Device
-		if needsSceneSnapshot(f) {
+		if snapshot {
 			if err := g.prepareSnapshot(dev, g.target.w, g.target.h); err != nil {
 				return err
 			}
@@ -405,7 +406,9 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		// averages down and encodes. Pixel sizes stay the frame's, through
 		// the uniform viewport, so points and lines keep their size when
 		// supersampled.
-		return g.renderScene(frame, f, func(color, depth *wgpu.TextureView) error { return g.drawScene(f, drawn, frame.Encoder, color, depth) })
+		return g.renderScene(frame, f, func(color, depth *wgpu.TextureView) error {
+			return g.drawScene(f, drawn, snapshot, frame.Encoder, color, depth)
+		})
 	})
 	if err != nil {
 		for _, node := range g.geometries {
@@ -429,7 +432,7 @@ func background(f Frame) gputypes.Color {
 }
 
 // drawScene records the scene's pass into a color and depth target.
-func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
+func (g *gpuRenderer) drawScene(f Frame, drawn []bool, snapshot bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
 		if g.shadowActive {
 			if err := g.drawShadow(f, encoder); err != nil {
@@ -471,7 +474,7 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, encoder *wgpu.CommandEnco
 					}
 				}
 				// Freeze opaque color/depth, then transmit from that immutable snapshot.
-				if needsSceneSnapshot(f) {
+				if snapshot {
 					if err := pass.End(); err != nil {
 						return err
 					}

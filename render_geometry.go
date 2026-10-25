@@ -348,7 +348,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 // unlit flag, reflection F0, and where the mesh's extension records start (its index
 // count; the shader cannot trust arrayLength, which Metal reports from
 // the allocation, not the binding).
-func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32, optics ...[8]float32) []byte {
+func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32, optics [8]float32) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
@@ -366,11 +366,7 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 	data := append(floats(world[:]...), floats(normal[:]...)...)
 	c := outline.Color
 	data = appendFloats(data, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, outline.Width)
-	var o [8]float32
-	if len(optics) > 0 {
-		o = optics[0]
-	}
-	return appendFloats(data, o[:]...)
+	return appendFloats(data, optics[:]...)
 }
 
 func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {
@@ -381,7 +377,7 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Materi
 	if m != nil && !m.Unlit {
 		reflectivity = m.Reflectivity
 	}
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, 0))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, 0, [8]float32{}))
 }
 
 // sortPoints orders a geometry's alpha points farthest first for the view

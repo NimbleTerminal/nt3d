@@ -30,10 +30,27 @@ func rippleVector(u, v, t float64) (x, y, z float64) {
 	return x / l, y / l, 1 / l
 }
 
+// waterRipples animates both the shader and its software fallback image.
 func waterRipples(time float64) (*nt3d.Texture, error) {
-	const size = 128
 	// Both implementations use the exact float32 uniform time.
 	phase := float32(time)
+	return nt3d.NewShaderNormalMapWithParameters(waterRippleShader, [4]float32{phase}, rippleFallback(phase))
+}
+
+// waterRipples is the frame's ripple normal map. The GPU evaluates the shader
+// and never reads the fallback image, so only the software renderer pays to
+// regenerate it every frame; other modes share one still image.
+func (d *demo) waterRipples() (*nt3d.Texture, error) {
+	if d.view != nil && d.view.RenderMode() != nt3d.Software {
+		return nt3d.NewShaderNormalMapWithParameters(waterRippleShader, [4]float32{float32(d.animationTime)}, stillRippleFallback())
+	}
+	return waterRipples(d.animationTime)
+}
+
+var stillRippleFallback = sync.OnceValue(func() *image.NRGBA { return rippleFallback(0) })
+
+func rippleFallback(phase float32) *image.NRGBA {
+	const size = 128
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	encode := func(v float64) uint8 { return uint8(math.Round((v*.5 + .5) * 255)) }
 	for y := range size {
@@ -42,7 +59,7 @@ func waterRipples(time float64) (*nt3d.Texture, error) {
 			img.SetNRGBA(x, y, color.NRGBA{encode(nx), encode(ny), encode(nz), 255})
 		}
 	}
-	return nt3d.NewShaderNormalMapWithParameters(waterRippleShader, [4]float32{phase}, img)
+	return img
 }
 
 var waterEnvironment = sync.OnceValue(func() *nt3d.Environment {

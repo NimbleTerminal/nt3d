@@ -21,7 +21,9 @@ type waterScene struct {
 	optics, softSpray    bool
 	surface              *nt3d.WaveSurface
 	baseSurface          *nt3d.WaveSurface
-	grid                 nt3d.Geometry
+	material             nt3d.Material // Each frame's copy is shared by every tile.
+	flow                 *nt3d.FlowMap
+	grid                 nt3d.Geometry // The first tile, for analytic-surface checks.
 	mesh, float          nt3d.NodeID
 	craft                waterCraft
 	effects              waterEffects
@@ -39,14 +41,10 @@ func (d *demo) setupWater() error {
 	if err != nil {
 		return err
 	}
-	g := nt3d.Geometry{Material: &nt3d.Material{Specular: .8, Shininess: 64}}
-	w := &waterScene{surface: surface, baseSurface: surface, grid: g}
+	w := &waterScene{surface: surface, baseSurface: surface, material: nt3d.Material{Specular: .8, Shininess: 64, Reflectivity: .02, NormalStrength: 1, NormalRepeat: true}}
 	w.craft = waterCraft{x: 0, y: -2.7, throttle: .65, autopilot: true}
 	w.ripples, w.reflections = true, true
 	w.optics, w.softSpray = true, true
-	w.grid.Material.Reflectivity = .02
-	w.grid.Material.NormalStrength = 1
-	w.grid.Material.NormalRepeat = true
 	d.water = w
 	hull, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 1.5, Y: .7, Z: .23}, Color: color.RGBA{242, 148, 48, 255}, Material: &nt3d.Material{Specular: .25, Shininess: 24}})
 	if err != nil {
@@ -87,25 +85,25 @@ func (d *demo) setupWater() error {
 
 func (d *demo) stepWater() error {
 	w := d.water
-	normal, err := waterRipples(d.animationTime)
+	normal, err := d.waterRipples()
 	if err != nil {
 		return err
 	}
-	w.grid.Material.Transmission, w.grid.Material.Refraction = 0, 0
-	w.grid.Material.Absorption = nt3dmath.Vec3{}
+	w.material.Transmission, w.material.Refraction = 0, 0
+	w.material.Absorption = nt3dmath.Vec3{}
 	if w.optics {
-		w.grid.Material.Transmission = .94
-		w.grid.Material.Refraction = .018
-		w.grid.Material.Absorption = vec(.85, .28, .12)
+		w.material.Transmission = .94
+		w.material.Refraction = .018
+		w.material.Absorption = vec(.85, .28, .12)
 	}
-	w.grid.Material.NormalMap = normal
-	w.grid.Material.NormalStrength = 0
+	w.material.NormalMap = normal
+	w.material.NormalStrength = 0
 	if w.ripples {
-		w.grid.Material.NormalStrength = 1
+		w.material.NormalStrength = 1
 	}
-	w.grid.Material.Reflectivity = 0
+	w.material.Reflectivity = 0
 	if w.reflections {
-		w.grid.Material.Reflectivity = .02
+		w.material.Reflectivity = .02
 	}
 
 	if !w.moored {
@@ -117,7 +115,7 @@ func (d *demo) stepWater() error {
 	if err != nil {
 		return err
 	}
-	if err := d.stepWaterTiles(w.grid.Material); err != nil {
+	if err := d.stepWaterTiles(); err != nil {
 		return err
 	}
 	if !w.moored {
@@ -139,17 +137,9 @@ func (d *demo) stepWater() error {
 // Fit a plane to four fixed world-XY probes beneath the float. This is a
 // kinematic demonstration, not forces, inertia, or a boat physics model.
 func waterFloatPose(surface *nt3d.WaveSurface, time float64) (nt3dmath.Mat4, error) {
-	const hx, hy = .6, .25
-	var z, gx, gy float64
-	for _, p := range [][2]float64{{-hx, -hy}, {hx, -hy}, {-hx, hy}, {hx, hy}} {
-		s, err := surface.AtWorld(p[0], p[1], time)
-		if err != nil {
-			return nt3dmath.Mat4{}, err
-		}
-		h := float64(s.Position.Z)
-		z += h / 4
-		gx += h * p[0] / (4 * hx * hx)
-		gy += h * p[1] / (4 * hy * hy)
+	z, gx, gy, err := craftSupport(surface, 0, 0, 0, time)
+	if err != nil {
+		return nt3dmath.Mat4{}, err
 	}
 	up := (nt3dmath.Vec3{X: float32(-gx), Y: float32(-gy), Z: 1}).Normalize()
 	forward := (nt3dmath.Vec3{X: 1, Z: float32(gx)}).Normalize()

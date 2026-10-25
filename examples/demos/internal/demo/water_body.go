@@ -44,7 +44,8 @@ func (c *waterCraft) integrateWater(surface *nt3d.WaveSurface, dt float64) (impa
 	if c.noPlaning {
 		hull = waterHulls[c.preset][0]
 	}
-	loads, err := hull.Forces(surface, nt3d.WaterBodyState{Transform: pose, LinearVelocity: vec(c.vx, c.vy, c.vz), AngularVelocity: omega}, c.time)
+	probes := probeSurface{surface: surface}
+	loads, err := hull.Forces(&probes, nt3d.WaterBodyState{Transform: pose, LinearVelocity: vec(c.vx, c.vy, c.vz), AngularVelocity: omega}, c.time)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -80,7 +81,7 @@ func (c *waterCraft) integrateWater(surface *nt3d.WaveSurface, dt float64) (impa
 	bank := math.Atan2(float64(pose[6]), float64(pose[10]))
 	rider := (handling.bankStrength*(targetBank-bank) - 20*c.angular[0]) * math.Min(1, float64(loads.WetFraction)/.15)
 	torque = torque.Add(pose.Direction(vec(rider, 0, 0)))
-	if err := c.recordWater(surface, pose, loads, thrust, force, torque, omega, impact); err != nil {
+	if err := c.recordWater(&probes, pose, loads, thrust, force, torque, omega, impact); err != nil {
 		return 0, 0, err
 	}
 

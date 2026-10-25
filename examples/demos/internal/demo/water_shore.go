@@ -72,11 +72,12 @@ func (d *demo) rebuildWaterTiles() error {
 		return err
 	}
 	// A valid normal map is needed when the material carries flow data.
-	normal, err := waterRipples(d.animationTime)
+	normal, err := d.waterRipples()
 	if err != nil {
 		return err
 	}
-	material := *w.grid.Material
+	w.flow = flow
+	material := w.material
 	material.NormalMap = normal
 	material.FlowMap = flow
 	tiles, err := nt3d.BuildWaveTiles(nt3d.WaveGrid{NX: n, NY: n, TileCells: 40, MinX: -extent, MaxX: extent, MinY: -extent, MaxY: extent, NormalTileSize: 2.5, Color: color.RGBA{28, 127, 155, 255}, Material: &material})
@@ -135,11 +136,14 @@ func (d *demo) rebuildWaterTiles() error {
 
 func shoreFoam(g nt3d.Geometry, time float64) nt3d.Geometry {
 	out := nt3d.Geometry{Material: &nt3d.Material{Texture: wakeFoam(), Repeat: true, Tint: true, Transparent: true, Unlit: true}}
+	depths := make([]float64, len(g.Vertices))
+	for i, v := range g.Vertices {
+		depths[i] = float64(v.Position.Z) - waterBedHeight(float64(v.Position.X), float64(v.Position.Y))
+	}
 	for i := 0; i < len(g.Indices); i += 3 {
 		var depth [3]float64
 		for k := range 3 {
-			p := g.Vertices[g.Indices[i+k]].Position
-			depth[k] = float64(p.Z) - waterBedHeight(float64(p.X), float64(p.Y))
+			depth[k] = depths[g.Indices[i+k]]
 		}
 		if min(depth[0], depth[1], depth[2]) > .55 || max(depth[0], depth[1], depth[2]) <= .015 {
 			continue
@@ -160,11 +164,11 @@ func shoreFoam(g nt3d.Geometry, time float64) nt3d.Geometry {
 	return out
 }
 
-func (d *demo) stepWaterTiles(material *nt3d.Material) error {
+func (d *demo) stepWaterTiles() error {
 	w := d.water
 	for _, tile := range w.tiles {
-		m := *material
-		m.FlowMap = tile.wave.Geometry.Material.FlowMap
+		m := w.material
+		m.FlowMap = w.flow
 		m.FlowPhase = float32(math.Mod(d.animationTime/3, 1))
 		m.FlowStrength = 0
 		if w.flowOn() {

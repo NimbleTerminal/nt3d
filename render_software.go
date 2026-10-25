@@ -725,7 +725,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 	}
 	// Capture opaque color and depth once. Transmitters write scene depth but
 	// never sample one another, independent of geometry submission order.
-	if needsSceneSnapshot(f) {
+	if needsSceneSnapshot(f, drawn) {
 		opaqueColor = append([]byte(nil), img.Pix...)
 		opaqueDepth = append([]float32(nil), depth...)
 		for gi := range f.Geometry {

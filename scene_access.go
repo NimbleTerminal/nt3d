@@ -14,9 +14,15 @@ func opticalParams(m *Material, p PointStyle) (o [8]float32) {
 	o[5] = p.SoftDistance
 	return
 }
-func needsSceneSnapshot(f Frame) bool {
+
+// needsSceneSnapshot reports whether a drawn node samples the opaque scene:
+// hidden and culled transmitters cost no capture passes.
+func needsSceneSnapshot(f Frame, drawn []bool) bool {
 	for i := range f.Geometry {
 		g := &f.Geometry[i]
+		if !drawn[i] {
+			continue
+		}
 		if transmitting(g) || blendedPoints(g) && g.PointStyle.SoftDistance > 0 {
 			return true
 		}
