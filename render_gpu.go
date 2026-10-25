@@ -542,7 +542,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot bool, encoder *wgpu.CommandEnc
 				}
 				// Then blend them, far to near in depth slices: each slice's
 				// transparent meshes and additive points, then its run of every
-				// alpha geometry's sorted points.
+				// alpha geometry's sorted points, for the slices its bounds span.
 				g.resolveSortedRuns(f)
 				var last *wgpu.RenderPipeline
 				for slice := range blendSlices {
@@ -553,7 +553,9 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot bool, encoder *wgpu.CommandEnc
 						last = nil
 					}
 					for slot := range g.sortedRuns {
-						last = g.drawSortedRun(pass, g.sortedRuns[slot], slice, slot, last)
+						if span := g.plan.slotSlices[slot]; slice >= span[0] && slice <= span[1] {
+							last = g.drawSortedRun(pass, g.sortedRuns[slot], slice, slot, last)
+						}
 					}
 				}
 			}

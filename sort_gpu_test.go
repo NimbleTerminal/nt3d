@@ -263,8 +263,10 @@ func checkSort(t *testing.T, dev *wgpu.Device, s *gpuSort, keys []uint32, slots 
 // GPU's arithmetic may round otherwise.
 func TestGPUSortKeysMatchPlan(t *testing.T) {
 	rng := rand.New(rand.NewPCG(3, 4))
-	m := nt3dmath.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, .5, .5, 0, 0, .25, 1.5}
-	plan := blendPlan{near: .2, far: 1.1}
+	inside := nt3dmath.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, .5, .5, 0, 0, .25, 1.5}
+	// Past the far plane (z > w) for z beyond 2, behind the eye (w <= 0)
+	// for z below -3.
+	past := nt3dmath.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, .5, .25, 0, 0, .25, .75}
 	sizes := []int{3000, 5000}
 	withSortDevice(t, func(dev *wgpu.Device, g *gpuRenderer) error {
 		s := &g.sort
@@ -272,71 +274,101 @@ func TestGPUSortKeysMatchPlan(t *testing.T) {
 		if err := s.ensure(dev, total, len(sizes)); err != nil {
 			return err
 		}
-		var slots []sortSlot
-		var want []uint32
-		var zs []float32
-		for slot, size := range sizes {
-			var data []byte
-			world := nt3dmath.Identity()
-			world[14] = float32(slot) * .1
-			mw := m.Mul(world)
-			for range size {
-				p := nt3dmath.Vec3{X: rng.Float32()*2 - 1, Y: rng.Float32()*2 - 1, Z: rng.Float32()*8 - 4}
-				data = appendFloats(data, p.X, p.Y, p.Z, 1)
-				data = binary.LittleEndian.AppendUint32(data, 0xFFFFFFFF)
-				_, _, z, w := mw.Transform(p)
-				k := uint32(0xFFFFFFFF)
-				if w > 0 && z >= 0 && z <= w {
-					k = plan.key(slot, z)
-				}
-				want = append(want, k)
-				zs = append(zs, z)
+		for _, c := range []struct {
+			name string
+			m    nt3dmath.Mat4
+			plan blendPlan
+		}{
+			{"range", inside, blendPlan{near: .2, far: 1.1}},
+			{"past the far plane", past, blendPlan{near: 0, far: .8}},
+			{"near == far", inside, blendPlan{near: .5, far: .5}},
+			{"degenerate at the near plane", past, blendPlan{}},
+		} {
+			if err := checkKeys(dev, s, rng, c.m, &c.plan, sizes); err != nil {
+				return fmt.Errorf("%s: %w", c.name, err)
 			}
-			b, err := dev.CreateBuffer(&wgpu.BufferDescriptor{Label: "nt3d sort test points", Size: uint64(len(data)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
-			if err != nil {
-				return err
-			}
-			defer b.Release()
-			if err := dev.Queue().WriteBuffer(b, 0, data); err != nil {
-				return err
-			}
-			slots = append(slots, sortSlot{points: b, matrix: mw, count: size})
-		}
-		enc, err := dev.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "nt3d sort keys test"})
-		if err != nil {
-			return err
-		}
-		if err := s.encodeKeys(dev, enc, &plan, slots); err != nil {
-			return err
-		}
-		out, err := readBuffers(dev, enc, []*wgpu.Buffer{s.keys[0], s.payload[0]}, []uint64{uint64(total) * 4, uint64(total) * 4})
-		if err != nil {
-			return err
-		}
-		gotKeys, gotPayload := words(out[0]), words(out[1])
-		depth := func(k uint32) int { return int(65535 - (k>>22<<10 | k&1023)) }
-		exact, base := 0, 0
-		for slot, size := range sizes {
-			for i := range size {
-				got, w := gotKeys[base+i], want[base+i]
-				if gotPayload[base+i] != uint32(i) {
-					return fmt.Errorf("slot %d payload %d is %d", slot, i, gotPayload[base+i])
-				}
-				if got == w {
-					exact++
-					continue
-				}
-				if got == 0xFFFFFFFF || w == 0xFFFFFFFF || got>>10&4095 != w>>10&4095 || absInt(depth(got)-depth(w)) > 1 {
-					return fmt.Errorf("slot %d point %d (z %g): key %#x, want %#x", slot, i, zs[base+i], got, w)
-				}
-			}
-			base += size
-		}
-		if exact < total*99/100 {
-			return fmt.Errorf("only %d of %d keys exact", exact, total)
 		}
 		return nil
 	})
+}
+
+// checkKeys keys random points of slots of sizes through m on the GPU and
+// checks them against plan.key.
+func checkKeys(dev *wgpu.Device, s *gpuSort, rng *rand.Rand, m nt3dmath.Mat4, plan *blendPlan, sizes []int) error {
+	total := 0
+	for _, size := range sizes {
+		total += size
+	}
+	var slots []sortSlot
+	var want []uint32
+	var zs []float32
+	for slot, size := range sizes {
+		var data []byte
+		world := nt3dmath.Identity()
+		world[14] = float32(slot) * .1
+		mw := m.Mul(world)
+		for range size {
+			p := nt3dmath.Vec3{X: rng.Float32()*2 - 1, Y: rng.Float32()*2 - 1, Z: rng.Float32()*8 - 4}
+			data = appendFloats(data, p.X, p.Y, p.Z, 1)
+			data = binary.LittleEndian.AppendUint32(data, 0xFFFFFFFF)
+			_, _, z, w := mw.Transform(p)
+			k := uint32(0xFFFFFFFF)
+			if w > 0 && z >= 0 && z <= w {
+				k = plan.key(slot, z)
+			}
+			want = append(want, k)
+			zs = append(zs, z)
+		}
+		b, err := dev.CreateBuffer(&wgpu.BufferDescriptor{Label: "nt3d sort test points", Size: uint64(len(data)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+		if err != nil {
+			return err
+		}
+		defer b.Release()
+		if err := dev.Queue().WriteBuffer(b, 0, data); err != nil {
+			return err
+		}
+		slots = append(slots, sortSlot{points: b, matrix: mw, count: size})
+	}
+	enc, err := dev.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "nt3d sort keys test"})
+	if err != nil {
+		return err
+	}
+	if err := s.encodeKeys(dev, enc, plan, slots); err != nil {
+		return err
+	}
+	out, err := readBuffers(dev, enc, []*wgpu.Buffer{s.keys[0], s.payload[0]}, []uint64{uint64(total) * 4, uint64(total) * 4})
+	if err != nil {
+		return err
+	}
+	gotKeys, gotPayload := words(out[0]), words(out[1])
+	depth := func(k uint32) int { return int(65535 - (k>>22<<10 | k&1023)) }
+	exact, base, culled := 0, 0, 0
+	for slot, size := range sizes {
+		for i := range size {
+			got, w := gotKeys[base+i], want[base+i]
+			if w == 0xFFFFFFFF {
+				culled++
+			}
+			if gotPayload[base+i] != uint32(i) {
+				return fmt.Errorf("slot %d payload %d is %d", slot, i, gotPayload[base+i])
+			}
+			if got == w {
+				exact++
+				continue
+			}
+			if got == 0xFFFFFFFF || w == 0xFFFFFFFF || got>>10&4095 != w>>10&4095 || absInt(depth(got)-depth(w)) > 1 {
+				return fmt.Errorf("slot %d point %d (z %g): key %#x, want %#x", slot, i, zs[base+i], got, w)
+			}
+		}
+		base += size
+	}
+	if exact < total*99/100 {
+		return fmt.Errorf("only %d of %d keys exact", exact, total)
+	}
+	if culled == 0 || culled == total {
+		return fmt.Errorf("%d of %d points culled, want some of each", culled, total)
+	}
+	return nil
 }
 
 func TestGPUSortEnsureGrows(t *testing.T) {
@@ -448,16 +480,44 @@ func TestGPUGlobalBlendOrderMatchesSoftware(t *testing.T) {
 		{"pane first", over(blue, color.RGBA{255, 255, 255, 128}, green, red), []Geometry{pane, splat(-1, red), splat(-2, green), splat(-3, blue)}},
 		{"pane last", over(blue, color.RGBA{255, 255, 255, 128}, green, red), []Geometry{splat(-1, red), splat(-2, green), splat(-3, blue), pane}},
 	} {
-		f := depthFrame(24, 24, c.geometry...)
-		f.Background = white
-		f.Revision = nextRevision.Add(1)
-		img, err := r.Render(f)
-		check(t, err)
-		got, sw := at(img, 12, 12), at(softwareRender(f), 12, 12)
-		if !closeRGB(got, sw, 4) || !closeRGB(got, c.want, 4) {
-			t.Errorf("%s: gpu %v, software %v, want %v", c.name, got, sw, c.want)
+		// Mirrored, the camera is turned about Y to look up +Z at the
+		// geometry moved to +z: the same picture from the other side.
+		for _, mirrored := range []bool{false, true} {
+			for _, cull := range []bool{false, true} {
+				f := depthFrame(24, 24, c.geometry...)
+				if mirrored {
+					f = depthFrame(24, 24, mirror(c.geometry)...)
+					f.Matrix[0], f.Matrix[10] = -1, .25
+				}
+				f.Background, f.Cull = white, cull
+				f.Revision = nextRevision.Add(1)
+				img, err := r.Render(f)
+				check(t, err)
+				got, sw := at(img, 12, 12), at(softwareRender(f), 12, 12)
+				if !closeRGB(got, sw, 4) || !closeRGB(got, c.want, 4) {
+					t.Errorf("%s (mirrored %v, cull %v): gpu %v, software %v, want %v", c.name, mirrored, cull, got, sw, c.want)
+				}
+			}
 		}
 	}
+}
+
+// mirror turns geometry about Y: x and z negated, its triangles keeping
+// their winding.
+func mirror(geometry []Geometry) []Geometry {
+	out := make([]Geometry, len(geometry))
+	for i, g := range geometry {
+		g.Points, g.Vertices = slices.Clone(g.Points), slices.Clone(g.Vertices)
+		for j := range g.Points {
+			g.Points[j].Position.X, g.Points[j].Position.Z = -g.Points[j].Position.X, -g.Points[j].Position.Z
+		}
+		for j := range g.Vertices {
+			g.Vertices[j].Position.X, g.Vertices[j].Position.Z = -g.Vertices[j].Position.X, -g.Vertices[j].Position.Z
+			g.Vertices[j].Normal.X, g.Vertices[j].Normal.Z = -g.Vertices[j].Normal.X, -g.Vertices[j].Normal.Z
+		}
+		out[i] = g
+	}
+	return out
 }
 
 // A cloud split in two geometries at its median X blends as one across the
@@ -477,11 +537,16 @@ func TestGPUSlabsBlendAcrossSeam(t *testing.T) {
 	})
 	near, far := cloud, cloud
 	near.Points, far.Points = cloud.Points[:10000], cloud.Points[10000:]
-	for _, yaw := range []float64{0, .5} {
-		f := flatFrame(120, 120, near, far)
-		f.Matrix = alongX(yaw)
-		if off := gpuOff(t, r, f); off > 12 {
-			t.Errorf("yaw %g: %d pixels differ", yaw, off)
+	// Seen from the other side (yaw π), the far slab is the near one. A
+	// culling frame trusts the bounds, so each slab draws only in the slices
+	// they span.
+	for _, cull := range []bool{false, true} {
+		for _, yaw := range []float64{0, .5, math.Pi} {
+			f := flatFrame(120, 120, near, far)
+			f.Matrix, f.Cull = alongX(yaw), cull
+			if off := gpuOff(t, r, f); off > 12 {
+				t.Errorf("yaw %g, cull %v: %d pixels differ", yaw, cull, off)
+			}
 		}
 	}
 }
@@ -545,17 +610,38 @@ func TestGPUSortEdgeCases(t *testing.T) {
 			t.Errorf("%d splats: %d pixels differ", n, off)
 		}
 	}
-	// (c) Every splat behind the camera: only the background shows.
-	f = flatFrame(40, 40, randomCloud(rng, 500, .4))
-	f.Matrix[14] = -1
-	f.Revision = nextRevision.Add(1)
-	img, err := r.Render(f)
-	check(t, err)
-	for y := range 40 {
-		for x := range 40 {
-			if got := at(img, x, y); got != f.Background {
-				t.Fatalf("turned away: pixel %d,%d is %v", x, y, got)
+	// (c) Every splat in front of the near plane (clip z < 0), or behind
+	// the eye (w <= 0) with a camera turned away from the cloud, or behind
+	// it by w alone, its z in range: only the background shows.
+	// The camera sits at x = 2 looking toward -x; the cloud is moved to x = 4.
+	turned := Camera{Projection: Perspective, Distance: 2}.Matrix(1).Mul(nt3dmath.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 4, 0, 0, 1})
+	for _, c := range []struct {
+		name string
+		m    nt3dmath.Mat4
+	}{
+		{"in front of the near plane", nt3dmath.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -1, 1}},
+		{"behind the eye", turned},
+		{"behind by w alone", nt3dmath.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1, 0, 0, 1, -1}},
+	} {
+		f = flatFrame(40, 40, randomCloud(rng, 500, .4))
+		f.Matrix = c.m
+		for _, p := range f.Geometry[0].Points {
+			if _, _, z, w := c.m.Transform(p.Position); w > 0 && z >= 0 && z <= w || c.name != "in front of the near plane" && w > 0 {
+				t.Fatalf("%s: a splat at clip z %g, w %g", c.name, z, w)
 			}
+		}
+		f.Revision = nextRevision.Add(1)
+		img, err := r.Render(f)
+		check(t, err)
+		for y := range 40 {
+			for x := range 40 {
+				if got := at(img, x, y); got != f.Background {
+					t.Fatalf("%s: pixel %d,%d is %v", c.name, x, y, got)
+				}
+			}
+		}
+		if off := gpuOff(t, r, f); off != 0 {
+			t.Errorf("%s: %d pixels differ", c.name, off)
 		}
 	}
 	// (d) A transparent pane and an additive emitter, no alpha points.

@@ -114,6 +114,82 @@ func TestPlanBlend(t *testing.T) {
 		t.Error("a slot past the limit spills into the slice bits")
 	}
 
+	// With the camera inside the bounds, the range starts at the near plane:
+	// points from there to the far end of the bounds spread over the slices.
+	rng := rand.New(rand.NewPCG(1, 2))
+	slab := make([]Point, 2000)
+	for i := range slab {
+		slab[i] = Point{Position: nt3dmath.Vec3{X: rng.Float32()*10 - 5, Y: rng.Float32()*10 - 5, Z: rng.Float32()*2 - 1}, Radius: 1, Color: white}
+	}
+	inside := flatFrame(64, 36, styled(PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend}, slab...))
+	inside.Matrix = Camera{Projection: Perspective, Distance: 3, Alpha: 10, Beta: 30}.Matrix(16. / 9)
+	plan, err = inside.planBlend(inside.drawn(1))
+	check(t, err)
+	if plan.near < 0 || plan.far <= plan.near {
+		t.Fatalf("inside the bounds: depth range %v to %v", plan.near, plan.far)
+	}
+	hit := map[int]bool{}
+	for i := range 10_000 {
+		hit[plan.sliceOf(plan.far*float32(i)/9999)] = true
+	}
+	if len(hit) < 50 {
+		t.Errorf("inside the bounds: depths from the near plane to the far end use %d of %d slices", len(hit), blendSlices)
+	}
+	// Everything in front of the near plane: one depth, no NaN.
+	front := depthFrame(8, 8, cloud)
+	front.Matrix[14] = -2
+	plan, err = front.planBlend(front.drawn(1))
+	check(t, err)
+	if plan.near != 0 || plan.far != 0 || plan.key(0, -1) != plan.key(0, -.5) {
+		t.Errorf("in front of the near plane: range %v to %v", plan.near, plan.far)
+	}
+
+	// A slot draws in the slices its bounds span, when the frame trusts its
+	// bounds: it culls by them, or computes them.
+	nearCloud := styled(PointStyle{Blend: AlphaBlend, Units: WorldUnits}, Point{Position: nt3dmath.Vec3{X: -.2, Z: -1.2}, Radius: .1, Color: white}, Point{Position: nt3dmath.Vec3{X: .2, Z: -1.4}, Radius: .1, Color: white})
+	farCloud := styled(PointStyle{Blend: AlphaBlend, Units: WorldUnits}, Point{Position: nt3dmath.Vec3{Z: -3.5}, Radius: .1, Color: white}, Point{Position: nt3dmath.Vec3{Z: -3.9}, Radius: .1, Color: white})
+	spanned := depthFrame(8, 8, nearCloud, farCloud)
+	for _, c := range []struct {
+		name  string
+		cull  bool
+		clear bool
+	}{{"culled", true, false}, {"computed bounds", false, true}, {"untrusted bounds", false, false}} {
+		f := spanned
+		f.Cull = c.cull
+		f.Geometry = slices.Clone(spanned.Geometry)
+		if c.clear {
+			for i := range f.Geometry {
+				f.Geometry[i].Bounds = nt3dmath.AABB{}
+			}
+		}
+		plan, err := f.planBlend(f.drawn(1))
+		check(t, err)
+		if len(plan.slotSlices) != len(plan.slots) {
+			t.Fatalf("%s: %d slot ranges for %d slots", c.name, len(plan.slotSlices), len(plan.slots))
+		}
+		for slot, gi := range plan.slots {
+			span := plan.slotSlices[slot]
+			if c.name == "untrusted bounds" {
+				if span != [2]int{0, blendSlices - 1} {
+					t.Errorf("%s: slot %d spans %v, want every slice", c.name, slot, span)
+				}
+				continue
+			}
+			b := blendBounds(&f.Geometry[gi])
+			_, _, zNear, _ := f.Matrix.Transform(b.Max)
+			_, _, zFar, _ := f.Matrix.Transform(b.Min)
+			if want := [2]int{plan.sliceOf(zFar), plan.sliceOf(zNear)}; span != want || span[1]-span[0] > blendSlices/2 {
+				t.Errorf("%s: slot %d spans %v, want %v", c.name, slot, span, want)
+			}
+			for _, p := range f.Geometry[gi].Points {
+				_, _, z, _ := f.Matrix.Transform(p.Position)
+				if s := plan.sliceOf(z); s < span[0] || s > span[1] {
+					t.Errorf("%s: slot %d point in slice %d outside %v", c.name, slot, s, span)
+				}
+			}
+		}
+	}
+
 	// Nothing blended, nothing planned.
 	none := depthFrame(8, 8, opaque)
 	plan, err = none.planBlend(none.drawn(1))

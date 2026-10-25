@@ -74,10 +74,11 @@ const (
 // of their bounds-center depth; the depth range the keys quantize. Every
 // renderer orders blended points by these keys, so they draw one picture.
 type blendPlan struct {
-	slots     []int   // frame geometry indices of alpha-blended point geometries, in blendOrder
-	bySlice   [][]int // per slice (64), frame geometry indices of transparent meshes and additive point geometries, in blendOrder
-	near, far float32 // clip-space depth range over the eight bounds corners of every blended geometry
-	points    int     // total alpha points in slots
+	slots      []int    // frame geometry indices of alpha-blended point geometries, in blendOrder
+	slotSlices [][2]int // per slot, the first and last slice its points can fall in, first the farthest
+	bySlice    [][]int  // per slice (64), frame geometry indices of transparent meshes and additive point geometries, in blendOrder
+	near, far  float32  // clip-space depth range over the eight bounds corners of every blended geometry, from the near plane on
+	points     int      // total alpha points in slots
 }
 
 // planBlend plans the drawn geometries' blended work. A frame with more
@@ -87,7 +88,8 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 	order := f.blendOrder(drawn)
 	plan := blendPlan{bySlice: make([][]int, blendSlices)}
 	near, far := float32(math.Inf(1)), float32(math.Inf(-1))
-	for _, gi := range order {
+	spans := make([][2]float32, len(order)) // Each geometry's clip depth range over its bounds corners.
+	for o, gi := range order {
 		g := &f.Geometry[gi]
 		m := f.Matrix.Mul(instance(f, gi).World)
 		b := blendBounds(g)
@@ -103,16 +105,31 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 				corner.Z = b.Max.Z
 			}
 			_, _, z, _ := m.Transform(corner)
+			if c == 0 {
+				spans[o] = [2]float32{z, z}
+			}
+			spans[o] = [2]float32{min(spans[o][0], z), max(spans[o][1], z)}
 			near, far = min(near, z), max(far, z)
 		}
 	}
+	// Both renderers cull points in front of the near plane, so the range
+	// starts there: none of its 16 bits go where nothing draws.
 	if len(order) > 0 {
-		plan.near, plan.far = near, far
+		near = max(near, 0)
+		plan.near, plan.far = near, max(far, near)
 	}
-	for _, gi := range order {
+	for o, gi := range order {
 		g := &f.Geometry[gi]
 		if blendedPoints(g) && g.PointStyle.Blend == AlphaBlend {
 			plan.slots = append(plan.slots, gi)
+			// Clip depth is affine in position, so points in the bounds fall
+			// in the slices its corners span. Bounds the frame set are
+			// trusted to hold the points only when it culls by them.
+			span := [2]int{0, blendSlices - 1}
+			if f.Cull || !g.Bounds.IsValid() {
+				span = [2]int{plan.sliceOf(spans[o][1]), plan.sliceOf(spans[o][0])}
+			}
+			plan.slotSlices = append(plan.slotSlices, span)
 			plan.points += len(g.Points)
 		}
 		if transparent(g) || blendedPoints(g) && g.PointStyle.Blend == AdditiveBlend {
