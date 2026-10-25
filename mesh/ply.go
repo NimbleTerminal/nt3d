@@ -138,6 +138,9 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	if compressedPLY(elements) {
+		return DecodeCompressedPLY(data, o)
+	}
 	if gaussianPLY(elements) {
 		return DecodeGaussianPLY(data, o)
 	}
