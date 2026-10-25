@@ -36,7 +36,7 @@ The chain preserves how much shows, not exactly where: a thin strand far off bec
 
 ## Transparency and cutouts
 
-`Material.Transparent` blends a mesh over what lies behind it, by the vertex colors' alpha times the texture's. Transparent meshes are drawn after everything opaque, farthest first, each with its back faces before its front ones, so a glass sphere shows its far side through its near one. Meshes that intersect each other, or the overlapping layers of one curved mesh, can still blend out of order. Wireframe and picking treat transparent surfaces as solid. Press `t` in the [shapes demo](../demos/#shape-builders) to see it.
+`Material.Transparent` blends a mesh over what lies behind it, by the vertex colors' alpha times the texture's. Transparent meshes are drawn after everything opaque, farthest first, each with its back faces before its front ones, so a glass sphere shows its far side through its near one. Alpha-blended points sort with transparent meshes by depth slice. Meshes that intersect each other, or the overlapping layers of one curved mesh, can still blend out of order. Wireframe and picking treat transparent surfaces as solid. Press `t` in the [shapes demo](../demos/#shape-builders) to see it.
 
 `Material.Cutout` instead cuts holes: texels with alpha under `Threshold` (one half by default) aren't drawn at all, and the rest are solid. It's how leaves, fences, and [fur](../fur/) are made, and it can't be combined with `Transparent`. Picking passes through the holes. Far off, cutouts keep their density through [mipmaps of their own](#cutout-mipmaps).
 

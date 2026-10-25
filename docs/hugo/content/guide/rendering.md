@@ -69,7 +69,7 @@ Both kinds follow the instances drawn by the camera: a culled object loses its s
 
 Point maps use six 1024² depth faces on the GPU and for complete software frames (24 MiB depth storage); interactive software can use smaller faces. Directional maps remain 2048², with smaller interactive software maps. Point maps cost six geometry passes and can show small filtering seams at face boundaries. The near plane is 0.0001 of the fitted far distance; setting a useful `Range` helps precision in very large scenes. Wireframe does not render shadows.
 
-**Points.** `Geometry.PointStyle` sets how a geometry's points are drawn. `Shape` is `HardPoint`, the default, or `SoftPoint`, whose alpha falls off smoothly to its edge. `Units` is `PixelUnits`, the default (a `Radius` of 1 to 32 pixels at any distance), or `WorldUnits` (any positive radius, smaller farther away, between half a pixel and `MaxPointPixels` on screen). `Blend` is `OpaqueBlend`, the default; `AlphaBlend`, over what's behind by the color's alpha, with the geometry's points sorted farthest first each frame; or `AdditiveBlend`, added to what's behind times alpha, so overlapping points glow. Blended points are hidden by nearer opaque surfaces but hide nothing themselves, and fog fades additive points out rather than tinting them. Points are never lit, and wireframe draws them as dots whatever their style. For animated particles, [`SetNodePoints` and `UpdateNodePoints`](../particles/) reuse GPU buffers and accept fixed bounds. `PointStyle.Texture` draws textured squares with grid-atlas selection through `Point.Frame`. The [particles demo](../demos/#particles) moves up to 100,000 points; `t` toggles atlas sprites. For sets larger than the view needs, [clustering](../clustering/) selects which points to draw each frame; the [point cloud demo](../demos/#point-cloud) zooms through a million.
+**Points.** `Geometry.PointStyle` sets how a geometry's points are drawn. `Shape` is `HardPoint`, the default, or `SoftPoint`, whose alpha falls off smoothly to its edge. `Units` is `PixelUnits`, the default (a `Radius` of 1 to 32 pixels at any distance), or `WorldUnits` (any positive radius, smaller farther away, between half a pixel and `MaxPointPixels` on screen). `Blend` is `OpaqueBlend`, the default; `AlphaBlend`, over what's behind by the color's alpha, with the geometry's points sorted farthest first each frame, together with every other alpha point geometry's; or `AdditiveBlend`, added to what's behind times alpha, so overlapping points glow. Blended points are hidden by nearer opaque surfaces but hide nothing themselves, and fog fades additive points out rather than tinting them. Points are never lit, and wireframe draws them as dots whatever their style. For animated particles, [`SetNodePoints` and `UpdateNodePoints`](../particles/) reuse GPU buffers and accept fixed bounds. `PointStyle.Texture` draws textured squares with grid-atlas selection through `Point.Frame`. The [particles demo](../demos/#particles) moves up to 100,000 points; `t` toggles atlas sprites. For sets larger than the view needs, [clustering](../clustering/) selects which points to draw each frame; the [point cloud demo](../demos/#point-cloud) zooms through a million.
 
 **Linear light.** Frames from `Scene.Frame` light, blend, and average colors in linear light, decoding sRGB first and encoding the result, so light adds as it does physically. Surfaces turning away from the light dim gradually, and blended and smoothed edges keep their brightness instead of darkening. Hand-built frames work in encoded color unless they set `Frame.Linear`.
 
@@ -193,11 +193,21 @@ Gaussians extend `Point` with three local one-sigma `GaussianAxes`, using
 `PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend}`.
 Set a positive `Radius` for point validation; Gaussian rendering uses the axes.
 Node and baked affine transforms rotate and scale the axes. GPU rendering
-reuses the point quad, auxiliary sprite buffer, and stable CPU radix sorter;
-it uploads sorted indices when the view or geometry changes. Sorting is by
-center depth **within each geometry**. Merge overlapping clouds into one
-geometry with `MergeGeometry` for interleaved sorting. Intersections with
-transparent meshes retain the usual geometry-order limitations.
+reuses the point quad and auxiliary sprite buffer. Every frame the GPU sorts
+the centers of **every alpha-blended point geometry together**, with a radix
+sort in compute shaders, and draws them far to near. Within a geometry the
+order follows a 16-bit depth, finer near the viewer. Between geometries, and
+against transparent meshes and additive points, it is accurate to one of 64
+depth slices, which divide the depth range of the frame's blended geometries;
+a transparent mesh or an additive geometry falls in the slice of its bounds'
+center and draws before the alpha points of that slice. So overlapping clouds
+and the slabs of a big cloud blend in order without merging, though
+geometries whose points fall in the same slice draw one after another. The
+software renderer orders points by the same slices and keys. A frame can hold
+at most 4095 alpha point geometries; more are refused. Each costs 64 indirect
+draws a frame, one per slice, so draw cost grows with the number of alpha
+point geometries: keep emitters in a handful of geometries, not one per
+particle.
 
 GPU and software project covariance with the perspective/orthographic
 Jacobian and evaluate `exp(-r²/2)` on three-sigma ellipses. Both use a 0.3
@@ -221,12 +231,20 @@ binding WebGPU guarantees, per buffer of one geometry: `nt3d.MaxGaussians(n)`
 gives the most splats with `n` SH coefficients each (699,050 at degree 3, 2.8
 million without SH), and a larger cloud is [split into slabs](../meshes/#staying-safe-with-big-or-hostile-files).
 Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
-GPU point/axis records use 72 bytes per splat including sort indices, plus
-12 bytes per RGB coefficient (192 extra bytes at degree 3). SH uses a separate
-buffer, keeping each storage buffer below WebGPU's 128 MiB baseline even at
-the hard count limit. CPU scene snapshots, coefficients, sort scratch, and
-the input file require additional memory. GPU sorting and large-scene
-optimization are deferred.
+GPU point/axis records use 68 bytes per splat, plus 12 bytes per RGB
+coefficient (192 extra bytes at degree 3). SH uses a separate buffer, keeping
+each storage buffer below WebGPU's 128 MiB baseline even at the hard count
+limit. The frame-wide sort adds 16 bytes per alpha point drawn in a frame (two
+key and two index buffers), shared by all geometries and kept between frames
+at the most a frame has needed, plus about 17 KiB a geometry for its run
+table. On an Apple M5 Max through Metal, one geometry of a million splats
+(640×360, camera inside a 10×10×2 slab) renders in about 17 ms a frame, sort
+and draw included, and 2.5 million splats in about 40 ms
+(`NT3D_GPU_BENCH=1 go test -tags webgpu -run TestGPUSortMillion -v .`); these
+depend on the GPU and on how much the splats overlap. CPU scene snapshots,
+coefficients, and the input file require additional memory. Large-scene
+optimization (level of detail and budgets) is deferred: every splat is still
+sorted and drawn each frame.
 
 `Geometry.GaussianSH` is an optional flat slice with 1, 4, 9, or 16 RGB
 coefficients per point. Nil keeps ordinary point color behavior.

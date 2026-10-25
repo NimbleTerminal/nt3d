@@ -14,9 +14,8 @@ Nothing queued; the sections below are the open work.
   leaves the device; hierarchical levels that draw an interior node as one
   aggregate; per-frame rebuilds cheap enough for moving particles;
   hysteresis at range boundaries so clusters do not flicker between levels.
-- [ ] **Gaussian splatting follow-ups**: GPU sorting,
-  large-scene performance, and ordering across overlapping
-  geometry (including the slabs a big cloud is split into).
+- [ ] **Gaussian splatting follow-ups**: large-scene performance (level of
+  detail and budgets).
 
 - [ ] **Shared points, lines, and boxes**, only if something needs them
   (particles don't: they are many positions, not many copies): charts
@@ -65,6 +64,11 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Global GPU splat sorting**: blended points sort on the GPU every frame
+  across every alpha point geometry, to within one of 64 depth slices, with
+  transparent meshes and additive points interleaved by slice; the software
+  renderer orders by the same plan, so overlapping clouds and the slabs of a
+  big cloud blend in order (`8f49a76`…`f5bbd25`).
 - **SOG and compressed PLY decoding**: PlayCanvas SOG versions 1 and 2
   (`.sog` bundles and unbundled `meta.json`) in `nt3dmesh/sog`, and
   SuperSplat compressed PLY in `DecodePLY`, into the same Gaussian geometry
