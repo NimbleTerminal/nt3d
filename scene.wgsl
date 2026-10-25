@@ -12,10 +12,14 @@ struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, abso
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
 // Points have records of their own, five words each: position, radius
 // (negative in world units), and color as RGBA8. Alpha points are drawn in
-// order, farthest first; the order of others is a placeholder.
+// sort order, farthest first; the order of others is a placeholder.
 struct PointRecord { x:f32, y:f32, z:f32, radius:f32, color:u32 };
 @group(0) @binding(3) var<storage,read> points:array<PointRecord>;
 @group(0) @binding(4) var<storage,read> order:array<u32>;
+// A sorted draw's run among the frame's sorted points: where it starts in
+// order, which holds every alpha geometry's points by slice and slot.
+struct Run { start:u32, count:u32, pad:vec2<u32> };
+@group(0) @binding(6) var<uniform> run:Run;
 // decode turns sRGB-encoded color into linear light, when the frame works in
 // linear light (viewport.z); the resolve pass encodes the result.
 fn decode(c:vec3<f32>)->vec3<f32> {
@@ -158,7 +162,7 @@ fn pointOutput(vi:u32,index:u32)->Out {
  o.clip=vec4<f32>(o.clip.xy+corner*r*2.0/u.viewport.xy*o.clip.w,o.clip.zw);o.uv=corner;o.point=1.0;o.cut=c.a;return o;
 }
 @vertex fn vs_point(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,ii);}
-@vertex fn vs_point_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,order[ii]);}
+@vertex fn vs_point_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,order[run.start+ii]);}
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
 // Meshes are drawn instanced: each instance's transform is its own.
@@ -446,7 +450,7 @@ fn spriteOutput(vi:u32,index:u32)->Out {
  o.uv=vec2<f32>((o.uv.x+1.0)*0.5,(1.0-o.uv.y)*0.5);return o;
 }
 @vertex fn vs_sprite(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,ii);}
-@vertex fn vs_sprite_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,order[ii]);}
+@vertex fn vs_sprite_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,order[run.start+ii]);}
 fn spriteSample(o:Out)->vec4<f32> {
  let halfTexel=0.5/vec2<f32>(textureDimensions(mapTexture));
  let uv=clamp(o.rect.xy+o.uv*o.rect.zw,o.rect.xy+halfTexel,o.rect.xy+o.rect.zw-halfTexel);
@@ -466,7 +470,7 @@ fn spriteSample(o:Out)->vec4<f32> {
 // Covariance axes share the sprite auxiliary buffer. Project each axis by
 // the homogeneous Jacobian, then use a Cholesky factor for the ellipse.
 @vertex fn vs_gaussian(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
- let index=order[ii];let p=points[index];let axes=items[index];
+ let index=order[run.start+ii];let p=points[index];let axes=items[index];
  var o=pointOutput(vi,index);
  if gaussianSH[9]>0.0 {o.color=vec4<f32>(gaussianSHColor(index,o.world),1.0);}
  let m=u.matrix*instances[0].world;

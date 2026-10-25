@@ -8,8 +8,11 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"image/color"
+	"math"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -366,4 +369,209 @@ func TestGPUSortEnsureGrows(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// gpuOff renders f on r and in software, and counts the pixels that differ
+// by more than 4 in a channel.
+func gpuOff(t *testing.T, r *gpuRenderer, f Frame) int {
+	t.Helper()
+	f.Revision = nextRevision.Add(1)
+	gpu, err := r.Render(f)
+	check(t, err)
+	sw := softwareRender(f)
+	off := 0
+	for y := range f.Height {
+		for x := range f.Width {
+			if !closeRGB(at(gpu, x, y), at(sw, x, y), 4) {
+				off++
+			}
+		}
+	}
+	return off
+}
+
+// randomCloud is n Gaussian splats in a box of half-size s, of random
+// shapes, colors and alpha.
+func randomCloud(rng *rand.Rand, n int, s float32) Geometry {
+	points := make([]Point, n)
+	for i := range points {
+		r := func() float32 { return (rng.Float32()*2 - 1) * s }
+		a := func() float32 { return .01 + rng.Float32()*.04 }
+		points[i] = Point{
+			Position:     nt3dmath.Vec3{X: r(), Y: r(), Z: r()},
+			Radius:       1,
+			Color:        color.RGBA{uint8(rng.IntN(256)), uint8(rng.IntN(256)), uint8(rng.IntN(256)), uint8(40 + rng.IntN(180))},
+			GaussianAxes: [3]nt3dmath.Vec3{{X: a()}, {Y: a()}, {Z: a()}},
+		}
+	}
+	return styled(PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend}, points...)
+}
+
+// alongX looks along world X, turned by yaw about Y: clip x is world z, y
+// is y, and depth runs .2 to .8 over x in -1..1.
+func alongX(yaw float64) nt3dmath.Mat4 {
+	c, s := float32(math.Cos(yaw)), float32(math.Sin(yaw))
+	turn := nt3dmath.Mat4{c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1}
+	view := nt3dmath.Mat4{0, 0, .3, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, .5, 1}
+	return view.Mul(turn)
+}
+
+// The GPU blends alpha points across geometries, and transparent meshes
+// between them, by the frame-wide sort, as the software renderer does.
+func TestGPUGlobalBlendOrderMatchesSoftware(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	red, green, blue := color.RGBA{255, 0, 0, 128}, color.RGBA{0, 255, 0, 128}, color.RGBA{0, 0, 255, 128}
+	splat := func(z float32, c color.RGBA) Geometry {
+		return styled(PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend},
+			Point{Position: nt3dmath.Vec3{Z: z}, Radius: 1, Color: c, GaussianAxes: [3]nt3dmath.Vec3{{X: 20}, {Y: 20}, {Z: .03}}})
+	}
+	straddle := splat(-1, red)
+	straddle.Points = append(straddle.Points, splat(-3, blue).Points...)
+	pane := quad(3, -2.5, color.RGBA{255, 255, 255, 128}, glass, false)
+	over := func(layers ...color.RGBA) color.RGBA {
+		out := white
+		for _, c := range layers {
+			out = mixRGB(c, float32(c.A)/255, out)
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name     string
+		want     color.RGBA
+		geometry []Geometry
+	}{
+		{"nearest first", over(blue, green, red), []Geometry{splat(-1, red), splat(-2, green), splat(-3, blue)}},
+		{"farthest first", over(blue, green, red), []Geometry{splat(-3, blue), splat(-2, green), splat(-1, red)}},
+		{"straddled", over(blue, green, red), []Geometry{straddle, splat(-2, green)}},
+		{"straddled last", over(blue, green, red), []Geometry{splat(-2, green), straddle}},
+		{"pane first", over(blue, color.RGBA{255, 255, 255, 128}, green, red), []Geometry{pane, splat(-1, red), splat(-2, green), splat(-3, blue)}},
+		{"pane last", over(blue, color.RGBA{255, 255, 255, 128}, green, red), []Geometry{splat(-1, red), splat(-2, green), splat(-3, blue), pane}},
+	} {
+		f := depthFrame(24, 24, c.geometry...)
+		f.Background = white
+		f.Revision = nextRevision.Add(1)
+		img, err := r.Render(f)
+		check(t, err)
+		got, sw := at(img, 12, 12), at(softwareRender(f), 12, 12)
+		if !closeRGB(got, sw, 4) || !closeRGB(got, c.want, 4) {
+			t.Errorf("%s: gpu %v, software %v, want %v", c.name, got, sw, c.want)
+		}
+	}
+}
+
+// A cloud split in two geometries at its median X blends as one across the
+// seam, seen along X and obliquely.
+func TestGPUSlabsBlendAcrossSeam(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	cloud := randomCloud(rand.New(rand.NewPCG(5, 6)), 20000, .7)
+	slices.SortFunc(cloud.Points, func(a, b Point) int {
+		switch {
+		case a.Position.X < b.Position.X:
+			return -1
+		case a.Position.X > b.Position.X:
+			return 1
+		}
+		return 0
+	})
+	near, far := cloud, cloud
+	near.Points, far.Points = cloud.Points[:10000], cloud.Points[10000:]
+	for _, yaw := range []float64{0, .5} {
+		f := flatFrame(120, 120, near, far)
+		f.Matrix = alongX(yaw)
+		if off := gpuOff(t, r, f); off > 12 {
+			t.Errorf("yaw %g: %d pixels differ", yaw, off)
+		}
+	}
+}
+
+// Alpha sprites in one geometry threaded through a Gaussian cloud in
+// another blend point by point between its splats.
+func TestGPUSpritesAndGaussiansInterleave(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	cloud := randomCloud(rand.New(rand.NewPCG(7, 8)), 3000, .6)
+	var sprites []Point
+	for i := range 40 {
+		v := float32(i)/39*1.6 - .8
+		sprites = append(sprites, Point{Position: nt3dmath.Vec3{X: v, Y: v * .5, Z: v}, Radius: .12, Color: white, Frame: uint32(i % 3)})
+	}
+	emitter := styled(PointStyle{Texture: spriteAtlas(t), Columns: 2, Rows: 2, Units: WorldUnits, Blend: AlphaBlend}, sprites...)
+	for _, yaw := range []float64{0, 1} {
+		f := flatFrame(80, 80, emitter, cloud)
+		f.Matrix = alongX(yaw)
+		if off := gpuOff(t, r, f); off > 12 {
+			t.Errorf("yaw %g: %d pixels differ", yaw, off)
+		}
+	}
+}
+
+func TestGPUSortEdgeCases(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	rng := rand.New(rand.NewPCG(9, 10))
+	// (a) An opaque frame after a blended one sorts nothing.
+	f := flatFrame(80, 80, randomCloud(rng, 2000, .6))
+	f.Matrix = alongX(0)
+	if off := gpuOff(t, r, f); off > 12 {
+		t.Errorf("blended: %d pixels differ", off)
+	}
+	f = flatFrame(80, 80, quad(.5, .5, white, nil, false), styled(PointStyle{}, Point{Position: nt3dmath.Vec3{X: .3, Z: .25}, Radius: 5, Color: blue}))
+	if off := gpuOff(t, r, f); off > 12 {
+		t.Errorf("opaque after blended: %d pixels differ", off)
+	}
+	// A kept geometry's draw rebinds the sort's buffers as they grow: more
+	// slots and no more points grow the run table alone, more points the
+	// order.
+	kept := randomCloud(rng, 300, .6)
+	for _, c := range []struct{ more, points int }{{0, 0}, {1, 1000}, {1, 5000}} {
+		f := flatFrame(80, 80, kept)
+		f.Shared = []uint64{1 << 50}
+		for i := range c.more {
+			f.Geometry = append(f.Geometry, flatFrame(1, 1, randomCloud(rng, c.points, .6)).Geometry...)
+			f.Shared = append(f.Shared, 1<<50+uint64(c.points+i)) // A key for each geometry.
+		}
+		f.Matrix = alongX(.3)
+		if off := gpuOff(t, r, f); off > 12 {
+			t.Errorf("kept cloud and %d of %d: %d pixels differ", c.more, c.points, off)
+		}
+	}
+	// (b) A larger cloud grows the sort's buffers; draws rebind them.
+	for _, n := range []int{1000, 50000} {
+		f := flatFrame(80, 80, randomCloud(rng, n, .6))
+		f.Matrix = alongX(.3)
+		if off := gpuOff(t, r, f); off > 12 {
+			t.Errorf("%d splats: %d pixels differ", n, off)
+		}
+	}
+	// (c) Every splat behind the camera: only the background shows.
+	f = flatFrame(40, 40, randomCloud(rng, 500, .4))
+	f.Matrix[14] = -1
+	f.Revision = nextRevision.Add(1)
+	img, err := r.Render(f)
+	check(t, err)
+	for y := range 40 {
+		for x := range 40 {
+			if got := at(img, x, y); got != f.Background {
+				t.Fatalf("turned away: pixel %d,%d is %v", x, y, got)
+			}
+		}
+	}
+	// (d) A transparent pane and an additive emitter, no alpha points.
+	emitter := styled(PointStyle{Units: WorldUnits, Blend: AdditiveBlend}, Point{Position: nt3dmath.Vec3{X: -.2, Z: .3}, Radius: .2, Color: color.RGBA{200, 80, 20, 160}}, Point{Position: nt3dmath.Vec3{X: .2, Z: .7}, Radius: .2, Color: color.RGBA{20, 80, 200, 160}})
+	f = flatFrame(80, 80, quad(.6, .5, color.RGBA{255, 255, 255, 128}, glass, false), emitter)
+	if off := gpuOff(t, r, f); off > 12 {
+		t.Errorf("pane and emitter: %d pixels differ", off)
+	}
+	// (e) More alpha point geometries than the sort has slots.
+	var many []Geometry
+	for i := range maxBlendSlots + 1 {
+		many = append(many, styled(PointStyle{Blend: AlphaBlend}, Point{Position: nt3dmath.Vec3{X: float32(i%64)/32 - 1, Z: .5}, Radius: 2, Color: color.RGBA{255, 0, 0, 128}}))
+	}
+	f = flatFrame(32, 32, many...)
+	f.Revision = nextRevision.Add(1)
+	if _, err := r.Render(f); err == nil || !strings.Contains(err.Error(), "frame exceeds GPU binding limit") {
+		t.Errorf("%d alpha geometries: %v", len(many), err)
+	}
 }

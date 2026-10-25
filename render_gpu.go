@@ -52,7 +52,8 @@ type gpuRenderer struct {
 	environmentBind        *wgpu.BindGroup
 	skinPipeline           *wgpu.ComputePipeline
 	skinLayout             *wgpu.BindGroupLayout
-	sort                   gpuSort // The frame-wide blended point sort.
+	sort                   gpuSort   // The frame-wide blended point sort.
+	plan                   blendPlan // The frame's blended work, as the sort and the draws see it.
 	dropPipeline           *wgpu.RenderPipeline
 	outlinePipelines       [5]*wgpu.RenderPipeline
 	shadowLayout           *wgpu.BindGroupLayout
@@ -67,16 +68,16 @@ type gpuRenderer struct {
 	textureBlends  [2]*wgpu.RenderPipeline
 	// Points bind their records and order in place of items: opaque points
 	// through pipelines[0], blended ones through pointBlends, alpha then
-	// additive, hard then soft then Gaussian. zeros stands in for unsorted points' order
-	// and fills binding 1 (see setup).
+	// additive, hard then soft then Gaussian. Alpha points read the sort's
+	// order from their run of it (binding 6, at a dynamic offset). zeros
+	// stands in for unsorted points' order and fills binding 1 (see setup);
+	// zeroRun stands in for the run table, an empty run at offset 0.
 	pointBindLayout *wgpu.BindGroupLayout
 	pointLayout     *wgpu.PipelineLayout
 	spriteLayout    *wgpu.PipelineLayout
 	spritePipelines [3]*wgpu.RenderPipeline
 	pointBlends     [2][3]*wgpu.RenderPipeline
-	zeros           *wgpu.Buffer
-	sorter          pointSorter
-	orderBytes      []byte
+	zeros, zeroRun  *wgpu.Buffer
 	textures        map[textureKey]*gpuimage.Texture // Image textures, by addressing.
 	procedural      map[proceduralKey]*proceduralTexture
 	geometries      map[geometryKey]*gpuGeometry
@@ -128,14 +129,14 @@ func (g *gpuRenderer) setup() (err error) {
 		}
 		// Metal binds a group's buffers to consecutive slots, while the
 		// translated shader reads binding n from slot n, so the bindings run
-		// 0 to 5 without a gap. The shader also reads array lengths, for its
+		// 0 to 6 without a gap. The shader also reads array lengths, for its
 		// bounds checks, from its first unused slot, 1 in the point entry
 		// points; zeros there leave them unchecked, as an unbound slot
 		// leaves the other entry points.
 		storage := func(binding uint32) gputypes.BindGroupLayoutEntry {
 			return gputypes.BindGroupLayoutEntry{Binding: binding, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}
 		}
-		g.pointBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, storage(1), storage(2), storage(3), storage(4), storage(5)}})
+		g.pointBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, storage(1), storage(2), storage(3), storage(4), storage(5), {Binding: 6, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform, HasDynamicOffset: true, MinBindingSize: 16}}}})
 		if err != nil {
 			return err
 		}
@@ -190,6 +191,9 @@ func (g *gpuRenderer) setup() (err error) {
 			return err
 		}
 		if g.zeros, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 48, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
+			return err
+		}
+		if g.zeroRun, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: sortRecord, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst}); err != nil {
 			return err
 		}
 		g.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
@@ -334,6 +338,11 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	ub = append(ub, floats(lights[:]...)...)
 	drawn := f.drawn(1)
 	snapshot := needsSceneSnapshot(f, drawn)
+	plan, err := f.planBlend(drawn)
+	if err != nil {
+		return nil, err
+	}
+	g.plan = plan
 	size := shadowMapSize
 	if i := shadowCaster(f.Lighting); i >= 0 && f.Lighting.Lights[i].Kind == PointLight {
 		size = pointShadowMapSize
@@ -388,10 +397,20 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		if err := g.uploadIdentity(dev); err != nil {
 			return err
 		}
+		// The sort's buffers grow before the point bind groups that hold
+		// them are made, and it sorts once the points are on the device.
+		if g.plan.points > 0 {
+			if err := g.sort.ensure(dev, g.plan.points, len(g.plan.slots)); err != nil {
+				return err
+			}
+		}
 		if err := g.prepareGeometry(dev, f, drawn); err != nil {
 			return err
 		}
 		if err := g.skinGeometry(dev, frame.Encoder, f); err != nil {
+			return err
+		}
+		if err := g.encodeSort(dev, frame.Encoder, f, &g.plan); err != nil {
 			return err
 		}
 		if err := g.uploadLines(dev, f); err != nil {
@@ -408,7 +427,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		// the uniform viewport, so points and lines keep their size when
 		// supersampled.
 		return g.renderScene(frame, f, func(color, depth *wgpu.TextureView) error {
-			return g.drawScene(f, drawn, snapshot, frame.Encoder, color, depth)
+			return g.drawScene(f, snapshot, frame.Encoder, color, depth)
 		})
 	})
 	if err != nil {
@@ -433,7 +452,7 @@ func background(f Frame) gputypes.Color {
 }
 
 // drawScene records the scene's pass into a color and depth target.
-func (g *gpuRenderer) drawScene(f Frame, drawn []bool, snapshot bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
+func (g *gpuRenderer) drawScene(f Frame, snapshot bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
 		if g.shadowActive {
 			if err := g.drawShadow(f, encoder); err != nil {
@@ -516,37 +535,15 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, snapshot bool, encoder *w
 						}
 					}
 				}
-				// Then blend them, farthest first, back faces before front.
-				for _, index := range f.blendOrder(drawn) {
-					d := g.draws[g.blendDraw[index]]
-					if transparent(&f.Geometry[index]) {
-						g.drawOutline(pass, f, d)
+				// Then blend them, far to near in depth slices: each slice's
+				// transparent meshes and additive points, then its run of every
+				// alpha geometry's sorted points.
+				for slice := range blendSlices {
+					for _, index := range g.plan.bySlice[slice] {
+						g.drawBlended(pass, f, g.draws[g.blendDraw[index]])
 					}
-					// A blended draw's triangles blend only if they are
-					// transparent; opaque ones drew with everything opaque.
-					for side := range 2 {
-						if !transparent(&f.Geometry[index]) {
-							break
-						}
-						if b := d.geom.batches[1]; b.count > 0 {
-							pass.SetPipeline(g.blendPipelines[side])
-							pass.SetBindGroup(0, d.set.binds[1], nil)
-							pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
-						}
-						if d.geom.batches[7].count > 0 {
-							pass.SetPipeline(g.textureBlends[side])
-							g.drawTextured(pass, f, d)
-						}
-					}
-					// Then its blended points, after its triangles.
-					if geom := &f.Geometry[index]; blendedPoints(geom) && d.geom.batches[0].count > 0 {
-						if geom.PointStyle.Texture != nil {
-							g.drawSprite(pass, f, d)
-							continue
-						}
-						pass.SetPipeline(g.pointBlends[geom.PointStyle.Blend-AlphaBlend][geom.PointStyle.Shape])
-						pass.SetBindGroup(0, d.set.binds[0], nil)
-						pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
+					for slot, index := range g.plan.slots {
+						g.drawSortedRun(pass, f, g.draws[g.blendDraw[index]], slice, slot)
 					}
 				}
 			}
@@ -584,6 +581,52 @@ func (g *gpuRenderer) drawScene(f Frame, drawn []bool, snapshot bool, encoder *w
 		}
 		return pass.End()
 	}
+}
+
+// drawBlended draws a transparent mesh, its outline then back faces then
+// front faces, or additive points, unsorted.
+func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
+	geom := &f.Geometry[d.index]
+	if transparent(geom) {
+		g.drawOutline(pass, f, d)
+		for side := range 2 {
+			if b := d.geom.batches[1]; b.count > 0 {
+				pass.SetPipeline(g.blendPipelines[side])
+				pass.SetBindGroup(0, d.set.binds[1], nil)
+				pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
+			}
+			if d.geom.batches[7].count > 0 {
+				pass.SetPipeline(g.textureBlends[side])
+				g.drawTextured(pass, f, d)
+			}
+		}
+	}
+	if blendedPoints(geom) && geom.PointStyle.Blend == AdditiveBlend && d.geom.batches[0].count > 0 {
+		if geom.PointStyle.Texture != nil {
+			g.drawSprite(pass, f, d)
+			return
+		}
+		pass.SetPipeline(g.pointBlends[1][geom.PointStyle.Shape])
+		pass.SetBindGroup(0, d.set.binds[0], []uint32{0})
+		pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
+	}
+}
+
+// drawSortedRun draws an alpha point geometry's run of the sorted points in
+// a slice, as many as the sort counted there.
+func (g *gpuRenderer) drawSortedRun(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, slice, slot int) {
+	if d.geom.batches[0].count == 0 {
+		return
+	}
+	style := f.Geometry[d.index].PointStyle
+	offset := g.sort.runOffset(slice, slot)
+	if style.Texture != nil {
+		g.bindSprite(pass, f, d, offset)
+	} else {
+		pass.SetPipeline(g.pointBlends[0][style.Shape])
+		pass.SetBindGroup(0, d.set.binds[0], []uint32{offset})
+	}
+	pass.DrawIndirect(g.sort.args, g.sort.argsOffset(slice, slot))
 }
 
 // blendPipeline draws a transparent mesh's back faces (side 0) or front faces
@@ -695,6 +738,9 @@ func (g *gpuRenderer) Close() error {
 		if g.zeros != nil {
 			g.zeros.Release()
 		}
+		if g.zeroRun != nil {
+			g.zeroRun.Release()
+		}
 		if g.pointLayout != nil {
 			g.pointLayout.Release()
 		}
@@ -775,7 +821,11 @@ func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBat
 		return
 	}
 	pass.SetPipeline(g.pipelines[kind])
-	pass.SetBindGroup(0, bind, nil)
+	if kind == 0 {
+		pass.SetBindGroup(0, bind, []uint32{0}) // Opaque points: the empty run.
+	} else {
+		pass.SetBindGroup(0, bind, nil)
+	}
 	v, n := b.count, uint32(1)
 	switch kind {
 	case 0:

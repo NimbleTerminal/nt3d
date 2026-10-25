@@ -30,10 +30,7 @@ type gpuGeometry struct {
 	skin          *gpuSkin
 	batches       [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
 	sets          []*instanceSet
-	used          int           // Sets drawn from this frame.
-	order         *wgpu.Buffer  // Alpha points' order, farthest first, as last sorted.
-	view          nt3dmath.Mat4 // The matrix it was sorted under.
-	sorted        bool
+	used          int // Sets drawn from this frame.
 }
 
 func (n *gpuGeometry) release() {
@@ -46,9 +43,6 @@ func (n *gpuGeometry) release() {
 	for _, s := range n.sets {
 		s.release()
 	}
-	if n.order != nil {
-		n.order.Release()
-	}
 }
 
 // instanceSet is one draw's instances of a geometry: their transforms, an
@@ -60,6 +54,10 @@ type instanceSet struct {
 	capacity  int
 	binds     [9]*wgpu.BindGroup
 	last      []transformState // What the buffer holds.
+	// The order and run table binds[0] holds: the sort's, of the
+	// generation it was made in, or the stand-ins.
+	order, runs *wgpu.Buffer
+	generation  uint64
 }
 
 func (s *instanceSet) release() {
@@ -161,13 +159,6 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			if extended(geom) {
 				node.batches[7].count = uint32(len(geom.Indices))
 			}
-			if geom.PointStyle.Blend == AlphaBlend && len(geom.Points) > 0 {
-				var err error
-				if node.order, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 4 * uint64(len(geom.Points)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
-					node.release()
-					return err
-				}
-			}
 			if geom.pointUpdate != nil {
 				node.pointRevision = geom.pointUpdate.revision
 			}
@@ -207,7 +198,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					return err
 				}
 			}
-			node.pointRevision, node.sorted = revision, false
+			node.pointRevision = revision
 		}
 		g.nodes[i] = node
 		if !drawn[i] {
@@ -236,14 +227,17 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		if err != nil {
 			return err
 		}
+		// Alpha points draw from the frame's sort when it runs.
+		geom := &f.Geometry[grp.members[0]]
+		sorted := grp.blended && g.plan.points > 0 && blendedPoints(geom) && geom.PointStyle.Blend == AlphaBlend
+		if err := g.bindPoints(dev, node, set, sorted); err != nil {
+			return err
+		}
 		if err := writeTransforms(dev, set, f, grp.members); err != nil {
 			return err
 		}
 		if grp.blended {
 			g.blendDraw[grp.members[0]] = len(g.draws)
-			if err := g.sortPoints(dev, node, f, grp.members[0]); err != nil {
-				return err
-			}
 		}
 		g.draws = append(g.draws, gpuDraw{node, set, uint32(len(grp.members)), grp.members[0], grp.blended})
 	}
@@ -283,23 +277,11 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 		if b.buffer == nil {
 			continue
 		}
-		layout, entries := g.bindLayout, []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: next.transform, Size: size}}
 		if kind == 0 {
-			order, orderSize := g.zeros, uint64(4)
-			if node.order != nil {
-				order, orderSize = node.order, 4*uint64(b.count)
-			}
-			layout, entries = g.pointBindLayout, []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: g.zeros, Size: 48}, {Binding: 2, Buffer: next.transform, Size: size}, {Binding: 3, Buffer: b.buffer, Size: b.size}, {Binding: 4, Buffer: order, Size: orderSize}}
-			sh, shSize := g.zeros, uint64(48)
-			if node.sh.buffer != nil {
-				sh, shSize = node.sh.buffer, node.sh.size
-			}
-			entries = append(entries, wgpu.BindGroupEntry{Binding: 5, Buffer: sh, Size: shSize})
-			if node.sprite.buffer != nil {
-				entries[1] = wgpu.BindGroupEntry{Binding: 1, Buffer: node.sprite.buffer, Size: node.sprite.size}
-			}
+			continue // Points bind by the frame's sort: bindPoints.
 		}
-		if next.binds[kind], err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries}); err != nil {
+		entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: next.transform, Size: size}}
+		if next.binds[kind], err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: entries}); err != nil {
 			next.release()
 			return nil, err
 		}
@@ -307,6 +289,44 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 	next.capacity = capacity
 	*s = next
 	return s, nil
+}
+
+// bindPoints makes a set's point bind group, unless the one it has binds
+// the order and run table it should: the sort's for a sorted draw, the
+// stand-ins otherwise. The sort's buffers are made again when they grow,
+// so a group of an older generation, or over another run table, is too.
+func (g *gpuRenderer) bindPoints(dev *wgpu.Device, node *gpuGeometry, s *instanceSet, sorted bool) error {
+	b := node.batches[0]
+	if b.buffer == nil {
+		return nil
+	}
+	order, orderSize, runs := g.zeros, uint64(4), g.zeroRun
+	if sorted {
+		order, runs = g.sort.payload[g.sort.final], g.sort.runs
+		orderSize = order.Size()
+	}
+	if s.binds[0] != nil && s.order == order && s.runs == runs && s.generation == g.sort.generation {
+		return nil
+	}
+	if s.binds[0] != nil {
+		s.binds[0].Release()
+		s.binds[0] = nil
+	}
+	entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: g.zeros, Size: 48}, {Binding: 2, Buffer: s.transform, Size: uint64(s.capacity) * instanceRecordSize}, {Binding: 3, Buffer: b.buffer, Size: b.size}, {Binding: 4, Buffer: order, Size: orderSize}}
+	sh, shSize := g.zeros, uint64(48)
+	if node.sh.buffer != nil {
+		sh, shSize = node.sh.buffer, node.sh.size
+	}
+	entries = append(entries, wgpu.BindGroupEntry{Binding: 5, Buffer: sh, Size: shSize}, wgpu.BindGroupEntry{Binding: 6, Buffer: runs, Size: 16})
+	if node.sprite.buffer != nil {
+		entries[1] = wgpu.BindGroupEntry{Binding: 1, Buffer: node.sprite.buffer, Size: node.sprite.size}
+	}
+	bind, err := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.pointBindLayout, Entries: entries})
+	if err != nil {
+		return err
+	}
+	s.binds[0], s.order, s.runs, s.generation = bind, order, runs, g.sort.generation
+	return nil
 }
 
 // writeTransforms writes a draw's instance transforms, when they changed.
@@ -378,27 +398,6 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Materi
 		reflectivity = m.Reflectivity
 	}
 	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, 0, [8]float32{}))
-}
-
-// sortPoints orders a geometry's alpha points farthest first for the view
-// they are drawn in, when that changed since they were last sorted.
-func (g *gpuRenderer) sortPoints(dev *wgpu.Device, node *gpuGeometry, f Frame, i int) error {
-	if node.order == nil {
-		return nil
-	}
-	m := f.Matrix.Mul(instance(f, i).World)
-	if node.sorted && node.view == m {
-		return nil
-	}
-	g.orderBytes = g.orderBytes[:0]
-	for _, k := range g.sorter.sort(f.Geometry[i].Points, &m) {
-		g.orderBytes = binary.LittleEndian.AppendUint32(g.orderBytes, k)
-	}
-	if err := dev.Queue().WriteBuffer(node.order, 0, g.orderBytes); err != nil {
-		return err
-	}
-	node.view, node.sorted = m, true
-	return nil
 }
 
 // uploadData uploads a geometry batch's records, to be bound per instance set.
