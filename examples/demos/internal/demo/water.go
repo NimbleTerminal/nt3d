@@ -9,7 +9,7 @@ import (
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
-// WaterMain runs a shared wave surface and a float following four world samples.
+// WaterMain runs a shared wave surface and a force-driven craft.
 func WaterMain() { mainDemo(false, sceneWater) }
 
 type waterScene struct {
@@ -20,11 +20,14 @@ type waterScene struct {
 	ripples, reflections bool
 	optics, softSpray    bool
 	surface              *nt3d.WaveSurface
+	baseSurface          *nt3d.WaveSurface
 	grid                 nt3d.Geometry
 	mesh, float          nt3d.NodeID
 	craft                waterCraft
 	effects              waterEffects
 	moored               bool
+	debugMode            int
+	debugNode            nt3d.NodeID
 }
 
 func (d *demo) setupWater() error {
@@ -37,8 +40,8 @@ func (d *demo) setupWater() error {
 		return err
 	}
 	g := nt3d.Geometry{Material: &nt3d.Material{Specular: .8, Shininess: 64}}
-	w := &waterScene{surface: surface, grid: g}
-	w.craft = waterCraft{x: 0, y: -2.7, speed: 4.5, autopilot: true}
+	w := &waterScene{surface: surface, baseSurface: surface, grid: g}
+	w.craft = waterCraft{x: 0, y: -2.7, throttle: .65, autopilot: true}
 	w.ripples, w.reflections = true, true
 	w.optics, w.softSpray = true, true
 	w.grid.Material.Reflectivity = .02
@@ -71,6 +74,13 @@ func (d *demo) setupWater() error {
 	if err = d.setupWaterEffects(); err != nil {
 		return err
 	}
+	w.debugNode, err = d.scene.SetGeometry("water-debug", nt3d.Geometry{})
+	if err != nil {
+		return err
+	}
+	if err = d.scene.Reparent(w.debugNode, d.group); err != nil {
+		return err
+	}
 	d.scene.SetEnvironment(waterEnvironment())
 	return d.rebuildWaterTiles()
 }
@@ -97,17 +107,27 @@ func (d *demo) stepWater() error {
 	if w.reflections {
 		w.grid.Material.Reflectivity = .02
 	}
+
+	if !w.moored {
+		if err := w.craft.advanceEffects(w.baseSurface, d.animationTime, &w.effects); err != nil {
+			return err
+		}
+	}
+	w.surface, err = w.effects.deformation.surface(w.baseSurface)
+	if err != nil {
+		return err
+	}
 	if err := d.stepWaterTiles(w.grid.Material); err != nil {
 		return err
 	}
 	if !w.moored {
-		if err := w.craft.advanceEffects(w.surface, d.animationTime, &w.effects); err != nil {
-			return err
-		}
 		if err := d.scene.SetTransform(w.float, w.craft.pose()); err != nil {
 			return err
 		}
-		return d.drawWaterEffects()
+		if err := d.drawWaterEffects(); err != nil {
+			return err
+		}
+		return d.drawWaterDebug()
 	}
 	pose, err := waterFloatPose(w.surface, d.animationTime)
 	if err != nil {
@@ -147,7 +167,10 @@ func (d *demo) waterView(content string) string {
 	if !d.animate {
 		state = "paused"
 	}
-	flight := "riding"
+	flight := "buoyant"
+	if d.water.craft.lift > 80 && !d.water.craft.noPlaning {
+		flight = "planing"
+	}
 	if d.water.craft.airborne {
 		flight = "airborne"
 	}
@@ -155,6 +178,13 @@ func (d *demo) waterView(content string) string {
 	if d.water.craft.autopilot {
 		pilot = "autopilot"
 	}
-	return "water · w/s speed · j/l steer · space auto · v shore/flow · m size · f wake/spray · t optics · a pause · q quit\n" + content +
-		fmt.Sprintf("\n%s · %s · %s · %s · %.1f m/s · %s · %d drops · %s", d.rendering(), state, pilot, flight, d.water.craft.speed, d.water.effects.modeName(), d.water.effects.live, fmt.Sprintf("%s · %d tiles · %s", d.water.shoreName(), len(d.water.tiles), d.status))
+	wake := "wake on"
+	if d.water.effects.deformation.disabled {
+		wake = "wake off"
+	}
+	if d.water.debugMode != 0 {
+		return "water · b debug · u preset · [/] trim · k center · . step · a pause · w/s throttle · j/l steer · space auto · q quit\n" + content + "\n" + d.waterDebugText()
+	}
+	return "water · b debug · u preset · w/s throttle · j/l steer · space auto · a pause · q quit\n" + content +
+		fmt.Sprintf("\n%s · %s · %s · %s · %s · %.0f%% · %.1f m/s · %s · %s", d.rendering(), state, pilot, d.water.craft.handling().name, flight, 100*d.water.craft.throttle, d.water.craft.speed, wake, d.status)
 }

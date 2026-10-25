@@ -43,7 +43,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 <img class="poster" src="../../posters/water.png" alt="An orange float riding teal waves">
 
-`task water`. A craft rides three [Gerstner waves](../water/), launching off crests and landing under gravity. It starts on autopilot; `w`/`s` change speed, `j`/`l` steer, and Space toggles autopilot. Four surface probes drive its contact pose. `n` toggles procedural ripple normals, `e` sky reflections, and `a` pauses the shared clock. GPU and software share surface geometry and material behavior; wireframe shows the large waves and craft motion.
+`task water`. A craft rides three [Gerstner waves](../water/), launching off crests and landing under gravity. It starts on autopilot; `w`/`s` change throttle, `j`/`l` steer, and Space toggles autopilot. Hull probes supply buoyancy, drag, and planing forces to a fixed-step rigid-body integrator; stern-jet thrust drives and steers it. The [water guide](../water/) covers the force model and full key list. `n` toggles procedural ripple normals, `e` sky reflections, and `a` pauses the shared clock. GPU and software share surface geometry and material behavior; wireframe shows the large waves and craft motion.
 
 ## Shape builders
 

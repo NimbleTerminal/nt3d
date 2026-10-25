@@ -1,4 +1,4 @@
-# Shoreline foam, flowing normals, tiled water, and scene optics.
+# Force-driven craft, wake displacement, shoreline, and scene optics.
 Output dist/tapes/water.gif
 Output dist/tapes/water.txt
 Source tapes/common.tape
@@ -16,6 +16,31 @@ Sleep 0.4s
 Screenshot dist/tapes/water-2.png
 Sleep 0.4s
 Screenshot dist/tapes/water-3.png
+# Freeze and inspect actual force samples without changing motion.
+Type "b"
+Sleep 1s
+Screenshot dist/tapes/water-forces.png
+Type "b"
+Sleep 1s
+Screenshot dist/tapes/water-handling.png
+Type "."
+Sleep 0.5s
+Type "u]]"
+Sleep 0.5s
+Screenshot dist/tapes/water-sport-trim.png
+Type "u[[b"
+# Compare displaced and undisplaced geometry at the same simulation time.
+Type "z"
+Sleep 1s
+Screenshot dist/tapes/water-no-deformation.png
+Type "3"
+Sleep 1s
+Screenshot dist/tapes/water-flat-wake-wire.png
+Type "z"
+Sleep 1s
+Screenshot dist/tapes/water-deformed-wake-wire.png
+Type "1"
+Sleep 1s
 # Shore foam and flow comparisons at the same wave time.
 Type "v"
 Sleep 1s

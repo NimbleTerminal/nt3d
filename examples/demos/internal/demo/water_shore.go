@@ -28,10 +28,10 @@ func waterBank(c *waterCraft) {
 	}
 	c.x = limit
 	n := vec(1, -.225*math.Cos(c.y*.9), 0).Normalize()
-	v := vec(math.Cos(c.heading), math.Sin(c.heading), 0)
+	v := vec(c.vx, c.vy, 0)
 	if dot := v.Dot(n); dot < 0 {
-		v = v.Sub(n.Scale(2 * dot))
-		c.heading = math.Atan2(float64(v.Y), float64(v.X))
+		v = v.Sub(n.Scale(1.4 * dot))
+		c.vx, c.vy = float64(v.X), float64(v.Y)
 	}
 }
 
@@ -122,6 +122,7 @@ func (d *demo) rebuildWaterTiles() error {
 		w.effects.count, w.effects.first = 0, 0
 		w.effects.contact = false
 		w.effects.drops = [waterSprayCapacity]sprayDrop{}
+		w.effects.deformation.clear()
 	}
 
 	// The first tile remains available to the existing analytic-surface checks.

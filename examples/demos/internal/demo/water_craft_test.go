@@ -12,7 +12,12 @@ func TestWaterCraftLaunchAndLand(t *testing.T) {
 	if err := d.setupWater(); err != nil {
 		t.Fatal(err)
 	}
-	c := d.water.craft
+	initial := d.water.craft
+	initial.autopilot = false
+	initial.throttle = 1
+	initial.shoreline = false
+	initial.bound = 1000
+	c := initial
 	var airborne int
 	for i := 1; i <= 120*20; i++ {
 		if err := c.advance(d.water.surface, float64(i)/120); err != nil {
@@ -28,7 +33,7 @@ func TestWaterCraftLaunchAndLand(t *testing.T) {
 	if c.launches == 0 || c.landings == 0 || airborne == 0 {
 		t.Fatalf("never launched and landed: %+v", c)
 	}
-	other := d.water.craft
+	other := initial
 	for i := 1; i <= 20*30; i++ {
 		if err := other.advance(d.water.surface, float64(i)/30); err != nil {
 			t.Fatal(err)
@@ -40,11 +45,11 @@ func TestWaterCraftLaunchAndLand(t *testing.T) {
 }
 
 func TestWaterCraftFlatAndControls(t *testing.T) {
-	c := waterCraft{speed: 4, autopilot: true}
+	c := waterCraft{}
 	if err := c.advance(&nt3d.WaveSurface{}, 5); err != nil {
 		t.Fatal(err)
 	}
-	if c.airborne || c.launches != 0 || math.Abs(c.z-.065) > 1e-9 {
+	if c.airborne || c.launches != 0 || math.Abs(c.z-waterRestHeight) > 1e-6 {
 		t.Fatal("flat water launches craft", c)
 	}
 	d := &demo{water: &waterScene{craft: c}}
@@ -62,5 +67,36 @@ func TestWaterCraftTerminalSpace(t *testing.T) {
 	}
 	if !d.water.craft.autopilot || d.water.craft.turn != 0 {
 		t.Fatal("terminal space did not restore autopilot")
+	}
+}
+
+func TestWaterCraftForcesAndPlaning(t *testing.T) {
+	flat := &nt3d.WaveSurface{}
+	a := waterCraft{bound: 1000, throttle: .65}
+	b := a
+	b.noPlaning = true
+	for _, c := range []*waterCraft{&a, &b} {
+		if err := c.advance(flat, 10); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a.speed < 2 || a.z <= b.z || a.lift <= 0 {
+		t.Fatal("planing did not raise a moving hull", a, b)
+	}
+	before := a.speed
+	a.throttle = 0
+	if err := a.advance(flat, 12); err != nil {
+		t.Fatal(err)
+	}
+	if a.speed >= before {
+		t.Fatal("unpowered hull did not coast down", a.speed, before)
+	}
+	// A dropped, unpowered hull must fall and settle through forces alone.
+	c := waterCraft{ready: true, z: 1, orientation: [4]float64{1, 0, 0, 0}}
+	if err := c.advance(flat, 5); err != nil {
+		t.Fatal(err)
+	}
+	if c.landings == 0 || math.Abs(c.z-waterRestHeight) > .001 || math.Abs(c.vz) > .001 {
+		t.Fatal("drop did not settle", c)
 	}
 }

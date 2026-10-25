@@ -64,9 +64,9 @@ func TestWaterShoreModesAndSize(t *testing.T) {
 }
 func TestWaterBankKeepsHullWet(t *testing.T) {
 	for _, y := range []float64{-4, 0, 4} {
-		c := waterCraft{x: -5, y: y, heading: math.Pi}
+		c := waterCraft{x: -5, y: y, heading: math.Pi, vx: -3}
 		waterBank(&c)
-		if c.x < waterCoast(c.y)+.949 || math.Cos(c.heading) <= 0 {
+		if c.x < waterCoast(c.y)+.949 || c.vx <= 0 || c.heading != math.Pi {
 			t.Fatal("bank did not redirect craft", c)
 		}
 		if waterBedHeight(c.x, c.y) >= -.4 {

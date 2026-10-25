@@ -24,7 +24,7 @@ func TestWaterEffectsFixedStepAndExpiry(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if !reflect.DeepEqual(ea, eb) {
+	if a != b || !reflect.DeepEqual(ea, eb) {
 		t.Fatal("frame cadence changed effects")
 	}
 	if ea.count == 0 || ea.serial == 0 || a.landings == 0 {
@@ -38,7 +38,7 @@ func TestWaterEffectsFixedStepAndExpiry(t *testing.T) {
 		}
 	}
 	ea.pointSnapshot(a.time)
-	if ea.count != 0 || ea.live != 0 {
+	if ea.count != 0 || ea.live != 0 || ea.deformation.count != 0 {
 		t.Fatal("effects did not expire", ea.count, ea.live)
 	}
 }

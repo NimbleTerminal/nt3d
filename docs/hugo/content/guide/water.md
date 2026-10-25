@@ -76,27 +76,103 @@ approximation. Finer grids reduce the difference between them.
 
 ## Driving and crest launches
 
-The orange test craft starts on an autopilot circuit. Four rotated world-XY
-probes fit a support plane beneath it. When its upward velocity carries it
-above the falling surface, it launches and follows gravity until it meets the
-water again. Launches come from wave shape and speed, without a jump impulse.
-Pitch and roll smooth toward the support plane; the nose settles while airborne.
+The orange test craft starts on an autopilot circuit. Four hull cells sample
+water height and velocity, producing Archimedes buoyancy, directional drag,
+and optional speed-dependent planing lift. The demo integrates translation
+and quaternion rotation at 120 Hz. Throttle drives a stern jet; its offset
+from the center of mass produces steering and trim torque. The autopilot
+steers that jet rather than assigning position or heading. It anticipates the
+path using velocity and sideslip, and governs power to follow its circuit.
+The throttle setting limits that automatic power; manual mode uses the full setting.
 
-Physics advances in fixed 1/120-second steps, independently of render pacing.
-Pause holds the shared wave and craft clock. Horizontal handling is an arcade
-prototype: speed and steering change directly, and a bumper turns the craft
-back at the finite patch boundary. There is no hull hydrodynamics, force-based
-buoyancy or fluid feedback. Wakes and spray are visual effects. This code lives in the demo;
-`WaveSurface` remains the reusable library API for a game's own physics.
+Waves and wake displacement act through forces. A dry hull follows gravity
+and retains angular momentum until reentry; no jump impulse or per-frame
+surface snapping is used. The 80 kg mass and drag/lift coefficients are tuned
+for this stylized 1.5 m hull, not calibrated to a production personal watercraft.
+Patch edges and the bank still use simple velocity-reflecting constraints.
+Pause holds the shared wave and craft clock.
+
+### Handling and inspection
+
+`u` switches touring/sport without resetting motion. Touring uses 260 N peak
+jet thrust, stronger lateral drag, and slower input response. Sport uses 340 N,
+faster throttle/steering response, and more rider lean. Both share the same
+80 kg hull, buoyancy cells, and passive heave damping. Input values ramp on the
+fixed physics clock, so key repeat does not instantly change thrust or nozzle angle.
+Jet thrust falls with forward speed, preventing runaway acceleration as planing
+reduces immersion. A flat-water, full-throttle check settles near 7.4 m/s touring
+and 8.7 m/s sport; waves, steering, and trim change those values.
+`j`/`l` latch a steering command; `k` centers it and selects manual control.
+`[`/`]` adjust stern-jet trim within ±8.6°; positive trim generates bow-up torque.
+A damped, contact-gated rider torque leans into turns. It is an explicit gameplay
+control force, separate from passive water forces.
+
+`b` cycles normal display, force telemetry, and handling telemetry. Both debug
+pages draw the same depth-tested world geometry on all renderers:
+
+- Green/red dots and vertical bars identify wet/dry hull probes; cyan crosses
+  mark their sampled water heights. Cells use a world-vertical immersion range.
+- Green arrows show buoyancy, cyan planing, red drag, and yellow jet thrust.
+  Arrows start 0.5 m above the center of mass for visibility, with **1 m = 500 N**.
+- The white velocity arrow uses **1 m = 5 m/s**.
+
+The force page reports wet fraction/contact count and force magnitudes in N,
+plus net acceleration in g and its peak. Net acceleration includes gravity,
+water, and thrust, excludes boundary collision impulses, and reads zero at rest.
+The handling page reports actual power, steering, trim, pitch, bank, sideslip,
+and the last dry-to-wet entry speed in m/s. The latter is a landing measurement,
+not a solved impact impulse or pressure. Readings are captured from the last
+physics force evaluation; toggling debug never recomputes or alters the body.
+
+Pause with `a`, then press `.` to advance one 1/120-second step, including waves,
+wake history, and effects. `x` clears peak acceleration, last entry speed, and
+launch/landing counts while retaining body state. Paused preset/trim changes
+apply on the next physics step. The presets are starting points for game feel,
+not measured Sea-Doo parameters.
+
+### Integration with a physics engine
+
+`NewBuoyantHull` creates an immutable force provider. It accepts any
+`WaterSurface`, including `WaveSurface.WithWake` snapshots. At each engine
+physics step:
+
+1. Supply the body's rigid center-of-mass transform and world linear/angular
+   velocities in `WaterBodyState`.
+2. Call `hull.Forces(surface, body, simulationTime)`.
+3. Apply the returned world-space `Force` and `Torque` about the center of mass.
+4. Let the engine add gravity, propulsion, contacts, and constraints, integrate
+   the body, and copy its resulting transform to the scene.
+
+Use meters, kilograms, seconds, and Z up. The result is force, not impulse:
+only multiply by the timestep if the engine expects impulses. Hull probe
+positions are relative to the center of mass; transforms must have no scale.
+Point velocity includes angular velocity crossed with its lever arm. Drag
+uses velocity relative to the sampled water; a surface adapter can add a
+physical current. Material flow maps alone do not apply current forces.
+
+This component owns no rigid body, clock, collision system, or renderer state.
+The small integrator in `water_body.go` is demo code, replaceable by the game's
+physics engine. Probe cells approximate submerged volume; empirical planing
+lift does no work along relative motion, but does not solve hull pressures,
+ventilation, breaking waves, or two-way fluid momentum. Wake emission remains
+an analytic effect rather than a conservation-based fluid solver.
 
 | Key | Action |
 | --- | --- |
-| `w` / `s` | Increase / decrease speed, 0–7 m/s |
-| `j` / `l` | Adjust left / right turn rate and take manual control |
-| Space | Toggle autopilot; clears manual turn rate |
+| `w` / `s` | Increase / decrease throttle, 0–100% |
+| `j` / `l` | Adjust left / right jet steering and take manual control |
+| `k` | Center steering and take manual control |
+| `u` | Switch touring / sport handling |
+| `[` / `]` | Adjust bow-down / bow-up jet trim |
+| `b` | Cycle force / handling debug pages / off |
+| `.` | Advance one physics step while paused |
+| `x` | Clear peak acceleration and landing measurements |
+| Space | Toggle autopilot; clears manual steering |
 | `n` | Toggle ripple normal detail |
 | `e` | Toggle environment reflections |
-| `f` | Cycle wake + spray, wake only, spray only, and hidden |
+| `f` | Cycle wake foam + spray, foam only, spray only, and hidden |
+| `z` | Toggle wake deformation without changing body state |
+| `p` | Toggle empirical planing lift |
 | `t` | Toggle refraction and depth-dependent absorption |
 | `h` | Toggle spray intersection fading |
 | `v` | Cycle shore foam + flow, shore foam, flow, and neither |
@@ -147,8 +223,9 @@ bursts on landing. The existing world-space particle renderer updates a fixed
 or expiry. Emission runs on the craft's fixed physics clock; hiding effects
 with `f` continues the simulation, and pausing freezes it.
 
-These effects use the existing transparent geometry and particle infrastructure;
-they do not deform the waves or simulate fluid interaction.
+The ribbons and droplets use the existing transparent geometry and particle
+infrastructure. Separate wake impulses deform the surface beneath them, as
+described below. Hiding foam/spray with `f` does not disable displacement.
 
 ## Refraction, absorption, and soft spray
 
@@ -242,3 +319,50 @@ nodes allow render-time frustum culling; the demo still updates every tile on
 the CPU. Applications can schedule updates or stream tiles as needed. The
 builder caps allocation at 1024 tiles and 1,048,576 vertices including borders;
 `TileCells` defaults to 32 and must be 1–128.
+
+## Boat-driven wake deformation
+
+Hull contact emits paired crest/trough packets along the stern's path. They
+travel outward, forming a diverging wake; stronger landings emit a short radial
+burst. Each packet rises smoothly, spreads, and decays. The combined vertical
+displacement is smoothly limited to 18 cm in the demo, so overlapping wakes
+remain bounded. It is real mesh displacement, visible in wireframe as well as
+through changing reflections and refraction.
+
+`WaveSurface.WithWake` creates an immutable snapshot from bounded history:
+
+```go
+surfaceWithWake, err := surface.WithWake([]nt3d.WakeImpulse{
+    {
+        Origin: nt3dmath.Vec3{X: sternX, Y: sternY},
+        Velocity: nt3dmath.Vec3{Y: .4},
+        Start: seconds, Duration: 3.6,
+        Amplitude: .08, Radius: .8, Spread: .12,
+    },
+}, .18)
+if err != nil { return err }
+```
+
+`Origin` and `Velocity` are world-XY vectors with Z zero. Radius grows by
+`Spread` units per second. Positive amplitude produces a crest surrounded by
+a trough; negative amplitude inverts it. Up to `MaxWakeImpulses` (128) are
+accepted. The method copies the history, replaces any previous wake layer, and
+preserves the base Gerstner waves. An empty history removes wake displacement.
+
+Both `Sample` and `AtWorld` include analytic wake normals, tangents, and
+velocities, including the derivative of wake height along Gerstner horizontal
+motion. Horizontal coordinates are unchanged, so world queries retain the
+base surface's unique inversion. Use the returned surface for mesh updates,
+craft support, and other surface queries.
+
+The demo emits at fixed physics steps, freezes history into shared snapshots,
+and samples that same combined surface for the craft, tile meshes, foam, and
+spray contacts. Landing and contact history is bounded and expires independently
+of frame rate. `z` compares deformation on/off while emission continues; toggling
+preserves body pose and velocity, with subsequent steps responding to the new forces. Pausing
+freezes the simulation. Foam visibility (`f`) is independent.
+
+These are analytic wave packets, not a fluid simulation. They do not conserve
+momentum, reflect from shorelines, or model hull pressure and shallow-water
+hydrodynamics. They provide a practical wake that other surface-following
+objects can sample and ride over.

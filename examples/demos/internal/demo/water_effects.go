@@ -31,6 +31,7 @@ type sprayDrop struct {
 	live             bool
 }
 type waterEffects struct {
+	deformation             waterDeformation
 	extent                  float64
 	stations                [waterWakeCapacity]wakeStation
 	first, count            int
@@ -46,7 +47,7 @@ type waterEffects struct {
 }
 
 func (e *waterEffects) modeName() string {
-	return [...]string{"wake+spray", "wake", "spray", "effects off"}[e.mode]
+	return [...]string{"foam+spray", "foam", "spray", "foam/spray off"}[e.mode]
 }
 
 func (e *waterEffects) addStation(s wakeStation) {
@@ -137,6 +138,7 @@ func (e *waterEffects) step(surface *nt3d.WaveSurface, c *waterCraft, dt, impact
 			}
 		}
 	}
+	e.deform(c, touching, impact, turn)
 	e.contact = touching
 	if impact > .8 {
 		count := min(72, 16+int(impact*10))
