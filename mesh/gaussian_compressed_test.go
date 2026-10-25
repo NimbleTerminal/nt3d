@@ -8,6 +8,8 @@ import (
 	"math"
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -281,6 +283,99 @@ func TestCompressedPLYRejects(t *testing.T) {
 	for name, c := range cases {
 		if m, err := DecodePLY(c.data, c.o); err == nil || m != nil {
 			t.Errorf("%s: accepted: %v %v", name, m, err)
+		}
+	}
+}
+
+func decodeRing(t *testing.T, o *Options) *Model {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "examples", "demos", "internal", "demo", "models", "gaussian-ring.ply"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := DecodePLY(data, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// nearest returns, for each of got's points, the index of the closest of want's.
+func nearest(got, want []nt3d.Point) []int {
+	index := make([]int, len(got))
+	for i, p := range got {
+		best := math.Inf(1)
+		for j, q := range want {
+			d := p.Position.Sub(q.Position)
+			if s := float64(d.Dot(d)); s < best {
+				best, index[i] = s, j
+			}
+		}
+	}
+	return index
+}
+
+func TestCompressedFixtureMatchesPLY(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "gaussian-ring.compressed.ply"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range []*Options{nil, {Up: YUp}} {
+		want := decodeRing(t, o)
+		got, err := DecodePLY(data, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Format != PLY || len(got.Objects) != 1 || len(want.Objects) != 1 {
+			t.Fatalf("%+v: format %v, %d objects", o, got.Format, len(got.Objects))
+		}
+		g, w := got.Objects[0].Geometry, want.Objects[0].Geometry
+		if len(g.Points) != 576 || len(w.Points) != 576 || len(g.GaussianSH) != 4*576 || len(w.GaussianSH) != 4*576 {
+			t.Fatalf("%+v: %d points, %d SH; PLY %d, %d", o, len(g.Points), len(g.GaussianSH), len(w.Points), len(w.GaussianSH))
+		}
+		if g.GaussianSHTransform != w.GaussianSHTransform || g.PointStyle != w.PointStyle {
+			t.Fatalf("%+v: SH transform %v style %v; PLY %v %v", o, g.GaussianSHTransform, g.PointStyle, w.GaussianSHTransform, w.PointStyle)
+		}
+		// Positions are quantized to 11 bits over a chunk's bounds, at worst
+		// the source's extent per axis over 1024.
+		lo, hi := w.Points[0].Position, w.Points[0].Position
+		for _, p := range w.Points {
+			lo = nt3dmath.Vec3{X: min(lo.X, p.Position.X), Y: min(lo.Y, p.Position.Y), Z: min(lo.Z, p.Position.Z)}
+			hi = nt3dmath.Vec3{X: max(hi.X, p.Position.X), Y: max(hi.Y, p.Position.Y), Z: max(hi.Z, p.Position.Z)}
+		}
+		tolerance := [3]float64{float64(hi.X-lo.X) / 1024, float64(hi.Y-lo.Y) / 1024, float64(hi.Z-lo.Z) / 1024}
+		// The writer reorders the splats, so match each to the source by position.
+		match := nearest(g.Points, w.Points)
+		seen := make([]bool, len(w.Points))
+		for i, p := range g.Points {
+			j := match[i]
+			if seen[j] {
+				t.Fatalf("%+v: splats %d and another both match source %d", o, i, j)
+			}
+			seen[j] = true
+			q := w.Points[j]
+			d := p.Position.Sub(q.Position)
+			for k, v := range [3]float32{d.X, d.Y, d.Z} {
+				if math.Abs(float64(v)) > tolerance[k] {
+					t.Fatalf("%+v: splat %d at %v, source %d at %v: axis %d off by %g, limit %g", o, i, p.Position, j, q.Position, k, v, tolerance[k])
+				}
+			}
+			if abs(int(p.Color.A)-int(q.Color.A)) > 1 {
+				t.Fatalf("%+v: splat %d alpha %d, source %d", o, i, p.Color.A, q.Color.A)
+			}
+			if abs(int(p.Color.R)-int(q.Color.R)) > 2 || abs(int(p.Color.G)-int(q.Color.G)) > 2 || abs(int(p.Color.B)-int(q.Color.B)) > 2 {
+				t.Fatalf("%+v: splat %d color %v, source %d %v", o, i, p.Color, j, q.Color)
+			}
+			for k := range 3 {
+				assertAxis(t, p.GaussianAxes[k], q.GaussianAxes[k], .04, math.Pi/180)
+			}
+			for k := range 4 {
+				for ch := range 3 {
+					if a, b := g.GaussianSH[4*i+k][ch], w.GaussianSH[4*j+k][ch]; math.Abs(float64(a-b)) > .04 {
+						t.Fatalf("%+v: splat %d SH %d channel %d: %v, source %d %v", o, i, k, ch, a, j, b)
+					}
+				}
+			}
 		}
 	}
 }
