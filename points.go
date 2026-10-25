@@ -58,7 +58,7 @@ type PointBlend uint8
 
 const (
 	OpaqueBlend   PointBlend = iota // Opaque; color alpha is ignored.
-	AlphaBlend                      // Over what is behind, by color alpha, a geometry's farthest points first.
+	AlphaBlend                      // Over what is behind, by color alpha, farthest first, sorted together with every other alpha point geometry.
 	AdditiveBlend                   // Added to what is behind, times color alpha: brighter where points overlap.
 )
 

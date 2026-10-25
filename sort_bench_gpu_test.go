@@ -65,7 +65,7 @@ func TestGPUSortMillion(t *testing.T) {
 	if os.Getenv("NT3D_GPU_BENCH") != "1" {
 		t.Skip("set NT3D_GPU_BENCH=1 to time the sort")
 	}
-	t.Logf("1M splats: %.1f ms per frame (sort and draw)", benchSplats(t, 1_000_000))
+	t.Logf("1M splats: %.1f ms per frame (a whole Render: sort, draw, and readback to the CPU)", benchSplats(t, 1_000_000))
 	// MaxGaussians(0) is 2.8M for one geometry: 3M do not fit.
-	t.Logf("2.5M splats (the most one geometry holds, rounded down; 3M do not fit): %.1f ms per frame (sort and draw)", benchSplats(t, 2_500_000))
+	t.Logf("2.5M splats (the most one geometry holds, rounded down; 3M do not fit): %.1f ms per frame (a whole Render: sort, draw, and readback to the CPU)", benchSplats(t, 2_500_000))
 }

@@ -198,7 +198,8 @@ the centers of **every alpha-blended point geometry together**, with a radix
 sort in compute shaders, and draws them far to near. Within a geometry the
 order follows a 16-bit depth, finer near the viewer. Between geometries, and
 against transparent meshes and additive points, it is accurate to one of 64
-depth slices, which divide the depth range of the frame's blended geometries;
+depth slices, equal steps of the square root of depth over the range of the
+frame's blended geometries, so finer near the viewer;
 a transparent mesh or an additive geometry falls in the slice of its bounds'
 center and draws before the alpha points of that slice. So overlapping clouds
 and the slabs of a big cloud blend in order without merging, though
@@ -238,8 +239,9 @@ limit. The frame-wide sort adds 16 bytes per alpha point drawn in a frame (two
 key and two index buffers), shared by all geometries and kept between frames
 at the most a frame has needed, plus about 17 KiB a geometry for its run
 table. On an Apple M5 Max through Metal, one geometry of a million splats
-(640×360, camera inside a 10×10×2 slab) renders in about 17 ms a frame, sort
-and draw included, and 2.5 million splats in about 40 ms
+(640×360, camera inside a 10×10×2 slab) takes about 17 ms a frame, and 2.5
+million splats about 40 ms, each a whole `Render` call: sort, draw, and
+reading the image back to the CPU
 (`NT3D_GPU_BENCH=1 go test -tags webgpu -run TestGPUSortMillion -v .`); these
 depend on the GPU and on how much the splats overlap. CPU scene snapshots,
 coefficients, and the input file require additional memory. Large-scene

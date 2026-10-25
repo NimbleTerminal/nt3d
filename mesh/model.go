@@ -81,10 +81,10 @@ var (
 // nt3d.MaxPoints and nt3d.MaxGaussians) into consecutive Objects with the
 // object's Name, Material, and Part, each with its own Points, GaussianSH,
 // and Bounds, sharing the rest. The pieces are slabs along the cloud's
-// longest axis: the renderers blend geometries farthest first by their
-// bounds' centers, and sort within each, so slabs blend in nearly the
-// right order where pieces in file order would overlap entirely. A cloud
-// that fits is returned as it is, in a slice of one.
+// longest axis: blended slabs sort together with every other alpha point
+// geometry to within one of 64 depth slices, so a cloud split into slabs
+// blends in order where the pieces meet. A cloud that fits is returned as
+// it is, in a slice of one.
 func PointPieces(o Object) []Object {
 	g := &o.Geometry
 	most := piecePoints
