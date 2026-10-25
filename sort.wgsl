@@ -33,7 +33,7 @@ const fold=65535u;
   if sp.far>sp.near { t=min(1.0,max(0.0,(c.z-sp.near)/(sp.far-sp.near))); }
   if (bitcast<u32>(t)&0x7FFFFFFFu)>0x7F800000u { t=0.0; } // NaN, tested by its bits past fast math.
   let k=65535u-u32(sqrt(t)*65535.0);
-  key=(k>>10u)<<22u | min(sp.slot,4094u)<<10u | (k&1023u); // The slot clamps to maxBlendSlots-1, clear of the sentinel.
+  key=((k>>10u)<<22u) | (min(sp.slot,4094u)<<10u) | (k&1023u); // The slot clamps to maxBlendSlots-1, clear of the sentinel. Tint wants the parentheses.
  }
  keysAll[sp.base+i]=key;
  payloadAll[sp.base+i]=i;
@@ -142,7 +142,7 @@ var<workgroup> starts:array<u32,16>;
 const none=0xFFFFFFFFu;
 fn run(k:u32)->u32 {
  let slot=(k>>10u)&4095u;
- if k>=1u<<28u || slot>=runParams.slots { return none; }
+ if k>=(1u<<28u) || slot>=runParams.slots { return none; }
  return (k>>22u)*runParams.slots+slot;
 }
 
