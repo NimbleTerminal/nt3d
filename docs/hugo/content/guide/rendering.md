@@ -101,8 +101,9 @@ Hand-built frames don't cull unless you set `Frame.Cull`, and then each geometry
 
 ## 3D Gaussian splatting
 
-`nt3dmesh.DecodePLY` automatically recognizes uncompressed 3DGS PLY files;
-`nt3dmesh.DecodeGaussianPLY` explicitly requires them. Niantic's compressed
+`nt3dmesh.DecodePLY` recognizes uncompressed 3DGS PLY files and SuperSplat's
+compressed PLY by their headers; `nt3dmesh.DecodeGaussianPLY` and
+`nt3dmesh.DecodeCompressedPLY` each require their own. Niantic's compressed
 SPZ format, about ten times smaller, decodes through `nt3d/mesh/spz` (or the
 `formats` package), which registers `.spz` with `ReadFile`; PlayCanvas's SOG
 decodes through `nt3d/mesh/sog` (or `formats`) the same way. The result is
@@ -174,16 +175,16 @@ SOG's means are 16-bit values in a log domain; scales and DC color are
 sh0's alpha. Higher-order SH is a palette of up to 64k centroid sets, with a
 16-bit label per splat, so SH from a SOG is approximate by construction.
 Version 1 uses linear min/max ranges in place of the codebooks. A compressed
-PLY is chunks of 256 splats that bound their positions, scales, and optionally colors; each splat packs
-an 11-10-11 bit position and scale, a 2-10-10-10 rotation, and 8-bit color
-and opacity, with optional 8-bit SH in an `sh` element. All of it becomes the
-same points and `GaussianSH` as the PLY decoder makes.
+PLY is chunks of 256 splats that bound their positions, scales, and
+optionally colors; each splat packs an 11-10-11 bit position and scale, a
+2-10-10-10 rotation, and 8-bit color and opacity, with optional 8-bit SH in an
+`sh` element. All of it becomes the same points and `GaussianSH` as the PLY
+decoder makes.
 
 SOG's `model` tag (`antialiased`, `2dgs`) and the PLY `SplatRenderMode`
 comment are ignored. `Options.MaxBytes` bounds a compressed PLY's input
 bytes, and a SOG's files plus its decoded images (`width × height × 4` bytes
-each). SOG's zip64 form is not read. `.splat` and `.ksplat` remain
-unsupported.
+each). `.splat` and `.ksplat` remain unsupported.
 
 ### Rendering and limits
 
