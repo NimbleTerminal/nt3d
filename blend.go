@@ -123,11 +123,14 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 		if blendedPoints(g) && g.PointStyle.Blend == AlphaBlend {
 			plan.slots = append(plan.slots, gi)
 			// Clip depth is affine in position, so points in the bounds fall
-			// in the slices its corners span. Bounds the frame set are
-			// trusted to hold the points only when it culls by them.
+			// in the slices its corners span, padded by a slice each way:
+			// the GPU's keys round within an ulp of the CPU's, and a point at
+			// a corner on a slice boundary must not land in a slice the loop
+			// skips. Bounds the frame set are trusted to hold the points only
+			// when it culls by them.
 			span := [2]int{0, blendSlices - 1}
 			if f.Cull || !g.Bounds.IsValid() {
-				span = [2]int{plan.sliceOf(spans[o][1]), plan.sliceOf(spans[o][0])}
+				span = [2]int{max(0, plan.sliceOf(spans[o][1])-1), min(blendSlices-1, plan.sliceOf(spans[o][0])+1)}
 			}
 			plan.slotSlices = append(plan.slotSlices, span)
 			plan.points += len(g.Points)

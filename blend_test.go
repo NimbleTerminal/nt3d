@@ -178,7 +178,7 @@ func TestPlanBlend(t *testing.T) {
 			b := blendBounds(&f.Geometry[gi])
 			_, _, zNear, _ := f.Matrix.Transform(b.Max)
 			_, _, zFar, _ := f.Matrix.Transform(b.Min)
-			if want := [2]int{plan.sliceOf(zFar), plan.sliceOf(zNear)}; span != want || span[1]-span[0] > blendSlices/2 {
+			if want := [2]int{max(0, plan.sliceOf(zFar)-1), min(blendSlices-1, plan.sliceOf(zNear)+1)}; span != want || span[1]-span[0] > blendSlices/2 {
 				t.Errorf("%s: slot %d spans %v, want %v", c.name, slot, span, want)
 			}
 			for _, p := range f.Geometry[gi].Points {
