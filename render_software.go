@@ -747,9 +747,21 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 	// Blended work goes over everything opaque, far to near in depth slices:
 	// each slice's transparent meshes and additive points, then its alpha
 	// points, ordered across geometries by the plan's keys, as the GPU does.
-	// validateFrame refuses a frame with too many alpha geometries; the plan
-	// holds them all regardless.
-	plan, _ := f.planBlend(drawn)
+	// validateFrame refuses a frame with too many alpha geometries, but it
+	// plans at scale 1 and a supersampled culling frame draws a padded mask,
+	// so the plan can still run over: the slots beyond the limit then draw
+	// unsorted at the slice of their center, rather than overflowing a key.
+	plan, err := f.planBlend(drawn)
+	overflow := make([][]int, blendSlices)
+	if err != nil {
+		for _, gi := range plan.slots[maxBlendSlots:] {
+			b := blendBounds(&f.Geometry[gi])
+			_, _, z, _ := f.Matrix.Mul(instance(f, gi).World).Transform(b.Min.Add(b.Max).Scale(.5))
+			s := plan.sliceOf(z)
+			overflow[s] = append(overflow[s], gi)
+		}
+		plan.slots = plan.slots[:maxBlendSlots]
+	}
 	type slotDraw struct {
 		g           *Geometry
 		inst        Instance
@@ -792,6 +804,11 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			if blendedPoints(g) && g.PointStyle.Blend == AdditiveBlend {
 				drawPointsUnsorted(g, inst, &m)
 			}
+		}
+		for _, gi := range overflow[slice] {
+			g, inst := &f.Geometry[gi], instance(f, gi)
+			m := f.Matrix.Mul(inst.World)
+			drawPointsUnsorted(g, inst, &m)
 		}
 		for ; next < len(order) && int(keys[order[next]]>>22) == slice; next++ {
 			k := keys[order[next]]

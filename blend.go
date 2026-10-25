@@ -143,10 +143,11 @@ func (p *blendPlan) depth16(z float32) uint32 {
 }
 
 // key orders a point of slot at depth z: slice, then slot, then depth, each
-// ascending, so a sort draws far to near within a slot's slice.
+// ascending, so a sort draws far to near within a slot's slice. A slot past
+// the limit is clamped to the last, never spilling into the slice bits.
 func (p *blendPlan) key(slot int, z float32) uint32 {
 	k := p.depth16(z)
-	return k>>10<<22 | uint32(slot)<<10 | k&1023
+	return k>>10<<22 | uint32(min(slot, maxBlendSlots-1))<<10 | k&1023
 }
 
 // sliceOf is the slice a depth z falls in, 0 the farthest.

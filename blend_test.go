@@ -106,6 +106,10 @@ func TestPlanBlend(t *testing.T) {
 		t.Errorf("%d slots, error %v", len(plan.slots), err)
 	}
 
+	if p.key(maxBlendSlots+5, .5) != p.key(maxBlendSlots-1, .5) {
+		t.Error("a slot past the limit spills into the slice bits")
+	}
+
 	// Nothing blended, nothing planned.
 	none := depthFrame(8, 8, opaque)
 	plan, err = none.planBlend(none.drawn(1))
@@ -149,5 +153,36 @@ func TestSortKeysStable(t *testing.T) {
 	}
 	if !slices.Equal(keys, original) {
 		t.Fatal("sorting changed the caller's keys")
+	}
+}
+
+// A frame over the slot limit fails in every renderer that validates; the
+// software draw, reached without validation, still draws all of it: the
+// first slots sorted, the rest unsorted.
+func TestBlendSlotOverflow(t *testing.T) {
+	dot := func(x float32, c color.RGBA) Geometry {
+		return styled(PointStyle{Blend: AlphaBlend}, Point{Position: nt3dmath.Vec3{X: x, Z: -2}, Radius: 4, Color: c})
+	}
+	red := color.RGBA{255, 0, 0, 255}
+	var many []Geometry
+	for range maxBlendSlots {
+		many = append(many, dot(-.5, white))
+	}
+	many = append(many, dot(.5, red))
+	f := depthFrame(32, 32, many...)
+	if _, err := RenderSoftware(f); err == nil {
+		t.Error("RenderSoftware accepted a frame over the slot limit")
+	}
+	r := NewSoftwareRenderer()
+	defer r.Close()
+	if _, err := r.Render(f); err == nil {
+		t.Error("Render accepted a frame over the slot limit")
+	}
+	img := softwareRender(f)
+	if got := at(img, 8, 16); got != white {
+		t.Errorf("sorted slots: %v at the left dot, want %v", got, white)
+	}
+	if got := at(img, 24, 16); got != red {
+		t.Errorf("overflow slot: %v at the right dot, want %v", got, red)
 	}
 }
