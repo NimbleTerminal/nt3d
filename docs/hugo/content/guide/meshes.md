@@ -25,8 +25,9 @@ err = scene.SetTransform(group, fit)                 // scale it to fit the defa
 | 3MF | with colors, textures, painting, and parts | one object, with face colors |
 | PLY | ASCII and binary, including raw scans | binary |
 | glTF 2.0 | `.gltf` and `.glb` | — |
+| SOG | `.sog` bundles and `meta.json` folders | — |
 
-STL, OBJ, 3MF, and PLY are built in. glTF is in its own package, `nt3d/mesh/gltf`, and [SPZ Gaussian splats](../rendering/#spz) in `nt3d/mesh/spz`; each registers itself when imported, the way image formats do with `image`. To get every optional format, and WebP textures, import them all at once:
+STL, OBJ, 3MF, and PLY are built in. glTF is in its own package, `nt3d/mesh/gltf`, [SPZ Gaussian splats](../rendering/#spz) in `nt3d/mesh/spz`, and [SOG Gaussian splats](../rendering/#sog-and-compressed-ply) in `nt3d/mesh/sog`; each registers itself when imported, the way image formats do with `image`. To get every optional format, and WebP textures, import them all at once:
 
 ```go
 import _ "nimbleterminal.dev/nt3d/mesh/formats"

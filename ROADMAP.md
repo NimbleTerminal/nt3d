@@ -14,8 +14,8 @@ Nothing queued; the sections below are the open work.
   leaves the device; hierarchical levels that draw an interior node as one
   aggregate; per-frame rebuilds cheap enough for moving particles;
   hysteresis at range boundaries so clusters do not flicker between levels.
-- [ ] **Gaussian splatting follow-ups**: GPU sorting, SOG and PlayCanvas
-  compressed PLY, large-scene performance, and ordering across overlapping
+- [ ] **Gaussian splatting follow-ups**: GPU sorting,
+  large-scene performance, and ordering across overlapping
   geometry (including the slabs a big cloud is split into).
 
 - [ ] **Shared points, lines, and boxes**, only if something needs them
@@ -65,6 +65,12 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **SOG and compressed PLY decoding**: PlayCanvas SOG versions 1 and 2
+  (`.sog` bundles and unbundled `meta.json`) in `nt3dmesh/sog`, and
+  SuperSplat compressed PLY in `DecodePLY`, into the same Gaussian geometry
+  as PLY and SPZ. A shared `GaussianSH` helper assembles point-major
+  coefficients for every splat decoder, and registered sniffs may claim a zip
+  before it defaults to 3MF (`3336623`…`9f66b22`).
 - **gloss on `nt3dmesh`**: gloss decodes STL, OBJ, PLY, and 3MF through
   `nt3dmesh` (gloss `aa49fd3`, `ef31abc`, `e21ce3f`) and draws its export
   outlines from `RenderSoftware`'s normalized depth with relative thresholds,

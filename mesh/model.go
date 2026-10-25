@@ -168,8 +168,8 @@ type Options struct {
 	// Parts chooses which 3MF build items to assemble, by index into
 	// Model.Parts; nil assembles all. The triangle limit applies to those chosen.
 	Parts []bool
-	// MaxBytes limits unpacked 3MF data, Gaussian PLY input bytes, and
-	// decompressed SPZ. Zero uses DefaultMaxBytes.
+	// MaxBytes limits unpacked 3MF data, Gaussian PLY input bytes,
+	// decompressed SPZ, and SOG files and images. Zero uses DefaultMaxBytes.
 	MaxBytes int64
 	// Up is the file's up axis. Most files do not say, so the caller must;
 	// SPZ states its axes, and ignores Up.

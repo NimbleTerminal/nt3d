@@ -104,12 +104,13 @@ Hand-built frames don't cull unless you set `Frame.Cull`, and then each geometry
 `nt3dmesh.DecodePLY` automatically recognizes uncompressed 3DGS PLY files;
 `nt3dmesh.DecodeGaussianPLY` explicitly requires them. Niantic's compressed
 SPZ format, about ten times smaller, decodes through `nt3d/mesh/spz` (or the
-`formats` package), which registers `.spz` with `ReadFile`. The result is
+`formats` package), which registers `.spz` with `ReadFile`; PlayCanvas's SOG
+decodes through `nt3d/mesh/sog` (or `formats`) the same way. The result is
 ordinary scene geometry, so orbit, pan, zoom, node transforms, visibility,
 fog, and renderer switching work as usual:
 
 ```go
-model, err := nt3dmesh.ReadFile("scene.spz", nil)
+model, err := nt3dmesh.ReadFile("scene.sog", nil) // or scene.spz
 // Handle err, then install the cloud: one object, or slabs of a big one.
 for i, o := range model.Objects {
 	id, err := scene.SetGeometry(fmt.Sprintf("splats %d", i), o.Geometry)
@@ -136,7 +137,9 @@ clamped before the normal sRGB/linear conversion. Orthographic cameras use
 parallel rays. Coefficients remain float32; opacity is quantized to eight
 bits. Wireframe uses clamped sRGB8 DC color. Normals and unrelated scalar
 properties are ignored. Incomplete SH bands, nonfinite coefficients,
-compressed PLY, `.splat`, and exposure metadata are not supported. Invalid/nonfinite attributes, zero quaternions, missing
+`.splat`, and exposure metadata are not supported. PlayCanvas's compressed
+PLY is detected by its header and described [below](#sog-and-compressed-ply).
+Invalid/nonfinite attributes, zero quaternions, missing
 properties, and activated scales outside `[1e-20, 1e6]` are rejected.
 
 ### SPZ
@@ -152,6 +155,35 @@ nothing. Degree-4 SH and version 1 are refused; the optional extensions
 block (a named coordinate system, quantization notes) and the antialiased
 flag are ignored. `Options.MaxBytes` bounds the decompressed size. Niantic's
 samples, at 786k and 933k splats, open as two slabs each.
+
+### SOG and compressed PLY
+
+SuperSplat writes PlayCanvas's compressed formats: SOG version 2 as a `.sog`
+bundle (a zip of `meta.json` and lossless WebP images) or as a folder holding
+an unbundled `meta.json` and its images, and a compressed PLY. Legacy SOG
+version 1, which has no `version` field, decodes too. `nt3dsog.Decode` reads
+a bundle, or a `meta.json` whose images come through `Options.Open`, which
+`ReadFile` sets for you. `ReadFile` recognizes `.sog` by its extension and an
+unbundled `meta.json` or a zip holding one by its content. `DecodePLY`
+detects compressed PLY, and `DecodeCompressedPLY` requires it. Both store
+the coordinates of the PLY they were made from, so `Options.Up` applies as
+it does for PLY.
+
+SOG's means are 16-bit values in a log domain; scales and DC color are
+256-entry codebooks; quaternions use the "smallest three" packing; opacity is
+sh0's alpha. Higher-order SH is a palette of up to 64k centroid sets, with a
+16-bit label per splat, so SH from a SOG is approximate by construction.
+Version 1 uses linear min/max ranges in place of the codebooks. A compressed
+PLY is chunks of 256 splats that bound their positions, scales, and optionally colors; each splat packs
+an 11-10-11 bit position and scale, a 2-10-10-10 rotation, and 8-bit color
+and opacity, with optional 8-bit SH in an `sh` element. All of it becomes the
+same points and `GaussianSH` as the PLY decoder makes.
+
+SOG's `model` tag (`antialiased`, `2dgs`) and the PLY `SplatRenderMode`
+comment are ignored. `Options.MaxBytes` bounds a compressed PLY's input
+bytes, and a SOG's files plus its decoded images (`width × height × 4` bytes
+each). SOG's zip64 form is not read. `.splat` and `.ksplat` remain
+unsupported.
 
 ### Rendering and limits
 
@@ -191,8 +223,8 @@ GPU point/axis records use 72 bytes per splat including sort indices, plus
 12 bytes per RGB coefficient (192 extra bytes at degree 3). SH uses a separate
 buffer, keeping each storage buffer below WebGPU's 128 MiB baseline even at
 the hard count limit. CPU scene snapshots, coefficients, sort scratch, and
-the input file require additional memory. GPU sorting, compressed formats,
-and large-scene optimization are deferred.
+the input file require additional memory. GPU sorting and large-scene
+optimization are deferred.
 
 `Geometry.GaussianSH` is an optional flat slice with 1, 4, 9, or 16 RGB
 coefficients per point. Nil keeps ordinary point color behavior.
