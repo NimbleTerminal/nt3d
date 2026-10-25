@@ -58,10 +58,10 @@ type rawMeta struct {
 	Version *int `json:"version"`
 	Count   int  `json:"count"`
 	Means   struct {
-		Shape []int     `json:"shape"`
-		Mins  []float64 `json:"mins"`
-		Maxs  []float64 `json:"maxs"`
-		Files []string  `json:"files"`
+		Shape []int           `json:"shape"`
+		Mins  json.RawMessage `json:"mins"`
+		Maxs  json.RawMessage `json:"maxs"`
+		Files []string        `json:"files"`
 	} `json:"means"`
 	Scales rawTable `json:"scales"`
 	Quats  struct {
@@ -115,17 +115,19 @@ func parseMeta(data []byte) (*meta, error) {
 	}
 
 	// means
-	if len(raw.Means.Mins) != 3 || len(raw.Means.Maxs) != 3 {
+	meansMins, err := numbers("means.mins", raw.Means.Mins)
+	if err != nil {
+		return nil, err
+	}
+	meansMaxs, err := numbers("means.maxs", raw.Means.Maxs)
+	if err != nil {
+		return nil, err
+	}
+	if len(meansMins) != 3 || len(meansMaxs) != 3 {
 		return nil, metaErr("means needs 3 mins and 3 maxs")
 	}
-	if err := finite("means.mins", raw.Means.Mins); err != nil {
-		return nil, err
-	}
-	if err := finite("means.maxs", raw.Means.Maxs); err != nil {
-		return nil, err
-	}
-	copy(m.means.mins[:], raw.Means.Mins)
-	copy(m.means.maxs[:], raw.Means.Maxs)
+	copy(m.means.mins[:], meansMins)
+	copy(m.means.maxs[:], meansMaxs)
 	files, err := fileNames("means", raw.Means.Files, 2)
 	if err != nil {
 		return nil, err
@@ -232,22 +234,31 @@ func parseCodebook(name string, cb []*float64) ([]float64, error) {
 	return out, nil
 }
 
-// numbers reads a JSON number or array of numbers.
+// numbers reads a JSON number or array of numbers. A null, whether the whole
+// value or an element, is an error: encoding/json would read it as 0, and
+// JavaScript encoders write NaN and Infinity as null.
 func numbers(what string, raw json.RawMessage) ([]float64, error) {
 	if len(raw) == 0 {
 		return nil, metaErr("%s is missing", what)
 	}
-	var list []float64
+	var ptrs []*float64
 	if raw[0] == '[' {
-		if err := json.Unmarshal(raw, &list); err != nil {
+		if err := json.Unmarshal(raw, &ptrs); err != nil {
 			return nil, metaErr("%s: %v", what, err)
 		}
 	} else {
-		var one float64
+		var one *float64
 		if err := json.Unmarshal(raw, &one); err != nil {
 			return nil, metaErr("%s: %v", what, err)
 		}
-		list = []float64{one}
+		ptrs = []*float64{one}
+	}
+	list := make([]float64, len(ptrs))
+	for i, p := range ptrs {
+		if p == nil {
+			return nil, metaErr("%s is null", what)
+		}
+		list[i] = *p
 	}
 	if err := finite(what, list); err != nil {
 		return nil, err
