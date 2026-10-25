@@ -195,18 +195,19 @@ Set a positive `Radius` for point validation; Gaussian rendering uses the axes.
 Node and baked affine transforms rotate and scale the axes. GPU rendering
 reuses the point quad and auxiliary sprite buffer. Every frame the GPU sorts
 the centers of **every alpha-blended point geometry together**, with a radix
-sort in compute shaders, and draws them far to near. Within a geometry the
-order follows a 16-bit depth, finer near the viewer. Between geometries, and
-against transparent meshes and additive points, it is accurate to one of 64
-depth slices, equal steps of the square root of depth over the range of the
-frame's blended geometries, so finer near the viewer;
+sort in compute shaders, and draws them far to near. Depth runs from the
+near plane to the far end of the frame's blended geometries, and is
+quantized by its square root, so finer near the viewer. Within a geometry the
+order follows a 16-bit depth. Between geometries, and against transparent
+meshes and additive points, it is accurate to one of 64 depth slices;
 a transparent mesh or an additive geometry falls in the slice of its bounds'
 center and draws before the alpha points of that slice. So overlapping clouds
 and the slabs of a big cloud blend in order without merging, though
 geometries whose points fall in the same slice draw one after another. The
 software renderer orders points by the same slices and keys. A frame can hold
-at most 4095 alpha point geometries; more are refused. Each costs 64 indirect
-draws a frame, one per slice, so draw cost grows with the number of alpha
+at most 4095 alpha point geometries; more are refused. Each costs an indirect
+draw a frame for every slice its bounds span (all 64 unless the frame culls
+by its bounds, as `Scene.Frame`'s do), so draw cost grows with the number of alpha
 point geometries: keep emitters in a handful of geometries, not one per
 particle.
 
@@ -239,8 +240,8 @@ limit. The frame-wide sort adds 16 bytes per alpha point drawn in a frame (two
 key and two index buffers), shared by all geometries and kept between frames
 at the most a frame has needed, plus about 17 KiB a geometry for its run
 table. On an Apple M5 Max through Metal, one geometry of a million splats
-(640×360, camera inside a 10×10×2 slab) takes about 17 ms a frame, and 2.5
-million splats about 40 ms, each a whole `Render` call: sort, draw, and
+(640×360, camera inside a 10×10×2 slab) takes about 18 ms a frame, and 2.5
+million splats about 43 ms, each a whole `Render` call: sort, draw, and
 reading the image back to the CPU
 (`NT3D_GPU_BENCH=1 go test -tags webgpu -run TestGPUSortMillion -v .`); these
 depend on the GPU and on how much the splats overlap. CPU scene snapshots,

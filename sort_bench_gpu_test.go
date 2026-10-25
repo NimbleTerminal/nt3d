@@ -59,8 +59,9 @@ func benchSplats(t *testing.T, count int) float64 {
 	return float64(total.Microseconds()) / 4000
 }
 
-// TestGPUSortMillion times a frame of a million blended splats, sort and
-// draw, from inside the slab. It runs only when NT3D_GPU_BENCH=1.
+// TestGPUSortMillion times a frame of a million blended splats from inside
+// the slab: a whole Render, sort, draw, and readback to the CPU. It runs
+// only when NT3D_GPU_BENCH=1.
 func TestGPUSortMillion(t *testing.T) {
 	if os.Getenv("NT3D_GPU_BENCH") != "1" {
 		t.Skip("set NT3D_GPU_BENCH=1 to time the sort")
