@@ -5,6 +5,7 @@ package nt3dsog
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -327,4 +328,76 @@ func TestRegistration(t *testing.T) {
 	if err != nil || m.Format != SOG {
 		t.Fatalf("Decode: %v", err)
 	}
+}
+
+// The v1 bundle decodes to the v2 bundle's splats: v1 quantizes scales, SH0,
+// and SH-N linearly over a range, where v2 uses codebooks, so those agree
+// only within one range step; positions and rotations are encoded alike.
+func TestV1MatchesV2(t *testing.T) {
+	v1 := read(t, filepath.Join("testdata", "gaussian-ring.v1.sog"))
+	var raw struct {
+		Scales, Sh0 struct{ Mins, Maxs []float64 }
+		ShN         struct{ Mins, Maxs float64 }
+	}
+	if err := json.Unmarshal(readEntry(t, v1, "meta.json"), &raw); err != nil {
+		t.Fatal(err)
+	}
+	// A degenerate range (mins == maxs) has a zero step.
+	var scaleStep, sh0Step [3]float64
+	for k := range 3 {
+		scaleStep[k] = math.Exp((raw.Scales.Maxs[k]-raw.Scales.Mins[k])/255) - 1
+		sh0Step[k] = (raw.Sh0.Maxs[k] - raw.Sh0.Mins[k]) / 255
+	}
+	shNStep := (raw.ShN.Maxs - raw.ShN.Mins) / 255
+
+	m, err := Decode(v1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Format != SOG || len(m.Objects) != 1 {
+		t.Fatalf("format %v, %d objects", m.Format, len(m.Objects))
+	}
+	g, w := m.Objects[0].Geometry, decodeRing(t, nil)
+	if len(g.Points) != 576 || len(g.GaussianSH) != 4*576 {
+		t.Fatalf("%d points, %d SH", len(g.Points), len(g.GaussianSH))
+	}
+	match := nearest(t, g.Points, w.Points)
+	for i, p := range g.Points {
+		j := match[i]
+		q := w.Points[j]
+		if d := length(p.Position.Sub(q.Position)); d > 1e-6 {
+			t.Fatalf("splat %d at %v, v2 %d at %v: %g apart", i, p.Position, j, q.Position, d)
+		}
+		if !near(p.Color.R, q.Color.R, 2) || !near(p.Color.G, q.Color.G, 2) || !near(p.Color.B, q.Color.B, 2) || !near(p.Color.A, q.Color.A, 1) {
+			t.Fatalf("splat %d color %v, v2 %d %v", i, p.Color, j, q.Color)
+		}
+		for k := range 3 {
+			assertAxis(t, i, k, p.GaussianAxes[k], q.GaussianAxes[k], scaleStep[k]+1e-4, .01*math.Pi/180)
+		}
+		for k := range 4 {
+			for ch := range 3 {
+				step := shNStep
+				if k == 0 {
+					step = sh0Step[ch]
+				}
+				if a, b := g.GaussianSH[4*i+k][ch], w.GaussianSH[4*j+k][ch]; math.Abs(float64(a-b)) > step+1e-5 {
+					t.Fatalf("splat %d SH %d channel %d: %v, v2 %d %v, step %g", i, k, ch, a, j, b, step)
+				}
+			}
+		}
+	}
+}
+
+// readEntry returns the named file from a bundle.
+func readEntry(t *testing.T, bundle []byte, name string) []byte {
+	t.Helper()
+	z, err := zip.NewReader(bytes.NewReader(bundle), int64(len(bundle)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := entry(z, name, 1<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
