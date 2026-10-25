@@ -3,9 +3,15 @@
 package nt3dsog
 
 import (
+	"archive/zip"
+	"bytes"
+	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"nimbleterminal.dev/nt3d"
@@ -191,5 +197,134 @@ func TestSample(t *testing.T) {
 	}
 	if sh != 16*points {
 		t.Fatalf("%d SH for %d points", sh, points)
+	}
+}
+
+// unzip writes the bundle's files into a new directory, as an unbundled
+// SOG export lays them out, and returns the directory.
+func unzip(t *testing.T, bundle []byte) string {
+	t.Helper()
+	z, err := zip.NewReader(bytes.NewReader(bundle), int64(len(bundle)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for _, f := range z.File {
+		r, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f.Name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// zipOf builds a zip of the named files, in order.
+func zipOf(t *testing.T, files map[string]string, order ...string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, name := range order {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte(files[name])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// An unbundled meta.json reads its images from beside it, through ReadFile,
+// to the same points the bundle decodes to; without a way to open them it
+// fails, and an opener's error is the decoder's.
+func TestUnbundled(t *testing.T) {
+	bundle := read(t, filepath.Join("testdata", "gaussian-ring.sog"))
+	dir := unzip(t, bundle)
+	want, err := Decode(bundle, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := nt3dmesh.ReadFile(filepath.Join(dir, "meta.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Format != SOG || len(got.Objects) != 1 {
+		t.Fatalf("format %v, %d objects", got.Format, len(got.Objects))
+	}
+	if !reflect.DeepEqual(got.Objects[0].Geometry.Points, want.Objects[0].Geometry.Points) {
+		t.Fatal("unbundled points differ from the bundle's")
+	}
+
+	meta := read(t, filepath.Join(dir, "meta.json"))
+	if _, err := Decode(meta, nil); err == nil {
+		t.Fatal("meta.json decoded without a way to open its images")
+	}
+	broken := errors.New("quats.webp is unreadable")
+	_, err = Decode(meta, &nt3dmesh.Options{Open: func(name string) ([]byte, error) {
+		if name == "quats.webp" {
+			return nil, broken
+		}
+		return os.ReadFile(filepath.Join(dir, name))
+	}})
+	if !errors.Is(err, broken) {
+		t.Fatalf("opener's error not returned: %v", err)
+	}
+}
+
+func TestRegistration(t *testing.T) {
+	bundle := read(t, filepath.Join("testdata", "gaussian-ring.sog"))
+	meta := read(t, filepath.Join(unzip(t, bundle), "meta.json"))
+	for _, c := range []struct {
+		name string
+		data []byte
+	}{{"a.sog", nil}, {"a.bin", bundle}, {"a.json", meta}, {"a.bin", meta}} {
+		if f, _ := nt3dmesh.FormatOf(c.name, c.data); f != SOG {
+			t.Fatalf("%s with %d bytes: %q", c.name, len(c.data), f)
+		}
+	}
+	v1 := read(t, filepath.Join("testdata", "gaussian-ring.v1.sog"))
+	if f, _ := nt3dmesh.FormatOf("a.bin", v1); f != SOG {
+		t.Fatalf("version 1 bundle: %q", f)
+	}
+	other := zipOf(t, map[string]string{"3D/3dmodel.model": "<model/>"}, "3D/3dmodel.model")
+	if f, _ := nt3dmesh.FormatOf("a.bin", other); f != nt3dmesh.ThreeMF {
+		t.Fatalf("a zip without meta.json: %q", f)
+	}
+	// A zip that merely names meta.json in a directory is not a bundle.
+	nested := zipOf(t, map[string]string{"x/meta.json": "{}"}, "x/meta.json")
+	if f, _ := nt3dmesh.FormatOf("a.bin", nested); f != nt3dmesh.ThreeMF {
+		t.Fatalf("a zip with only x/meta.json: %q", f)
+	}
+	for _, data := range []string{"{}", `{"means": {}}`, `  {"quats": {}}`, `[{"means":1,"quats":2}]`} {
+		if f, _ := nt3dmesh.FormatOf("a.json", []byte(data)); f == SOG {
+			t.Fatalf("%q sniffed as SOG", data)
+		}
+	}
+	if f, _ := nt3dmesh.FormatOf("a.json", append([]byte("\n\t "), meta...)); f != SOG {
+		t.Fatalf("meta.json after whitespace: %q", f)
+	}
+	// Keys far from the start are not looked for.
+	late := append([]byte("{"+strings.Repeat(" ", sniffWindow)), meta[1:]...)
+	if sniff(late) {
+		t.Fatal("keys past the sniff window sniffed as SOG")
+	}
+	if sniff([]byte("PK\x03\x04 truncated")) || sniff(nil) {
+		t.Fatal("garbage sniffed as SOG")
+	}
+	m, err := nt3dmesh.Decode(bundle, SOG, nil)
+	if err != nil || m.Format != SOG {
+		t.Fatalf("Decode: %v", err)
 	}
 }

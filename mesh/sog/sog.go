@@ -18,6 +18,36 @@ const SOG nt3dmesh.Format = "sog"
 // zipMagic starts a zip's first local file header.
 const zipMagic = "PK\x03\x04"
 
+func init() { nt3dmesh.RegisterFormatSniff(SOG, []string{".sog"}, sniff, Decode) }
+
+// sniffWindow is how much of an unbundled meta.json sniff looks through for
+// its "means" and "quats" keys. A version 2 file puts the 256-entry scales
+// codebook between them, so "quats" can begin past 5000 bytes in.
+const sniffWindow = 64 << 10
+
+// sniff recognizes a zip holding a top-level meta.json, or an unbundled
+// meta.json: JSON whose opening names both "means" and "quats".
+func sniff(data []byte) bool {
+	if bytes.HasPrefix(data, []byte(zipMagic)) {
+		z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return false
+		}
+		for _, f := range z.File {
+			if f.Name == "meta.json" {
+				return true
+			}
+		}
+		return false
+	}
+	head := bytes.TrimLeft(data, " \t\r\n")
+	if len(head) == 0 || head[0] != '{' {
+		return false
+	}
+	head = head[:min(len(head), sniffWindow)]
+	return bytes.Contains(head, []byte(`"means"`)) && bytes.Contains(head, []byte(`"quats"`))
+}
+
 // Decode reads a SOG bundle (a zip holding meta.json and its images), or
 // an unbundled meta.json whose images it reads through o.Open. The files
 // and decoded images together may hold no more than o.ByteLimit() bytes.

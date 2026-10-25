@@ -15,8 +15,9 @@
 // Units are whatever the file uses; nothing is normalized.
 //
 // STL, OBJ, 3MF, PLY (meshes, point clouds, and 3DGS Gaussian splats), and
-// Stanford .conf are built in; glTF and SPZ register themselves from
-// nt3dmesh/gltf and nt3dmesh/spz, or all at once from nt3dmesh/formats.
+// Stanford .conf are built in; glTF, SPZ, and SOG register themselves from
+// nt3dmesh/gltf, nt3dmesh/spz, and nt3dmesh/sog, or all at once from
+// nt3dmesh/formats.
 package nt3dmesh
 
 import (
