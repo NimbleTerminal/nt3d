@@ -32,8 +32,9 @@ var (
 // RegisterFormat adds a format that Decode, ReadFile, and FormatOf know: by
 // its name, its file extensions (with the dot, such as ".glb"), and, when it
 // has one, the magic prefix its content begins with. Formats built in, and
-// formats registered earlier, are chosen first. It is meant to be called
-// from init functions.
+// formats registered earlier, are chosen first, except that a registered
+// sniff is consulted for zip content before it defaults to 3MF. It is meant
+// to be called from init functions.
 func RegisterFormat(f Format, extensions []string, magic string, decode func(data []byte, o *Options) (*Model, error)) {
 	var sniff func([]byte) bool
 	if magic != "" {

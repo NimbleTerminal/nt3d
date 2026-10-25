@@ -410,6 +410,10 @@ func FormatOf(name string, data []byte) (Format, bool) {
 		return PLY, true
 	}
 	if bytes.HasPrefix(data, []byte("PK\x03\x04")) {
+		// A registered format may be a zip bundle; any other zip is 3MF.
+		if f, ok := registeredMagic(data); ok {
+			return f, true
+		}
 		return ThreeMF, true
 	}
 	if binarySTL(data) || bytes.HasPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte("solid")) {

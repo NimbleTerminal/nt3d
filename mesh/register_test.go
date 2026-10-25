@@ -2,6 +2,7 @@
 package nt3dmesh
 
 import (
+	"archive/zip"
 	"bytes"
 	"errors"
 	"testing"
@@ -47,5 +48,35 @@ func TestRegisterFormat(t *testing.T) {
 	}
 	if f, _ := FormatOf("b.ZP", nil); f != "zipped" {
 		t.Fatalf("extension: %q", f)
+	}
+	// A registered sniff may claim a zip; otherwise a zip is 3MF.
+	zipWith := func(name string) []byte {
+		var b bytes.Buffer
+		w := zip.NewWriter(&b)
+		f, _ := w.Create(name)
+		f.Write([]byte("{}"))
+		w.Close()
+		return b.Bytes()
+	}
+	RegisterFormatSniff("bundle", []string{".bundle"}, func(data []byte) bool {
+		r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return false
+		}
+		for _, f := range r.File {
+			if f.Name == "meta.json" {
+				return true
+			}
+		}
+		return false
+	}, func([]byte, *Options) (*Model, error) { return nil, errors.New("bundle") })
+	if f, _ := FormatOf("a.bin", zipWith("meta.json")); f != "bundle" {
+		t.Fatalf("zip with meta.json: %q", f)
+	}
+	if f, _ := FormatOf("a.bin", zipWith("3D/3dmodel.model")); f != ThreeMF {
+		t.Fatalf("other zip: %q", f)
+	}
+	if f, _ := FormatOf("a.3mf", zipWith("meta.json")); f != ThreeMF {
+		t.Fatalf("extension first: %q", f)
 	}
 }
