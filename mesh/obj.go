@@ -217,7 +217,7 @@ func (d *objDecoder) statement(fields []string) error {
 func (d *objDecoder) part() *objPart {
 	key := [2]string{d.name, d.material}
 	p := d.parts[key]
-	if p == nil || len(p.Geometry.Indices) >= 3*pieceTriangles {
+	if p == nil || len(p.Geometry.Indices) >= 3*pieceTriangles() {
 		p = &objPart{Object: Object{Name: d.name, Material: d.material}, shared: map[[3]int]uint32{}}
 		d.parts[key] = p
 		d.order = append(d.order, p)

@@ -69,14 +69,15 @@ var ErrTooLarge = errors.New("nt3dmesh: package unpacks to too many bytes")
 // is zero: about 600 MB of GPU buffers, and somewhat less of decoded memory.
 const DefaultMaxTriangles = 4 << 20
 
-// pieceTriangles is the most triangles one Object holds. Tests lower it.
-var pieceTriangles = nt3d.MaxMeshTriangles
+// pieceTriangles is the most triangles one Object holds, read when a mesh
+// is split so it follows nt3d.SetBindingLimit. Tests lower it.
+var pieceTriangles = nt3d.MeshTriangleLimit
 
 // piecePoints, maxGaussians, and maxPreciseGaussians are the most points, and
 // Gaussian splats with a count of SH coefficients each (compact, or Precise),
 // one Object holds. Tests lower them.
 var (
-	piecePoints         = nt3d.MaxPoints
+	piecePoints         = nt3d.PointLimit
 	maxGaussians        = nt3d.MaxGaussians
 	maxPreciseGaussians = nt3d.MaxPreciseGaussians
 )
@@ -95,7 +96,7 @@ var (
 // returned as it is, in a slice of one.
 func PointPieces(o Object) []Object {
 	g := &o.Geometry
-	most := piecePoints
+	most := piecePoints()
 	per := 0
 	if len(g.Points) > 0 {
 		per = len(g.GaussianSH) / len(g.Points)

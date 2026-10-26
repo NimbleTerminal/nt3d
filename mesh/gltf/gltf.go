@@ -38,7 +38,7 @@ const maxTextureSide = 8192
 
 // pieceTriangles is the most triangles one object holds, as nt3dmesh splits
 // them. Tests lower it.
-var pieceTriangles = nt3d.MaxMeshTriangles
+var pieceTriangles = nt3d.MeshTriangleLimit
 
 // maxLineVertices is the most line ends a model may hold, as many as one
 // geometry may.
@@ -926,10 +926,10 @@ func (b *gltfBuilder) generateTangents(v []uint32, mirror bool) {
 // normals are computed per face. at is each corner's index in the
 // primitive's triangle list.
 func (b *gltfBuilder) face(tri [3]uint32, at [3]int, back bool) error {
-	limit := pieceTriangles
+	limit := pieceTriangles()
 	if b.look.normal != nil {
 		// Tangents or independent normal UVs take an extension record.
-		limit = min(limit, nt3d.MaxMeshTriangles/2)
+		limit = min(limit, nt3d.MeshTriangleLimit()/2)
 	}
 	if b.piece == nil || len(b.piece.Geometry.Indices) >= 3*limit {
 		b.start()
@@ -1004,11 +1004,11 @@ func (b *gltfBuilder) face(tri [3]uint32, at [3]int, back bool) error {
 }
 
 // maxPoints caps a model's points, across its primitives. Tests lower it.
-var maxPoints = nt3d.MaxPoints
+var maxPoints = nt3d.PointLimit
 
 func (b *gltfBuilder) points(v []uint32) error {
-	if b.d.points += len(v); b.d.points > maxPoints {
-		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooManyTriangles, maxPoints)
+	if b.d.points += len(v); b.d.points > maxPoints() {
+		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooManyTriangles, maxPoints())
 	}
 	b.start()
 	g := &b.piece.Geometry

@@ -16,8 +16,21 @@ import (
 func pieces(t *testing.T, n int) {
 	t.Helper()
 	real := pieceTriangles
-	pieceTriangles = n
+	pieceTriangles = func() int { return n }
 	t.Cleanup(func() { pieceTriangles = real })
+}
+
+// The piece caps read the binding limit when a cloud is split, not when the
+// package loads.
+func TestPieceCapsFollowLimit(t *testing.T) {
+	defer nt3d.SetBindingLimit(nt3d.DefaultBindingLimit)
+	if piecePoints() != nt3d.MaxPoints || pieceTriangles() != nt3d.MaxMeshTriangles || maxGaussians(16) != 2_796_202 {
+		t.Fatalf("default caps %d %d %d", piecePoints(), pieceTriangles(), maxGaussians(16))
+	}
+	nt3d.SetBindingLimit(nt3d.MaxBindingLimit)
+	if piecePoints() != nt3d.MaxPointIndex || pieceTriangles() != 7_456_540 || maxGaussians(16) != 16_777_216 {
+		t.Fatalf("caps at the ceiling %d %d %d", piecePoints(), pieceTriangles(), maxGaussians(16))
+	}
 }
 
 // sizes lists each object's triangles, checking it is valid geometry.
@@ -89,7 +102,7 @@ func TestTriangleBudget(t *testing.T) {
 // A cloud over the capacity splits into slabs along its longest axis, SH
 // kept with its points, each piece valid and sharing the object's fields.
 func TestPointPieces(t *testing.T) {
-	defer func(g func(int) int, p int) { maxGaussians, piecePoints = g, p }(maxGaussians, piecePoints)
+	defer func(g func(int) int, p func() int) { maxGaussians, piecePoints = g, p }(maxGaussians, piecePoints)
 	maxGaussians = func(int) int { return 4 }
 	g := nt3d.Geometry{PointStyle: nt3d.PointStyle{Shape: nt3d.GaussianPoint, Units: nt3d.WorldUnits, Blend: nt3d.AlphaBlend}}
 	for i := range 10 {
@@ -113,7 +126,7 @@ func TestPointPieces(t *testing.T) {
 			last = pt.Position.X
 		}
 	}
-	piecePoints = 3
+	piecePoints = func() int { return 3 }
 	plain := Object{Geometry: nt3d.Geometry{Points: g.Points}}
 	if n := len(PointPieces(plain)); n != 4 {
 		t.Fatalf("plain cloud: %d pieces", n)
@@ -146,7 +159,7 @@ func TestPointPiecesPrecise(t *testing.T) {
 // Gaussian PLY and point-cloud PLY over the capacity decode as pieces
 // instead of failing.
 func TestGaussianPLYSplits(t *testing.T) {
-	defer func(g func(int) int, p int) { maxGaussians, piecePoints = g, p }(maxGaussians, piecePoints)
+	defer func(g func(int) int, p func() int) { maxGaussians, piecePoints = g, p }(maxGaussians, piecePoints)
 	maxGaussians = func(int) int { return 2 }
 	var b strings.Builder
 	b.WriteString("ply\nformat ascii 1.0\nelement vertex 5\n")
@@ -168,7 +181,7 @@ func TestGaussianPLYSplits(t *testing.T) {
 	if len(m.Objects) != 3 || total != 5 || m.Format != PLY {
 		t.Fatalf("%d objects, %d points, format %q", len(m.Objects), total, m.Format)
 	}
-	piecePoints = 2
+	piecePoints = func() int { return 2 }
 	cloud := "ply\nformat ascii 1.0\nelement vertex 5\nproperty float x\nproperty float y\nproperty float z\nend_header\n0 0 0\n1 0 0\n2 0 0\n3 0 0\n4 0 0\n"
 	if m, err = DecodePLY([]byte(cloud), nil); err != nil || len(m.Objects) != 3 {
 		t.Fatalf("point cloud: %v, %d objects", err, len(m.Objects))

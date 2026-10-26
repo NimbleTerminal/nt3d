@@ -99,6 +99,18 @@ func near(a, b nt3dmath.Vec3) bool {
 	return d.Dot(d) < 1e-8
 }
 
+// The caps read the binding limit at decode time.
+func TestGLTFCapsFollowLimit(t *testing.T) {
+	defer nt3d.SetBindingLimit(nt3d.DefaultBindingLimit)
+	if maxPoints() != nt3d.MaxPoints || pieceTriangles() != nt3d.MaxMeshTriangles {
+		t.Fatalf("default caps %d %d", maxPoints(), pieceTriangles())
+	}
+	nt3d.SetBindingLimit(nt3d.MaxBindingLimit)
+	if maxPoints() != nt3d.MaxPointIndex || pieceTriangles() != 7_456_540 {
+		t.Fatalf("caps at the ceiling %d %d", maxPoints(), pieceTriangles())
+	}
+}
+
 func TestGLTFTriangle(t *testing.T) {
 	data := glb(t, gltfDoc(upTriangle))
 	if f, ok := nt3dmesh.FormatOf("x.bin", data); !ok || f != GLTF {
@@ -391,9 +403,9 @@ func TestGLTFRefusals(t *testing.T) {
 	fails(t, err, "non-finite texture coordinate")
 
 	// Points and lines count against caps of their own, across primitives.
-	defer func(n int) { maxPoints = n }(maxPoints)
-	maxPoints = 10
-	cloud := make([][3]float32, maxPoints/2+1)
+	defer func(n func() int) { maxPoints = n }(maxPoints)
+	maxPoints = func() int { return 10 }
+	cloud := make([][3]float32, maxPoints()/2+1)
 	_, err = Decode(glb(t, gltfDoc(prim{positions: cloud, mode: gltf.PrimitivePoints}, prim{positions: cloud, mode: gltf.PrimitivePoints})), nil)
 	if !errors.Is(err, nt3dmesh.ErrTooManyTriangles) {
 		t.Fatalf("over the point cap: %v", err)
@@ -417,8 +429,8 @@ func TestGLTFAddTo(t *testing.T) {
 // A primitive larger than one geometry may hold is split into objects of
 // the same name, sharing vertices within each.
 func TestGLTFSplit(t *testing.T) {
-	defer func(n int) { pieceTriangles = n }(pieceTriangles)
-	pieceTriangles = 2
+	defer func(n func() int) { pieceTriangles = n }(pieceTriangles)
+	pieceTriangles = func() int { return 2 }
 	p := prim{
 		positions: [][3]float32{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {2, 0, 0}, {2, 1, 0}},
 		indices:   []uint16{0, 1, 2, 0, 2, 3, 1, 4, 5, 1, 5, 2, 0, 1, 3},

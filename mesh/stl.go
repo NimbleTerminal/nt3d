@@ -57,7 +57,7 @@ func (s *faceObject) addNormals(v [3]nt3dmath.Vec3, normals *[3]nt3dmath.Vec3, s
 	if err := s.budget.take(1); err != nil {
 		return err
 	}
-	if len(s.Geometry.Indices) >= 3*pieceTriangles {
+	if len(s.Geometry.Indices) >= 3*pieceTriangles() {
 		s.pieces = append(s.pieces, s.Object)
 		s.Object = Object{Name: s.Name, Material: s.Material, Part: s.Part, Geometry: nt3d.Geometry{Material: s.Geometry.Material}}
 	}
@@ -126,7 +126,7 @@ func decodeBinarySTL(data []byte, o *Options, budget *triangleBudget) (*Model, e
 		objectColor = color.RGBA{header[i+6], header[i+7], header[i+8], 255}
 	}
 	s := &faceObject{budget: budget}
-	first := 3 * min(n, pieceTriangles)
+	first := 3 * min(n, pieceTriangles())
 	s.Geometry.Vertices = make([]nt3d.Vertex, 0, first)
 	s.Geometry.Indices = make([]uint32, 0, first)
 	s.Plain = make([]bool, 0, first)
