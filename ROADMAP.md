@@ -75,6 +75,19 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **`v0.6.0`** (`f44ada1`…`e2664cf`): spherical-harmonic palettes below.
+- **SH palettes**: a Gaussian geometry keeps its spherical-harmonic bands
+  above DC as a palette of up to 65,536 centroids shared by pointer
+  (`Geometry.GaussianSHPalette`) with a 16-bit label a splat
+  (`GaussianSHLabels`), DC staying per splat, so a million degree-3 splats
+  take about 49 MB plus at most 2.9 MB of palette instead of 92. Both
+  renderers resolve the palette, inside the two existing SH buffers.
+  `nt3dmesh.BuildSHPalette` builds one by deterministic two-level k-means
+  (a million splats in about 2.5 s on an M5 Max), at load through
+  `Options.SHPalette` (`Keep` by default, which keeps a SOG's own palette;
+  `Build`; `Expand` for the old per-splat shape) or in the background with
+  a swap, as the meshes demo's `w` shows; `ExpandSHPalette` inverts
+  (`f44ada1`…`e2664cf`).
 - **`v0.5.0`** (`2bfe699`…`6ddfaf3`): budgeted splat level of detail below.
 - **Budgeted splat LOD**: every splat decoder clusters its clouds at load
   (`Geometry.Clusters`; `nt3dmesh.Options.NoClusters` opts out), and both
