@@ -62,6 +62,7 @@ type DropShadow struct {
 // Scene setters copy geometry; frame consumers must treat snapshots as read-only.
 type Geometry struct {
 	pointUpdate *pointUpdate
+	stored      *storedGeometry
 	posed       *posedGeometry
 	Billboard   *Billboard // Optional camera-facing transform, resolved by Scene.Frame.
 

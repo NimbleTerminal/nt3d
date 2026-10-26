@@ -253,6 +253,7 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	g = cloneGeometry(g)
 	g.posed = nil
 	g.Bounds = GeometryBounds(g)
+	g.stored = &storedGeometry{g.Points, g.PointStyle, g.Clusters} // Validated above.
 	generateTangentsOnUpload(&g)
 	n.deformation = nil
 	n.geometry, n.shared, n.pickIndex = &g, nil, nil

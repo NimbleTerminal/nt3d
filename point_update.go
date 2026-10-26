@@ -3,6 +3,7 @@ package nt3d
 
 import (
 	"fmt"
+	"nimbleterminal.dev/nt3d/clod"
 	"nimbleterminal.dev/nt3d/math"
 	"slices"
 )
@@ -57,7 +58,7 @@ func (s *Scene) UpdateNodePoints(id NodeID, first int, points []Point, bounds nt
 		return nil
 	}
 	g := *old
-	g.Clusters = nil
+	g.Clusters, g.stored = nil, nil
 	if first == 0 && len(points) == len(old.Points) {
 		g.Points = slices.Clone(points)
 	} else {
@@ -75,10 +76,26 @@ func (s *Scene) UpdateNodePoints(id NodeID, first int, points []Point, bounds nt
 	return nil
 }
 
+// storedGeometry certifies the points, style and clusters a scene stored
+// after Validate passed on them, as pointUpdate certifies an update's.
+type storedGeometry struct {
+	points   []Point
+	style    PointStyle
+	clusters *nt3dclod.Set
+}
+
+// certifies reports whether points and style are the very ones validated.
+func certifies(points, validated []Point, style, validatedStyle PointStyle) bool {
+	return len(points) == len(validated) && (len(points) == 0 || &points[0] == &validated[0]) && style == validatedStyle
+}
+
 func validateFrameGeometry(g Geometry) error {
 	// Scene-owned arrays are immutable by contract. Public Geometry.Validate
 	// still checks every point; manually constructed frames have no certificate.
-	if u := g.pointUpdate; u != nil && len(g.Points) == len(u.points) && len(g.Points) > 0 && &g.Points[0] == &u.points[0] && g.PointStyle == u.style {
+	n := len(g.Points)
+	u, c := g.pointUpdate, g.stored
+	stored := c != nil && certifies(g.Points, c.points, g.PointStyle, c.style)
+	if stored || u != nil && n > 0 && certifies(g.Points, u.points, g.PointStyle, u.style) {
 		if err := validateGaussianSH(g); err != nil {
 			return err
 		}
@@ -87,8 +104,12 @@ func validateFrameGeometry(g Geometry) error {
 		g.GaussianSHTransform = nt3dmath.Mat4{}
 	}
 	if g.Clusters != nil {
-		if err := validateClusterBounds(g.Clusters, len(g.Points)); err != nil {
-			return err
+		// A stored set is trusted as long as it still describes n points: one
+		// Rebuilt in place over other positions is checked again.
+		if !stored || g.Clusters != c.clusters || len(g.Clusters.Order) != n {
+			if err := validateClusterBounds(g.Clusters, n); err != nil {
+				return err
+			}
 		}
 		g.Clusters = nil
 	}

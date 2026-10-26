@@ -3,6 +3,7 @@ package nt3d
 import (
 	"math"
 	"nimbleterminal.dev/nt3d/math"
+	"slices"
 	"testing"
 )
 
@@ -84,5 +85,52 @@ func BenchmarkPointUpdate100K(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// A scene's stored geometry is trusted per frame by pointer identity:
+// replacing its points or clusters in a frame copy is checked again.
+func TestStoredGeometryCertificate(t *testing.T) {
+	s := NewScene()
+	_, err := s.SetGeometry("cloud", lodCloud(t, 256, 64))
+	check(t, err)
+	f, err := s.Frame(DefaultCamera(), 40, 40)
+	check(t, err)
+	gi := -1
+	for i, g := range f.Geometry {
+		if g.Clusters != nil {
+			gi = i
+		}
+	}
+	if gi < 0 || f.Geometry[gi].stored == nil {
+		t.Fatal("the scene's frame carries no certified cloud")
+	}
+	if err := validateFrame(f); err != nil {
+		t.Fatalf("scene frame: %v", err)
+	}
+
+	nan := float32(math.NaN())
+	bad := lodCloud(t, 256, 64)
+	bad.Points[3].Position.X = nan
+	if validateFrame(lodOrtho(bad)) == nil {
+		t.Fatal("a hand-built frame with a NaN point passed")
+	}
+
+	points := slices.Clone(f.Geometry[gi].Points)
+	points[3].Position.X = nan
+	swapped := f
+	swapped.Geometry = slices.Clone(f.Geometry)
+	swapped.Geometry[gi].Points = points
+	if validateFrame(swapped) == nil {
+		t.Fatal("a frame copy with other points holding a NaN passed")
+	}
+
+	set := *f.Geometry[gi].Clusters
+	set.Clusters = slices.Clone(set.Clusters)
+	set.Clusters[0].First++
+	swapped.Geometry = slices.Clone(f.Geometry)
+	swapped.Geometry[gi].Clusters = &set
+	if validateFrame(swapped) == nil {
+		t.Fatal("a frame copy with a non-tiling cluster set passed")
 	}
 }
