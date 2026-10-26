@@ -74,8 +74,9 @@ func TransformGeometry(g Geometry, m nt3dmath.Mat4) (Geometry, error) {
 
 // unifySHPalettes returns gs unchanged when no palette is present or all the
 // SH is palettes of the same bands; otherwise a copy with every palette
-// expanded, which leaves gs alone.
-func unifySHPalettes(gs []Geometry) []Geometry {
+// expanded, which leaves gs alone. Expansion trusts its input, so each palette
+// is checked first.
+func unifySHPalettes(gs []Geometry) ([]Geometry, error) {
 	var first *SHPalette
 	paletted, mixed := false, false
 	for i := range gs {
@@ -89,13 +90,19 @@ func unifySHPalettes(gs []Geometry) []Geometry {
 		}
 	}
 	if !paletted || !mixed {
-		return gs
+		return gs, nil
 	}
 	gs = slices.Clone(gs)
 	for i := range gs {
+		if gs[i].GaussianSHPalette == nil {
+			continue
+		}
+		if err := validateSHPalette(gs[i], false); err != nil {
+			return nil, err
+		}
 		ExpandSHPalette(&gs[i])
 	}
-	return gs
+	return gs, nil
 }
 
 func sameMaterial(a, b *Material) bool {
@@ -111,7 +118,10 @@ func sameMaterial(a, b *Material) bool {
 // it; if any other SH is present, the palettes are expanded first.
 func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	var out Geometry
-	gs = unifySHPalettes(gs)
+	gs, err := unifySHPalettes(gs)
+	if err != nil {
+		return Geometry{}, err
+	}
 	if len(gs) == 1 {
 		out.WireGrid = gs[0].WireGrid
 	}

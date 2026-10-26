@@ -225,3 +225,31 @@ func TestSHPaletteFrameCertificate(t *testing.T) {
 		t.Fatal("an emptied clip kept palette state")
 	}
 }
+
+func TestMergeMalformedSHPalette(t *testing.T) {
+	g := paletteGeometry(t, 50, 4)
+	plain := g
+	ExpandSHPalette(&plain) // Forces the expanding path.
+	for name, mutate := range map[string]func(*Geometry){
+		"short labels":     func(h *Geometry) { h.GaussianSHLabels = h.GaussianSHLabels[:10] },
+		"label past count": func(h *Geometry) { h.GaussianSHLabels[7] = 4 },
+		"no labels":        func(h *Geometry) { h.GaussianSHLabels = nil },
+	} {
+		bad := g
+		bad.GaussianSHLabels = slices.Clone(g.GaussianSHLabels)
+		mutate(&bad)
+		for other, h := range map[string]Geometry{"expanded": plain, "other palette": func() Geometry {
+			o := paletteGeometry(t, 50, 4)
+			o.GaussianSHPalette = &SHPalette{Degree: 3, Coefficients: slices.Clone(o.GaussianSHPalette.Coefficients)}
+			o.GaussianSHPalette.Coefficients[0][0]++
+			return o
+		}()} {
+			if _, err := MergeGeometry(bad, h); err == nil {
+				t.Errorf("%s with %s: accepted", name, other)
+			}
+			if _, err := MergeGeometry(h, bad); err == nil {
+				t.Errorf("%s with %s (reversed): accepted", name, other)
+			}
+		}
+	}
+}
