@@ -54,6 +54,7 @@ type demo struct {
 	cloud             *cloudScene
 	aabb              *aabbScene
 	water             *waterScene
+	splats            splatStats
 }
 
 type shadowMode int
@@ -276,6 +277,11 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			d.animate = !d.animate
 			d.lastPhase = time.Now()
+		case "u", "y", "z":
+			if !d.showsSplats() {
+				return d, nil
+			}
+			d.adjustSplatBudget(v.String())
 		case "h":
 			if d.aabb != nil {
 				err = d.cycleAABBShow()
@@ -568,6 +574,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	}
 	if d.mipmaps != nil && d.mipmaps.mode == mipOnly {
 		f.Anisotropy = 1
+	}
+	if d.showsSplats() {
+		d.splats.drawn, d.splats.resident = f.SplatSelection()
 	}
 	if d.fog {
 		r := float32(d.view.Camera().Distance)

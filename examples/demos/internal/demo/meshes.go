@@ -19,6 +19,7 @@ func MeshesMain() { mainDemo(false, sceneMeshes) }
 
 type meshScene struct {
 	hasSH, dcOnly bool
+	splats        bool // Gaussian splats, with or without spherical harmonics.
 	capture       bool // A splat capture, framed on its subject rather than its bounds.
 	nodes         []nt3d.NodeID
 	sources       []nt3d.Geometry // As built or read, per node.
@@ -74,6 +75,7 @@ func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 			d.meshes.nodes = append(d.meshes.nodes, id)
 			d.meshes.sources = append(d.meshes.sources, m.Objects[j].Geometry)
 			d.meshes.hasSH = d.meshes.hasSH || len(m.Objects[j].Geometry.GaussianSH) > 0
+			d.meshes.splats = d.meshes.splats || m.Objects[j].Geometry.PointStyle.Shape == nt3d.GaussianPoint
 		}
 		d.meshes.triangles += m.Triangles()
 	}
@@ -202,17 +204,75 @@ func (d *demo) rebuildMeshes() error {
 	return nil
 }
 
-func (d *demo) meshesView(content string) string {
-	if d.meshes.hasSH {
-		count := 0
+// splatStats is the splat budget the keys set, and what the last frame
+// drew of it. The budget is zero for the default, as on the scene.
+type splatStats struct {
+	budget, drawn, resident int
+}
+
+// minSplatBudget is the least the budget keys halve to.
+const minSplatBudget = 1000
+
+// showsSplats reports whether the scene is a splat cloud, the budget keys'
+// scene.
+func (d *demo) showsSplats() bool {
+	return d.meshes != nil && d.models == nil && (d.meshes.hasSH || d.meshes.splats)
+}
+
+// adjustSplatBudget halves ("u"), doubles ("y"), or resets ("z") the splat
+// budget on the scene.
+func (d *demo) adjustSplatBudget(key string) {
+	b := d.splats.budget
+	if b <= 0 {
+		b = nt3d.DefaultSplatBudget
+	}
+	switch key {
+	case "u":
+		b = max(minSplatBudget, b/2)
+	case "y":
+		b *= 2
+	case "z":
+		b = 0
+	}
+	d.splats.budget = b
+	d.scene.SetSplatBudget(b)
+}
+
+// shortCount writes n as 12.5k or 1M.
+func shortCount(n int) string {
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.3gM", float64(n)/1e6)
+	}
+	return fmt.Sprintf("%.3gk", float64(n)/1e3)
+}
+
+// splatStatus is the splats a frame drew of those resident, and the budget.
+func (d *demo) splatStatus() string {
+	budget := d.splats.budget
+	if budget <= 0 {
+		budget = nt3d.DefaultSplatBudget
+	}
+	drawn, resident := d.splats.drawn, d.splats.resident
+	if resident == 0 { // Before the first frame.
 		for _, g := range d.meshes.sources {
-			count += len(g.Points)
+			resident += len(g.Points)
 		}
+		drawn = resident
+	}
+	count := fmt.Sprintf("%d splats", resident)
+	if drawn != resident {
+		count = fmt.Sprintf("%d / %d splats", drawn, resident)
+	}
+	return fmt.Sprintf("%s · budget %s", count, shortCount(budget))
+}
+
+func (d *demo) meshesView(content string) string {
+	if d.showsSplats() {
 		mode := "full SH"
 		if d.meshes.dcOnly {
 			mode = "DC only"
 		}
-		return fmt.Sprintf("nt3d splats · %s · h DC/full SH · d fog · n turn · 1/2/3 backend · q quit\n%s\n%s · %d splats · %s · drag orbit · wheel zoom · c fit · r rotate · %s", d.meshes.title, content, d.rendering(), count, mode, d.status)
+		return fmt.Sprintf("nt3d splats · %s · h DC/full SH · u/y budget · z reset · d fog · n turn · 1/2/3 backend · q quit\n%s\n%s · %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s", d.meshes.title, content, d.rendering(), d.splatStatus(), mode, d.status)
 	}
 	glass, shine, outlines := "opaque", "dull", "outlines off"
 	if d.meshes.outlined {

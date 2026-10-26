@@ -10,12 +10,13 @@ Nothing queued; the sections below are the open work.
 ## Rendering
 
 - [ ] **Clustered LOD follow-ups**: draw points straight from `nt3dclod.GPU`'s
-  item and indirect buffers in the GPU renderer, so a selection never
-  leaves the device; hierarchical levels that draw an interior node as one
-  aggregate; per-frame rebuilds cheap enough for moving particles;
-  hysteresis at range boundaries so clusters do not flicker between levels.
-- [ ] **Gaussian splatting follow-ups**: SOG's SH palette on the GPU; level of
-  detail and budgets.
+  item and indirect buffers; hierarchical levels that draw an interior node
+  as one aggregate (a preprocessing tool's job); per-frame rebuilds cheap
+  enough for moving particles.
+- [ ] **Gaussian splatting follow-ups**: SOG's SH palette on the GPU; store
+  points in cluster order at upload so budgeted gathers are contiguous (the
+  budgeted 2.5M frame is 11 ms against 7 for 1M); streaming and partial
+  loading; budgeted plain point clouds.
 
 - [ ] **Shared points, lines, and boxes**, only if something needs them
   (particles don't: they are many positions, not many copies): charts

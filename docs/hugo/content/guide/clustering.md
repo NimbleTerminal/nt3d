@@ -19,7 +19,7 @@ for i, p := range points {
 set, err := nt3dclod.Build(positions, nt3dclod.Options{ClusterSize: 256, Pad: 0})
 ```
 
-`Build` splits the items at the median of their longest axis until a group holds at most `ClusterSize` items (256 by default); the groups are the clusters, and the splits a hierarchy in `set.Nodes`. `Pad` grows every cluster's bounds by the largest distance an item draws past its position, in world units, so a cluster is kept while any of it could show; points sized in pixels use `View.Margin` instead. Within a cluster, items are ordered along a space-filling curve and then taken at ever finer, evenly spaced steps, so any prefix of `set.Items(c)` is a spread subsample of the cluster: one order serves every level of detail.
+`Build` splits the items at the spatial midpoint of their longest axis until a group holds at most `ClusterSize` items (256 by default); the groups are the clusters, and the splits a hierarchy in `set.Nodes`. `Pad` grows every cluster's bounds by the largest distance an item draws past its position, in world units, so a cluster is kept while any of it could show; points sized in pixels use `View.Margin` instead. Within a cluster, items are ordered along a space-filling curve and then taken at ever finer, evenly spaced steps, so any prefix of `set.Items(c)` is a spread subsample of the cluster: one order serves every level of detail.
 
 `set.Rebuild(positions)` regroups a changed set, reusing its allocations, and `set.Refit(positions)` keeps the groups and recomputes their bounds when items moved a little. Both change `set.Revision()`.
 
@@ -59,6 +59,18 @@ sel, err := g.Read(ctx, dev, view, levels)           // Or read the selection ba
 ```
 
 Three passes cull and level each cluster, lay their items out with a prefix sum, and copy the indices into a compact buffer, writing the item count into indirect draw arguments with the vertex count each item draws. nt3d's renderer does not consume these buffers yet (see the roadmap), so a consumer brings its own device and draw path; `Read` serves tests and CPU consumers. The GPU and CPU agree except where rounding moves a cluster across a plane or a range boundary, which the agreement test tolerates and nothing else.
+
+## Gaussian clouds
+
+Splat clouds use this package without any code of yours. Every Gaussian decoder clusters each piece at load (`nt3dmesh.ClusterPieces`, 256 splats a cluster) and stores the set in `Geometry.Clusters`, unless `nt3dmesh.Options.NoClusters` says not to. A scene's copy of the geometry shares the set by pointer. Each frame both renderers share `Frame.SplatBudget` (`DefaultSplatBudget`, one million; `Scene.SetSplatBudget` sets it for the scene's frames) among the visible clusters and draw a prefix of each one's progressive order.
+
+The selection works per cluster. A cluster outside the view, by its bounds padded for the largest splat, is dropped. The rest project their bounding sphere to a pixel radius `r` and want `ceil(0.5·π·r²)` splats, no more than they hold: about one splat per half pixel of footprint, so a cluster far enough away to cover a few pixels draws a few splats. Unclustered Gaussian geometry draws in full and comes off the budget first. If the wants add up to more than what is left, every want is scaled by the same factor (rounded up, and at least one for each visible cluster); nothing is scaled when they fit.
+
+Because the shares scale continuously with distance and with the budget, there are no level boundaries for a cluster to flicker across, and so no hysteresis. A thinned cluster's survivors grow their axes by `1/√f`, where `f` is the fraction drawn, so the cluster keeps its coverage and does not fade as it thins. The selection is a pure function of the frame: both renderers and `Frame.SplatSelection`, which reports `drawn, resident` counts, agree exactly. On the GPU the keying pass sorts only the selected prefixes, so sort and draw cost follow the budget rather than the capture's size; see [Rendering](../rendering/#budgeting-splats) for measured frames.
+
+A set describes the positions it was built from, so operations that move splats drop it: `Scene.UpdateNodePoints` and `SetNodePoints`, `TransformGeometry`, `MergeGeometry`, `Clip`, and the splits `nt3dmesh.PointPieces` makes. The geometry then draws in full under the same budget. `Model.OrientYUp`, which turns a Y-up capture upright, refits it instead. To keep a set across edits that move splats a little, `Refit` it, or `Rebuild` it after larger ones, with the positions in the geometry's order; either alters every geometry that shares the set.
+
+Later work: levels that merge distant clusters into aggregates, streaming and partial loading, and budgeting plain point clouds.
 
 ## Costs and limits
 

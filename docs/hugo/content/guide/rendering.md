@@ -187,6 +187,28 @@ comment are ignored. `Options.MaxBytes` bounds a compressed PLY's input
 bytes, and a SOG's files plus its decoded images (`width × height × 4` bytes
 each). `.splat` and `.ksplat` remain unsupported.
 
+### Budgeting splats
+
+A capture can hold millions of splats, most too small to see at once. The decoders cluster each cloud at load (see [Gaussian clouds](../clustering/#gaussian-clouds)), and every frame draws a budgeted subset: clusters outside the view are dropped and the rest are thinned by their projected size, with the remaining splats enlarged to keep their coverage. Splats are shared out under `Frame.SplatBudget`, one million (`DefaultSplatBudget`) when zero; a negative budget draws every splat, and `Scene.SetSplatBudget` sets it for the scene's frames and redraws the widget. `Frame.SplatSelection` returns how many splats the frame draws and how many its clouds hold, exactly what the renderers draw.
+
+```go
+scene.SetSplatBudget(250_000)
+f, err := scene.Frame(camera, width, height)
+drawn, resident := f.SplatSelection()
+```
+
+The GPU keys only the selected prefixes, so the sort and the draw cost follow the budget, not the capture's size. Whole `Render` times with readback on an Apple M5 Max (`NT3D_GPU_BENCH=1`):
+
+| Frame | ms |
+| --- | --- |
+| 1M splats, unbudgeted | 7.2 to 7.5 |
+| 2.5M splats, unbudgeted | 16.5 |
+| 2.5M splats, clustered, default budget (1,004,804 drawn) | 11.2 to 11.4 |
+
+The budgeted frame costs more than the 1M one because the GPU gathers points through the cluster order and fills the thinned clusters' coverage. Frames also skip revalidating geometry a scene stores: `SetNodeGeometry` certifies points and clusters once, so `Render` does not walk every point each frame (a 2.5M-splat frame took 67 ms before and 17 now, and a 1M frame 28 ms before and 7 now). Clustering 2.5M points at load takes about 400 ms.
+
+Try it in `task gaussians` or `task meshes -- scene.spz`: `u` halves the budget, `y` doubles it, `z` restores the default, and the status shows the splats drawn of those loaded.
+
 ### Rendering and limits
 
 Gaussians extend `Point` with three local one-sigma `GaussianAxes`, using

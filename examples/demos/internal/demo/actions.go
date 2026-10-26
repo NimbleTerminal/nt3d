@@ -87,8 +87,8 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.models != nil:
 		return "models", keys{[]key.Binding{bind("[", "[", "previous"), bind("]", "]", "next"), bind("s", "s", "normals"), bind("n", "n", "turn")}}
 	case d.meshes != nil:
-		if d.meshes.hasSH {
-			return "splats", keys{[]key.Binding{bind("h", "h", "DC/full SH"), bind("n", "n", "turn")}}
+		if d.showsSplats() {
+			return "splats", keys{[]key.Binding{bind("h", "h", "DC/full SH"), bind("u", "u", "budget /2"), bind("y", "y", "budget x2"), bind("z", "z", "budget reset"), bind("n", "n", "turn")}}
 		}
 		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("e", "e", "highlights"), bind("b", "b", "outlines"), bind("n", "n", "turn")}}
 	case d.dynamic != nil:

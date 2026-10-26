@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Gaussian clouds cluster at load and both renderers draw a budgeted subset each frame (`Frame.SplatBudget`, default one million), culled and thinned by projected size with coverage scaling, so the sort and draw cost follow the budget rather than the capture's size.
+
+- Frames no longer re-validate scene-stored geometry every frame: a store-time certificate covers points and clusters, so a 2.5M-splat frame dropped from 67 to 17 ms and a 1M frame from 28 to 7 ms on an M5 Max.
+
 ## v0.4.0
 
 - Gaussian splats store compactly on the GPU by default: half-float axes and byte spherical harmonics at SPZ's precision, so a geometry holds 2,796,202 degree-3 splats instead of 699,050 and a million-splat cloud takes about 92 MB instead of 260; `PointStyle.Precise` keeps full-precision records. Niantic's SPZ samples now open as one slab each.
