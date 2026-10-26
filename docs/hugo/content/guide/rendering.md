@@ -205,7 +205,7 @@ The GPU keys only the selected prefixes, so the sort and the draw cost follow th
 | 2.5M splats, unbudgeted | 16.5 |
 | 2.5M splats, clustered, default budget (1,004,804 drawn) | 11.2 to 11.4 |
 
-The budgeted frame costs more than the 1M one because the GPU gathers points through the cluster order and fills the thinned clusters' coverage. Frames also skip revalidating geometry a scene stores: `SetNodeGeometry` certifies points and clusters once, so `Render` does not walk every point each frame (a 2.5M-splat frame took 67 ms before and 17 now, and a 1M frame 28 ms before and 7 now). Clustering 2.5M points at load takes about 400 ms.
+The budgeted frame costs more than the 1M one for two reasons. Scaling the thinned clusters' axes to keep their coverage costs about 1 ms (forcing the scale to 1 took the frame from 11.0 to 10.2 ms); the rest is gathering points through the cluster order out of the full buffers, which storing points in cluster order at upload would fix (see the roadmap). Frames also skip revalidating geometry a scene stores: `SetNodeGeometry` certifies points and clusters once, so `Render` does not walk every point each frame (a 2.5M-splat frame took 67 ms before and 17 now, and a 1M frame 28 ms before and 7 now). Clustering 2.5M points at load takes about 400 ms.
 
 Try it in `task gaussians` or `task meshes -- scene.spz`: `u` halves the budget, `y` doubles it, `z` restores the default, and the status shows the splats drawn of those loaded.
 

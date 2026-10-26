@@ -268,11 +268,14 @@ func (d *demo) splatStatus() string {
 
 func (d *demo) meshesView(content string) string {
 	if d.showsSplats() {
-		mode := "full SH"
-		if d.meshes.dcOnly {
-			mode = "DC only"
+		hint, mode := "", ""
+		if d.meshes.hasSH {
+			hint, mode = " · h DC/full SH", " · full SH"
+			if d.meshes.dcOnly {
+				mode = " · DC only"
+			}
 		}
-		return fmt.Sprintf("nt3d splats · %s · h DC/full SH · u/y budget · z reset · d fog · n turn · 1/2/3 backend · q quit\n%s\n%s · %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s", d.meshes.title, content, d.rendering(), d.splatStatus(), mode, d.status)
+		return fmt.Sprintf("nt3d splats · %s%s · u/y budget · z reset · d fog · n turn · 1/2/3 backend · q quit\n%s\n%s · %s%s · drag orbit · wheel zoom · c fit · r rotate · %s", d.meshes.title, hint, content, d.rendering(), d.splatStatus(), mode, d.status)
 	}
 	glass, shine, outlines := "opaque", "dull", "outlines off"
 	if d.meshes.outlined {

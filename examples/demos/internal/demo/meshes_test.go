@@ -109,3 +109,20 @@ func TestSplatBudgetKeys(t *testing.T) {
 		t.Fatalf("shapes scene budget %d, want 0", other.splats.budget)
 	}
 }
+
+// The h hint and the SH mode show only for splats that have SH to toggle.
+func TestSplatViewSHHint(t *testing.T) {
+	for _, sh := range []bool{false, true} {
+		d := &demo{scene: nt3d.NewScene(), meshes: &meshScene{splats: true, hasSH: sh}}
+		d.view = nt3dwidget.New(d.scene, 20, 8, nt3dwidget.WithRenderMode(nt3d.Software))
+		_, k := d.sceneKeys()
+		hint := false
+		for _, b := range k.scene {
+			hint = hint || b.Help().Key == "h"
+		}
+		view := d.meshesView("")
+		if hint != sh || strings.Contains(view, "h DC/full SH") != sh || strings.Contains(view, "full SH") != sh {
+			t.Fatalf("hasSH %v: key hint %v, view %q", sh, hint, view)
+		}
+	}
+}

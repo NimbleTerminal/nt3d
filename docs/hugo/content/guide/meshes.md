@@ -35,6 +35,8 @@ import _ "nimbleterminal.dev/nt3d/mesh/formats"
 
 That keeps programs that read no files small: glTF alone adds about 0.6 MB to a WebAssembly build.
 
+The Gaussian decoders (PLY, SPZ, SOG) also group each cloud into clusters at load, which is what lets the renderers draw a budgeted subset: see [Gaussian clouds](../clustering/#gaussian-clouds). That costs about 160 ms per million splats (406 ms for 2.5 million on an M5 Max); `Options.NoClusters` skips it, so loading is faster and every splat is drawn, taking its share off the budget first.
+
 ## Which way is up
 
 Files don't say which way is up, and nt3d is Z-up. Many OBJ files are Y-up; set `Options.Up = nt3dmesh.YUp` to turn them. glTF is always Y-up by its specification, so it is always turned. Units are the file's own, and nothing is rescaled unless you ask, as `Normalization` does above.
@@ -46,7 +48,6 @@ Reading is bounded, so a file can't exhaust your memory:
 - `Options.MaxTriangles` caps the whole model (`DefaultMaxTriangles`, 4 million, unless you raise it).
 - Coordinates must be within ±10¹⁵, and textures at most 8192 pixels a side, checked before decoding.
 - 3MF packages are limited to 4096 entries and `Options.MaxBytes` unpacked (256 MiB by default).
-- `Options.NoClusters` skips clustering Gaussian clouds for [level of detail](../clustering/#gaussian-clouds). Clustering costs about 160 ms per million splats (406 ms for 2.5 million on an M5 Max); without it loading is faster and every splat is drawn, taking its share off the budget first.
 - Side files, like an OBJ's materials or a glTF's buffers, are read only through `Options.Open`. `ReadFile` confines them to the model's directory; `Decode` without `Open` skips them. Missing ones become `Model.Warnings` rather than errors.
 
 An object bigger than one geometry can hold (`nt3d.MaxMeshTriangles`) is split into consecutive objects that share its name, material, and part. `AddTo` gives each its own node. A point cloud or Gaussian splat larger than one geometry holds (`nt3d.MaxPoints`, or `nt3d.MaxGaussians`, or `nt3d.MaxPreciseGaussians` with `PointStyle.Precise`, for Gaussian splats) is split the same way, into slabs along its longest axis, by `nt3dmesh.PointPieces`; blended slabs sort together on the GPU, so they blend in order to within a depth slice where they meet. The decoders split at the compact limit; to draw a decoded cloud `Precise`, set `PointStyle.Precise` on each object's geometry and pass it through `nt3dmesh.PointPieces` again, which re-splits at the precise limit.

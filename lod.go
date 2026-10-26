@@ -35,8 +35,8 @@ type lodPlan struct {
 
 // planLOD shares the frame's splat budget among the clusters of plan's
 // slots. Points without clusters count against the budget first. Each
-// visible cluster then wants as many splats as would fill its half-pixel
-// footprint, at most all of them; if the wants exceed what is left, each is
+// visible cluster then wants as many splats as cover half a pixel for each
+// pixel of its footprint, at most all of them; if the wants exceed what is left, each is
 // scaled down alike, but a visible cluster keeps one. It sets plan.points to
 // the splats drawn, which the sort uses in place of the slots' point counts.
 func (f Frame) planLOD(plan *blendPlan) lodPlan {
@@ -97,9 +97,8 @@ func (f Frame) planLOD(plan *blendPlan) lodPlan {
 	return lod
 }
 
-// lodWant is how many of a cluster's count splats fill the half-pixel
-// footprint of a sphere r pixels across: half a pixel of each splat's
-// footprint is covered per pixel. A sphere the eye is inside, or one whose
+// lodWant is how many of a cluster's count splats cover a sphere r pixels
+// across at half a splat per pixel of its footprint. A sphere the eye is inside, or one whose
 // size is not finite, wants them all; a visible cluster wants one at least.
 func lodWant(count uint32, r float32) uint32 {
 	if r != r || math.IsInf(float64(r), 0) {
