@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"slices"
 
 	"nimbleterminal.dev/nt3d/math"
 )
@@ -71,6 +72,32 @@ func TransformGeometry(g Geometry, m nt3dmath.Mat4) (Geometry, error) {
 	return g, g.Validate()
 }
 
+// unifySHPalettes returns gs unchanged when no palette is present or all the
+// SH is palettes of the same bands; otherwise a copy with every palette
+// expanded, which leaves gs alone.
+func unifySHPalettes(gs []Geometry) []Geometry {
+	var first *SHPalette
+	paletted, mixed := false, false
+	for i := range gs {
+		switch p := gs[i].GaussianSHPalette; {
+		case p == nil:
+			mixed = mixed || len(gs[i].GaussianSH) > 0
+		case first == nil:
+			first, paletted = p, true
+		default:
+			mixed = mixed || !samePalette(first, p)
+		}
+	}
+	if !paletted || !mixed {
+		return gs
+	}
+	gs = slices.Clone(gs)
+	for i := range gs {
+		ExpandSHPalette(&gs[i])
+	}
+	return gs
+}
+
 func sameMaterial(a, b *Material) bool {
 	return a == b || a != nil && b != nil && *a == *b
 }
@@ -79,9 +106,12 @@ func sameMaterial(a, b *Material) bool {
 // Meshes must share a material and outline style, lines a width, and points a style. UVs are
 // kept only when every mesh has them. WireGrid survives only when a single geometry is given.
 // The first geometry with a positive drop shadow strength supplies the drop shadow.
-// The result has no Clusters.
+// The result has no Clusters. Geometries sharing an SH palette (the same one,
+// or one with the same degree and coefficients) merge to a geometry that shares
+// it; if any other SH is present, the palettes are expanded first.
 func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	var out Geometry
+	gs = unifySHPalettes(gs)
 	if len(gs) == 1 {
 		out.WireGrid = gs[0].WireGrid
 	}
@@ -132,6 +162,7 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	if points != nil {
 		out.PointStyle = points.PointStyle
 		out.GaussianSHTransform = points.GaussianSHTransform
+		out.GaussianSHPalette = points.GaussianSHPalette
 	}
 	for _, g := range gs {
 		base := uint32(len(out.Vertices))
@@ -154,6 +185,7 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 		}
 		out.Points = append(out.Points, g.Points...)
 		out.GaussianSH = append(out.GaussianSH, g.GaussianSH...)
+		out.GaussianSHLabels = append(out.GaussianSHLabels, g.GaussianSHLabels...)
 		out.Boxes = append(out.Boxes, g.Boxes...)
 		out.Lines = append(out.Lines, g.Lines...)
 		out.Arrows = append(out.Arrows, g.Arrows...)

@@ -47,6 +47,9 @@ func projectGaussian(p Point, m *nt3dmath.Mat4, width, height int, px float32) g
 	return gaussianEllipse{a * scale, b * scale, c * scale, radius * scale}
 }
 
+// gaussianSHCount is the RGB entries per point in GaussianSH: the whole
+// coefficient set, or with a palette just the DC. gaussianSHTotal is how many a
+// splat evaluates.
 func gaussianSHCount(g *Geometry) int {
 	if len(g.Points) == 0 {
 		return 0
@@ -61,7 +64,13 @@ func gaussianSHMatrix(g *Geometry) nt3dmath.Mat4 {
 	m[12], m[13], m[14] = 0, 0, 0 // Directions are independent of translations.
 	return m
 }
-func validateGaussianSH(g Geometry) error {
+
+// validateGaussianSH checks the SH, its palette and labels. certified means a
+// scene already checked this palette and these labels (storedGeometry).
+func validateGaussianSH(g Geometry, certified bool) error {
+	if err := validateSHPalette(g, certified); err != nil {
+		return err
+	}
 	if len(g.GaussianSH) == 0 {
 		return nil
 	}
@@ -86,10 +95,21 @@ func (f *Frame) gaussianColor(g *Geometry, index int, world, shFromWorld nt3dmat
 	if f.Perspective {
 		ray = world.Point(p.Position).Sub(f.Eye)
 	}
-	n := gaussianSHCount(g)
-	coefficients := g.GaussianSH[index*n : (index+1)*n]
-	if g.PointStyle.SHDCOnly {
-		coefficients = coefficients[:1]
+	var coefficients []nt3dsh.RGB
+	if pal := g.GaussianSHPalette; pal != nil {
+		var scratch [16]nt3dsh.RGB
+		scratch[0] = g.GaussianSH[index]
+		coefficients = scratch[:1]
+		if !g.PointStyle.SHDCOnly {
+			stride, label := pal.Stride(), int(g.GaussianSHLabels[index])
+			coefficients = scratch[:1+copy(scratch[1:], pal.Coefficients[label*stride:(label+1)*stride])]
+		}
+	} else {
+		n := gaussianSHCount(g)
+		coefficients = g.GaussianSH[index*n : (index+1)*n]
+		if g.PointStyle.SHDCOnly {
+			coefficients = coefficients[:1]
+		}
 	}
 	rgb := nt3dsh.Evaluate(coefficients, shFromWorld.Direction(ray))
 	for k := range rgb {

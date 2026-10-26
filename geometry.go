@@ -83,6 +83,16 @@ type Geometry struct {
 	// point-major, in nt3dsh ordering. PLY coefficients include DC, but not the
 	// 0.5 display offset. Nil uses Point.Color. Alpha remains Point.Color.A.
 	GaussianSH []nt3dsh.RGB
+	// GaussianSHPalette optionally shares the bands above DC among the
+	// points. With it GaussianSH holds only the DC, one RGB per point, and
+	// GaussianSHLabels names each point's centroid; the evaluated
+	// coefficients are the DC, then that centroid's. Both are set or both nil,
+	// and only for GaussianPoint. Like Clusters, the palette is shared by
+	// pointer with scene copies and geometry operations: do not alter one
+	// after use. ExpandSHPalette makes per-point coefficients again.
+	GaussianSHPalette *SHPalette
+	// GaussianSHLabels is each point's centroid in GaussianSHPalette.
+	GaussianSHLabels []uint16
 	// GaussianSHTransform maps local view rays to the SH coordinate frame.
 	// Zero means identity. TransformGeometry preserves this frame exactly,
 	// including under nonuniform scale, without reprojecting coefficients.
@@ -295,7 +305,7 @@ func validateGeometry(g Geometry) error {
 		}
 	}
 
-	if err := validateGaussianSH(g); err != nil {
+	if err := validateGaussianSH(g, false); err != nil {
 		return err
 	}
 	if err := validPointStyle(g.PointStyle); err != nil {
@@ -338,19 +348,28 @@ func validateGeometry(g Geometry) error {
 	// Each per-point buffer is one storage binding: the 20-byte records;
 	// the axis or sprite records, 24 bytes a Gaussian splat, or 48 bytes
 	// for a Precise one or a textured sprite; and the SH, 3 bytes a
-	// coefficient (rounded up to 4) beside a 48-byte header buffer in
-	// the compact records, or 48 bytes and 12 a coefficient with Precise.
-	// The compact header is always small enough to need no check.
+	// coefficient (rounded up to 4) beside a 64-byte header buffer in
+	// the compact records, or 64 bytes and 12 a coefficient with Precise.
+	// A palette adds its centroids' coefficients, and in the compact records
+	// the 16-bit labels, 2 bytes a point (rounded up to 4); Precise labels
+	// fill a buffer of their own that the point count already bounds.
+	// The compact header is always small enough to need no check. (The header
+	// is 64 bytes for every Gaussian geometry; the upload follows in a
+	// later change.)
 	axis := 48
 	if g.PointStyle.Shape == GaussianPoint && !g.PointStyle.Precise {
 		axis = 24
 	}
 	sprites := g.PointStyle.Shape == GaussianPoint || g.PointStyle.Texture != nil
-	sh := 48 + 12*len(g.GaussianSH)
+	banded := g.GaussianSHPalette.Stride() * g.GaussianSHPalette.Count()
+	sh := 64 + 12*(len(g.GaussianSH)+banded)
 	if !g.PointStyle.Precise {
-		sh = (3*len(g.GaussianSH) + 3) &^ 3
+		sh = (3*len(g.GaussianSH)+3)&^3 + 3*banded
+		if g.GaussianSHPalette != nil {
+			sh += (2*len(g.Points) + 3) &^ 3
+		}
 	}
-	if len(g.Points)*20 > bindingLimit || sprites && len(g.Points)*axis > bindingLimit || len(g.GaussianSH) > 0 && sh > bindingLimit {
+	if len(g.Points)*20 > bindingLimit || sprites && len(g.Points)*axis > bindingLimit || (len(g.GaussianSH) > 0 || banded > 0) && sh > bindingLimit {
 		return fmt.Errorf("nt3d: geometry exceeds the GPU binding limit")
 	}
 	if len(g.Indices)%3 != 0 || len(g.Lines)%2 != 0 {

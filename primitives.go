@@ -44,6 +44,7 @@ func cloneGeometry(g Geometry) Geometry {
 	g.pointUpdate, g.stored = nil, nil
 	g.Points = slices.Clone(g.Points)
 	g.GaussianSH = slices.Clone(g.GaussianSH)
+	g.GaussianSHLabels = slices.Clone(g.GaussianSHLabels)
 	g.Vertices = slices.Clone(g.Vertices)
 	g.Indices = slices.Clone(g.Indices)
 	g.Boxes = slices.Clone(g.Boxes)

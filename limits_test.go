@@ -70,14 +70,39 @@ func TestValidateBuffers(t *testing.T) {
 	if err := g.Validate(); err == nil {
 		t.Fatal("compact SH over the binding accepted")
 	}
-	// Precise: 48 + 12 a coefficient.
+	// Precise: 64 + 12 a coefficient.
 	g.PointStyle.Precise = true
-	bindingLimit = 48 + 12*32
+	bindingLimit = 64 + 12*32
 	if err := g.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	bindingLimit--
 	if err := g.Validate(); err == nil {
 		t.Fatal("precise SH over the binding accepted")
+	}
+
+	// The same two splats with a palette of two degree-3 centroids and labels.
+	g.PointStyle.Precise = false
+	g.GaussianSH = make([]nt3dsh.RGB, 2)
+	g.GaussianSHLabels = []uint16{0, 1}
+	g.GaussianSHPalette = &SHPalette{Degree: 3, Coefficients: make([]nt3dsh.RGB, 30)}
+	// Compact: the DCs (6 bytes, padded to 8), the labels (4) and 30 bands (90).
+	bindingLimit = 8 + 4 + 90
+	if err := g.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	bindingLimit--
+	if err := g.Validate(); err == nil {
+		t.Fatal("compact palette over the binding accepted")
+	}
+	// Precise: 64 + 12 a coefficient, DC and bands alike.
+	g.PointStyle.Precise = true
+	bindingLimit = 64 + 12*32
+	if err := g.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	bindingLimit--
+	if err := g.Validate(); err == nil {
+		t.Fatal("precise palette over the binding accepted")
 	}
 }

@@ -15,6 +15,25 @@ type pointUpdate struct {
 	first, end         int
 	points             []Point
 	style              PointStyle
+	sh                 shCertificate // The labels and palette the update shares with the stored geometry.
+}
+
+// shCertificate identifies the SH palette and labels a validation covered. The
+// centroid count catches a palette altered in place to fewer centroids.
+type shCertificate struct {
+	labels    []uint16
+	palette   *SHPalette
+	centroids int
+}
+
+func newSHCertificate(g *Geometry) shCertificate {
+	return shCertificate{g.GaussianSHLabels, g.GaussianSHPalette, g.GaussianSHPalette.Count()}
+}
+
+// certifies reports whether g's labels and palette are the very ones validated.
+func (c shCertificate) certifies(g *Geometry) bool {
+	return g.GaussianSHPalette == c.palette && len(g.GaussianSHLabels) == len(c.labels) &&
+		(len(c.labels) == 0 || &g.GaussianSHLabels[0] == &c.labels[0]) && g.GaussianSHPalette.Count() == c.centroids
 }
 
 // SetNodePoints replaces an existing geometry's points without changing their
@@ -73,7 +92,7 @@ func (s *Scene) UpdateNodePoints(id NodeID, first int, points []Point, bounds nt
 		previous = old.pointUpdate.revision
 	}
 	s.changed(false, false)
-	g.pointUpdate = &pointUpdate{s.stateRevision, previous, first, first + len(points), g.Points, g.PointStyle}
+	g.pointUpdate = &pointUpdate{s.stateRevision, previous, first, first + len(points), g.Points, g.PointStyle, newSHCertificate(&g)}
 	g.Bounds = bounds
 	n.geometry, n.pickIndex = &g, nil
 	return nil
@@ -85,6 +104,7 @@ type storedGeometry struct {
 	points   []Point
 	style    PointStyle
 	clusters *nt3dclod.Set
+	sh       shCertificate
 }
 
 // certifies reports whether points and style are the very ones validated.
@@ -99,11 +119,12 @@ func validateFrameGeometry(g Geometry) error {
 	u, c := g.pointUpdate, g.stored
 	stored := c != nil && certifies(g.Points, c.points, g.PointStyle, c.style)
 	if stored || u != nil && n > 0 && certifies(g.Points, u.points, g.PointStyle, u.style) {
-		if err := validateGaussianSH(g); err != nil {
+		certified := stored && c.sh.certifies(&g) || !stored && u.sh.certifies(&g)
+		if err := validateGaussianSH(g, certified); err != nil {
 			return err
 		}
 		g.Points = nil
-		g.GaussianSH = nil
+		g.GaussianSH, g.GaussianSHLabels, g.GaussianSHPalette = nil, nil, nil
 		g.GaussianSHTransform = nt3dmath.Mat4{}
 	}
 	if g.Clusters != nil {

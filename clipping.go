@@ -134,16 +134,22 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 	out.Tangents = nil
 	out.Arrows = nil
 	out.Points, out.Vertices, out.Indices, out.Boxes, out.Lines = nil, nil, nil, nil, nil
-	out.GaussianSH = nil
+	out.GaussianSH, out.GaussianSHLabels = nil, nil
 	count := gaussianSHCount(&g)
 	for i, p := range g.Points {
 		if contains(b, p.Position) {
 			out.Points = append(out.Points, p)
 			out.GaussianSH = append(out.GaussianSH, g.GaussianSH[i*count:(i+1)*count]...)
+			if g.GaussianSHLabels != nil {
+				out.GaussianSHLabels = append(out.GaussianSHLabels, g.GaussianSHLabels[i])
+			}
 		}
 	}
 	if len(out.Points) != len(g.Points) {
 		out.Clusters = nil
+	}
+	if len(out.Points) == 0 {
+		out.GaussianSHPalette, out.GaussianSHLabels = nil, nil
 	}
 	for i := 0; i+2 < len(g.Indices); i += 3 {
 		at := func(index uint32) meshVertex {
