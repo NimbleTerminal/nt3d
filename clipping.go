@@ -142,6 +142,9 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 			out.GaussianSH = append(out.GaussianSH, g.GaussianSH[i*count:(i+1)*count]...)
 		}
 	}
+	if len(out.Points) != len(g.Points) {
+		out.Clusters = nil
+	}
 	for i := 0; i+2 < len(g.Indices); i += 3 {
 		at := func(index uint32) meshVertex {
 			v := meshVertex{Vertex: g.Vertices[index]}

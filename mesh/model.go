@@ -129,6 +129,7 @@ func PointPieces(o Object) []Object {
 		piece := o
 		piece.Geometry.Points = make([]nt3d.Point, 0, end-start)
 		piece.Geometry.GaussianSH = nil
+		piece.Geometry.Clusters = nil
 		if per > 0 {
 			piece.Geometry.GaussianSH = make([]nt3dsh.RGB, 0, (end-start)*per)
 		}
@@ -222,7 +223,7 @@ func (o *Options) orient(m *Model) {
 // becomes (x, -z, y) for every vertex, normal, point, Gaussian axis, line,
 // arrow, and box, and Gaussian spherical harmonics turn with them through
 // GaussianSHTransform. A decoder of a format that states its axes calls it
-// itself.
+// itself. Level-of-detail Clusters are refit to the turned points.
 func (m *Model) OrientYUp() {
 	turn := func(v nt3dmath.Vec3) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v.X, Y: -v.Z, Z: v.Y} }
 	for i := range m.Objects {
@@ -257,6 +258,17 @@ func (m *Model) OrientYUp() {
 			b := &g.Boxes[j]
 			b.Min = turn(b.Min.Add(nt3dmath.Vec3{Z: b.Size.Z}))
 			b.Size = nt3dmath.Vec3{X: b.Size.X, Y: b.Size.Z, Z: b.Size.Y}
+		}
+		if g.Clusters != nil {
+			// Refit fails only on a set that does not match the points; one
+			// that no longer describes them is dropped.
+			positions := make([]nt3dmath.Vec3, len(g.Points))
+			for j, p := range g.Points {
+				positions[j] = p.Position
+			}
+			if g.Clusters.Refit(positions) != nil {
+				g.Clusters = nil
+			}
 		}
 		g.Bounds = nt3d.GeometryBounds(*g)
 	}

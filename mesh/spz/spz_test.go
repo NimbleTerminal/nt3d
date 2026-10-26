@@ -551,3 +551,27 @@ func TestDecodersCluster(t *testing.T) {
 		t.Fatalf("NoClusters left clusters %v", g.Clusters)
 	}
 }
+
+// SPZ always orients; its clusters must follow the turned points.
+func TestClustersFollowOrientation(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "gaussian-ring.v4.spz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := Decode(data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := m.Objects[0].Geometry
+	if g.Clusters == nil {
+		t.Fatal("no clusters")
+	}
+	for c, cl := range g.Clusters.Clusters {
+		for _, i := range g.Clusters.Items(c) {
+			p := g.Points[i].Position
+			if p.X < cl.Bounds.Min.X || p.X > cl.Bounds.Max.X || p.Y < cl.Bounds.Min.Y || p.Y > cl.Bounds.Max.Y || p.Z < cl.Bounds.Min.Z || p.Z > cl.Bounds.Max.Z {
+				t.Fatalf("cluster %d bounds %v miss point %d at %v", c, cl.Bounds, i, p)
+			}
+		}
+	}
+}

@@ -236,10 +236,50 @@ func TestClusterPieces(t *testing.T) {
 	if pieces[3].Geometry.Clusters != nil {
 		t.Fatal("clustered a plain point cloud")
 	}
+	// Splitting again drops the clusters of the cloud it splits, which
+	// describe all its points; a cloud that fits keeps them.
+	maxGaussians = func(int) int { return 100 }
+	for _, p := range PointPieces(pieces[0]) {
+		if p.Geometry.Clusters != nil {
+			t.Fatal("a split piece kept its parent's clusters")
+		}
+		check(t, p.Geometry.Validate())
+	}
+	maxGaussians = func(int) int { return 200 }
+	if again := PointPieces(pieces[0]); len(again) != 1 || again[0].Geometry.Clusters != pieces[0].Geometry.Clusters {
+		t.Fatal("a cloud that fits lost its clusters")
+	}
 	for i := range pieces {
 		pieces[i].Geometry.Clusters = nil
 	}
 	if err := ClusterPieces(pieces, &Options{NoClusters: true}); err != nil || pieces[0].Geometry.Clusters != nil {
 		t.Fatalf("NoClusters: %v", err)
 	}
+}
+
+// clustersFit checks every cluster's bounds contain its items' positions.
+func clustersFit(t *testing.T, name string, g nt3d.Geometry) {
+	t.Helper()
+	if g.Clusters == nil {
+		t.Fatalf("%s: no clusters", name)
+	}
+	for c, cl := range g.Clusters.Clusters {
+		for _, i := range g.Clusters.Items(c) {
+			p := g.Points[i].Position
+			if p.X < cl.Bounds.Min.X || p.X > cl.Bounds.Max.X || p.Y < cl.Bounds.Min.Y || p.Y > cl.Bounds.Max.Y || p.Z < cl.Bounds.Min.Z || p.Z > cl.Bounds.Max.Z {
+				t.Fatalf("%s: cluster %d bounds %v miss point %d at %v", name, c, cl.Bounds, i, p)
+			}
+		}
+	}
+	if err := g.Validate(); err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+}
+
+// Orienting a decoded model turns its clusters with its points.
+func TestOrientRefitsClusters(t *testing.T) {
+	clustersFit(t, "PLY", decodeRing(t, &Options{Up: YUp}).Objects[0].Geometry)
+	m := decodeRing(t, nil)
+	m.OrientYUp()
+	clustersFit(t, "OrientYUp", m.Objects[0].Geometry)
 }

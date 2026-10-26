@@ -86,7 +86,7 @@ func GeometryBounds(g Geometry) (b nt3dmath.AABB) {
 }
 
 // Clip returns geometry clipped to a local-space box. It may share unchanged
-// input storage. Recompile selection metadata if mesh triangle indices matter.
+// input storage, and drops Clusters when it removes points. Recompile selection metadata if mesh triangle indices matter.
 func Clip(g Geometry, b nt3dmath.AABB) (Geometry, error) {
 	if err := g.Validate(); err != nil {
 		return Geometry{}, err

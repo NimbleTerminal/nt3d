@@ -93,7 +93,11 @@ type Geometry struct {
 	// budgeted prefix of each cluster's progressive order (see
 	// Frame.SplatBudget). Decoders build it for Gaussian clouds;
 	// nt3dclod.Build makes one. Point updates and geometry operations drop
-	// it, since it describes the positions it was built from.
+	// it, since it describes the positions it was built from. Validate
+	// checks the set on any geometry that carries one; the renderers use it
+	// only for GaussianPoint. The set is shared by pointer with scene
+	// copies, so a caller who Rebuilds or Refits it alters every geometry
+	// that holds it.
 	Clusters   *nt3dclod.Set
 	Vertices   []Vertex
 	Indices    []uint32

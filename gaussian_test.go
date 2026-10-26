@@ -210,3 +210,26 @@ func TestMergeAndTransformDropClusters(t *testing.T) {
 		t.Fatal("MergeGeometry kept the clusters")
 	}
 }
+
+func TestClipDropsClusters(t *testing.T) {
+	g, positions := clusteredGaussians(t, 100)
+	set, err := nt3dclod.Build(positions, nt3dclod.Options{ClusterSize: 16})
+	check(t, err)
+	g.Clusters = set
+	var half nt3dmath.AABB
+	half.Include(nt3dmath.Vec3{X: -1, Y: -1, Z: -1})
+	half.Include(nt3dmath.Vec3{X: .45, Y: 2, Z: 2})
+	clipped, err := Clip(g, half)
+	check(t, err)
+	if len(clipped.Points) == 0 || len(clipped.Points) >= 100 || clipped.Clusters != nil {
+		t.Fatalf("%d points, clusters %v", len(clipped.Points), clipped.Clusters)
+	}
+	var all nt3dmath.AABB
+	all.Include(nt3dmath.Vec3{X: -1, Y: -1, Z: -1})
+	all.Include(nt3dmath.Vec3{X: 2, Y: 2, Z: 2})
+	whole, err := Clip(g, all)
+	check(t, err)
+	if whole.Clusters != set {
+		t.Fatal("Clip dropped the clusters though no point went")
+	}
+}
