@@ -89,7 +89,11 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	g, err := unpack(m, im)
+	mode := nt3dmesh.SHPaletteKeep
+	if o != nil {
+		mode = o.SHPalette
+	}
+	g, err := unpack(m, im, mode)
 	if err != nil {
 		return nil, err
 	}

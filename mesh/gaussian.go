@@ -198,6 +198,9 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 		return nil, fmt.Errorf("nt3dmesh: Gaussian PLY lacks vertices")
 	}
 	g.Bounds = nt3d.GeometryBounds(g)
+	if err := paletteCloud(&g, o); err != nil {
+		return nil, err
+	}
 	m.Objects = PointPieces(Object{Geometry: g})
 	if err := ClusterPieces(m.Objects, o); err != nil {
 		return nil, err

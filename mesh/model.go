@@ -23,6 +23,7 @@ package nt3dmesh
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -87,8 +88,11 @@ var (
 // Bounds, sharing the rest. The pieces are slabs along the cloud's
 // longest axis: blended slabs sort together with every other alpha point
 // geometry to within one of 64 depth slices, so a cloud split into slabs
-// blends in order where the pieces meet. A cloud that fits is returned as
-// it is, in a slice of one.
+// blends in order where the pieces meet. A cloud with an SH palette
+// (nt3d.Geometry.GaussianSHPalette) holds one coefficient a splat, so pieces
+// are sized for that; each piece takes its splats' labels and shares the
+// palette. Clusters are dropped from split pieces. A cloud that fits is
+// returned as it is, in a slice of one.
 func PointPieces(o Object) []Object {
 	g := &o.Geometry
 	most := piecePoints
@@ -129,14 +133,21 @@ func PointPieces(o Object) []Object {
 		piece := o
 		piece.Geometry.Points = make([]nt3d.Point, 0, end-start)
 		piece.Geometry.GaussianSH = nil
+		piece.Geometry.GaussianSHLabels = nil
 		piece.Geometry.Clusters = nil
 		if per > 0 {
 			piece.Geometry.GaussianSH = make([]nt3dsh.RGB, 0, (end-start)*per)
+		}
+		if g.GaussianSHLabels != nil {
+			piece.Geometry.GaussianSHLabels = make([]uint16, 0, end-start)
 		}
 		for _, i := range order[start:end] {
 			piece.Geometry.Points = append(piece.Geometry.Points, g.Points[i])
 			if per > 0 {
 				piece.Geometry.GaussianSH = append(piece.Geometry.GaussianSH, g.GaussianSH[i*per:(i+1)*per]...)
+			}
+			if g.GaussianSHLabels != nil {
+				piece.Geometry.GaussianSHLabels = append(piece.Geometry.GaussianSHLabels, g.GaussianSHLabels[i])
 			}
 		}
 		piece.Geometry.Bounds = nt3d.GeometryBounds(piece.Geometry)
@@ -185,6 +196,54 @@ type Options struct {
 	// NoClusters skips clustering Gaussian clouds for level of detail;
 	// loading is faster and the renderers draw every splat.
 	NoClusters bool
+	// SHPalette chooses how Gaussian clouds carry their higher-order
+	// spherical harmonics. The zero value, SHPaletteKeep, leaves each format
+	// as it comes: a SOG's palette stays a palette, other formats keep
+	// per-splat coefficients.
+	SHPalette SHPaletteMode
+}
+
+// SHPaletteMode says whether a decoded Gaussian cloud shares its spherical
+// harmonics above DC through a palette (nt3d.Geometry.GaussianSHPalette) or
+// carries them per splat.
+type SHPaletteMode int
+
+const (
+	// SHPaletteKeep, the zero value, keeps what the file holds: a SOG's
+	// palette stays a palette; other formats give per-splat coefficients and
+	// no palette is built.
+	SHPaletteKeep SHPaletteMode = iota
+	// SHPaletteBuild gives every cloud with higher-order bands a palette,
+	// building one with DefaultPaletteOptions (see BuildSHPalette) when the
+	// file has none. Clouds of degree 0 are left alone.
+	SHPaletteBuild
+	// SHPaletteExpand gives every cloud per-splat coefficients, expanding a
+	// SOG's palette. The geometry is what v0.5.0 decoded.
+	SHPaletteExpand
+)
+
+// ApplySHPalette applies o's SHPalette mode to a whole decoded Gaussian
+// cloud, as the built-in decoders do. Format packages call it once the cloud
+// is complete and before PointPieces splits it, so every piece shares one
+// palette. A nil o, or SHPaletteKeep, leaves g as it is.
+func ApplySHPalette(g *nt3d.Geometry, o *Options) error { return paletteCloud(g, o) }
+
+// paletteCloud applies o's SHPalette mode to a whole Gaussian cloud, before
+// PointPieces splits it so that every piece shares one palette.
+func paletteCloud(g *nt3d.Geometry, o *Options) error {
+	if o == nil {
+		return nil
+	}
+	switch o.SHPalette {
+	case SHPaletteBuild:
+		if g.GaussianSHPalette == nil && len(g.Points) > 0 && len(g.GaussianSH)/len(g.Points) >= 4 {
+			_, err := BuildSHPalette(context.Background(), g, DefaultPaletteOptions())
+			return err
+		}
+	case SHPaletteExpand:
+		nt3d.ExpandSHPalette(g)
+	}
+	return nil
 }
 
 // ClusterPieces builds level-of-detail clusters for each Gaussian piece, as

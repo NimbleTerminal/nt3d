@@ -119,8 +119,11 @@ func pixel(img *image.NRGBA, x, y int) []uint8 {
 	return img.Pix[o : o+4 : o+4]
 }
 
-// unpack turns the images into m.count Gaussian splats by m's tables.
-func unpack(m *meta, im *images) (nt3d.Geometry, error) {
+// unpack turns the images into m.count Gaussian splats by m's tables. With a
+// shN, mode SHPaletteExpand gives each splat its coefficients; otherwise
+// the geometry keeps the file's palette: GaussianSH holds each splat's DC,
+// and GaussianSHPalette and GaussianSHLabels the rest.
+func unpack(m *meta, im *images, mode nt3dmesh.SHPaletteMode) (nt3d.Geometry, error) {
 	g := nt3d.Geometry{
 		PointStyle: nt3d.PointStyle{Shape: nt3d.GaussianPoint, Units: nt3d.WorldUnits, Blend: nt3d.AlphaBlend},
 		Points:     make([]nt3d.Point, m.count),
@@ -131,7 +134,25 @@ func unpack(m *meta, im *images) (nt3d.Geometry, error) {
 		coeffs = coefficients[m.shN.bands]
 		rest = make([]float64, 3*coeffs)
 	}
-	g.GaussianSH = make([]nt3dsh.RGB, 0, (1+coeffs)*m.count)
+	palette := m.shN != nil && mode != nt3dmesh.SHPaletteExpand
+	if palette {
+		g.GaussianSH = make([]nt3dsh.RGB, 0, m.count)
+		g.GaussianSHLabels = make([]uint16, m.count)
+		// Dequantize each centroid once, in nt3dsh order: the image holds
+		// coeffs pixels a centroid, one coefficient each, in R, G, B. Labels
+		// are 16 bits, so centroids past 65536 are unreachable.
+		n := min(m.shN.count, nt3d.MaxSHPaletteCentroids)
+		g.GaussianSHPalette = &nt3d.SHPalette{Degree: nt3dsh.Degree(1 + coeffs), Coefficients: make([]nt3dsh.RGB, n*coeffs)}
+		for c := range n {
+			for k := range coeffs {
+				v := pixel(im.centroids, (c%64)*coeffs+k, c/64)
+				g.GaussianSHPalette.Coefficients[c*coeffs+k] = nt3dsh.RGB{float32(m.shN.values.value(0, v[0])), float32(m.shN.values.value(1, v[1])), float32(m.shN.values.value(2, v[2]))}
+			}
+		}
+	} else {
+		g.GaussianSH = make([]nt3dsh.RGB, 0, (1+coeffs)*m.count)
+	}
+	zero := false // Some label is at or past the palette: it gets a centroid of zeros.
 	for i := range m.count {
 		x, y := i%im.width, i/im.width
 
@@ -181,6 +202,16 @@ func unpack(m *meta, im *images) (nt3d.Geometry, error) {
 		g.Points[i] = point
 
 		// Higher-order SH: a palette entry, channel-major.
+		if palette {
+			lp := pixel(im.labels, x, y)
+			label := int(lp[0]) | int(lp[1])<<8
+			if label >= m.shN.count {
+				label, zero = len(g.GaussianSHPalette.Coefficients)/coeffs, true
+			}
+			g.GaussianSHLabels[i] = uint16(label)
+			g.GaussianSH = append(g.GaussianSH, nt3dsh.RGB{float32(dc[0]), float32(dc[1]), float32(dc[2])})
+			continue
+		}
 		if m.shN != nil {
 			clear(rest)
 			lp := pixel(im.labels, x, y)
@@ -199,6 +230,10 @@ func unpack(m *meta, im *images) (nt3d.Geometry, error) {
 			return nt3d.Geometry{}, fmt.Errorf("nt3dmesh: SOG splat %d: %w", i, err)
 		}
 		g.GaussianSH = append(g.GaussianSH, sh...)
+	}
+	if zero {
+		p := g.GaussianSHPalette
+		p.Coefficients = append(p.Coefficients, make([]nt3dsh.RGB, coeffs)...)
 	}
 	g.Bounds = nt3d.GeometryBounds(g)
 	return g, nil

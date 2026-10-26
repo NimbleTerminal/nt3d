@@ -93,7 +93,9 @@ func decodeBundle(t *testing.T, bundle []byte) nt3d.Geometry {
 	if len(m.Objects) != 1 {
 		t.Fatalf("%d objects", len(m.Objects))
 	}
-	return m.Objects[0].Geometry
+	g := m.Objects[0].Geometry
+	nt3d.ExpandSHPalette(&g)
+	return g
 }
 
 func TestDecodeTolerates(t *testing.T) {
@@ -395,7 +397,7 @@ func TestUnpackSynthetic(t *testing.T) {
 		pix(im.labels, i, labels[i][0], labels[i][1], 0, 255)
 	}
 
-	g, err := unpack(m, im)
+	g, err := unpack(m, im, nt3dmesh.SHPaletteExpand)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,5 +479,33 @@ func TestUnpackSynthetic(t *testing.T) {
 	valid, past := g.GaussianSH[0:4], g.GaussianSH[4:8]
 	if valid[1] == (nt3dsh.RGB{}) || past[1] != (nt3dsh.RGB{}) || past[2] != (nt3dsh.RGB{}) || past[3] != (nt3dsh.RGB{}) {
 		t.Fatalf("valid label SH %v, label past count SH %v", valid, past)
+	}
+
+	// Kept as a palette, the two labels past the count share one appended
+	// all-zero centroid, and expanding gives the same coefficients.
+	kept, err := unpack(m, im, nt3dmesh.SHPaletteKeep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kept.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	p := kept.GaussianSHPalette
+	if p == nil || p.Degree != 1 || p.Count() != 3 || !reflect.DeepEqual(kept.GaussianSHLabels, []uint16{1, 2, 0, 2}) {
+		t.Fatalf("palette %v, labels %v", p, kept.GaussianSHLabels)
+	}
+	if !reflect.DeepEqual(p.Coefficients[6:], make([]nt3dsh.RGB, 3)) {
+		t.Fatalf("appended centroid %v, want zeros", p.Coefficients[6:])
+	}
+	nt3d.ExpandSHPalette(&kept)
+	if !reflect.DeepEqual(kept.GaussianSH, g.GaussianSH) {
+		t.Fatal("expanded palette differs from the per-splat decode")
+	}
+	// Labels all within the palette append nothing.
+	for i := range count {
+		pix(im.labels, i, uint8(i%2), 0, 0, 255)
+	}
+	if again, err := unpack(m, im, nt3dmesh.SHPaletteBuild); err != nil || again.GaussianSHPalette.Count() != 2 {
+		t.Fatalf("palette %v: %v", again.GaussianSHPalette, err)
 	}
 }

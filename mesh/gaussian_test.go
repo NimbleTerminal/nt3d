@@ -10,6 +10,7 @@ import (
 	"nimbleterminal.dev/nt3d/sh"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -282,4 +283,101 @@ func TestOrientRefitsClusters(t *testing.T) {
 	m := decodeRing(t, nil)
 	m.OrientYUp()
 	clustersFit(t, "OrientYUp", m.Objects[0].Geometry)
+}
+
+// expanded returns g's per-splat coefficients, whether or not it has a palette.
+func expanded(g nt3d.Geometry) []nt3dsh.RGB {
+	nt3d.ExpandSHPalette(&g)
+	return g.GaussianSH
+}
+
+// SHPaletteBuild gives Gaussian PLYs a palette that expands to what they
+// decode to without one; the default builds none.
+func TestDecodersBuildPalette(t *testing.T) {
+	compressed, err := os.ReadFile(filepath.Join("testdata", "gaussian-ring.compressed.ply"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoders := map[string]func(o *Options) *Model{
+		"PLY": func(o *Options) *Model { return decodeRing(t, o) },
+		"compressed PLY": func(o *Options) *Model {
+			m, err := DecodePLY(compressed, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return m
+		},
+	}
+	for name, decode := range decoders {
+		plain := decode(nil).Objects[0].Geometry
+		if plain.GaussianSHPalette != nil || plain.GaussianSHLabels != nil {
+			t.Errorf("%s: the default built a palette", name)
+		}
+		g := decode(&Options{SHPalette: SHPaletteBuild}).Objects[0].Geometry
+		if g.GaussianSHPalette == nil || g.GaussianSHPalette.Count() > 576 || len(g.GaussianSHLabels) != 576 || len(g.GaussianSH) != 576 {
+			t.Errorf("%s: palette %v, %d labels, %d SH", name, g.GaussianSHPalette, len(g.GaussianSHLabels), len(g.GaussianSH))
+			continue
+		}
+		if err := g.Validate(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if !reflect.DeepEqual(expanded(g), plain.GaussianSH) {
+			t.Errorf("%s: the palette expands to different coefficients", name)
+		}
+		keep := decode(&Options{SHPalette: SHPaletteKeep}).Objects[0].Geometry
+		if keep.GaussianSHPalette != nil {
+			t.Errorf("%s: Keep built a palette", name)
+		}
+		if again := decode(&Options{SHPalette: SHPaletteExpand}).Objects[0].Geometry; again.GaussianSHPalette != nil || !reflect.DeepEqual(again.GaussianSH, plain.GaussianSH) {
+			t.Errorf("%s: Expand differs from the default", name)
+		}
+	}
+	// A cloud without higher-order bands gets no palette.
+	g := nt3d.Geometry{PointStyle: nt3d.PointStyle{Shape: nt3d.GaussianPoint}, Points: make([]nt3d.Point, 2), GaussianSH: make([]nt3dsh.RGB, 2)}
+	if err := paletteCloud(&g, &Options{SHPalette: SHPaletteBuild}); err != nil || g.GaussianSHPalette != nil {
+		t.Fatalf("degree 0: palette %v, %v", g.GaussianSHPalette, err)
+	}
+}
+
+// A split paletted cloud gives each piece its splats' labels and one shared
+// palette.
+func TestPointPiecesSliceLabels(t *testing.T) {
+	whole := decodeRing(t, &Options{SHPalette: SHPaletteBuild, NoClusters: true}).Objects[0]
+	if len(whole.Geometry.Points) != 576 || whole.Geometry.GaussianSHPalette == nil {
+		t.Fatalf("%d points, palette %v", len(whole.Geometry.Points), whole.Geometry.GaussianSHPalette)
+	}
+	want := expanded(whole.Geometry)
+	per := len(want) / 576
+	at := map[nt3dmath.Vec3]int{}
+	for i, p := range whole.Geometry.Points {
+		at[p.Position] = i
+	}
+	if len(at) != 576 {
+		t.Fatalf("%d distinct positions", len(at))
+	}
+	defer func(g func(int) int) { maxGaussians = g }(maxGaussians)
+	maxGaussians = func(per int) int {
+		if per != 1 {
+			t.Errorf("pieces sized for %d coefficients a splat, not 1", per)
+		}
+		return 200
+	}
+	pieces := PointPieces(whole)
+	if len(pieces) != 3 {
+		t.Fatalf("%d pieces", len(pieces))
+	}
+	for i, p := range pieces {
+		g := p.Geometry
+		if g.GaussianSHPalette != whole.Geometry.GaussianSHPalette || len(g.GaussianSHLabels) != len(g.Points) || len(g.GaussianSH) != len(g.Points) {
+			t.Fatalf("piece %d: palette shared %v, %d labels, %d SH, %d points", i, g.GaussianSHPalette == whole.Geometry.GaussianSHPalette, len(g.GaussianSHLabels), len(g.GaussianSH), len(g.Points))
+		}
+		check(t, g.Validate())
+		got := expanded(g)
+		for j, pt := range g.Points {
+			k := at[pt.Position]
+			if !reflect.DeepEqual(got[j*per:(j+1)*per], want[k*per:(k+1)*per]) {
+				t.Fatalf("piece %d point %d: coefficients differ from the whole cloud's point %d", i, j, k)
+			}
+		}
+	}
 }

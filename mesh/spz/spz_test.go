@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 
@@ -549,6 +550,40 @@ func TestDecodersCluster(t *testing.T) {
 	}
 	if g := m.Objects[0].Geometry; g.Clusters != nil || len(g.Points) != 576 {
 		t.Fatalf("NoClusters left clusters %v", g.Clusters)
+	}
+}
+
+// SHPaletteBuild gives an SPZ a palette that expands to the coefficients it
+// decodes to without one; the default builds none.
+func TestDecodeBuildsPalette(t *testing.T) {
+	for _, version := range []string{"v2", "v3", "v4"} {
+		data, err := os.ReadFile(filepath.Join("testdata", "gaussian-ring."+version+".spz"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := Decode(data, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plain := m.Objects[0].Geometry
+		if plain.GaussianSHPalette != nil || len(plain.GaussianSH) != 4*576 {
+			t.Fatalf("%s: default palette %v, %d SH", version, plain.GaussianSHPalette, len(plain.GaussianSH))
+		}
+		m, err = Decode(data, &nt3dmesh.Options{SHPalette: nt3dmesh.SHPaletteBuild})
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := m.Objects[0].Geometry
+		if g.GaussianSHPalette == nil || g.GaussianSHPalette.Degree != 1 || g.GaussianSHPalette.Count() > len(g.Points) || len(g.GaussianSHLabels) != 576 || len(g.GaussianSH) != 576 {
+			t.Fatalf("%s: palette %v, %d labels, %d SH", version, g.GaussianSHPalette, len(g.GaussianSHLabels), len(g.GaussianSH))
+		}
+		if err := g.Validate(); err != nil {
+			t.Fatalf("%s: %v", version, err)
+		}
+		nt3d.ExpandSHPalette(&g)
+		if !reflect.DeepEqual(g.GaussianSH, plain.GaussianSH) {
+			t.Fatalf("%s: the palette expands to different coefficients", version)
+		}
 	}
 }
 

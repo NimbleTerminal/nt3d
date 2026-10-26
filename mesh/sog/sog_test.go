@@ -40,7 +40,9 @@ func ringPLY(t *testing.T, o *nt3dmesh.Options) nt3d.Geometry {
 }
 
 // decodeRing decodes the v2 bundle fixture and checks its shape: one object
-// of 576 degree-1 splats, their SH turned only by a Y-up orientation.
+// of 576 degree-1 splats, their SH turned only by a Y-up orientation. A
+// decoded palette is expanded to per-splat coefficients, so tests compare SH
+// as v0.5.0 gave it.
 func decodeRing(t *testing.T, o *nt3dmesh.Options) nt3d.Geometry {
 	t.Helper()
 	m, err := Decode(read(t, filepath.Join("testdata", "gaussian-ring.sog")), o)
@@ -51,6 +53,10 @@ func decodeRing(t *testing.T, o *nt3dmesh.Options) nt3d.Geometry {
 		t.Fatalf("format %v, %d objects", m.Format, len(m.Objects))
 	}
 	g := m.Objects[0].Geometry
+	if err := g.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	nt3d.ExpandSHPalette(&g)
 	if len(g.Points) != 576 || len(g.GaussianSH) != 4*576 || (o == nil) != (g.GaussianSHTransform == nt3dmath.Mat4{}) {
 		t.Fatalf("%d points, %d SH, SH transform %v", len(g.Points), len(g.GaussianSH), g.GaussianSHTransform)
 	}
@@ -362,6 +368,7 @@ func TestV1MatchesV2(t *testing.T) {
 		t.Fatalf("format %v, %d objects", m.Format, len(m.Objects))
 	}
 	g, w := m.Objects[0].Geometry, decodeRing(t, nil)
+	nt3d.ExpandSHPalette(&g)
 	if len(g.Points) != 576 || len(g.GaussianSH) != 4*576 {
 		t.Fatalf("%d points, %d SH", len(g.Points), len(g.GaussianSH))
 	}
@@ -404,6 +411,46 @@ func readEntry(t *testing.T, bundle []byte, name string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+// A SOG keeps its palette unless asked to expand it; the expanded form is the
+// per-splat coefficients v0.5.0 gave.
+func TestSOGKeepsPalette(t *testing.T) {
+	data := read(t, filepath.Join("testdata", "gaussian-ring.sog"))
+	decode := func(o *nt3dmesh.Options) nt3d.Geometry {
+		t.Helper()
+		m, err := Decode(data, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := m.Objects[0].Geometry
+		if err := g.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	kept := decode(nil)
+	if kept.GaussianSHPalette == nil || len(kept.GaussianSHLabels) != 576 || len(kept.GaussianSH) != 576 {
+		t.Fatalf("palette %v, %d labels, %d SH", kept.GaussianSHPalette, len(kept.GaussianSHLabels), len(kept.GaussianSH))
+	}
+	if kept.GaussianSHPalette.Degree != 1 || kept.GaussianSHPalette.Count() < 1 || kept.GaussianSHPalette.Count() > 576 {
+		t.Fatalf("palette degree %d with %d centroids", kept.GaussianSHPalette.Degree, kept.GaussianSHPalette.Count())
+	}
+	expanded := decode(&nt3dmesh.Options{SHPalette: nt3dmesh.SHPaletteExpand})
+	if expanded.GaussianSHPalette != nil || expanded.GaussianSHLabels != nil || len(expanded.GaussianSH) != 4*576 {
+		t.Fatalf("expand left palette %v, %d SH", expanded.GaussianSHPalette, len(expanded.GaussianSH))
+	}
+	if !reflect.DeepEqual(kept.Points, expanded.Points) {
+		t.Fatal("points differ between keep and expand")
+	}
+	nt3d.ExpandSHPalette(&kept)
+	if !reflect.DeepEqual(kept.GaussianSH, expanded.GaussianSH) {
+		t.Fatal("expanded palette differs from the per-splat decode")
+	}
+	built := decode(&nt3dmesh.Options{SHPalette: nt3dmesh.SHPaletteBuild})
+	if built.GaussianSHPalette == nil || built.GaussianSHPalette.Count() != decode(nil).GaussianSHPalette.Count() {
+		t.Fatalf("build changed the file's palette: %v", built.GaussianSHPalette)
+	}
 }
 
 func TestDecodersCluster(t *testing.T) {

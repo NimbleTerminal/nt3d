@@ -208,6 +208,9 @@ func DecodeCompressedPLY(data []byte, o *Options) (*Model, error) {
 	}
 	g.Bounds = nt3d.GeometryBounds(g)
 	m := &Model{Format: PLY}
+	if err := paletteCloud(&g, o); err != nil {
+		return nil, err
+	}
 	m.Objects = PointPieces(Object{Geometry: g})
 	if err := ClusterPieces(m.Objects, o); err != nil {
 		return nil, err
