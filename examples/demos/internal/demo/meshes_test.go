@@ -280,3 +280,34 @@ func runPalette(cmd tea.Cmd) *paletteDoneMsg {
 	}
 	return nil
 }
+
+// The w key tells a cloud whose SH is already a palette from one with no
+// bands to palette.
+func TestPaletteKeyNothingToBuild(t *testing.T) {
+	paletted := splatCloud(10)
+	paletted.GaussianSH = paletted.GaussianSH[:0]
+	for range paletted.Points {
+		paletted.GaussianSH = append(paletted.GaussianSH, nt3dsh.RGB{})
+	}
+	paletted.GaussianSHPalette = &nt3d.SHPalette{Degree: 3, Coefficients: make([]nt3dsh.RGB, 15)}
+	dc := splatCloud(10)
+	dc.GaussianSH = dc.GaussianSH[:0]
+	for range dc.Points {
+		dc.GaussianSH = append(dc.GaussianSH, nt3dsh.RGB{})
+	}
+	for _, c := range []struct {
+		name string
+		g    nt3d.Geometry
+		want string
+	}{
+		{"paletted", paletted, "already a palette"},
+		{"dc only", dc, "no per-splat SH bands"},
+	} {
+		d := &demo{scene: nt3d.NewScene()}
+		d.meshes = &meshScene{splats: true, hasSH: true, sources: []nt3d.Geometry{c.g}}
+		d.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+		if !strings.Contains(d.status, c.want) || d.meshes.palette.building {
+			t.Errorf("%s: status %q building %v, want %q", c.name, d.status, d.meshes.palette.building, c.want)
+		}
+	}
+}

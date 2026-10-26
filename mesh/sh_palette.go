@@ -58,7 +58,9 @@ type PaletteReport struct {
 // nearest centroid, and each centroid becomes the mean of its splats. The
 // result is deterministic for the same geometry and options, whatever
 // o.Workers is. It never writes into g's existing slices; g changes only on
-// success. An already paletted geometry is left as it is.
+// success. An already paletted geometry is left as it is, and returns a
+// report with RMSError 0 and MetBudget true, since the per-splat bands are no
+// longer available to measure.
 //
 // The geometry need not fit one GPU geometry: decoders build before
 // PointPieces splits a cloud, so BuildSHPalette checks only what it reads (a

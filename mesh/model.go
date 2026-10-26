@@ -210,8 +210,8 @@ type SHPaletteMode int
 
 const (
 	// SHPaletteKeep, the zero value, keeps what the file holds: a SOG's
-	// palette stays a palette; other formats give per-splat coefficients and
-	// no palette is built.
+	// palette stays a palette (and GaussianSH is then DC only); other
+	// formats give per-splat coefficients and no palette is built.
 	SHPaletteKeep SHPaletteMode = iota
 	// SHPaletteBuild gives every cloud with higher-order bands a palette,
 	// building one with DefaultPaletteOptions (see BuildSHPalette) when the

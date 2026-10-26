@@ -65,3 +65,31 @@ func TestGPUSHPaletteBudgeted(t *testing.T) {
 		t.Errorf("%d pixels differ", off)
 	}
 }
+
+// TestGPUSHPalettePadding renders paletted clouds whose splat counts are not
+// multiples of four, so the compact labels and SH words are padded, and
+// compares them with the software renderer and the expanded twin.
+func TestGPUSHPalettePadding(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	for _, n := range []int{1, 3, 201, 203} {
+		for _, precise := range []bool{false, true} {
+			g := paletteGeometry(t, n, min(n, 9))
+			g.PointStyle.Precise = precise
+			e := g
+			ExpandSHPalette(&e)
+			f := lodGPUFrame(lodPerspective(3, g), 0)
+			f.Perspective = true
+			gpu, err := r.Render(f)
+			check(t, err)
+			if off := lodOff(gpu, softwareRender(f)); off > 12 {
+				t.Errorf("n %d precise %v: %d pixels differ from software", n, precise, off)
+			}
+			twin, err := r.Render(lodGPUFrame(lodPerspective(3, e), 0))
+			check(t, err)
+			if off := lodOff(gpu, twin); off > 12 {
+				t.Errorf("n %d precise %v: %d pixels differ from the expanded twin", n, precise, off)
+			}
+		}
+	}
+}

@@ -147,7 +147,9 @@ var bindingLimit = 128 << 20
 // degrees 0 to 3), in the default compact records: each buffer must fit the
 // binding, the 24-byte axis records and the SH, three bytes a coefficient.
 // Other counts give 0. PointStyle.Precise keeps float records and holds
-// fewer: see MaxPreciseGaussians.
+// fewer: see MaxPreciseGaussians. A geometry with an SH palette holds more
+// than this for its coefficient count: its per-splat SH is DC plus a two-byte
+// label, so MaxGaussians(1) bounds it.
 func MaxGaussians(coefficients int) int {
 	most := min(MaxPoints, (128<<20)/24)
 	switch coefficients {
@@ -160,7 +162,7 @@ func MaxGaussians(coefficients int) int {
 }
 
 // MaxPreciseGaussians is MaxGaussians for a geometry with PointStyle.Precise:
-// the 48-byte axis records and the SH, 48 bytes plus 12 a coefficient, must
+// the 48-byte axis records and the SH, 64 bytes plus 12 a coefficient, must
 // each fit the binding.
 func MaxPreciseGaussians(coefficients int) int {
 	most := min(MaxPoints, (128<<20)/48)
@@ -168,7 +170,7 @@ func MaxPreciseGaussians(coefficients int) int {
 	case 0:
 		return most
 	case 1, 4, 9, 16:
-		return min(most, ((128<<20)-48)/(12*coefficients))
+		return min(most, ((128<<20)-64)/(12*coefficients))
 	}
 	return 0
 }

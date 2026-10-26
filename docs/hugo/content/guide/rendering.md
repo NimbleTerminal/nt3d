@@ -174,7 +174,8 @@ SOG's means are 16-bit values in a log domain; scales and DC color are
 256-entry codebooks; quaternions use the "smallest three" packing; opacity is
 sh0's alpha. Higher-order SH is a palette of up to 64k centroid sets, with a
 16-bit label per splat, which the decoder keeps as a palette (see [SH
-palettes](#sh-palettes)); `Options.SHPalette` can expand it to per-splat
+palettes](#sh-palettes)); that palette is lossy, so a SOG's higher-order SH is
+approximate by construction. `Options.SHPalette` can expand it to per-splat
 coefficients instead. Version 1 uses linear min/max ranges in place of the codebooks. Early
 exports of either version omit the palette size and band count, which the
 centroid image then supplies. A compressed PLY is chunks of 256 splats that bound their positions, scales, and
@@ -200,7 +201,7 @@ A splat's view-dependent color is up to 16 RGB spherical-harmonic coefficients, 
 | `SHPaletteBuild` | Those three get a palette built at load, on the whole cloud before it is split, with `DefaultPaletteOptions()`. A SOG keeps its own. |
 | `SHPaletteExpand` | Per-splat coefficients for every format, a SOG's included, as before palettes existed. |
 
-Decoders apply the mode with `nt3dmesh.ApplySHPalette(&g, &options)`, once the cloud is complete and before `PointPieces` splits it, so every piece shares one palette; a decoder of your own calls it the same way. To build a palette yourself, call `BuildSHPalette(ctx, &g, nt3dmesh.DefaultPaletteOptions())`. It trains two-level k-means on a subsample of at most `DefaultSubsample` (262,144) splats, `DefaultCoarseCentroids` (256) coarse cells and then centroids within each, assigns every splat, and reports the centroids made and the RMS error per band coefficient. Set `Centroids`, `Iterations`, `Workers`, `MaxRMSError` (the report's `MetBudget` says whether it was met), or `Progress` in `PaletteOptions`; zero values mean the defaults. A cloud with no more distinct band sets than `Centroids` gets exactly those sets, with no error. On an 18-core Mac, a million random degree-3 splats build 65,536 centroids in about 2.5 s with an RMS error of 0.227 against an input whose own RMS is 0.289; uniform random coefficients are the worst case, and real captures cluster far better.
+Decoders apply the mode with `nt3dmesh.ApplySHPalette(&g, &options)`, once the cloud is complete and before `PointPieces` splits it, so every piece shares one palette; a decoder of your own calls it the same way. To build a palette yourself, call `BuildSHPalette(ctx, &g, nt3dmesh.DefaultPaletteOptions())`. It trains two-level k-means on a subsample of at most `DefaultSubsample` (262,144) splats, `DefaultCoarseCentroids` (256) coarse cells and then centroids within each, assigns every splat, and reports the centroids made and the RMS error per band coefficient. Set `Centroids`, `Iterations`, `Workers`, `MaxRMSError` (the report's `MetBudget` says whether it was met), or `Progress` in `PaletteOptions`; zero values mean the defaults. A cloud with no more distinct band sets than `Centroids` gets exactly those sets, with no error. On an Apple M5 Max, a million random degree-3 splats build 65,536 centroids in about 2.5 s with an RMS error of 0.227 against an input whose own RMS is 0.289; uniform random coefficients are the worst case, and real captures cluster far better.
 
 `BuildSHPalette` never writes into the slices it is given, and it changes its geometry only on success, so it can run beside a scene that is drawing the original: copy the geometry, build on a goroutine, and swap the result in.
 
@@ -304,7 +305,7 @@ The decoders split at the compact limit; to draw a decoded cloud `Precise`, set
 `nt3dmesh.PointPieces` again, which re-splits at the precise limit.
 Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
 A compact splat takes 44 GPU bytes (a 20-byte point record and 24 bytes of
-axes), plus a 48-byte header per geometry, plus 3 bytes per RGB coefficient, 92 bytes at degree 3; a precise one
+axes), plus a 64-byte header per geometry, plus 3 bytes per RGB coefficient, 92 bytes at degree 3; a precise one
 takes 68 plus 12 per coefficient, 260 at degree 3. A million degree-3 splats
 take about 92 MB compact and 260 MB precise. With an [SH palette](#sh-palettes)
 a splat holds 5 bytes of SH compact (49 in all, plus 45 bytes per centroid)

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Gaussian splats share their spherical harmonics through a palette (`Geometry.GaussianSHPalette` and `GaussianSHLabels`), which both renderers draw: a SOG's palette is kept instead of expanded, and `nt3dmesh.BuildSHPalette` (or `Options.SHPalette = SHPaletteBuild` for PLY, compressed PLY, and SPZ) builds one by two-level k-means, taking a degree-3 splat's SH from 48 bytes on the GPU to 5 plus a palette of at most 2.9 MB; `SHPaletteExpand` restores per-splat coefficients, and `w` in the meshes demo builds one in the background.
+- Gaussian splats can share their spherical harmonics through a palette (`Geometry.GaussianSHPalette` and `GaussianSHLabels`), drawn by both renderers: `nt3dmesh.BuildSHPalette` (or `Options.SHPalette = SHPaletteBuild` for PLY, compressed PLY, and SPZ) builds one by two-level k-means, taking a degree-3 splat's SH from 48 bytes on the GPU to 5, plus a palette of at most 2.9 MB per geometry; `w` in the meshes demo builds one in the background. A decoded SOG now keeps its palette, so its `GaussianSH` holds DC only: code that reads a SOG's `GaussianSH` must call `nt3d.ExpandSHPalette` or decode with `Options.SHPalette = SHPaletteExpand`.
 
 ## v0.5.0
 

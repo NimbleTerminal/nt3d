@@ -98,6 +98,12 @@ func (d *demo) togglePalette() tea.Cmd {
 	}
 	if len(pieces) == 0 {
 		d.status = "no per-splat SH bands to palette"
+		for _, g := range d.meshes.sources {
+			if g.GaussianSHPalette != nil {
+				d.status = "this cloud's SH is already a palette (from the file)"
+				break
+			}
+		}
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
