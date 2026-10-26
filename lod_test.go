@@ -256,3 +256,23 @@ func TestSceneSplatBudget(t *testing.T) {
 		t.Fatalf("frame budget %d, %v", f.SplatBudget, err)
 	}
 }
+
+// A frame checks only that a set's order stays within the points: the
+// permutation check is SetGeometry's and Validate's, once, not every frame's.
+func TestFrameTrustsClusterPermutation(t *testing.T) {
+	cloud := lodCloud(t, 256, 64)
+	set := *cloud.Clusters
+	set.Order = append([]uint32(nil), set.Order...)
+	set.Order[1] = set.Order[0]
+	cloud.Clusters = &set
+	if cloud.Validate() == nil {
+		t.Fatal("Validate accepted a repeated index")
+	}
+	if err := validateFrame(lodOrtho(cloud)); err != nil {
+		t.Fatalf("frame: %v", err)
+	}
+	set.Order[1] = 256
+	if validateFrame(lodOrtho(cloud)) == nil {
+		t.Fatal("frame accepted an index past the points")
+	}
+}

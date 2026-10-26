@@ -33,28 +33,37 @@ type gpuSort struct {
 	keys, payload      [2]*wgpu.Buffer // ping-pong; payload[final] is the sorted order bound to point bind groups
 	hist, counts       *wgpu.Buffer    // counts: each run's first and end index, 0 ends where empty
 	runs, args, params *wgpu.Buffer    // runs: 256 B per (slice, slot); args: 16 B per (slice, slot); params: sort uniform
+	ranges             *wgpu.Buffer    // the frame's lodRanges, every clustered slot's back to back, 16 B each
 	capacity, slots    int             // points and slots the buffers hold
 	final              int             // which payload buffer holds the sorted order after seven passes (always the same parity: 1)
 	generation         uint64          // bumps when payload[final] is reallocated, so point bind groups rebuild
 
-	keyLayout, sortLayout, runLayout                                                     *wgpu.BindGroupLayout
-	keyPipeline, histPipeline, scanPipeline, scatterPipeline, countPipeline, runPipeline *wgpu.ComputePipeline
+	keyLayout, keyClusteredLayout, sortLayout, runLayout                                                       *wgpu.BindGroupLayout
+	keyPipeline, keyClusteredPipeline, histPipeline, scanPipeline, scatterPipeline, countPipeline, runPipeline *wgpu.ComputePipeline
 
 	// Bind groups over the buffers, dropped when one grows: the radix
 	// passes' by parity, the run passes', and the key pass's a slot, with
-	// the points buffer each was made for.
+	// the points buffer each was made for; a clustered slot's also with its
+	// order buffer.
 	passBinds [2]*wgpu.BindGroup
 	runBind   *wgpu.BindGroup
 	keyBinds  []*wgpu.BindGroup
 	keyPoints []*wgpu.Buffer
+	lodBinds  []*wgpu.BindGroup
+	lodPoints []*wgpu.Buffer
+	lodOrders []*wgpu.Buffer
 }
 
 // sortSlot is an alpha point geometry the key pass reads: its point
-// records, the clip matrix they are drawn under, and how many there are.
+// records, the clip matrix they are drawn under, and how many it keys. A
+// clustered slot keys only its selection: ranges of its order buffer (its
+// Clusters.Order), count in all.
 type sortSlot struct {
 	points *wgpu.Buffer
 	matrix nt3dmath.Mat4
 	count  int
+	order  *wgpu.Buffer
+	ranges []lodRange // nil for a slot that keys every point
 }
 
 // initSort makes the sort's layouts and pipelines, once.
@@ -75,6 +84,10 @@ func (g *gpuRenderer) initSort(dev *wgpu.Device) error {
 	}
 	var err error
 	if s.keyLayout, err = layout("sort keys", uniform, read, write, write); err != nil {
+		s.release()
+		return err
+	}
+	if s.keyClusteredLayout, err = layout("sort keys clustered", uniform, read, write, write, read, read); err != nil {
 		s.release()
 		return err
 	}
@@ -111,6 +124,7 @@ func (g *gpuRenderer) initSort(dev *wgpu.Device) error {
 		entry  string
 	}{
 		{&s.keyPipeline, s.keyLayout, "keys", "keys"},
+		{&s.keyClusteredPipeline, s.keyClusteredLayout, "clustered", "keysClustered"},
 		{&s.histPipeline, s.sortLayout, "radix", "histogram"},
 		{&s.scanPipeline, s.sortLayout, "radix", "scan"},
 		{&s.scatterPipeline, s.sortLayout, "radix", "scatter"},
@@ -214,9 +228,10 @@ func (s *gpuSort) argsOffset(slice, slot int) uint64 {
 	return uint64(16 * (slice*s.slots + slot))
 }
 
-// encodeSort records the frame's sort: keys for every alpha point of the
-// plan's slots, the radix passes, and the run table, all on the device.
-func (g *gpuRenderer) encodeSort(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame, plan *blendPlan) error {
+// encodeSort records the frame's sort: keys for the alpha points lod selects
+// of the plan's slots, the radix passes, and the run table, all on the
+// device.
+func (g *gpuRenderer) encodeSort(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame, plan *blendPlan, lod *lodPlan) error {
 	if plan.points == 0 {
 		return nil
 	}
@@ -237,7 +252,15 @@ func (g *gpuRenderer) encodeSort(dev *wgpu.Device, encoder *wgpu.CommandEncoder,
 		if n > 0 && points == nil {
 			return fmt.Errorf("nt3d: geometry %d's points are not on the device", gi)
 		}
-		slots[slot] = sortSlot{points, f.Matrix.Mul(instance(f, gi).World), n}
+		slots[slot] = sortSlot{points: points, matrix: f.Matrix.Mul(instance(f, gi).World), count: n}
+		if ranges := lod.slots[slot].ranges; ranges != nil {
+			sl := &slots[slot]
+			sl.count, sl.ranges = lod.slots[slot].selected, ranges
+			sl.order = g.nodes[gi].order.buffer
+			if sl.count > 0 && sl.order == nil {
+				return fmt.Errorf("nt3d: geometry %d's cluster order is not on the device", gi)
+			}
+		}
 	}
 	if err := s.encodeKeys(dev, encoder, plan, slots); err != nil {
 		return err
@@ -256,19 +279,27 @@ func dispatchFolded(pass *wgpu.ComputePassEncoder, groups int) {
 	}
 }
 
-// encodeKeys writes each slot's keys and point indices into keys[0] and
-// payload[0], the slots one after another.
+// encodeKeys writes each slot's keys and payloads into keys[0] and
+// payload[0], the slots one after another. A payload is the point's index
+// with its splat's scale byte above (packLOD): 255 for a slot that keys
+// every point, its range's f8 for a clustered one.
 func (s *gpuSort) encodeKeys(dev *wgpu.Device, encoder *wgpu.CommandEncoder, plan *blendPlan, slots []sortSlot) error {
 	data := make([]byte, 0, len(slots)*sortRecord)
+	var ranges []byte
 	base := 0
 	for slot, sl := range slots {
 		rec := appendFloats(data, sl.matrix[:]...)
 		rec = appendFloats(rec, plan.near, plan.far)
-		for _, v := range []int{base, sl.count, slot} {
+		for _, v := range []int{base, sl.count, slot, len(ranges) / 16, len(sl.ranges)} {
 			rec = binary.LittleEndian.AppendUint32(rec, uint32(v))
 		}
 		data = append(rec, make([]byte, sortRecord-(len(rec)-len(data)))...)
 		base += sl.count
+		for _, r := range sl.ranges {
+			for _, v := range []uint32{r.first, r.count, r.outBase, uint32(r.f8)} {
+				ranges = binary.LittleEndian.AppendUint32(ranges, v)
+			}
+		}
 	}
 	if len(data) == 0 {
 		return nil
@@ -276,10 +307,39 @@ func (s *gpuSort) encodeKeys(dev *wgpu.Device, encoder *wgpu.CommandEncoder, pla
 	if err := dev.Queue().WriteBuffer(s.params, keyParamRecord*sortRecord, data); err != nil {
 		return err
 	}
+	if len(ranges) > 0 {
+		grown, err := growSort(dev, &s.ranges, uint64(len(ranges)), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst, "ranges")
+		if grown {
+			s.releaseLODBinds()
+		}
+		if err != nil {
+			return err
+		}
+		if err := dev.Queue().WriteBuffer(s.ranges, 0, ranges); err != nil {
+			return err
+		}
+	}
 	s.keyBinds = append(s.keyBinds, make([]*wgpu.BindGroup, max(0, len(slots)-len(s.keyBinds)))...)
 	s.keyPoints = append(s.keyPoints, make([]*wgpu.Buffer, max(0, len(slots)-len(s.keyPoints)))...)
+	s.lodBinds = append(s.lodBinds, make([]*wgpu.BindGroup, max(0, len(slots)-len(s.lodBinds)))...)
+	s.lodPoints = append(s.lodPoints, make([]*wgpu.Buffer, max(0, len(slots)-len(s.lodPoints)))...)
+	s.lodOrders = append(s.lodOrders, make([]*wgpu.Buffer, max(0, len(slots)-len(s.lodOrders)))...)
 	for slot, sl := range slots {
-		if sl.count == 0 || s.keyBinds[slot] != nil && s.keyPoints[slot] == sl.points {
+		if sl.count == 0 || sl.ranges == nil || s.lodBinds[slot] != nil && s.lodPoints[slot] == sl.points && s.lodOrders[slot] == sl.order {
+			continue
+		}
+		if s.lodBinds[slot] != nil {
+			s.lodBinds[slot].Release()
+			s.lodBinds[slot] = nil
+		}
+		bind, err := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Label: "sort keys clustered", Layout: s.keyClusteredLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: s.params, Size: sortRecord}, {Binding: 1, Buffer: sl.points}, {Binding: 2, Buffer: s.keys[0]}, {Binding: 3, Buffer: s.payload[0]}, {Binding: 4, Buffer: sl.order}, {Binding: 5, Buffer: s.ranges}}})
+		if err != nil {
+			return err
+		}
+		s.lodBinds[slot], s.lodPoints[slot], s.lodOrders[slot] = bind, sl.points, sl.order
+	}
+	for slot, sl := range slots {
+		if sl.count == 0 || sl.ranges != nil || s.keyBinds[slot] != nil && s.keyPoints[slot] == sl.points {
 			continue
 		}
 		if s.keyBinds[slot] != nil {
@@ -296,13 +356,24 @@ func (s *gpuSort) encodeKeys(dev *wgpu.Device, encoder *wgpu.CommandEncoder, pla
 	if err != nil {
 		return err
 	}
-	pass.SetPipeline(s.keyPipeline)
+	// One workgroup a clustered slot's range, folded; 64 points a workgroup
+	// otherwise.
+	var pipeline *wgpu.ComputePipeline
 	for slot, sl := range slots {
 		if sl.count == 0 {
 			continue
 		}
-		pass.SetBindGroup(0, s.keyBinds[slot], []uint32{uint32((keyParamRecord + slot) * sortRecord)})
-		dispatchFolded(pass, (sl.count+63)/64)
+		offset := []uint32{uint32((keyParamRecord + slot) * sortRecord)}
+		want, bind, groups := s.keyPipeline, s.keyBinds[slot], (sl.count+63)/64
+		if sl.ranges != nil {
+			want, bind, groups = s.keyClusteredPipeline, s.lodBinds[slot], len(sl.ranges)
+		}
+		if pipeline != want {
+			pipeline = want
+			pass.SetPipeline(pipeline)
+		}
+		pass.SetBindGroup(0, bind, offset)
+		dispatchFolded(pass, groups)
 	}
 	return pass.End()
 }
@@ -382,6 +453,7 @@ func (s *gpuSort) encodeRuns(dev *wgpu.Device, encoder *wgpu.CommandEncoder, n i
 }
 
 func (s *gpuSort) releaseBinds() {
+	s.releaseLODBinds()
 	for _, b := range append(s.keyBinds, s.passBinds[0], s.passBinds[1], s.runBind) {
 		if b != nil {
 			b.Release()
@@ -390,20 +462,31 @@ func (s *gpuSort) releaseBinds() {
 	s.passBinds, s.runBind, s.keyBinds, s.keyPoints = [2]*wgpu.BindGroup{}, nil, nil, nil
 }
 
-// release frees the sort's buffers, bind groups, layouts and pipelines.
-func (s *gpuSort) release() {
-	s.releaseBinds()
-	for _, b := range []*wgpu.Buffer{s.keys[0], s.keys[1], s.payload[0], s.payload[1], s.hist, s.counts, s.runs, s.args, s.params} {
+// releaseLODBinds drops the clustered slots' key bind groups, which hold
+// the ranges buffer as well as the sort's.
+func (s *gpuSort) releaseLODBinds() {
+	for _, b := range s.lodBinds {
 		if b != nil {
 			b.Release()
 		}
 	}
-	for _, p := range []*wgpu.ComputePipeline{s.keyPipeline, s.histPipeline, s.scanPipeline, s.scatterPipeline, s.countPipeline, s.runPipeline} {
+	s.lodBinds, s.lodPoints, s.lodOrders = nil, nil, nil
+}
+
+// release frees the sort's buffers, bind groups, layouts and pipelines.
+func (s *gpuSort) release() {
+	s.releaseBinds()
+	for _, b := range []*wgpu.Buffer{s.keys[0], s.keys[1], s.payload[0], s.payload[1], s.hist, s.counts, s.runs, s.args, s.params, s.ranges} {
+		if b != nil {
+			b.Release()
+		}
+	}
+	for _, p := range []*wgpu.ComputePipeline{s.keyPipeline, s.keyClusteredPipeline, s.histPipeline, s.scanPipeline, s.scatterPipeline, s.countPipeline, s.runPipeline} {
 		if p != nil {
 			p.Release()
 		}
 	}
-	for _, l := range []*wgpu.BindGroupLayout{s.keyLayout, s.sortLayout, s.runLayout} {
+	for _, l := range []*wgpu.BindGroupLayout{s.keyLayout, s.keyClusteredLayout, s.sortLayout, s.runLayout} {
 		if l != nil {
 			l.Release()
 		}

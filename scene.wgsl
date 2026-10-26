@@ -162,7 +162,7 @@ fn pointOutput(vi:u32,index:u32)->Out {
  o.clip=vec4<f32>(o.clip.xy+corner*r*2.0/u.viewport.xy*o.clip.w,o.clip.zw);o.uv=corner;o.point=1.0;o.cut=c.a;return o;
 }
 @vertex fn vs_point(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,ii);}
-@vertex fn vs_point_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,order[run.start+ii]);}
+@vertex fn vs_point_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,order[run.start+ii] & 0xFFFFFFu);}
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
 // Meshes are drawn instanced: each instance's transform is its own.
@@ -450,7 +450,7 @@ fn spriteOutput(vi:u32,index:u32)->Out {
  o.uv=vec2<f32>((o.uv.x+1.0)*0.5,(1.0-o.uv.y)*0.5);return o;
 }
 @vertex fn vs_sprite(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,ii);}
-@vertex fn vs_sprite_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,order[run.start+ii]);}
+@vertex fn vs_sprite_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,order[run.start+ii] & 0xFFFFFFu);}
 fn spriteSample(o:Out)->vec4<f32> {
  let halfTexel=0.5/vec2<f32>(textureDimensions(mapTexture));
  let uv=clamp(o.rect.xy+o.uv*o.rect.zw,o.rect.xy+halfTexel,o.rect.xy+o.rect.zw-halfTexel);
@@ -473,7 +473,11 @@ fn spriteSample(o:Out)->vec4<f32> {
 // for the ellipse.
 @group(0) @binding(7) var<storage,read> compactAxes:array<u32>;
 @vertex fn vs_gaussian(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
- let index=order[run.start+ii];let p=points[index];
+ // The order's top byte is the splat's cluster fraction drawn, in 1/255ths:
+ // a thinned cluster's splats grow by 1/sqrt of it to keep its coverage.
+ let packed=order[run.start+ii];let index=packed & 0xFFFFFFu;let p=points[index];
+ var lodScale=1.0; // Exactly, at full size.
+ if (packed>>24u)<255u {lodScale=inverseSqrt(max(f32(packed>>24u),1.0)/255.0);}
  let compact=gaussianSH[11]>0.5;
  var vectors:array<vec3<f32>,3>;
  if compact {
@@ -485,6 +489,7 @@ fn spriteSample(o:Out)->vec4<f32> {
   let axes=items[index];
   vectors=array<vec3<f32>,3>(axes.a.xyz,axes.b.xyz,axes.color.xyz);
  }
+ for(var k=0u;k<3u;k++) {vectors[k]*=lodScale;}
  var o=pointOutput(vi,index);
  if gaussianSH[9]>0.0 {o.color=vec4<f32>(gaussianSHColor(index,o.world),1.0);}
  let m=u.matrix*instances[0].world;

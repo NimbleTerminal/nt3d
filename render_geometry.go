@@ -27,6 +27,7 @@ type gpuGeometry struct {
 	sh            gpuBatch // Gaussians' SH header, and their float coefficients when Precise.
 	sprite        gpuBatch // Sprite rects, or Precise Gaussians' float axes.
 	axes, shBytes gpuBatch // Compact Gaussians' half axes and SH bytes.
+	order         gpuBatch // Clustered Gaussians' Clusters.Order, which the sort keys ranges of.
 	pointRevision uint64
 	skin          *gpuSkin
 	batches       [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
@@ -40,6 +41,7 @@ func (n *gpuGeometry) release() {
 	releaseBatch(n.sh)
 	releaseBatch(n.axes)
 	releaseBatch(n.shBytes)
+	releaseBatch(n.order)
 	for _, b := range n.batches {
 		releaseBatch(b)
 	}
@@ -179,6 +181,12 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					return err
 				}
 				if err := g.uploadData(dev, &node.shBytes, compactSHData(&geom), 4); err != nil {
+					node.release()
+					return err
+				}
+			}
+			if geom.Clusters != nil && geom.PointStyle.Shape == GaussianPoint {
+				if err := g.uploadData(dev, &node.order, orderData(geom.Clusters.Order), 4); err != nil {
 					node.release()
 					return err
 				}
@@ -630,6 +638,16 @@ func compactAxisData(points []Point) []byte {
 		for _, h := range packGaussianAxes(p.GaussianAxes) {
 			data = binary.LittleEndian.AppendUint16(data, h)
 		}
+	}
+	return data
+}
+
+// orderData is a cluster set's point order as little-endian words, which
+// keysClustered reads ranges of.
+func orderData(order []uint32) []byte {
+	data := make([]byte, 0, len(order)*4)
+	for _, i := range order {
+		data = binary.LittleEndian.AppendUint32(data, i)
 	}
 	return data
 }

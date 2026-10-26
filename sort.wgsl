@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Neomantra Corp.
 // The frame-wide splat sort: keys quantizes each alpha point to a 28-bit
-// key (slice, slot, depth, as blendPlan.key does), seven radix passes of
+// key (slice, slot, depth, as blendPlan.key does), or keysClustered each of
+// a clustered slot's selected points (lodPlan), seven radix passes of
 // histogram, scan and scatter order the keys four bits at a time, count
 // finds where each (slice, slot) run begins and ends among the sorted keys,
 // and runs lays out its record and draw arguments. Points
@@ -8,7 +9,7 @@
 // and is never counted. Workgroups fold over y past 65535 a dimension.
 // Each "// ==" section is a module of its own, after what precedes the
 // first: their groups' bindings overlap.
-struct SortParams { matrix:mat4x4<f32>, near:f32, far:f32, base:u32, count:u32, slot:u32 };
+struct SortParams { matrix:mat4x4<f32>, near:f32, far:f32, base:u32, count:u32, slot:u32, rangeBase:u32, rangeCount:u32 };
 struct PassParams { n:u32, shift:u32, blocks:u32, slots:u32 };
 struct PointRecord { x:f32, y:f32, z:f32, radius:f32, color:u32 };
 
@@ -16,7 +17,24 @@ const sentinel=0xFFFFFFFFu;
 const block=2048u; // Keys a workgroup sorts: 256 threads, 8 each.
 const fold=65535u;
 
-// == keys: the key pass's group.
+// pointKey is a point's key under a slot's params: its slice and depth
+// about the slot, or the sentinel.
+fn pointKey(p:PointRecord,params:SortParams)->u32 {
+ let c=params.matrix*vec4<f32>(p.x,p.y,p.z,1.0);
+ var key=sentinel;
+ if !(c.w<=0.0 || c.z<0.0 || c.z>c.w) {
+  var t=0.0;
+  if params.far>params.near { t=min(1.0,max(0.0,(c.z-params.near)/(params.far-params.near))); }
+  if (bitcast<u32>(t)&0x7FFFFFFFu)>0x7F800000u { t=0.0; } // NaN, tested by its bits past fast math.
+  let k=65535u-u32(sqrt(t)*65535.0);
+  key=((k>>10u)<<22u) | (min(params.slot,4094u)<<10u) | (k&1023u); // The slot clamps to maxBlendSlots-1, clear of the sentinel. Tint wants the parentheses.
+ }
+ return key;
+}
+
+// == keys: the key pass's group. A payload is the point's index with its
+// splat's scale byte above (packLOD): 255, full size, as keys keys every
+// point of a slot.
 @group(0) @binding(0) var<uniform> sp:SortParams;
 @group(0) @binding(1) var<storage,read> points:array<PointRecord>;
 @group(0) @binding(2) var<storage,read_write> keysAll:array<u32>;
@@ -25,18 +43,33 @@ const fold=65535u;
 @compute @workgroup_size(64) fn keys(@builtin(workgroup_id) wg:vec3<u32>, @builtin(local_invocation_id) lid:vec3<u32>) {
  let i=(wg.x+wg.y*fold)*64u+lid.x;
  if i>=sp.count { return; }
- let p=points[i];
- let c=sp.matrix*vec4<f32>(p.x,p.y,p.z,1.0);
- var key=sentinel;
- if !(c.w<=0.0 || c.z<0.0 || c.z>c.w) {
-  var t=0.0;
-  if sp.far>sp.near { t=min(1.0,max(0.0,(c.z-sp.near)/(sp.far-sp.near))); }
-  if (bitcast<u32>(t)&0x7FFFFFFFu)>0x7F800000u { t=0.0; } // NaN, tested by its bits past fast math.
-  let k=65535u-u32(sqrt(t)*65535.0);
-  key=((k>>10u)<<22u) | (min(sp.slot,4094u)<<10u) | (k&1023u); // The slot clamps to maxBlendSlots-1, clear of the sentinel. Tint wants the parentheses.
+ keysAll[sp.base+i]=pointKey(points[i],sp);
+ payloadAll[sp.base+i]=i | 0xFF000000u;
+}
+
+// == clustered: the clustered key pass's group, a section of its own as
+// Metal places a module's buffer sizes after the layout's bindings: the key
+// pass's, then the slot's order (its Clusters.Order) and the frame's ranges.
+// A workgroup keys one range of the order; its payloads carry the range's
+// f8 as their scale byte.
+struct LODRange { first:u32, count:u32, outBase:u32, f8:u32 };
+@group(0) @binding(0) var<uniform> sp:SortParams;
+@group(0) @binding(1) var<storage,read> points:array<PointRecord>;
+@group(0) @binding(2) var<storage,read_write> keysAll:array<u32>;
+@group(0) @binding(3) var<storage,read_write> payloadAll:array<u32>;
+@group(0) @binding(4) var<storage,read> order:array<u32>;
+@group(0) @binding(5) var<storage,read> ranges:array<LODRange>;
+
+@compute @workgroup_size(64) fn keysClustered(@builtin(workgroup_id) wg:vec3<u32>, @builtin(local_invocation_id) lid:vec3<u32>) {
+ let r=wg.x+wg.y*fold;
+ if r>=sp.rangeCount { return; }
+ let rg=ranges[sp.rangeBase+r];
+ let to=sp.base+rg.outBase;
+ for (var j=lid.x; j<rg.count; j+=64u) {
+  let index=order[rg.first+j];
+  keysAll[to+j]=pointKey(points[index],sp);
+  payloadAll[to+j]=index | (rg.f8<<24u);
  }
- keysAll[sp.base+i]=key;
- payloadAll[sp.base+i]=i;
 }
 
 // == radix: the radix passes' group: keys and payload in and out, ping-ponged, and

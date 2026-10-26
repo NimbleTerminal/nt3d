@@ -86,5 +86,11 @@ func validateFrameGeometry(g Geometry) error {
 		g.GaussianSH = nil
 		g.GaussianSHTransform = nt3dmath.Mat4{}
 	}
+	if g.Clusters != nil {
+		if err := validateClusterBounds(g.Clusters, len(g.Points)); err != nil {
+			return err
+		}
+		g.Clusters = nil
+	}
 	return g.Validate()
 }

@@ -349,7 +349,7 @@ func checkKeys(dev *wgpu.Device, s *gpuSort, rng *rand.Rand, m nt3dmath.Mat4, pl
 			if w == 0xFFFFFFFF {
 				culled++
 			}
-			if gotPayload[base+i] != uint32(i) {
+			if gotPayload[base+i] != packLOD(uint32(i), 255) {
 				return fmt.Errorf("slot %d payload %d is %d", slot, i, gotPayload[base+i])
 			}
 			if got == w {

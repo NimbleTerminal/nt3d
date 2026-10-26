@@ -165,15 +165,31 @@ func MaxPreciseGaussians(coefficients int) int {
 // validateClusters checks that a set describes n points: its Order holds each
 // index once, and its clusters tile Order in sequence.
 func validateClusters(s *nt3dclod.Set, n int) error {
-	if len(s.Order) != n {
-		return fmt.Errorf("nt3d: clusters order has %d items for %d points", len(s.Order), n)
+	if err := validateClusterBounds(s, n); err != nil {
+		return err
 	}
 	seen := make([]bool, n)
 	for _, i := range s.Order {
-		if int64(i) >= int64(n) || seen[i] {
+		if seen[i] {
 			return fmt.Errorf("nt3d: clusters order is not a permutation of the points")
 		}
 		seen[i] = true
+	}
+	return nil
+}
+
+// validateClusterBounds checks what the renderers need of a set to read
+// only n points: an Order of n indices below n, which its clusters tile in
+// sequence. Frames check only this; that Order holds each index once is
+// SetGeometry's and Validate's to check.
+func validateClusterBounds(s *nt3dclod.Set, n int) error {
+	if len(s.Order) != n {
+		return fmt.Errorf("nt3d: clusters order has %d items for %d points", len(s.Order), n)
+	}
+	for _, i := range s.Order {
+		if int64(i) >= int64(n) {
+			return fmt.Errorf("nt3d: clusters order indexes past the points")
+		}
 	}
 	next := int64(0)
 	for _, c := range s.Clusters {

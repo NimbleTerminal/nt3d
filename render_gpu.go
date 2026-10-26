@@ -54,6 +54,7 @@ type gpuRenderer struct {
 	skinLayout             *wgpu.BindGroupLayout
 	sort                   gpuSort   // The frame-wide blended point sort.
 	plan                   blendPlan // The frame's blended work, as the sort and the draws see it.
+	lod                    lodPlan   // The splats of plan's slots the sort keys: its points are their total.
 	dropPipeline           *wgpu.RenderPipeline
 	outlinePipelines       [5]*wgpu.RenderPipeline
 	shadowLayout           *wgpu.BindGroupLayout
@@ -345,6 +346,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		return nil, err
 	}
 	g.plan = plan
+	g.lod = f.planLOD(&g.plan)
 	size := shadowMapSize
 	if i := shadowCaster(f.Lighting); i >= 0 && f.Lighting.Lights[i].Kind == PointLight {
 		size = pointShadowMapSize
@@ -415,7 +417,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 		if err := g.skinGeometry(dev, frame.Encoder, f); err != nil {
 			return err
 		}
-		if err := g.encodeSort(dev, frame.Encoder, f, &g.plan); err != nil {
+		if err := g.encodeSort(dev, frame.Encoder, f, &g.plan, &g.lod); err != nil {
 			return err
 		}
 		if err := g.uploadLines(dev, f); err != nil {
