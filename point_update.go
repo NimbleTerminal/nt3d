@@ -23,7 +23,9 @@ type pointUpdate struct {
 // positions (point radii are handled separately by culling). Construct it with
 // AABB.Include. A fixed conservative bound avoids a bounds pass each frame.
 // Use SetNodeGeometry when changing the point count/style or a deformed mesh.
-// The updated geometry has no Clusters, which describe the old positions.
+// The updated geometry has no Clusters, which describe the old positions,
+// and draws in full until SetNodeGeometry stores it again with a set refit
+// or rebuilt for the new ones (nt3dclod's Set.Refit or Set.Rebuild).
 func (s *Scene) SetNodePoints(id NodeID, points []Point, bounds nt3dmath.AABB) error {
 	n := s.nodes[id]
 	if n == nil || n.geometry == nil || len(points) != len(n.geometry.Points) {
@@ -36,7 +38,8 @@ func (s *Scene) SetNodePoints(id NodeID, points []Point, bounds nt3dmath.AABB) e
 // frame snapshots by copying only the point slice. The GPU uploads this range
 // when it rendered the preceding update, or the whole point buffer if frames
 // were skipped. bounds has the same contract as SetNodePoints. The updated
-// geometry has no Clusters, which describe the old positions.
+// geometry has no Clusters, which describe the old positions, and draws in
+// full until SetNodeGeometry stores it again with a refit or rebuilt set.
 func (s *Scene) UpdateNodePoints(id NodeID, first int, points []Point, bounds nt3dmath.AABB) error {
 	n := s.nodes[id]
 	if id == Root || n == nil || n.geometry == nil || n.shared != nil || n.deformation != nil {
