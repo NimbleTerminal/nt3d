@@ -65,6 +65,18 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **`v0.5.0`** (`2bfe699`…`6ddfaf3`): budgeted splat level of detail below.
+- **Budgeted splat LOD**: every splat decoder clusters its clouds at load
+  (`Geometry.Clusters`; `nt3dmesh.Options.NoClusters` opts out), and both
+  renderers draw a per-frame subset under `Frame.SplatBudget` (default one
+  million): each visible cluster gets a prefix of its spread order sized by
+  its projected area, survivors scale by 1/√f to keep coverage, the GPU keys
+  and sorts only the selection, and `Frame.SplatSelection()` reports drawn
+  and resident counts. Shares are continuous, so the clustered-LOD items on
+  the renderer consuming selections directly and on flicker between levels
+  are closed. A store-time validation certificate stops `Render`
+  re-validating stored geometry each frame (a 1M-splat frame 28→7 ms)
+  (`2bfe699`…`6ddfaf3`).
 - **`v0.4.0`** (`8e1e04d`…`72c0fcc`): water, from shared Gerstner wave
   surfaces with wakes, buoyancy, drag and planing hull forces, flow maps,
   transmission, refraction and absorption, environment reflections, and soft

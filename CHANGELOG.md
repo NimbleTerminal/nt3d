@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.0
 
 - Gaussian clouds cluster at load and both renderers draw a budgeted subset each frame (`Frame.SplatBudget`, default one million), culled and thinned by projected size with coverage scaling, so the sort and draw cost follow the budget rather than the capture's size.
 
