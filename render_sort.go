@@ -35,6 +35,7 @@ type gpuSort struct {
 	runs, args, params *wgpu.Buffer    // runs: 256 B per (slice, slot); args: 16 B per (slice, slot); params: sort uniform
 	ranges             *wgpu.Buffer    // the frame's lodRanges, every clustered slot's back to back, 16 B each
 	capacity, slots    int             // points and slots the buffers hold
+	deviceLimit        int             // the device's storage binding, set at setup; 0 means unknown
 	final              int             // which payload buffer holds the sorted order after seven passes (always the same parity: 1)
 	generation         uint64          // bumps when payload[final] is reallocated, so point bind groups rebuild
 
@@ -151,14 +152,23 @@ func (g *gpuRenderer) initSort(dev *wgpu.Device) error {
 	return nil
 }
 
-// growSort makes a buffer of at least size bytes, keeping the old one when
-// it is large enough, and reports whether it changed.
-func growSort(dev *wgpu.Device, b **wgpu.Buffer, size uint64, usage gputypes.BufferUsage, label string) (bool, error) {
+// limit is the bytes one sort buffer may take: the binding limit in force,
+// or less when the device holds less.
+func (s *gpuSort) limit() int {
+	if s.deviceLimit > 0 {
+		return min(BindingLimit(), s.deviceLimit)
+	}
+	return BindingLimit()
+}
+
+// growSort makes a buffer of at least size bytes, within limit, keeping the
+// old one when it is large enough, and reports whether it changed.
+func growSort(dev *wgpu.Device, b **wgpu.Buffer, size uint64, limit int, usage gputypes.BufferUsage, label string) (bool, error) {
 	size = max(16, size)
 	if *b != nil && (*b).Size() >= size {
 		return false, nil
 	}
-	if size > uint64(BindingLimit()) {
+	if size > uint64(limit) {
 		return false, fmt.Errorf("nt3d: sort %s needs %d bytes, more than the GPU binding limit", label, size)
 	}
 	nb, err := dev.CreateBuffer(&wgpu.BufferDescriptor{Label: "sort " + label, Size: size, Usage: usage})
@@ -178,7 +188,8 @@ func (s *gpuSort) ensure(dev *wgpu.Device, points, slots int) error {
 	if points <= s.capacity && slots <= s.slots {
 		return nil
 	}
-	if slots > maxBlendSlots || points*4 > BindingLimit() {
+	limit := s.limit()
+	if slots > maxBlendSlots || points*4 > limit {
 		return fmt.Errorf("nt3d: frame exceeds GPU binding limit")
 	}
 	points, slots = max(points, s.capacity), max(slots, s.slots)
@@ -202,7 +213,7 @@ func (s *gpuSort) ensure(dev *wgpu.Device, points, slots int) error {
 		{&s.params, uint64(keyParamRecord+slots) * sortRecord, wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst, "params"},
 	} {
 		final := b.to == &s.payload[s.final]
-		did, err := growSort(dev, b.to, b.size, b.usage, b.label)
+		did, err := growSort(dev, b.to, b.size, limit, b.usage, b.label)
 		if did {
 			// At once, so a later failure leaves no group over a freed buffer.
 			s.releaseBinds()
@@ -308,7 +319,7 @@ func (s *gpuSort) encodeKeys(dev *wgpu.Device, encoder *wgpu.CommandEncoder, pla
 		return err
 	}
 	if len(ranges) > 0 {
-		grown, err := growSort(dev, &s.ranges, uint64(len(ranges)), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst, "ranges")
+		grown, err := growSort(dev, &s.ranges, uint64(len(ranges)), s.limit(), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst, "ranges")
 		if grown {
 			s.releaseLODBinds()
 		}

@@ -199,6 +199,31 @@ type Renderer interface {
 
 func NewGPURenderer() Renderer { return &gpuRenderer{} }
 
+// BindingLimiter is a Renderer that knows how many bytes one storage
+// binding on its device holds; the GPU renderer is one.
+type BindingLimiter interface {
+	// BindingLimit sets the device up if it has to and returns the bytes one
+	// storage binding holds, at most MaxBindingLimit.
+	BindingLimit() (int, error)
+}
+
+// AdoptBindingLimit raises the binding limit (SetBindingLimit) to what r's
+// device holds, when r is a BindingLimiter, and returns the limit in force.
+// Any other renderer leaves the limit as it is. When the device cannot be
+// set up, the limit is untouched and the error returned. Call it once at
+// startup, before geometries are stored or files decoded.
+func AdoptBindingLimit(r Renderer) (int, error) {
+	l, ok := r.(BindingLimiter)
+	if !ok {
+		return BindingLimit(), nil
+	}
+	bytes, err := l.BindingLimit()
+	if err != nil {
+		return BindingLimit(), err
+	}
+	return SetBindingLimit(bytes), nil
+}
+
 // Retain at most 4 MiB of private depth scratch. Larger snapshots use temporary
 // storage, leaving the interactive buffer intact. Shrinking below one quarter
 // of its capacity replaces the buffer with an exactly sized allocation.

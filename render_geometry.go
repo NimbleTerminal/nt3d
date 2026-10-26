@@ -451,6 +451,9 @@ func (g *gpuRenderer) uploadData(dev *wgpu.Device, b *gpuBatch, data []byte, rec
 	if len(data) == 0 {
 		return nil
 	}
+	if err := g.checkUpload(len(data)); err != nil {
+		return err
+	}
 	var err error
 	b.buffer, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(len(data)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
 	if err != nil {
@@ -466,6 +469,9 @@ func (g *gpuRenderer) uploadData(dev *wgpu.Device, b *gpuBatch, data []byte, rec
 func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, transform *wgpu.Buffer) error {
 	if len(data) == 0 {
 		return nil
+	}
+	if err := g.checkUpload(len(data)); err != nil {
+		return err
 	}
 	var err error
 	b.buffer, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(len(data)), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})

@@ -166,3 +166,17 @@ func TestValidateFollowsLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A renderer without a device limit leaves the setting as it is.
+func TestAdoptBindingLimitSoftware(t *testing.T) {
+	defer setBindingLimit(DefaultBindingLimit)
+	r := NewSoftwareRenderer()
+	defer r.Close()
+	if got, err := AdoptBindingLimit(r); err != nil || got != DefaultBindingLimit || BindingLimit() != DefaultBindingLimit {
+		t.Fatalf("adopted %d, %v; limit %d", got, err, BindingLimit())
+	}
+	SetBindingLimit(256 << 20)
+	if got, err := AdoptBindingLimit(r); err != nil || got != 256<<20 || BindingLimit() != 256<<20 {
+		t.Fatalf("adopted %d, %v; limit %d", got, err, BindingLimit())
+	}
+}

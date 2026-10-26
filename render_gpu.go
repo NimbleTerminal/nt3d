@@ -101,6 +101,29 @@ type gpuRenderer struct {
 	batches         [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
 	uploads         uint64
 	target          sceneTarget
+	// deviceLimit is the most bytes one storage binding on the device holds,
+	// the smaller of its binding and buffer limits, read at setup; a geometry
+	// past it is refused at upload. Zero before setup. Tests lower it.
+	deviceLimit int
+}
+
+// deviceBinding is the bytes one storage binding may hold on a device with
+// these limits, within what an int holds.
+func deviceBinding(l gputypes.Limits) int {
+	bytes := min(l.MaxStorageBufferBindingSize, l.MaxBufferSize)
+	if bytes > uint64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(bytes)
+}
+
+// checkUpload refuses a buffer the device's binding cannot hold, as a frame
+// error, before the device would fail to create or bind it.
+func (g *gpuRenderer) checkUpload(size int) error {
+	if g.deviceLimit > 0 && size > g.deviceLimit {
+		return fmt.Errorf("nt3d: geometry needs %d bytes in one buffer, more than the device's %d-byte binding limit", size, g.deviceLimit)
+	}
+	return nil
 }
 
 func (g *gpuRenderer) setup() (err error) {
@@ -114,6 +137,8 @@ func (g *gpuRenderer) setup() (err error) {
 		return gpuimage.ErrNoAdapter
 	}
 	return g.r.Do(func(dev *wgpu.Device) error {
+		g.deviceLimit = deviceBinding(dev.Limits())
+		g.sort.deviceLimit = g.deviceLimit
 		g.shader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d", WGSL: sceneShaderSource()})
 		if err != nil {
 			return err
@@ -260,6 +285,26 @@ func (g *gpuRenderer) uploadDynamic(dev *wgpu.Device, index int, data []byte) er
 	releaseBatch(*b)
 	*b = gpuBatch{}
 	return g.uploadBatch(dev, b, data, g.transforms)
+}
+
+// BindingLimit sets the device up if it has to and returns the bytes one
+// storage binding on it holds, at most MaxBindingLimit; see AdoptBindingLimit.
+func (g *gpuRenderer) BindingLimit() (int, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return 0, fmt.Errorf("%w: renderer closed", ErrGPUUnavailable)
+	}
+	if g.initErr != nil {
+		return 0, g.initErr
+	}
+	if g.r == nil {
+		if err := g.setup(); err != nil {
+			g.initErr = fmt.Errorf("%w: %w", ErrGPUUnavailable, err)
+			return 0, g.initErr
+		}
+	}
+	return min(g.deviceLimit, MaxBindingLimit), nil
 }
 
 func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
