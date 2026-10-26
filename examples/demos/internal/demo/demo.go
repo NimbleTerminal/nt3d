@@ -762,6 +762,20 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	default:
 		return fmt.Errorf("invalid medium")
 	}
+	// On the GPU, take the device's binding limit before anything loads, so a
+	// big capture needs fewer pieces where the device allows it. The widget
+	// owns the renderer it is given and falls back as it would with its own.
+	// In the browser the device holds the 128 MiB baseline whatever is asked,
+	// so nothing is adopted there.
+	var renderer nt3d.Renderer
+	if renderMode == nt3d.WebGPU && runtime.GOOS != "js" {
+		r := nt3d.NewGPURenderer()
+		if _, err := nt3d.AdoptBindingLimit(r); err != nil {
+			_ = r.Close()
+		} else {
+			renderer = r
+		}
+	}
 	d := &demo{scene: nt3d.NewScene(), zones: zone.New(), duration: *duration, animate: *animate}
 	defer d.zones.Close()
 	var err error
@@ -887,7 +901,11 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
 	}
 	camera.AutoRotate = proceduralDefault
-	d.view = nt3dwidget.New(d.scene, 80, 22, nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate))
+	options := []nt3dwidget.Option{nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate)}
+	if renderer != nil {
+		options = append(options, nt3dwidget.WithRenderer(renderer))
+	}
+	d.view = nt3dwidget.New(d.scene, 80, 22, options...)
 	defer d.view.Close()
 	switch kind {
 	case sceneMeshes:
