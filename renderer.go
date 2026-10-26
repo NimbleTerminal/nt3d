@@ -114,7 +114,18 @@ type Frame struct {
 	// Scene.Frame's do, and Scene.Frame sets it; geometry without valid
 	// Bounds is always drawn. Changing Matrix afterward is fine.
 	Cull bool
+	// SplatBudget is the most splats a frame draws across every clustered
+	// Gaussian geometry: each cluster draws a prefix of its progressive
+	// order, longer the more screen it covers, until the budget is shared
+	// out. Zero means DefaultSplatBudget; negative draws everything. Points
+	// that are not clustered count against the budget first. A cluster in
+	// view always draws at least one splat, so a frame can run over by up
+	// to one splat per visible cluster. Scene.Frame sets it.
+	SplatBudget int
 }
+
+// DefaultSplatBudget is the splat budget a frame gets when it names none.
+const DefaultSplatBudget = 1_000_000
 
 // MaxAnisotropy is the most Frame.Anisotropy allows, and its default.
 const MaxAnisotropy = 16
@@ -143,7 +154,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	if err := s.UpdateDeformations(); err != nil {
 		return Frame{}, err
 	}
-	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Environment: s.environment, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Cull: true, Linear: true}
+	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Environment: s.environment, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Cull: true, Linear: true, SplatBudget: s.splatBudget}
 	if width < 1 || height < 1 || width > MaxFramePixels || height > MaxFramePixels/width {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)
 	}

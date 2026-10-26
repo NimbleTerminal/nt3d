@@ -52,6 +52,7 @@ type Scene struct {
 	order                                    []NodeID
 	revision, textureRevision, stateRevision uint64
 	noPickIndex                              bool
+	splatBudget                              int
 }
 
 func NewScene() *Scene {
@@ -214,6 +215,15 @@ func (s *Scene) SetVisible(id NodeID, visible bool) error {
 		s.changed(false, false)
 	}
 	return nil
+}
+
+// SetSplatBudget sets the most splats Frame draws across clustered Gaussian
+// geometry; see Frame.SplatBudget. Zero restores the default.
+func (s *Scene) SetSplatBudget(n int) {
+	if s.splatBudget != n {
+		s.splatBudget = n
+		s.changed(false, false)
+	}
 }
 
 // SetGeometry replaces a named node's geometry, or creates a node under Root.
