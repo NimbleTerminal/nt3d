@@ -7,6 +7,8 @@ env:
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
   DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water
+  # Every tool: a command in cmd/nt3d-NAME, built to bin/nt3d-NAME.
+  TOOLS: palette
 
 tasks:
   default:
@@ -19,10 +21,10 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go aabbtree/*.go clod/*.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
+      - gofmt -w *.go aabbtree/*.go clod/*.go cmd/*/*.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go aabbtree/*.go clod/*.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
+      - test -z "$(gofmt -l *.go aabbtree/*.go clod/*.go cmd/*/*.go math/*.go mesh/*.go mesh/*/*.go widget/*.go examples/demos/cmd/*/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...
@@ -42,9 +44,12 @@ tasks:
       - go vet -mod=readonly ./...
       - go -C examples/demos vet -mod=readonly ./...
   build:
-    desc: Build the library and every demo; Go's cache rebuilds only what changed
+    desc: Build the library, every tool, and every demo; Go's cache rebuilds only what changed
     deps:
       - build:lib
+      - for: {var: TOOLS}
+        task: build:tool
+        vars: {NAME: '{{.ITEM}}'}
       - for: {var: DEMOS}
         task: build:demo
         vars: {NAME: '{{.ITEM}}'}
@@ -52,6 +57,13 @@ tasks:
     internal: true
     cmds:
       - go build -mod=readonly ./...
+  # build:tool builds one command-line tool from cmd to bin.
+  build:tool:
+    internal: true
+    label: 'build:{{.NAME}}'
+    requires: {vars: [NAME]}
+    cmds:
+      - go build -mod=readonly -o bin/nt3d-{{.NAME}} ./cmd/nt3d-{{.NAME}}
   # build:demo builds one demo. Each demo's task needs only its own binary;
   # build runs them all at once.
   build:demo:
@@ -61,7 +73,7 @@ tasks:
     cmds:
       - go -C examples/demos build -mod=readonly -o ../../bin/nt3d-{{.NAME}} ./cmd/{{.NAME}}
   clean:
-    desc: Remove the demo binaries that build puts in bin
+    desc: Remove the tool and demo binaries that build puts in bin
     cmds: [rm -rf bin]
   build-wasm:
     env:

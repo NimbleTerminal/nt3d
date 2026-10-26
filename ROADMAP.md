@@ -14,8 +14,7 @@ Nothing queued; the sections below are the open work.
   as one aggregate (a preprocessing tool's job); per-frame rebuilds cheap
   enough for moving particles.
 - [ ] **Gaussian splatting follow-ups**: streaming and partial loading;
-  budgeted plain point clouds; write SH palettes to a file from the
-  preprocessing tool. Measured and
+  budgeted plain point clouds. Measured and
   dropped (2026-10-26): storing points in cluster order so budgeted gathers
   are contiguous saved only 0.5 ms of the budgeted 2.5M frame's 12 ms
   (against 7 for 1M unbudgeted); the gap is the draw pass gathering by

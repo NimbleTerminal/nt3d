@@ -124,4 +124,35 @@ See the [glTF camera specification](https://registry.khronos.org/glTF/specs/2.0/
 
 ## Writing
 
-`EncodeSTL`, `EncodeOBJ`, `Encode3MF`, and `EncodePLY` write triangles; OBJ writes lines too. Nothing is normalized on the way out.
+`EncodeSTL`, `EncodeOBJ`, `Encode3MF`, and `EncodePLY` write triangles; OBJ writes lines too. Nothing is normalized on the way out. `nt3dsog.Encode` writes a Gaussian cloud whose bands above DC are a palette (see [Preprocessing splats](#preprocessing-splats)) as a SOG bundle.
+
+## Preprocessing splats
+
+Loading a big PLY or SPZ with `SHPaletteBuild` pays the k-means every time, about 2.5 s for a million degree-3 splats. `nt3d-palette`, built to `bin/` by `task build`, does it once and writes a file that loads paletted:
+
+```
+nt3d-palette [flags] input.ply|.spz|.sog ...
+```
+
+It reads each input (PLY, compressed PLY, SPZ, or SOG), builds a palette with `BuildSHPalette`, and writes a SOG v2 bundle, which `nt3dmesh` loads with the default `SHPaletteKeep`: the palette is the bundle's `shN` centroid image and 16-bit labels, nothing new to decode. A SOG input that already holds a palette is copied through unchanged, and a cloud with no bands above DC is written without a palette, with a warning. Inputs are converted in order, and one that fails is reported on stderr while the rest continue. The exit status is 1 when any failed, 2 for a usage error.
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `-centroids` | 65536 | Palette centroids, at most `MaxSHPaletteCentroids`. |
+| `-iterations` | 10 | K-means rounds at each level. |
+| `-max-rms` | 0 | Fail, writing nothing, when the palette's RMS error exceeds this; 0 ignores it. |
+| `-workers` | 0 | Goroutines for the build; 0 is `GOMAXPROCS`. |
+| `-out` | | The output file (one input only) or directory; a directory is one that exists, or a name ending in a separator, which is created. |
+| `-i` | | Write `<stem>.sog` beside the input and remove the input. A SOG input that is copied through is left untouched. |
+| `-rebuild` | | Build a new palette even when the input holds one. |
+| `-progress` | | Report the build's progress on stderr. |
+| `-quiet` | | Print no reports, warnings, or progress; errors still go to stderr. |
+| `-fail-fast` | | Stop at the first input that fails. |
+
+Without `-out` or `-i`, the output is `<stem>.paletted.sog` beside the input; with `-out` naming a directory it is `<dir>/<stem>.sog`. The output is written through a temporary file beside it and renamed into place, so an interrupted or failed run leaves nothing. Each input gets one report line on stdout: the output path, the centroids used and the RMS error (or `kept N centroids` for a copied SOG), whether `-max-rms` was met, the SH bytes as per-splat coefficients and as a palette with labels, and the wall time:
+
+```
+scan.sog: 65536 centroids, RMS 0.0412, SH 92.0 MB -> 4.9 MB, 3.1s
+```
+
+The bundle's images are lossless PNG rather than WebP, since Go has no lossless WebP encoder: `nt3dmesh` and any reader that decodes images by content open it, but a SOG reader that insists on WebP may not. Positions keep 16 bits in SOG's log domain and scales, DC, and palette coefficients 8 bits over each attribute's range, as SOG v1's linear ranges did, so a reload matches within that quantization. The file keeps the input's coordinates; `Options.Up` applies at load as it does for any SOG.
