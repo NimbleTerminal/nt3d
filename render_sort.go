@@ -321,6 +321,14 @@ func (s *gpuSort) encodeKeys(dev *wgpu.Device, encoder *wgpu.CommandEncoder, pla
 	}
 	s.keyBinds = append(s.keyBinds, make([]*wgpu.BindGroup, max(0, len(slots)-len(s.keyBinds)))...)
 	s.keyPoints = append(s.keyPoints, make([]*wgpu.Buffer, max(0, len(slots)-len(s.keyPoints)))...)
+	// A slot not clustered this frame lets its group go, and with it the
+	// points and order buffers it holds.
+	for k, b := range s.lodBinds {
+		if b != nil && (k >= len(slots) || slots[k].ranges == nil) {
+			b.Release()
+			s.lodBinds[k], s.lodPoints[k], s.lodOrders[k] = nil, nil, nil
+		}
+	}
 	s.lodBinds = append(s.lodBinds, make([]*wgpu.BindGroup, max(0, len(slots)-len(s.lodBinds)))...)
 	s.lodPoints = append(s.lodPoints, make([]*wgpu.Buffer, max(0, len(slots)-len(s.lodPoints)))...)
 	s.lodOrders = append(s.lodOrders, make([]*wgpu.Buffer, max(0, len(slots)-len(s.lodOrders)))...)

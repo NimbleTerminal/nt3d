@@ -276,3 +276,61 @@ func TestFrameTrustsClusterPermutation(t *testing.T) {
 		t.Fatal("frame accepted an index past the points")
 	}
 }
+
+// A cluster's projected radius depends on the matrix's rows: rolling the
+// camera about its view axis, or spinning the cloud about it, leaves it
+// unchanged at any aspect, and a rigid view's w row is a unit, so a sphere
+// reaches exactly its radius toward the eye.
+func TestLODProjectedRadiusRows(t *testing.T) {
+	cloud := lodCloud(t, 4096, 64)
+	const width, height = 640, 400
+	radii := func(roll, spin float64) []float32 {
+		cam := Camera{Projection: Perspective, Pose: nt3dmath.Translation(nt3dmath.Vec3{Z: 6}).Mul(nt3dmath.RotationZ(roll)), Near: .1, Far: 100}
+		m := cam.Matrix(float32(width) / height).Mul(nt3dmath.RotationZ(spin))
+		var out []float32
+		for _, c := range cloud.Clusters.Clusters {
+			out = append(out, lodProjectedRadius(c.Center, c.Radius, m, width, height, true))
+		}
+		return out
+	}
+	want := radii(0, 0)
+	for _, turn := range [][2]float64{{.7, 0}, {math.Pi / 2, 0}, {0, 1.1}, {-.4, 2.5}} {
+		for i, r := range radii(turn[0], turn[1]) {
+			if math.Abs(float64(r-want[i])) > 1e-3*float64(want[i]) {
+				t.Fatalf("roll %v spin %v: cluster %d radius %v, want %v", turn[0], turn[1], i, r, want[i])
+			}
+		}
+	}
+
+	cam := DefaultCamera()
+	cam.Projection, cam.Alpha, cam.Beta = Perspective, 45, 45
+	m := cam.Matrix(float32(width) / height)
+	if row := math.Sqrt(float64(m[3]*m[3] + m[7]*m[7] + m[11]*m[11])); math.Abs(row-1) > 1e-5 {
+		t.Fatalf("orbit camera's w row has length %v", row)
+	}
+	_, _, _, w := m.Transform(nt3dmath.Vec3{})
+	if r := lodProjectedRadius(nt3dmath.Vec3{}, w*1.001, m, width, height, true); !math.IsInf(float64(r), 1) {
+		t.Fatalf("a sphere holding the eye has radius %v", r)
+	}
+	if r := lodProjectedRadius(nt3dmath.Vec3{}, w*.999, m, width, height, true); math.IsInf(float64(r), 0) || r <= 0 {
+		t.Fatalf("a sphere short of the eye has radius %v", r)
+	}
+}
+
+// A supersampled software frame plans its selection at the frame's own
+// size, as the GPU and SplatSelection do.
+func TestLODSupersampledSelection(t *testing.T) {
+	f := lodPerspective(20, lodCloud(t, 4096, 64))
+	f.Width, f.Height, f.Supersample, f.SplatBudget = 160, 100, 2, 2000
+	drawn, _ := f.SplatSelection()
+	big := f
+	big.Width, big.Height = f.Width*2, f.Height*2
+	bp, err := big.planBlend(big.drawn(1))
+	check(t, err)
+	if got := big.planLODScaled(&bp, 2).drawn; got != drawn || drawn == 0 {
+		t.Fatalf("supersampled plan selects %d, the frame %d", got, drawn)
+	}
+	if bp, _ = big.planBlend(big.drawn(1)); big.planLOD(&bp).drawn == drawn {
+		t.Fatal("the frame's size does not change the selection; the test proves nothing")
+	}
+}

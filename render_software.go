@@ -769,7 +769,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		}
 		plan.slots = plan.slots[:maxBlendSlots]
 	}
-	lod := f.planLOD(&plan)
+	lod := f.planLODScaled(&plan, scale)
 	type slotDraw struct {
 		g           *Geometry
 		inst        Instance

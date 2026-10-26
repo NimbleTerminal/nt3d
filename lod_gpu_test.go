@@ -137,6 +137,23 @@ func TestGPULODLargeBudgetEqualsUnclustered(t *testing.T) {
 	}
 }
 
+// A supersampled frame selects at its own size in both renderers.
+func TestGPULODSupersampled(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	f := lodGPUFrame(lodPerspective(20, lodCloud(t, 4096, 64)), 0) // Footprints, not the budget, thin it.
+	f.Supersample = 2
+	drawn, resident := f.SplatSelection()
+	gpu, err := r.Render(f)
+	check(t, err)
+	if drawn >= resident || r.plan.points != drawn {
+		t.Fatalf("selected %d of %d, sorted %d", drawn, resident, r.plan.points)
+	}
+	if off := lodOff(gpu, softwareRender(f)); off > 12 {
+		t.Errorf("supersampled (%d of %d drawn): %d pixels differ", drawn, resident, off)
+	}
+}
+
 func TestGPULODMixedFrame(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
@@ -160,5 +177,38 @@ func TestGPULODMixedFrame(t *testing.T) {
 	check(t, err)
 	if off := lodOff(gpu, softwareRender(f)); off > 12 {
 		t.Errorf("mixed frame (%d of %d drawn): %d pixels differ", drawn, resident, off)
+	}
+}
+
+// A point update drops a cloud's clusters; the GPU then lets their order go
+// and draws the cloud in full.
+func TestGPULODPointUpdateDropsOrder(t *testing.T) {
+	s := NewScene()
+	cloud := lodCloud(t, 4096, 64)
+	id, err := s.SetGeometry("cloud", cloud)
+	check(t, err)
+	camera := DefaultCamera()
+	camera.Projection, camera.Distance = Perspective, 60
+	r := &gpuRenderer{}
+	defer r.Close()
+	render := func() *gpuGeometry {
+		f, err := s.Frame(camera, 80, 80)
+		check(t, err)
+		_, err = r.Render(f)
+		check(t, err)
+		for i, g := range f.Geometry {
+			if len(g.Points) == 4096 {
+				return r.nodes[i]
+			}
+		}
+		t.Fatal("no cloud in the frame")
+		return nil
+	}
+	if node := render(); node.order.buffer == nil || r.plan.points >= 4096 {
+		t.Fatalf("clustered cloud: order %v, %d sorted", node.order.buffer, r.plan.points)
+	}
+	check(t, s.SetNodePoints(id, cloud.Points, cloud.Bounds))
+	if node := render(); node.order.buffer != nil || r.plan.points != 4096 {
+		t.Fatalf("updated cloud: order %v, %d sorted", node.order.buffer, r.plan.points)
 	}
 }

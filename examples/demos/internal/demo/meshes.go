@@ -210,8 +210,9 @@ type splatStats struct {
 	budget, drawn, resident int
 }
 
-// minSplatBudget is the least the budget keys halve to.
-const minSplatBudget = 1000
+// minSplatBudget and maxSplatBudget are the least the budget keys halve
+// to and the most they double to, so the budget never overflows.
+const minSplatBudget, maxSplatBudget = 1000, 1 << 30
 
 // showsSplats reports whether the scene is a splat cloud, the budget keys'
 // scene.
@@ -230,7 +231,7 @@ func (d *demo) adjustSplatBudget(key string) {
 	case "u":
 		b = max(minSplatBudget, b/2)
 	case "y":
-		b *= 2
+		b = min(maxSplatBudget, b*2)
 	case "z":
 		b = 0
 	}

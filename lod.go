@@ -11,6 +11,10 @@ import (
 // scale byte f8 sits above it.
 const lodIndexMask = 1<<24 - 1
 
+// Every point index fits below the scale byte: this fails to compile if
+// MaxPoints outgrows the mask.
+const _ = uint(lodIndexMask + 1 - MaxPoints)
+
 // lodRange is a run of one cluster's points a slot draws: count entries of
 // Clusters.Order from first, written to the slot's selection from outBase. f8 is the fraction of the cluster drawn in 1/255ths
 // (1..255); a thinned cluster's splats grow by 1/sqrt of it to keep its
@@ -97,6 +101,14 @@ func (f Frame) planLOD(plan *blendPlan) lodPlan {
 	return lod
 }
 
+// planLODScaled is planLOD for f drawn at scale times its frame's size, as
+// a supersampled frame is: the selection is the frame's own, as the GPU and
+// SplatSelection plan it.
+func (f Frame) planLODScaled(plan *blendPlan, scale int) lodPlan {
+	f.Width, f.Height = max(1, f.Width/scale), max(1, f.Height/scale)
+	return f.planLOD(plan)
+}
+
 // lodWant is how many of a cluster's count splats cover a sphere r pixels
 // across at half a splat per pixel of its footprint. A sphere the eye is inside, or one whose
 // size is not finite, wants them all; a visible cluster wants one at least.
@@ -108,10 +120,12 @@ func lodWant(count uint32, r float32) uint32 {
 	return uint32(min(float64(count), max(1, want)))
 }
 
-// SplatSelection reports how many splats Frame draws and how many its
-// Gaussian clouds hold, under the frame's SplatBudget: exactly what the
-// renderers draw, as the selection depends on the frame alone. A frame that
-// fails to plan reports zeros.
+// SplatSelection reports how many splats Frame selects for drawing and how
+// many its Gaussian clouds hold, under the frame's SplatBudget: exactly what
+// the renderers select, as the selection depends on the frame alone. drawn
+// counts every selected splat, including those the renderers then cull
+// behind the eye or past the clip planes. A frame that fails to plan
+// reports zeros.
 func (f Frame) SplatSelection() (drawn, resident int) {
 	plan, err := f.planBlend(f.drawn(1))
 	if err != nil {
@@ -123,18 +137,21 @@ func (f Frame) SplatSelection() (drawn, resident int) {
 
 // lodProjectedRadius is the on-screen radius, in pixels, of a sphere of the
 // given radius about center, under the matrix m (the frame's matrix with the
-// instance's world transform). The matrix's x and y scales, including the
-// instance's, size it; a perspective view divides by the sphere's nearest
-// depth. A sphere that holds the eye is infinitely large.
+// instance's world transform). Clip x and y vary across the sphere by its
+// radius times the lengths of m's x and y rows (xyz), which the viewport's
+// half width and half height take to pixels; the larger sizes it. A
+// perspective view divides by the sphere's nearest w: its center's, less the
+// radius times the length of m's w row. A sphere that holds the eye is
+// infinitely large.
 func lodProjectedRadius(center nt3dmath.Vec3, radius float32, m nt3dmath.Mat4, width, height int, perspective bool) float32 {
-	length := func(i int) float64 { return math.Sqrt(float64(m[i]*m[i] + m[i+1]*m[i+1] + m[i+2]*m[i+2])) }
-	s := float32(max(length(0), length(4)))
-	r := radius * s * float32(height) / 2
+	row := func(i int) float64 { return math.Sqrt(float64(m[i]*m[i] + m[i+4]*m[i+4] + m[i+8]*m[i+8])) }
+	s := float32(max(row(0)*float64(width)/2, row(1)*float64(height)/2))
+	r := radius * s
 	if !perspective {
 		return r
 	}
 	_, _, _, w := m.Transform(center)
-	reach := radius * float32(length(8))
+	reach := radius * float32(row(3))
 	if w <= reach {
 		return float32(math.Inf(1))
 	}

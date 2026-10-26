@@ -194,6 +194,11 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			g.geometries[keys[i]] = node
 			g.uploads++
 		}
+		if geom.Clusters == nil && node.order.buffer != nil {
+			// A point update dropped the clusters the order was uploaded for.
+			releaseBatch(node.order)
+			node.order = gpuBatch{}
+		}
 		u := geom.pointUpdate
 		revision := uint64(0)
 		if u != nil {

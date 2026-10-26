@@ -83,7 +83,13 @@ func TestSplatBudgetKeys(t *testing.T) {
 	if got := budget(); got != 0 {
 		t.Fatalf("after z, budget %d, want 0 (the default)", got)
 	}
-	for range 20 {
+	for range 40 {
+		press('y')
+	}
+	if got := budget(); got != 1<<30 {
+		t.Fatalf("after many y, budget %d, want the 1<<30 cap", got)
+	}
+	for range 30 {
 		press('u')
 	}
 	if got := budget(); got != 1000 {
