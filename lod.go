@@ -12,8 +12,8 @@ import (
 const lodIndexMask = 1<<24 - 1
 
 // Every point index fits below the scale byte: this fails to compile if
-// MaxPoints outgrows the mask.
-const _ = uint(lodIndexMask + 1 - MaxPoints)
+// MaxPointIndex, which PointLimit never exceeds, outgrows the mask.
+const _ = uint(lodIndexMask + 1 - MaxPointIndex)
 
 // lodRange is a run of one cluster's points a slot draws: count entries of
 // Clusters.Order from first, written to the slot's selection from outBase. f8 is the fraction of the cluster drawn in 1/255ths

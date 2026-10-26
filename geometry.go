@@ -122,41 +122,42 @@ type Geometry struct {
 }
 
 // MaxMeshIndices is the most indices one geometry's mesh may have, three to a
-// triangle. The GPU renderer keeps a 48-byte record for each index, vertices
-// shared or not, in a storage buffer; 128 MiB is the largest binding that
-// WebGPU promises, and so the largest mesh that can be drawn wherever WebGPU
-// can. MaxMeshTriangles is the same limit, counted in faces. MaxPoints is
-// the same limit for points, whose records are 20 bytes; textured points keep
-// a 48-byte record too. Gaussian splats keep an axis record and spherical
-// harmonics as well, compact by default (24-byte axes, one byte a
-// coefficient channel) and float with PointStyle.Precise (48-byte axes, 12
-// bytes a coefficient), so those geometries hold fewer: see MaxGaussians and
-// MaxPreciseGaussians.
+// triangle, on every device. The GPU renderer keeps a 48-byte record for each
+// index, vertices shared or not, in a storage buffer; 128 MiB
+// (DefaultBindingLimit) is the largest binding that WebGPU promises, and so
+// the largest mesh that can be drawn wherever WebGPU can. MaxMeshTriangles is
+// the same limit, counted in faces. MaxPoints is the same limit for points,
+// whose records are 20 bytes; textured points keep a 48-byte record too.
+// Gaussian splats keep an axis record and spherical harmonics as well,
+// compact by default (24-byte axes, one byte a coefficient channel) and float
+// with PointStyle.Precise (48-byte axes, 12 bytes a coefficient), so those
+// geometries hold fewer: see MaxGaussians and MaxPreciseGaussians. A device
+// that offers a larger binding holds more once SetBindingLimit raises the
+// limit: MeshTriangleLimit, MeshIndexLimit, and PointLimit give the counts in
+// force.
 const (
-	MaxMeshTriangles = (128 << 20) / 48 / 3
+	MaxMeshTriangles = DefaultBindingLimit / 48 / 3
 	MaxMeshIndices   = 3 * MaxMeshTriangles
-	MaxPoints        = (128 << 20) / 20
+	MaxPoints        = DefaultBindingLimit / 20
 )
-
-// bindingLimit is the storage binding WebGPU guarantees, in bytes, that
-// Validate measures a geometry's buffers against. Tests lower it.
-var bindingLimit = 128 << 20
 
 // MaxGaussians is the most Gaussian splats one geometry holds with that many
 // RGB spherical harmonic coefficients each (0 for none; else 1, 4, 9, or 16,
-// degrees 0 to 3), in the default compact records: each buffer must fit the
-// binding, the 24-byte axis records and the SH, three bytes a coefficient.
-// Other counts give 0. PointStyle.Precise keeps float records and holds
-// fewer: see MaxPreciseGaussians. A geometry with an SH palette holds more
-// than this for its coefficient count: its per-splat SH is DC plus a two-byte
-// label, so MaxGaussians(1) bounds it.
+// degrees 0 to 3), in the default compact records at the binding limit in
+// force: each buffer must fit the binding, the 24-byte axis records and the
+// SH, three bytes a coefficient, and no geometry holds more than
+// MaxPointIndex. Other counts give 0. PointStyle.Precise keeps float records
+// and holds fewer: see MaxPreciseGaussians. A geometry with an SH palette
+// holds more than this for its coefficient count: its per-splat SH is DC
+// plus a two-byte label, so MaxGaussians(1) bounds it.
 func MaxGaussians(coefficients int) int {
-	most := min(MaxPoints, (128<<20)/24)
+	limit := BindingLimit()
+	most := min(PointLimit(), limit/24)
 	switch coefficients {
 	case 0:
 		return most
 	case 1, 4, 9, 16:
-		return min(most, (128<<20)/(3*coefficients))
+		return min(most, limit/(3*coefficients))
 	}
 	return 0
 }
@@ -165,12 +166,13 @@ func MaxGaussians(coefficients int) int {
 // the 48-byte axis records and the SH, 64 bytes plus 12 a coefficient, must
 // each fit the binding.
 func MaxPreciseGaussians(coefficients int) int {
-	most := min(MaxPoints, (128<<20)/48)
+	limit := BindingLimit()
+	most := min(PointLimit(), limit/48)
 	switch coefficients {
 	case 0:
 		return most
 	case 1, 4, 9, 16:
-		return min(most, ((128<<20)-64)/(12*coefficients))
+		return min(most, (limit-64)/(12*coefficients))
 	}
 	return 0
 }
@@ -254,7 +256,7 @@ func validateGeometry(g Geometry) error {
 			return fmt.Errorf("nt3d: invalid tangent")
 		}
 	}
-	if extended(g) && len(g.Indices) > MaxMeshIndices/2 {
+	if extended(g) && len(g.Indices) > MeshIndexLimit()/2 {
 		return fmt.Errorf("nt3d: normal-mapped mesh with tangents or independent UVs exceeds GPU binding limit")
 	}
 	for _, uv := range g.NormalUV {
@@ -344,7 +346,7 @@ func validateGeometry(g Geometry) error {
 
 	// A mesh may give each face vertices of its own, so it may have as many
 	// vertices as indices.
-	if len(g.Points) > MaxPoints || len(g.Vertices) > MaxMeshIndices || len(g.Indices) > MaxMeshIndices || len(g.Boxes) > 512*512 || len(g.Lines) > 2*512*512 {
+	if len(g.Points) > PointLimit() || len(g.Vertices) > MeshIndexLimit() || len(g.Indices) > MeshIndexLimit() || len(g.Boxes) > 512*512 || len(g.Lines) > 2*512*512 {
 		return fmt.Errorf("nt3d: geometry exceeds cap")
 	}
 	// Each per-point buffer is one storage binding: the 20-byte records;
@@ -369,7 +371,7 @@ func validateGeometry(g Geometry) error {
 			sh += (2*len(g.Points) + 3) &^ 3
 		}
 	}
-	if len(g.Points)*20 > bindingLimit || sprites && len(g.Points)*axis > bindingLimit || (len(g.GaussianSH) > 0 || banded > 0) && sh > bindingLimit {
+	if limit := BindingLimit(); len(g.Points)*20 > limit || sprites && len(g.Points)*axis > limit || (len(g.GaussianSH) > 0 || banded > 0) && sh > limit {
 		return fmt.Errorf("nt3d: geometry exceeds the GPU binding limit")
 	}
 	if len(g.Indices)%3 != 0 || len(g.Lines)%2 != 0 {

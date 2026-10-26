@@ -396,7 +396,7 @@ func TestGPUSortEnsureGrows(t *testing.T) {
 		if s.generation != generation+1 || s.capacity != 4000 || s.slots != 5 {
 			return fmt.Errorf("growth gave capacity %d, slots %d, generation %d", s.capacity, s.slots, s.generation)
 		}
-		if err := s.ensure(dev, bindingLimit/4+1, 1); err == nil {
+		if err := s.ensure(dev, BindingLimit()/4+1, 1); err == nil {
 			return fmt.Errorf("ensure took more keys than a binding holds")
 		}
 		return nil

@@ -158,7 +158,7 @@ func growSort(dev *wgpu.Device, b **wgpu.Buffer, size uint64, usage gputypes.Buf
 	if *b != nil && (*b).Size() >= size {
 		return false, nil
 	}
-	if size > uint64(bindingLimit) {
+	if size > uint64(BindingLimit()) {
 		return false, fmt.Errorf("nt3d: sort %s needs %d bytes, more than the GPU binding limit", label, size)
 	}
 	nb, err := dev.CreateBuffer(&wgpu.BufferDescriptor{Label: "sort " + label, Size: size, Usage: usage})
@@ -178,7 +178,7 @@ func (s *gpuSort) ensure(dev *wgpu.Device, points, slots int) error {
 	if points <= s.capacity && slots <= s.slots {
 		return nil
 	}
-	if slots > maxBlendSlots || points*4 > bindingLimit {
+	if slots > maxBlendSlots || points*4 > BindingLimit() {
 		return fmt.Errorf("nt3d: frame exceeds GPU binding limit")
 	}
 	points, slots = max(points, s.capacity), max(slots, s.slots)
