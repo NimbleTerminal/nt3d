@@ -90,7 +90,7 @@ func (d *demo) sceneKeys() (string, keys) {
 		if d.showsSplats() {
 			controls := []key.Binding{bind("u", "u", "budget /2"), bind("y", "y", "budget x2"), bind("z", "z", "budget reset"), bind("n", "n", "turn")}
 			if d.meshes.hasSH {
-				controls = append([]key.Binding{bind("h", "h", "DC/full SH")}, controls...)
+				controls = append([]key.Binding{bind("h", "h", "DC/full SH"), bind("w", "w", "palette")}, controls...)
 			}
 			return "splats", keys{controls}
 		}

@@ -2,6 +2,8 @@
 package demo
 
 import (
+	"fmt"
+	"image/color"
 	"math"
 	"math/rand/v2"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
+	nt3dsh "nimbleterminal.dev/nt3d/sh"
 	"nimbleterminal.dev/nt3d/widget"
 )
 
@@ -131,4 +134,149 @@ func TestSplatViewSHHint(t *testing.T) {
 			t.Fatalf("hasSH %v: key hint %v, view %q", sh, hint, view)
 		}
 	}
+}
+
+// splatCloud is a degree-3 splat cloud of n splats with a distinct color set
+// each, small enough that a palette of n centroids is exact.
+func splatCloud(n int) nt3d.Geometry {
+	rng := rand.New(rand.NewPCG(5, 6))
+	g := nt3d.Geometry{PointStyle: nt3d.PointStyle{Shape: nt3d.GaussianPoint, Units: nt3d.WorldUnits, Blend: nt3d.AlphaBlend}}
+	for range n {
+		g.Points = append(g.Points, nt3d.Point{Position: nt3dmath.Vec3{X: float32(rng.NormFloat64()), Y: float32(rng.NormFloat64()), Z: float32(rng.NormFloat64())}, Radius: .1, Color: color.RGBA{200, 200, 200, 255}, GaussianAxes: [3]nt3dmath.Vec3{{X: .05}, {Y: .05}, {Z: .05}}})
+		for range 16 {
+			g.GaussianSH = append(g.GaussianSH, nt3dsh.RGB{float32(rng.NormFloat64()) * .1, float32(rng.NormFloat64()) * .1, float32(rng.NormFloat64()) * .1})
+		}
+	}
+	return g
+}
+
+// The palette status is the build's progress while it runs, then the
+// centroids over all pieces and the compact SH bytes before and after:
+// 3 a coefficient before, and after 3 for the DC, 2 for the label, and 45
+// a centroid at degree 3.
+func TestPaletteStatus(t *testing.T) {
+	const n, centroids = 100000, 400
+	piece := func() (nt3d.Geometry, nt3d.Geometry) {
+		src := nt3d.Geometry{Points: make([]nt3d.Point, n), GaussianSH: make([]nt3dsh.RGB, 16*n)}
+		built := nt3d.Geometry{Points: src.Points, GaussianSH: src.GaussianSH[:n],
+			GaussianSHPalette: &nt3d.SHPalette{Degree: 3, Coefficients: make([]nt3dsh.RGB, 15*centroids)}}
+		return src, built
+	}
+	srcA, builtA := piece()
+	srcB, builtB := piece()
+	d := &demo{meshes: &meshScene{splats: true, hasSH: true, sources: []nt3d.Geometry{srcA, {}, srcB}}}
+	p := &d.meshes.palette
+	if got := d.paletteStatus(); got != "" {
+		t.Fatalf("idle status %q", got)
+	}
+	p.building = true
+	p.fraction.Store(437)
+	if got := d.paletteStatus(); got != "SH palette: building 43%" {
+		t.Fatalf("building status %q", got)
+	}
+	p.building, p.active = false, true
+	p.built = []nt3d.Geometry{builtA, {}, builtB}
+	p.reports = []nt3dmesh.PaletteReport{{Centroids: centroids}, {Centroids: centroids}}
+	before, after := p.shBytes(d.meshes.sources)
+	if before != 2*48*n || after != 2*(5*n+45*centroids) {
+		t.Fatalf("bytes %d -> %d, want %d -> %d", before, after, 2*48*n, 2*(5*n+45*centroids))
+	}
+	if got, want := d.paletteStatus(), "SH palette 800 centroids · SH 9.6 MB → 1.04 MB"; got != want {
+		t.Fatalf("status %q, want %q", got, want)
+	}
+	for b, want := range map[int]string{48_000_000: "48 MB", 7_934_000: "7.93 MB", 24_000: "0.024 MB", 1_500_000_000: "1500 MB", 0: "0 MB"} {
+		if got := megabytes(b); got != want {
+			t.Fatalf("megabytes(%d) = %q, want %q", b, got, want)
+		}
+	}
+	for n, want := range map[int]string{65536: "65,536", 999: "999", 1000: "1,000", 1234567: "1,234,567"} {
+		if got := groupDigits(n); got != want {
+			t.Fatalf("groupDigits(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// The w key builds a palette in the background, swaps it in when done,
+// swaps the originals back on a second press, and a cancel swaps nothing.
+func TestPaletteKey(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	var sources []nt3d.Geometry
+	d.meshes = &meshScene{splats: true, hasSH: true}
+	for i, g := range []nt3d.Geometry{splatCloud(300), splatCloud(200)} {
+		id, err := d.scene.SetGeometry(fmt.Sprintf("piece %d", i), g)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.meshes.nodes = append(d.meshes.nodes, id)
+		sources = append(sources, g)
+	}
+	d.meshes.sources = sources
+	d.view = nt3dwidget.New(d.scene, 80, 24, nt3dwidget.WithRenderMode(nt3d.Software), nt3dwidget.WithFrameDecorator(d.decorate))
+	press := func() tea.Cmd {
+		_, cmd := d.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+		return cmd
+	}
+
+	// A cancel: the build's context ends before it starts, and nothing swaps.
+	cmd := press()
+	if !d.meshes.palette.building {
+		t.Fatal("w did not start a build")
+	}
+	d.meshes.palette.cancel()
+	done := runPalette(cmd)
+	if done == nil || done.err == nil {
+		t.Fatalf("canceled build result %+v", done)
+	}
+	d.Update(*done)
+	if d.meshes.palette.building || d.meshes.palette.active || !strings.Contains(d.status, "canceled") {
+		t.Fatalf("after cancel: building %v active %v status %q", d.meshes.palette.building, d.meshes.palette.active, d.status)
+	}
+
+	// A build to the end.
+	cmd = press()
+	done = runPalette(cmd)
+	if done == nil || done.err != nil || len(done.reports) != 2 {
+		t.Fatalf("build result %+v", done)
+	}
+	d.Update(*done)
+	p := &d.meshes.palette
+	if !p.active || p.building || p.built[0].GaussianSHPalette == nil || p.built[1].GaussianSHPalette == nil {
+		t.Fatalf("after build: active %v building %v", p.active, p.building)
+	}
+	if got, want := d.paletteStatus(), "SH palette 500 centroids · SH 0.024 MB → 0.025 MB"; got != want {
+		t.Fatalf("status %q, want %q", got, want)
+	}
+	if sources[0].GaussianSHPalette != nil || len(sources[0].GaussianSH) != 16*300 {
+		t.Fatal("the build wrote into the source")
+	}
+	if _, err := d.scene.Frame(nt3d.DefaultCamera(), 64, 48); err != nil {
+		t.Fatal(err)
+	}
+	// Again: back to the originals.
+	press()
+	if p.active || p.built != nil {
+		t.Fatal("second w did not swap back")
+	}
+	if got := d.paletteStatus(); got != "" {
+		t.Fatalf("status after swap back %q", got)
+	}
+}
+
+// runPalette runs a command, or those it batches, and returns the finished
+// build's message if one comes back.
+func runPalette(cmd tea.Cmd) *paletteDoneMsg {
+	if cmd == nil {
+		return nil
+	}
+	switch m := cmd().(type) {
+	case paletteDoneMsg:
+		return &m
+	case tea.BatchMsg:
+		for _, c := range m {
+			if done := runPalette(c); done != nil {
+				return done
+			}
+		}
+	}
+	return nil
 }

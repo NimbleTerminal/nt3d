@@ -35,7 +35,7 @@ import _ "nimbleterminal.dev/nt3d/mesh/formats"
 
 That keeps programs that read no files small: glTF alone adds about 0.6 MB to a WebAssembly build.
 
-The Gaussian decoders (PLY, SPZ, SOG) also group each cloud into clusters at load, which is what lets the renderers draw a budgeted subset: see [Gaussian clouds](../clustering/#gaussian-clouds). That costs about 160 ms per million splats (406 ms for 2.5 million on an M5 Max); `Options.NoClusters` skips it, so loading is faster and every splat is drawn, taking its share off the budget first.
+The Gaussian decoders (PLY, SPZ, SOG) also group each cloud into clusters at load, which is what lets the renderers draw a budgeted subset: see [Gaussian clouds](../clustering/#gaussian-clouds). That costs about 160 ms per million splats (406 ms for 2.5 million on an M5 Max); `Options.NoClusters` skips it, so loading is faster and every splat is drawn, taking its share off the budget first. `Options.SHPalette` chooses whether the spherical harmonics are shared through a palette: a SOG's palette is kept by default, and `SHPaletteBuild` makes one for PLY, compressed PLY, and SPZ clouds at load (see [SH palettes](../rendering/#sh-palettes)).
 
 ## Which way is up
 

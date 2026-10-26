@@ -235,6 +235,19 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return d, phaseTick()
 		}
 		return d, tea.Batch(d.followSampleCamera(), d.view.Refresh(), phaseTick())
+	case paletteTickMsg:
+		if d.meshes != nil && d.meshes.palette.building {
+			return d, paletteTick()
+		}
+		return d, nil
+	case paletteDoneMsg:
+		if d.meshes == nil {
+			return d, nil
+		}
+		if err := d.finishPalette(v); err != nil {
+			d.status = err.Error()
+		}
+		return d, d.view.Refresh()
 	case quitMsg:
 		d.closed = true
 		return d, tea.Sequence(d.view.Dispose(), tea.Quit)
@@ -269,6 +282,9 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch v.String() {
 		case "q", "ctrl+c":
 			d.closed = true
+			if d.meshes != nil && d.meshes.palette.building {
+				d.meshes.palette.cancel()
+			}
 			return d, tea.Sequence(d.view.Dispose(), tea.Quit)
 		case "enter":
 			if d.animatedSamples != nil {
@@ -282,6 +298,11 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, nil
 			}
 			d.adjustSplatBudget(v.String())
+		case "w":
+			if !d.showsSplats() || !d.meshes.hasSH {
+				return d, nil
+			}
+			return d, d.togglePalette()
 		case "h":
 			if d.aabb != nil {
 				err = d.cycleAABBShow()

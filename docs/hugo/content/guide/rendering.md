@@ -173,8 +173,9 @@ it does for PLY.
 SOG's means are 16-bit values in a log domain; scales and DC color are
 256-entry codebooks; quaternions use the "smallest three" packing; opacity is
 sh0's alpha. Higher-order SH is a palette of up to 64k centroid sets, with a
-16-bit label per splat, so SH from a SOG is approximate by construction.
-Version 1 uses linear min/max ranges in place of the codebooks. Early
+16-bit label per splat, which the decoder keeps as a palette (see [SH
+palettes](#sh-palettes)); `Options.SHPalette` can expand it to per-splat
+coefficients instead. Version 1 uses linear min/max ranges in place of the codebooks. Early
 exports of either version omit the palette size and band count, which the
 centroid image then supplies. A compressed PLY is chunks of 256 splats that bound their positions, scales, and
 optionally colors; each splat packs an 11-10-11 bit position and scale, a
@@ -186,6 +187,36 @@ SOG's `model` tag (`antialiased`, `2dgs`) and the PLY `SplatRenderMode`
 comment are ignored. `Options.MaxBytes` bounds a compressed PLY's input
 bytes, and a SOG's files plus its decoded images (`width × height × 4` bytes
 each). `.splat` and `.ksplat` remain unsupported.
+
+### SH palettes
+
+A splat's view-dependent color is up to 16 RGB spherical-harmonic coefficients, 48 bytes at degree 3 even when stored compactly, and most captures use far fewer distinct sets of the 15 bands above the first than they have splats. A palette shares them. `Geometry.GaussianSHPalette` (an `*SHPalette` holding a degree and `Count()` centroids of `Stride()` RGB coefficients each) and `Geometry.GaussianSHLabels` (a `uint16` centroid per splat) replace the per-splat bands: with a palette, `GaussianSH` holds just the first coefficient, the DC, one RGB per splat, and a splat's color is its DC plus its centroid's bands. A palette holds at most `MaxSHPaletteCentroids` (65,536) centroids. Both renderers draw it, `PointStyle.SHDCOnly` shows the DC alone, and `nt3d.ExpandSHPalette(&g)` turns a geometry back into per-splat coefficients, leaving the palette for other geometries to keep sharing.
+
+`nt3dmesh.Options.SHPalette` chooses what the decoders hand back:
+
+| Mode | Result |
+| --- | --- |
+| `SHPaletteKeep` (the default) | A SOG's palette stays a palette; PLY, compressed PLY, and SPZ give per-splat coefficients, and nothing is built. |
+| `SHPaletteBuild` | Those three get a palette built at load, on the whole cloud before it is split, with `DefaultPaletteOptions()`. A SOG keeps its own. |
+| `SHPaletteExpand` | Per-splat coefficients for every format, a SOG's included, as before palettes existed. |
+
+Decoders apply the mode with `nt3dmesh.ApplySHPalette(&g, &options)`, once the cloud is complete and before `PointPieces` splits it, so every piece shares one palette; a decoder of your own calls it the same way. To build a palette yourself, call `BuildSHPalette(ctx, &g, nt3dmesh.DefaultPaletteOptions())`. It trains two-level k-means on a subsample of at most `DefaultSubsample` (262,144) splats, `DefaultCoarseCentroids` (256) coarse cells and then centroids within each, assigns every splat, and reports the centroids made and the RMS error per band coefficient. Set `Centroids`, `Iterations`, `Workers`, `MaxRMSError` (the report's `MetBudget` says whether it was met), or `Progress` in `PaletteOptions`; zero values mean the defaults. A cloud with no more distinct band sets than `Centroids` gets exactly those sets, with no error. On an 18-core Mac, a million random degree-3 splats build 65,536 centroids in about 2.5 s with an RMS error of 0.227 against an input whose own RMS is 0.289; uniform random coefficients are the worst case, and real captures cluster far better.
+
+`BuildSHPalette` never writes into the slices it is given, and it changes its geometry only on success, so it can run beside a scene that is drawing the original: copy the geometry, build on a goroutine, and swap the result in.
+
+```go
+g2 := g // Shares g's slices; the build replaces g2's fields, not their contents.
+go func() {
+	report, err := nt3dmesh.BuildSHPalette(ctx, &g2, nt3dmesh.DefaultPaletteOptions())
+	if err == nil {
+		scene.SetNodeGeometry(id, g2) // From your update loop, not the goroutine, if it owns the scene.
+	}
+}()
+```
+
+A palette changes what the GPU holds. Compact SH goes from 48 bytes a degree-3 splat to 5 (3 for the DC and 2 for the label), plus a palette of 45 bytes a centroid, 2.9 MB at 65,536: a million splats' SH shrinks from 48 MB to 5 MB plus up to 2.9 MB. `Precise` goes from 192 bytes a splat to 14 (12 for the DC and 2 for the label), plus 180 bytes a centroid, 11.8 MB at 65,536. The palette is quantized as compact SH is, so a built palette is also approximate: the RMS error above is before that.
+
+The scene operations know about palettes. `MergeGeometry` keeps a palette when its inputs share it, the same `*SHPalette` or a byte-identical one, and expands them otherwise. `Clip`, `TransformGeometry`, point updates, and `nt3dmesh.PointPieces` carry the labels, and pieces share the palette. A paletted splat has one stored coefficient, so `nt3d.MaxGaussians(1)` bounds a paletted cloud's pieces. Try it in `task meshes -- scene.spz`: `w` builds a palette for every piece in the background, with progress in the status line, then swaps it in; pressing `w` again swaps the originals back, and pressing it during the build cancels it.
 
 ### Budgeting splats
 
@@ -275,7 +306,10 @@ Gaussian input obeys `Options.MaxBytes` (256 MiB by default).
 A compact splat takes 44 GPU bytes (a 20-byte point record and 24 bytes of
 axes), plus a 48-byte header per geometry, plus 3 bytes per RGB coefficient, 92 bytes at degree 3; a precise one
 takes 68 plus 12 per coefficient, 260 at degree 3. A million degree-3 splats
-take about 92 MB compact and 260 MB precise. SH uses a separate buffer,
+take about 92 MB compact and 260 MB precise. With an [SH palette](#sh-palettes)
+a splat holds 5 bytes of SH compact (49 in all, plus 45 bytes per centroid)
+and 14 precise (82 in all, plus 180 per centroid), so a million paletted
+splats take about 49 MB plus up to 2.9 MB compact. SH uses a separate buffer,
 keeping each storage buffer below WebGPU's 128 MiB baseline even at the hard
 count limit. The frame-wide sort adds 16 bytes per alpha point drawn in a
 frame (two key and two index buffers), shared by all geometries and kept

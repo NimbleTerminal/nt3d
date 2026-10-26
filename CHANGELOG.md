@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Gaussian splats share their spherical harmonics through a palette (`Geometry.GaussianSHPalette` and `GaussianSHLabels`), which both renderers draw: a SOG's palette is kept instead of expanded, and `nt3dmesh.BuildSHPalette` (or `Options.SHPalette = SHPaletteBuild` for PLY, compressed PLY, and SPZ) builds one by two-level k-means, taking a degree-3 splat's SH from 48 bytes on the GPU to 5 plus a palette of at most 2.9 MB; `SHPaletteExpand` restores per-splat coefficients, and `w` in the meshes demo builds one in the background.
+
 ## v0.5.0
 
 - Gaussian clouds cluster at load and both renderers draw a budgeted subset each frame (`Frame.SplatBudget`, default one million), culled and thinned by projected size with coverage scaling, so the sort and draw cost follow the budget rather than the capture's size.

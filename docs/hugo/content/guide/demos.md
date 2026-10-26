@@ -57,7 +57,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 `task models`. Three sample files: a 3MF robot (components with a mirrored arm, a corner-color gradient, slicer-painted stripes, a textured screen, and a thumbnail), a Y-up OBJ star (concave caps, a wood texture, an MTL color), and a binary STL trefoil knot with face colors. `[` and `]` change model, and `s` cycles normals. The samples are made from nt3d's own shape builders by `task models-generate`, so no third-party models are included.
 
-`task meshes -- model.stl` shows your own files, any format nt3d reads; add `--up y` for Y-up OBJ files. A Gaussian splat capture (`.spz`, or a 3DGS `.ply` with `--up -y`) opens on its subject, the dense middle of the cloud, rather than on the shell of background splats around it, and `c` returns there. In a splat scene `u` halves the splat budget, `y` doubles it, and `z` restores the default.
+`task meshes -- model.stl` shows your own files, any format nt3d reads; add `--up y` for Y-up OBJ files. A Gaussian splat capture (`.spz`, or a 3DGS `.ply` with `--up -y`) opens on its subject, the dense middle of the cloud, rather than on the shell of background splats around it, and `c` returns there. In a splat scene `u` halves the splat budget, `y` doubles it, and `z` restores the default. `w` builds a spherical-harmonic palette for the cloud in the background, with progress in the status line, and swaps it in with the GPU memory it saves; `w` again swaps the originals back, and during the build it cancels.
 
 ## Dense mesh
 

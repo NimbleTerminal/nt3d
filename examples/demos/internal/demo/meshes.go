@@ -2,11 +2,15 @@
 package demo
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"math"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
+	"time"
 
 	"charm.land/bubbletea/v2"
 	"nimbleterminal.dev/nt3d"
@@ -29,6 +33,161 @@ type meshScene struct {
 	shiny         bool            // Shapes with specular highlights.
 	triangles     int
 	title         string
+	palette       paletteBuild
+}
+
+// paletteBuild is the state of the "w" key's SH palette: a background build
+// of one palette per splat piece, and, once done, the paletted geometries
+// the scene shows in place of the originals.
+type paletteBuild struct {
+	building bool
+	fraction atomic.Uint32 // Progress of the build, 0 to 1000; the build's goroutine stores it.
+	cancel   context.CancelFunc
+	built    []nt3d.Geometry // Per node; nil where the node was not paletted.
+	reports  []nt3dmesh.PaletteReport
+	active   bool // The scene shows built where it is not nil.
+}
+
+// paletteDoneMsg carries a finished background build to the update loop.
+type paletteDoneMsg struct {
+	built   []nt3d.Geometry
+	reports []nt3dmesh.PaletteReport
+	err     error
+}
+
+// paletteTickMsg refreshes the view while a build runs, so its status moves.
+type paletteTickMsg struct{}
+
+func paletteTick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return paletteTickMsg{} })
+}
+
+// shCount is the number of SH coefficients g holds per splat, or zero.
+func shCount(g nt3d.Geometry) int {
+	if len(g.Points) == 0 {
+		return 0
+	}
+	return len(g.GaussianSH) / len(g.Points)
+}
+
+// paletteable reports whether g has bands above DC and no palette to share them.
+func paletteable(g nt3d.Geometry) bool {
+	return g.GaussianSHPalette == nil && shCount(g) >= 4
+}
+
+// togglePalette is the "w" key: it cancels a build, swaps the originals back
+// in, or starts a build of a palette for each piece that has bands to share.
+func (d *demo) togglePalette() tea.Cmd {
+	p := &d.meshes.palette
+	switch {
+	case p.building:
+		p.cancel()
+		return nil
+	case p.active:
+		p.active, p.built, p.reports = false, nil, nil
+		if err := d.rebuildMeshes(); err != nil {
+			d.status = err.Error()
+		}
+		return d.view.Refresh()
+	}
+	var pieces []int
+	for i, g := range d.meshes.sources {
+		if paletteable(g) {
+			pieces = append(pieces, i)
+		}
+	}
+	if len(pieces) == 0 {
+		d.status = "no per-splat SH bands to palette"
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.building, p.cancel = true, cancel
+	p.fraction.Store(0)
+	sources := slices.Clone(d.meshes.sources)
+	build := func() tea.Msg {
+		defer cancel()
+		msg := paletteDoneMsg{built: make([]nt3d.Geometry, len(sources))}
+		for k, i := range pieces {
+			o := nt3dmesh.DefaultPaletteOptions()
+			o.Progress = func(f float64) {
+				p.fraction.Store(uint32((float64(k) + f) / float64(len(pieces)) * 1000))
+			}
+			g := sources[i]
+			report, err := nt3dmesh.BuildSHPalette(ctx, &g, o)
+			if err != nil {
+				return paletteDoneMsg{err: err}
+			}
+			msg.built[i] = g
+			msg.reports = append(msg.reports, report)
+		}
+		return msg
+	}
+	return tea.Batch(build, paletteTick())
+}
+
+// finishPalette stores a finished build and shows it, on the update goroutine.
+func (d *demo) finishPalette(msg paletteDoneMsg) error {
+	p := &d.meshes.palette
+	p.building = false
+	if msg.err != nil {
+		if errors.Is(msg.err, context.Canceled) {
+			d.status = "SH palette canceled"
+			return nil
+		}
+		return msg.err
+	}
+	p.built, p.reports, p.active = msg.built, msg.reports, true
+	return d.rebuildMeshes()
+}
+
+// shBytes is the compact GPU storage of the scene's SH before and after the
+// palette: 3 bytes a coefficient per splat, against 3 DC bytes, a 2-byte
+// label, and 3 bytes for each centroid's coefficients.
+func (p *paletteBuild) shBytes(sources []nt3d.Geometry) (before, after int) {
+	for i, g := range p.built {
+		if g.GaussianSHPalette == nil {
+			continue
+		}
+		n := len(g.Points)
+		before += 3 * shCount(sources[i]) * n
+		after += 3*n + 2*n + 3*g.GaussianSHPalette.Stride()*g.GaussianSHPalette.Count()
+	}
+	return before, after
+}
+
+// megabytes writes b as 48 MB, 7.93 MB, or 0.024 MB: three significant digits.
+func megabytes(b int) string {
+	if mb := float64(b) / 1e6; mb < 1000 {
+		return fmt.Sprintf("%.3g MB", mb)
+	}
+	return fmt.Sprintf("%.0f MB", float64(b)/1e6)
+}
+
+// groupDigits writes n with commas, as 65,536.
+func groupDigits(n int) string {
+	s := fmt.Sprint(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
+}
+
+// paletteStatus is the "w" key's status: progress while building, then the
+// centroids and the SH storage saved; empty when there is none.
+func (d *demo) paletteStatus() string {
+	p := &d.meshes.palette
+	switch {
+	case p.building:
+		return fmt.Sprintf("SH palette: building %d%%", p.fraction.Load()/10)
+	case p.active:
+		centroids := 0
+		for _, r := range p.reports {
+			centroids += r.Centroids
+		}
+		before, after := p.shBytes(d.meshes.sources)
+		return fmt.Sprintf("SH palette %s centroids · SH %s → %s", groupDigits(centroids), megabytes(before), megabytes(after))
+	}
+	return ""
 }
 
 var meshNormals = []string{"as built", "flat", "smooth 40°"}
@@ -165,6 +324,9 @@ const glassAlpha = 110
 func (d *demo) rebuildMeshes() error {
 	for i, id := range d.meshes.nodes {
 		g, err := d.meshes.sources[i], error(nil)
+		if d.meshes.palette.active && d.meshes.palette.built[i].GaussianSHPalette != nil {
+			g = d.meshes.palette.built[i]
+		}
 		if len(g.GaussianSH) > 0 {
 			g.PointStyle.SHDCOnly = d.meshes.dcOnly
 		}
@@ -275,6 +437,12 @@ func (d *demo) meshesView(content string) string {
 			if d.meshes.dcOnly {
 				mode = " · DC only"
 			}
+		}
+		if d.meshes.hasSH {
+			hint += " · w palette"
+		}
+		if palette := d.paletteStatus(); palette != "" {
+			mode += " · " + palette
 		}
 		return fmt.Sprintf("nt3d splats · %s%s · u/y budget · z reset · d fog · n turn · 1/2/3 backend · q quit\n%s\n%s · %s%s · drag orbit · wheel zoom · c fit · r rotate · %s", d.meshes.title, hint, content, d.rendering(), d.splatStatus(), mode, d.status)
 	}
