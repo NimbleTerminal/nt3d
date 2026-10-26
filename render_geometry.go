@@ -198,6 +198,11 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			// A point update dropped the clusters the order was uploaded for.
 			releaseBatch(node.order)
 			node.order = gpuBatch{}
+		} else if geom.Clusters != nil && geom.PointStyle.Shape == GaussianPoint && node.order.buffer == nil {
+			// An older snapshot, from before that update, still has them.
+			if err := g.uploadData(dev, &node.order, orderData(geom.Clusters.Order), 4); err != nil {
+				return err
+			}
 		}
 		u := geom.pointUpdate
 		revision := uint64(0)

@@ -207,8 +207,17 @@ func TestGPULODPointUpdateDropsOrder(t *testing.T) {
 	if node := render(); node.order.buffer == nil || r.plan.points >= 4096 {
 		t.Fatalf("clustered cloud: order %v, %d sorted", node.order.buffer, r.plan.points)
 	}
+	before, err := s.Frame(camera, 80, 80)
+	check(t, err)
 	check(t, s.SetNodePoints(id, cloud.Points, cloud.Bounds))
 	if node := render(); node.order.buffer != nil || r.plan.points != 4096 {
 		t.Fatalf("updated cloud: order %v, %d sorted", node.order.buffer, r.plan.points)
+	}
+	// The snapshot from before the update keeps its clusters, and renders.
+	if _, err := r.Render(before); err != nil {
+		t.Fatalf("older snapshot after the update: %v", err)
+	}
+	if r.plan.points >= 4096 {
+		t.Fatalf("older snapshot drew %d splats, not its selection", r.plan.points)
 	}
 }
