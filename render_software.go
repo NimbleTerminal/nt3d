@@ -470,10 +470,11 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 	}
 	// drawPoint draws point i of a geometry, standing for step points, m
 	// taking them to clip space and shFromWorld its spherical harmonics'
-	// directions from world: a disc of its radius on screen, covering the
+	// directions from world, and a Gaussian's axes grown by scale (a thinned
+	// cluster's splats grow to keep its coverage): a disc of its radius on screen, covering the
 	// pixels whose centers it holds, as the GPU's quad does. One whose center
 	// is off screen may still hang into view; only depth clips it.
-	drawPoint := func(g *Geometry, inst Instance, m *nt3dmath.Mat4, i, step int, shFromWorld nt3dmath.Mat4) {
+	drawPoint := func(g *Geometry, inst Instance, m *nt3dmath.Mat4, i, step int, shFromWorld nt3dmath.Mat4, scale float32) {
 		style := g.PointStyle
 		p := g.Points[i]
 		cx, cy, cz, cw := m.Transform(p.Position)
@@ -484,7 +485,13 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		radius := f.pointRadius(style, p.Radius, cw, px)
 		var ellipse gaussianEllipse
 		if style.Shape == GaussianPoint {
-			ellipse = projectGaussian(p, m, f.Width, f.Height, px)
+			q := p
+			if scale != 1 {
+				for k := range q.GaussianAxes {
+					q.GaussianAxes[k] = q.GaussianAxes[k].Scale(scale)
+				}
+			}
+			ellipse = projectGaussian(q, m, f.Width, f.Height, px)
 			radius = ellipse.radius
 		}
 		distance := f.eyeDistance(inst.World.Point(p.Position))
@@ -581,7 +588,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		shFromWorld := gaussianSHMatrix(g).Mul(inverse)
 		step := pointStep(g)
 		for i := 0; i < len(g.Points); i += step {
-			drawPoint(g, inst, m, i, step, shFromWorld)
+			drawPoint(g, inst, m, i, step, shFromWorld, 1)
 		}
 	}
 	for gi, g := range f.Geometry {
@@ -762,6 +769,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		}
 		plan.slots = plan.slots[:maxBlendSlots]
 	}
+	lod := f.planLOD(&plan)
 	type slotDraw struct {
 		g           *Geometry
 		inst        Instance
@@ -776,12 +784,23 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		m := f.Matrix.Mul(inst.World)
 		inverse, _ := inst.World.InverseAffine()
 		slots[slot] = slotDraw{g, inst, m, gaussianSHMatrix(g).Mul(inverse), pointStep(g)}
-		for i := 0; i < len(g.Points); i += slots[slot].step {
+		key := func(i uint32, f8 uint8) {
 			_, _, z, w := m.Transform(g.Points[i].Position)
 			if w <= 0 || z < 0 || z > w {
-				continue
+				return
 			}
-			keys, indices = append(keys, plan.key(slot, z)), append(indices, uint32(i))
+			keys, indices = append(keys, plan.key(slot, z)), append(indices, packLOD(i, f8))
+		}
+		if ranges := lod.slots[slot].ranges; ranges != nil {
+			for _, r := range ranges {
+				for _, i := range g.Clusters.Order[r.first : r.first+r.count] {
+					key(i, r.f8)
+				}
+			}
+			continue
+		}
+		for i := 0; i < len(g.Points); i += slots[slot].step {
+			key(uint32(i), 255)
 		}
 	}
 	var sorter pointSorter
@@ -813,7 +832,8 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		for ; next < len(order) && int(keys[order[next]]>>22) == slice; next++ {
 			k := keys[order[next]]
 			s := &slots[k>>10&4095]
-			drawPoint(s.g, s.inst, &s.m, int(indices[order[next]]), s.step, s.shFromWorld)
+			i, scale := unpackLOD(indices[order[next]])
+			drawPoint(s.g, s.inst, &s.m, int(i), s.step, s.shFromWorld, scale)
 		}
 	}
 	drawOverlays(img, f)

@@ -116,3 +116,63 @@ func TestSoftwareGlobalBlendOrder(t *testing.T) {
 		}
 	}
 }
+
+// coveredPixels counts the pixels that differ from the background by more than a little.
+func coveredPixels(img *image.RGBA, background color.RGBA) int {
+	n := 0
+	for i := 0; i < len(img.Pix); i += 4 {
+		d := 0
+		for k, b := range [3]uint8{background.R, background.G, background.B} {
+			d = max(d, int(math.Abs(float64(img.Pix[i+k])-float64(b))))
+		}
+		if d > 8 {
+			n++
+		}
+	}
+	return n
+}
+
+// A far clustered cloud draws fewer, larger splats than the whole cloud, but
+// covers about the same pixels.
+func TestSoftwareLODThinsFarCloud(t *testing.T) {
+	clustered := lodCloud(t, 4096, 64)
+	plain := clustered
+	plain.Clusters = nil
+	bg := color.RGBA{10, 20, 30, 255}
+	render := func(g Geometry) *image.RGBA {
+		f := lodPerspective(100, g)
+		f.Background, f.Complete = bg, true
+		r, err := RenderSoftware(f)
+		check(t, err)
+		return r.Image
+	}
+	far := lodPerspective(100, clustered)
+	if drawn, resident := far.SplatSelection(); drawn >= resident {
+		t.Fatalf("far selection drew %d of %d splats; nothing thinned", drawn, resident)
+	}
+	thin, full := render(clustered), render(plain)
+	if bytes.Equal(thin.Pix, full.Pix) {
+		t.Fatal("the far clustered frame matches the unclustered one: nothing thinned")
+	}
+	a, b := coveredPixels(thin, bg), coveredPixels(full, bg)
+	if b == 0 || math.Abs(float64(a-b)) > .15*float64(b) {
+		t.Fatalf("covered pixels: %d clustered, %d unclustered", a, b)
+	}
+}
+
+// An unlimited budget draws every splat as an unclustered cloud does.
+func TestSoftwareUnlimitedBudgetMatchesUnclustered(t *testing.T) {
+	clustered := lodCloud(t, 4096, 64)
+	plain := clustered
+	plain.Clusters = nil
+	render := func(g Geometry) []byte {
+		f := lodPerspective(100, g)
+		f.Complete, f.SplatBudget = true, -1
+		r, err := RenderSoftware(f)
+		check(t, err)
+		return r.Image.Pix
+	}
+	if !bytes.Equal(render(clustered), render(plain)) {
+		t.Fatal("an unlimited budget changes the picture")
+	}
+}
