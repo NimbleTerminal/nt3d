@@ -17,12 +17,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -34,6 +34,7 @@ import (
 	"nimbleterminal.dev/nt3d/mesh"
 	"nimbleterminal.dev/nt3d/mesh/sog"
 	_ "nimbleterminal.dev/nt3d/mesh/spz" // SPZ inputs.
+	"nimbleterminal.dev/nt3d/sh"
 )
 
 const usage = "usage: nt3d-palette [flags] input.ply|.spz|.sog ..."
@@ -153,7 +154,10 @@ func convert(ctx context.Context, c config, input, output string, reports, warni
 	if !ok {
 		return errors.New("unknown splat format")
 	}
-	o := &nt3dmesh.Options{MaxBytes: math.MaxInt64, NoClusters: true, Open: nt3dmesh.DirOpener(filepath.Dir(input)), SHPalette: nt3dmesh.SHPaletteKeep}
+	// The tool is offline and the files are the user's own, so only memory
+	// bounds a decode: a terabyte, not math.MaxInt64, which the budget's
+	// arithmetic would overflow.
+	o := &nt3dmesh.Options{MaxBytes: 1 << 40, NoClusters: true, Open: nt3dmesh.DirOpener(filepath.Dir(input)), SHPalette: nt3dmesh.SHPaletteKeep}
 	m, err := nt3dmesh.Decode(data, format, o)
 	if err != nil {
 		return err
@@ -162,11 +166,24 @@ func convert(ctx context.Context, c config, input, output string, reports, warni
 	if err != nil {
 		return err
 	}
+	if c.rebuild && g.GaussianSHPalette != nil {
+		nt3d.ExpandSHPalette(&g)
+	}
 	n := len(g.Points)
 	count := len(g.GaussianSH) / n // RGB entries a splat; 1 with a palette
 	elapsed := func() float64 { return time.Since(start).Seconds() }
+	// A SOG bundle that needs no new palette is copied as it is: a decode and
+	// re-encode would only lose precision. An unbundled meta.json is
+	// re-encoded, since a copy would leave its images behind.
+	bundle := format == nt3dsog.SOG && bytes.HasPrefix(data, []byte("PK\x03\x04"))
+	copyThrough := false
 	var line string
 	switch {
+	case g.GaussianSHPalette != nil:
+		p := g.GaussianSHPalette
+		before, after := n*(nt3dsh.Count(p.Degree)-1)*12, p.Count()*p.Stride()*12+2*n
+		line = fmt.Sprintf("%s: kept %d centroids, SH %s -> %s, ", output, p.Count(), size(before), size(after))
+		copyThrough = bundle
 	case count > 1:
 		opts := nt3dmesh.PaletteOptions{Centroids: c.centroids, Iterations: c.iterations, Workers: c.workers, MaxRMSError: float32(c.maxRMS)}
 		if c.progress {
@@ -199,15 +216,43 @@ func convert(ctx context.Context, c config, input, output string, reports, warni
 			return fmt.Errorf("RMS %.4g over budget %.4g; nothing written", r.RMSError, c.maxRMS)
 		}
 	default:
+		fmt.Fprintf(warnings, "warning: %s: no SH bands above DC; written without a palette\n", input)
 		line = fmt.Sprintf("%s: no SH bands above DC, ", output)
+		copyThrough = bundle
 	}
-	if err := writeAtomic(output, func(w io.Writer) error {
-		return nt3dsog.Encode(w, []nt3dmesh.Object{{Geometry: g}})
-	}); err != nil {
+	same, err := samePath(input, output)
+	if err != nil {
 		return err
+	}
+	write := func(w io.Writer) error { return nt3dsog.Encode(w, []nt3dmesh.Object{{Geometry: g}}) }
+	if copyThrough {
+		write = func(w io.Writer) error { _, err := w.Write(data); return err }
+	}
+	if !(copyThrough && same) {
+		if err := writeAtomic(output, write); err != nil {
+			return err
+		}
+	}
+	if c.inPlace && !same {
+		if err := os.Remove(input); err != nil {
+			return fmt.Errorf("wrote %s but could not remove the input: %w", output, err)
+		}
 	}
 	fmt.Fprintf(reports, "%s%.1fs\n", line, elapsed())
 	return nil
+}
+
+// samePath reports whether a and b name the same file.
+func samePath(a, b string) (bool, error) {
+	a, err := filepath.Abs(a)
+	if err != nil {
+		return false, err
+	}
+	b, err = filepath.Abs(b)
+	if err != nil {
+		return false, err
+	}
+	return a == b, nil
 }
 
 // merge concatenates the pieces of one Gaussian cloud into one geometry:

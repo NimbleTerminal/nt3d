@@ -286,3 +286,111 @@ func TestSize(t *testing.T) {
 		}
 	}
 }
+
+// ringSOG is the ring as a SOG v2 bundle holding a palette.
+var ringSOG = filepath.Join("..", "..", "mesh", "sog", "testdata", "gaussian-ring.sog")
+
+// writePLY0 writes an ASCII 3DGS PLY of three splats with no bands above DC.
+func writePLY0(t *testing.T, path string) {
+	t.Helper()
+	header := "ply\nformat ascii 1.0\nelement vertex 3\n"
+	for _, p := range []string{"x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3"} {
+		header += "property float " + p + "\n"
+	}
+	body := "0 0 0 0.5 0.2 -0.1 2 -1 -1 -1 1 0 0 0\n1 0 0 0.1 0.3 0.2 1 -2 -1 -1 0.7 0.7 0 0\n0 1 0 -0.2 0 0.4 0 -1 -2 -1 0 0 0 1\n"
+	if err := os.WriteFile(path, []byte(header+"end_header\n"+body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunKeepsPalettedSOG(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "ring.sog")
+	copyFile(t, ringSOG, in)
+	out := filepath.Join(dir, "out")
+	code, stdout, stderr := runArgs(t, context.Background(), "-out", out+"/", in)
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	written := filepath.Join(out, "ring.sog")
+	if !strings.HasPrefix(stdout, written+": kept ") || !strings.Contains(stdout, " centroids, SH ") {
+		t.Fatalf("report %q", stdout)
+	}
+	if !bytes.Equal(readFile(t, written), readFile(t, in)) {
+		t.Fatal("the kept bundle differs from the input")
+	}
+	out2 := filepath.Join(dir, "out2")
+	code, stdout, stderr = runArgs(t, context.Background(), "-rebuild", "-centroids", "32", "-out", out2+"/", in)
+	if code != 0 || stderr != "" {
+		t.Fatalf("rebuild: exit %d, stderr %q", code, stderr)
+	}
+	rebuilt := filepath.Join(out2, "ring.sog")
+	if bytes.Equal(readFile(t, rebuilt), readFile(t, in)) {
+		t.Fatal("rebuild copied the input")
+	}
+	if !strings.Contains(stdout, "32 centroids, RMS") || load(t, rebuilt).GaussianSHPalette.Count() != 32 {
+		t.Fatalf("rebuild report %q", stdout)
+	}
+}
+
+func TestRunInPlaceSOGUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "ring.sog")
+	copyFile(t, ringSOG, in)
+	before, err := os.Stat(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runArgs(t, context.Background(), "-i", in)
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "kept") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	after, err := os.Stat(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) || !bytes.Equal(readFile(t, in), readFile(t, ringSOG)) {
+		t.Fatal("the input changed")
+	}
+	if names := entries(t, dir); len(names) != 1 {
+		t.Fatalf("directory holds %v", names)
+	}
+}
+
+func TestRunInPlacePLY(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "ring.ply")
+	copyFile(t, ringPLY, in)
+	code, _, stderr := runArgs(t, context.Background(), "-i", "-centroids", "64", in)
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if g := load(t, filepath.Join(dir, "ring.sog")); g.GaussianSHPalette == nil || g.GaussianSHPalette.Count() != 56 {
+		t.Fatalf("palette %+v", g.GaussianSHPalette)
+	}
+	if _, err := os.Stat(in); !os.IsNotExist(err) {
+		t.Fatalf("input still there: %v", err)
+	}
+}
+
+func TestRunDegreeZero(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "flat.ply")
+	writePLY0(t, in)
+	out := filepath.Join(dir, "out")
+	code, stdout, stderr := runArgs(t, context.Background(), "-out", out+"/", in)
+	if code != 0 || !strings.Contains(stderr, "no SH bands above DC") {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	written := filepath.Join(out, "flat.sog")
+	if !strings.HasPrefix(stdout, written+": no SH bands above DC, ") || !strings.HasSuffix(stdout, "s\n") {
+		t.Fatalf("report %q", stdout)
+	}
+	if g := load(t, written); g.GaussianSHPalette != nil || len(g.Points) != 3 || len(g.GaussianSH) != 3 {
+		t.Fatalf("palette %v, %d points, %d SH", g.GaussianSHPalette, len(g.Points), len(g.GaussianSH))
+	}
+	code, stdout, stderr = runArgs(t, context.Background(), "-quiet", "-out", out+"/", in)
+	if code != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("quiet: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
