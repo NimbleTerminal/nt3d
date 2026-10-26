@@ -79,7 +79,8 @@ Both renderers choose the frame the same way, in this order:
 2. **Generated at upload.** `SetGeometry`, `SetNodeGeometry`, and
    `NewSharedGeometry` fill `Tangents` with `GenerateTangents` when a
    geometry has a normal map, vertex UVs, no tangents of its own, and at
-   most `MaxMeshTriangles/2` triangles. A frame's `Geometry.Tangents` being
+   most half the triangles the binding limit holds (`MaxMeshTriangles/2` at
+   the default). A frame's `Geometry.Tangents` being
    non-empty tells you a scene geometry took this path or the first.
 3. **Per-triangle basis**, derived from the triangle's (deformed) positions
    and normal-map UVs: frames built by hand without a scene, meshes past the
@@ -112,9 +113,9 @@ with positions, not as normals do: instance transforms, `TransformGeometry`
 (`MorphTarget.Tangents` are direction deltas) all apply to them, so the
 frame follows the deformed surface with no per-frame regeneration. On the
 GPU a normal-mapped mesh with tangents or independent normal UVs keeps an
-extension record per index, which halves its per-geometry triangle limit to
-`MaxMeshTriangles/2`; `Validate` rejects larger ones and the glTF loader
-splits them. A transparent mesh seen from behind keeps the map's U and V
+extension record per index, which halves its per-geometry triangle limit
+(`MaxMeshTriangles/2` at the default binding limit, `MeshTriangleLimit()/2`
+in general); `Validate` rejects larger ones and the glTF loader splits them. A transparent mesh seen from behind keeps the map's U and V
 directions and flips only the normal. Wireframe, picking, shadows (whose
 bias uses the unperturbed normal), and outlines ignore tangents. Preserve
 the mesh's authored vertex normals; normal maps add detail to them rather

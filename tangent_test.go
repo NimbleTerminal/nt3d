@@ -266,7 +266,7 @@ func TestSceneGeneratesTangents(t *testing.T) {
 		t.Fatalf("authored tangent replaced: %v", tan)
 	}
 	saved := maxGeneratedIndices
-	maxGeneratedIndices = 3
+	maxGeneratedIndices = func() int { return 3 }
 	t.Cleanup(func() { maxGeneratedIndices = saved })
 	_, err = s.SetGeometry("mesh", g)
 	check(t, err)

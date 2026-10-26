@@ -167,6 +167,34 @@ func TestValidateFollowsLimit(t *testing.T) {
 	}
 }
 
+// Merging follows the limit: two meshes that fit one geometry at a raised
+// limit merge, and the error at a low one names the limit in force.
+func TestMergeFollowsLimit(t *testing.T) {
+	defer setBindingLimit(DefaultBindingLimit)
+	tri := Geometry{Vertices: []Vertex{{}, {Position: nt3dmath.Vec3{X: 1}}, {Position: nt3dmath.Vec3{Y: 1}}}, Indices: []uint32{0, 1, 2}}
+	tri.Bounds = GeometryBounds(tri)
+	setBindingLimit(144) // One triangle.
+	if _, err := MergeGeometry(tri, tri); err == nil || !strings.Contains(err.Error(), "exceeds 1 triangles") {
+		t.Fatalf("two triangles at a one-triangle limit: %v", err)
+	}
+	setBindingLimit(288)
+	if _, err := MergeGeometry(tri, tri); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A scene generates tangents for meshes up to half the limit in force.
+func TestGeneratedTangentsFollowLimit(t *testing.T) {
+	defer setBindingLimit(DefaultBindingLimit)
+	if maxGeneratedIndices() != MaxMeshIndices/2 {
+		t.Fatalf("default %d", maxGeneratedIndices())
+	}
+	SetBindingLimit(MaxBindingLimit)
+	if maxGeneratedIndices() != MeshIndexLimit()/2 || maxGeneratedIndices() != 3*7_456_540/2 {
+		t.Fatalf("at the ceiling %d", maxGeneratedIndices())
+	}
+}
+
 // A renderer without a device limit leaves the setting as it is.
 func TestAdoptBindingLimitSoftware(t *testing.T) {
 	defer setBindingLimit(DefaultBindingLimit)

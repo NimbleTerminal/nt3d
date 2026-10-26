@@ -128,6 +128,7 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	var mesh, points *Geometry
 	uv, tangents := true, true
 	normalUV := false
+	indices, vertices := 0, 0
 	for i := range gs {
 		g := &gs[i]
 		normalUV = normalUV || len(g.NormalUV) > 0
@@ -162,8 +163,11 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 				points = g
 			}
 		}
-		if len(out.Indices)+len(g.Indices) > MaxMeshIndices || len(out.Vertices)+len(g.Vertices) > MaxMeshIndices {
-			return Geometry{}, fmt.Errorf("nt3d: merged mesh exceeds %d triangles", MaxMeshTriangles)
+		// The mesh is assembled below; count it here so the sum, not each
+		// input alone, is held to the limit in force.
+		indices, vertices = indices+len(g.Indices), vertices+len(g.Vertices)
+		if limit := MeshIndexLimit(); indices > limit || vertices > limit {
+			return Geometry{}, fmt.Errorf("nt3d: merged mesh exceeds %d triangles", MeshTriangleLimit())
 		}
 	}
 	if mesh != nil {

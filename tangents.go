@@ -58,14 +58,14 @@ func GenerateCornerTangents(positions, normals []nt3dmath.Vec3, uvs []UV) []Tang
 }
 
 // maxGeneratedIndices is the largest mesh a scene generates tangents
-// for: the extension record halves the binding's triangles. Tests lower it.
-var maxGeneratedIndices = MaxMeshIndices / 2
+// for: the extension record halves the binding limit in force. Tests lower it.
+var maxGeneratedIndices = func() int { return MeshIndexLimit() / 2 }
 
 // generateTangentsOnUpload gives a normal-mapped mesh set on a scene its
 // tangents, when it has UVs and none of its own and fits the extension
 // record.
 func generateTangentsOnUpload(g *Geometry) {
-	if g.Material == nil || g.Material.NormalMap == nil || len(g.Tangents) != 0 || len(g.UV) != len(g.Vertices) || len(g.Indices) == 0 || len(g.Indices) > maxGeneratedIndices {
+	if g.Material == nil || g.Material.NormalMap == nil || len(g.Tangents) != 0 || len(g.UV) != len(g.Vertices) || len(g.Indices) == 0 || len(g.Indices) > maxGeneratedIndices() {
 		return
 	}
 	if tangents, err := vertexTangents(*g); err == nil {
