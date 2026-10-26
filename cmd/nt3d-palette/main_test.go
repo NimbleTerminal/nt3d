@@ -361,6 +361,56 @@ func TestRunInPlaceSOGUnchanged(t *testing.T) {
 	}
 }
 
+// On a case-insensitive filesystem (macOS's default), an input named in a
+// different case from the output it resolves to is the same file: -i must
+// neither remove it nor treat a copy-through as a write onto itself.
+func TestRunInPlaceCaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "ring.SOG")
+	copyFile(t, ringSOG, in)
+	if _, err := os.Stat(filepath.Join(dir, "ring.sog")); err != nil {
+		t.Skip("case-sensitive filesystem")
+	}
+	code, stdout, stderr := runArgs(t, context.Background(), "-i", in)
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "kept") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	if names := entries(t, dir); len(names) != 1 || !bytes.Equal(readFile(t, in), readFile(t, ringSOG)) {
+		t.Fatalf("directory holds %v; input intact %v", names, bytes.Equal(readFile(t, in), readFile(t, ringSOG)))
+	}
+	code, _, stderr = runArgs(t, context.Background(), "-i", "-rebuild", "-centroids", "32", in)
+	if code != 0 || stderr != "" {
+		t.Fatalf("rebuild: exit %d, stderr %q", code, stderr)
+	}
+	if names := entries(t, dir); len(names) != 1 {
+		t.Fatalf("directory holds %v", names)
+	}
+	if g := load(t, in); g.GaussianSHPalette == nil || g.GaussianSHPalette.Count() != 32 {
+		t.Fatalf("palette %+v", g.GaussianSHPalette)
+	}
+}
+
+// Two inputs that would write the same output are a usage error, not a
+// silent overwrite.
+func TestRunDuplicateOutputs(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	for _, d := range []string{a, b} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		copyFile(t, ringPLY, filepath.Join(d, "ring.ply"))
+	}
+	out := filepath.Join(dir, "out")
+	code, _, stderr := runArgs(t, context.Background(), "-out", out+"/", filepath.Join(a, "ring.ply"), filepath.Join(b, "ring.ply"))
+	if code != 2 || !strings.Contains(stderr, "ring.sog") {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if names := entries(t, out); len(names) != 0 {
+		t.Fatalf("output directory holds %v", names)
+	}
+}
+
 func TestRunInPlacePLY(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "ring.ply")

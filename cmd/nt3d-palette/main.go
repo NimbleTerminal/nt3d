@@ -86,12 +86,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	outputs := make([]string, len(inputs))
+	seen := map[string]string{}
 	for i, input := range inputs {
 		output, err := outputPath(c, input, len(inputs))
 		if err != nil {
 			fmt.Fprintf(stderr, "nt3d-palette: %v\n", err)
 			return 2
 		}
+		key := output
+		if abs, err := filepath.Abs(output); err == nil {
+			key = abs
+		}
+		if first, dup := seen[key]; dup {
+			fmt.Fprintf(stderr, "nt3d-palette: %s and %s would both write %s\n", first, input, output)
+			return 2
+		}
+		seen[key] = input
 		outputs[i] = output
 	}
 	reports, warnings := stdout, stderr
@@ -234,25 +244,48 @@ func convert(ctx context.Context, c config, input, output string, reports, warni
 		}
 	}
 	if c.inPlace && !same {
-		if err := os.Remove(input); err != nil {
-			return fmt.Errorf("wrote %s but could not remove the input: %w", output, err)
+		// The write may have landed on the input itself (a case-insensitive
+		// filesystem): look again before removing anything.
+		if same, err = samePath(input, output); err != nil {
+			return err
+		}
+		if !same {
+			if err := os.Remove(input); err != nil {
+				return fmt.Errorf("wrote %s but could not remove the input: %w", output, err)
+			}
 		}
 	}
 	fmt.Fprintf(reports, "%s%.1fs\n", line, elapsed())
 	return nil
 }
 
-// samePath reports whether a and b name the same file.
+// samePath reports whether a and b name the same file: the same absolute
+// path, or, when both exist, the same file by os.SameFile, which catches a
+// case-insensitive filesystem spelling one name two ways.
 func samePath(a, b string) (bool, error) {
-	a, err := filepath.Abs(a)
+	absA, err := filepath.Abs(a)
 	if err != nil {
 		return false, err
 	}
-	b, err = filepath.Abs(b)
+	absB, err := filepath.Abs(b)
 	if err != nil {
 		return false, err
 	}
-	return a == b, nil
+	if absA == absB {
+		return true, nil
+	}
+	infoA, err := os.Stat(a)
+	if err != nil {
+		return false, err
+	}
+	infoB, err := os.Stat(b)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return os.SameFile(infoA, infoB), nil
 }
 
 // merge concatenates the pieces of one Gaussian cloud into one geometry:
