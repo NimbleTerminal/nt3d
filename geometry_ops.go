@@ -14,6 +14,7 @@ import (
 // transforms, it accepts reflections: a mirroring transform reverses triangle
 // winding so faces stay outward. Normals use the inverse transpose. Boxes stay
 // axis-aligned, so geometry with boxes accepts only scale and translation.
+// The result has no Clusters.
 func TransformGeometry(g Geometry, m nt3dmath.Mat4) (Geometry, error) {
 	inverse, ok := m.InverseAffine()
 	if !ok {
@@ -24,6 +25,7 @@ func TransformGeometry(g Geometry, m nt3dmath.Mat4) (Geometry, error) {
 	}
 	normals := inverse.Transpose()
 	g = cloneGeometry(g)
+	g.Clusters = nil
 	if len(g.GaussianSH) > 0 {
 		g.GaussianSHTransform = gaussianSHMatrix(&g).Mul(inverse)
 	}
@@ -77,6 +79,7 @@ func sameMaterial(a, b *Material) bool {
 // Meshes must share a material and outline style, lines a width, and points a style. UVs are
 // kept only when every mesh has them. WireGrid survives only when a single geometry is given.
 // The first geometry with a positive drop shadow strength supplies the drop shadow.
+// The result has no Clusters.
 func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	var out Geometry
 	if len(gs) == 1 {

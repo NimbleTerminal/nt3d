@@ -405,3 +405,16 @@ func readEntry(t *testing.T, bundle []byte, name string) []byte {
 	}
 	return data
 }
+
+func TestDecodersCluster(t *testing.T) {
+	if g := decodeRing(t, nil); g.Clusters == nil || len(g.Clusters.Order) != 576 {
+		t.Fatalf("clusters %v", g.Clusters)
+	}
+	m, err := Decode(read(t, filepath.Join("testdata", "gaussian-ring.sog")), &nt3dmesh.Options{NoClusters: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := m.Objects[0].Geometry; g.Clusters != nil || len(g.Points) != 576 {
+		t.Fatalf("NoClusters left clusters %v", g.Clusters)
+	}
+}

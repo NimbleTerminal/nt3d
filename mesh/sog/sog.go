@@ -94,6 +94,9 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 		return nil, err
 	}
 	model := &nt3dmesh.Model{Format: SOG, Objects: nt3dmesh.PointPieces(nt3dmesh.Object{Geometry: g})}
+	if err := nt3dmesh.ClusterPieces(model.Objects, o); err != nil {
+		return nil, err
+	}
 	for _, piece := range model.Objects {
 		if err := piece.Geometry.Validate(); err != nil {
 			return nil, err

@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"nimbleterminal.dev/nt3d"
+	"nimbleterminal.dev/nt3d/clod"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/sh"
 )
@@ -180,6 +181,33 @@ type Options struct {
 	// Up is the file's up axis. Most files do not say, so the caller must;
 	// SPZ states its axes, and ignores Up.
 	Up Up
+	// NoClusters skips clustering Gaussian clouds for level of detail;
+	// loading is faster and the renderers draw every splat.
+	NoClusters bool
+}
+
+// ClusterPieces builds level-of-detail clusters for each Gaussian piece, as
+// the decoders do unless Options.NoClusters is set.
+func ClusterPieces(objects []Object, o *Options) error {
+	if o != nil && o.NoClusters {
+		return nil
+	}
+	for i := range objects {
+		g := &objects[i].Geometry
+		if g.PointStyle.Shape != nt3d.GaussianPoint {
+			continue
+		}
+		positions := make([]nt3dmath.Vec3, len(g.Points))
+		for j, p := range g.Points {
+			positions[j] = p.Position
+		}
+		set, err := nt3dclod.Build(positions, nt3dclod.Options{})
+		if err != nil {
+			return err
+		}
+		g.Clusters = set
+	}
+	return nil
 }
 
 // orient turns a decoded model to Z-up.

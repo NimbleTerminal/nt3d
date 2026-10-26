@@ -530,3 +530,24 @@ func TestStreamsDecodeNoMoreThanDeclared(t *testing.T) {
 		t.Fatalf("decoding a 9-byte stream allocated %d MiB", grew>>20)
 	}
 }
+
+func TestDecodersCluster(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "gaussian-ring.v4.spz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := Decode(data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := m.Objects[0].Geometry; g.Clusters == nil || len(g.Clusters.Order) != 576 {
+		t.Fatalf("clusters %v", g.Clusters)
+	}
+	m, err = Decode(data, &nt3dmesh.Options{NoClusters: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := m.Objects[0].Geometry; g.Clusters != nil || len(g.Points) != 576 {
+		t.Fatalf("NoClusters left clusters %v", g.Clusters)
+	}
+}

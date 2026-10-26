@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 
+	"nimbleterminal.dev/nt3d/clod"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/sh"
 )
@@ -88,6 +89,12 @@ type Geometry struct {
 	// PointStyle is how Points are drawn: their shape, the units of their
 	// radii, and how they blend.
 	PointStyle PointStyle
+	// Clusters groups the points for level of detail: the renderers draw a
+	// budgeted prefix of each cluster's progressive order (see
+	// Frame.SplatBudget). Decoders build it for Gaussian clouds;
+	// nt3dclod.Build makes one. Point updates and geometry operations drop
+	// it, since it describes the positions it was built from.
+	Clusters   *nt3dclod.Set
 	Vertices   []Vertex
 	Indices    []uint32
 	Boxes      []Box
@@ -149,6 +156,32 @@ func MaxPreciseGaussians(coefficients int) int {
 		return min(most, ((128<<20)-48)/(12*coefficients))
 	}
 	return 0
+}
+
+// validateClusters checks that a set describes n points: its Order holds each
+// index once, and its clusters tile Order in sequence.
+func validateClusters(s *nt3dclod.Set, n int) error {
+	if len(s.Order) != n {
+		return fmt.Errorf("nt3d: clusters order has %d items for %d points", len(s.Order), n)
+	}
+	seen := make([]bool, n)
+	for _, i := range s.Order {
+		if int64(i) >= int64(n) || seen[i] {
+			return fmt.Errorf("nt3d: clusters order is not a permutation of the points")
+		}
+		seen[i] = true
+	}
+	next := int64(0)
+	for _, c := range s.Clusters {
+		if c.Count == 0 || int64(c.First) != next {
+			return fmt.Errorf("nt3d: clusters do not tile the order")
+		}
+		next += int64(c.Count)
+	}
+	if next != int64(n) {
+		return fmt.Errorf("nt3d: clusters do not tile the order")
+	}
+	return nil
 }
 
 func validateGeometry(g Geometry) error {
@@ -250,6 +283,11 @@ func validateGeometry(g Geometry) error {
 	for _, p := range g.Points {
 		if !validFloat(p.Position.X, p.Position.Y, p.Position.Z) || !validPointRadius(g.PointStyle.Units, p.Radius) || !validGaussian(g.PointStyle, p) {
 			return fmt.Errorf("nt3d: invalid point geometry")
+		}
+	}
+	if g.Clusters != nil {
+		if err := validateClusters(g.Clusters, len(g.Points)); err != nil {
+			return err
 		}
 	}
 	for _, v := range g.Vertices {

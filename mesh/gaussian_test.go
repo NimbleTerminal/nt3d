@@ -8,6 +8,8 @@ import (
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/sh"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -177,5 +179,67 @@ func TestGaussianSH(t *testing.T) {
 	}
 	if _, err := GaussianSH(dc, []float64{math.NaN(), 0, 0, 0, 0, 0, 0, 0, 0}); err == nil {
 		t.Fatal("accepted NaN")
+	}
+}
+
+// The Gaussian decoders cluster each splat piece for level of detail, unless
+// Options.NoClusters says not to.
+func TestDecodersCluster(t *testing.T) {
+	compressed, err := os.ReadFile(filepath.Join("testdata", "gaussian-ring.compressed.ply"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoders := map[string]func(o *Options) *Model{
+		"PLY": func(o *Options) *Model { return decodeRing(t, o) },
+		"compressed PLY": func(o *Options) *Model {
+			m, err := DecodePLY(compressed, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return m
+		},
+	}
+	for name, decode := range decoders {
+		g := decode(nil).Objects[0].Geometry
+		if g.Clusters == nil || len(g.Clusters.Order) != 576 || len(g.Points) != 576 {
+			t.Errorf("%s: clusters %v", name, g.Clusters)
+		}
+		if g := decode(&Options{NoClusters: true}).Objects[0].Geometry; g.Clusters != nil || len(g.Points) != 576 {
+			t.Errorf("%s: NoClusters left clusters %v", name, g.Clusters)
+		}
+	}
+}
+
+// Each piece of a split cloud is clustered over its own points; other
+// geometry is left alone.
+func TestClusterPieces(t *testing.T) {
+	whole := decodeRing(t, nil).Objects[0]
+	defer func(g func(int) int) { maxGaussians = g }(maxGaussians)
+	maxGaussians = func(int) int { return 200 }
+	whole.Geometry.Clusters = nil
+	pieces := PointPieces(whole)
+	if len(pieces) != 3 {
+		t.Fatalf("%d pieces", len(pieces))
+	}
+	pieces = append(pieces, Object{Geometry: nt3d.Geometry{Points: whole.Geometry.Points[:5]}})
+	if err := ClusterPieces(pieces, nil); err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range pieces[:3] {
+		if p.Geometry.Clusters == nil || len(p.Geometry.Clusters.Order) != len(p.Geometry.Points) {
+			t.Fatalf("piece %d: clusters %v", i, p.Geometry.Clusters)
+		}
+		if err := p.Geometry.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if pieces[3].Geometry.Clusters != nil {
+		t.Fatal("clustered a plain point cloud")
+	}
+	for i := range pieces {
+		pieces[i].Geometry.Clusters = nil
+	}
+	if err := ClusterPieces(pieces, &Options{NoClusters: true}); err != nil || pieces[0].Geometry.Clusters != nil {
+		t.Fatalf("NoClusters: %v", err)
 	}
 }

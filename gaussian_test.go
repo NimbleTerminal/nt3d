@@ -3,7 +3,9 @@ package nt3d
 import (
 	"image/color"
 	"math"
+	"nimbleterminal.dev/nt3d/clod"
 	"nimbleterminal.dev/nt3d/math"
+	"slices"
 	"testing"
 )
 
@@ -84,5 +86,127 @@ func TestGaussianWireframeCenters(t *testing.T) {
 	check(t, err)
 	if gaussian != points {
 		t.Fatal("Gaussian wireframe differs from point centers")
+	}
+}
+
+func clusteredGaussians(t *testing.T, n int) (Geometry, []nt3dmath.Vec3) {
+	t.Helper()
+	g := gaussianGeometry()
+	g.Points = nil
+	positions := make([]nt3dmath.Vec3, n)
+	for i := range positions {
+		positions[i] = nt3dmath.Vec3{X: float32(i%10) * .1, Y: float32(i/10) * .1, Z: .5}
+		p := gaussianGeometry().Points[0]
+		p.Position = positions[i]
+		g.Points = append(g.Points, p)
+	}
+	g.Bounds = GeometryBounds(g)
+	return g, positions
+}
+
+func TestGeometryClustersValidate(t *testing.T) {
+	g, positions := clusteredGaussians(t, 100)
+	set, err := nt3dclod.Build(positions, nt3dclod.Options{ClusterSize: 16})
+	check(t, err)
+	g.Clusters = set
+	check(t, g.Validate())
+
+	short, err := nt3dclod.Build(positions[:99], nt3dclod.Options{})
+	check(t, err)
+	g.Clusters = short
+	if g.Validate() == nil {
+		t.Fatal("accepted a set over 99 of 100 points")
+	}
+
+	dup := *set
+	dup.Order = slices.Clone(set.Order)
+	dup.Order[1] = dup.Order[0]
+	g.Clusters = &dup
+	if g.Validate() == nil {
+		t.Fatal("accepted an Order with a duplicate")
+	}
+
+	out := *set
+	out.Order = slices.Clone(set.Order)
+	out.Order[0] = 100
+	g.Clusters = &out
+	if g.Validate() == nil {
+		t.Fatal("accepted an Order index out of range")
+	}
+
+	gap := *set
+	gap.Clusters = slices.Clone(set.Clusters)
+	gap.Clusters[1].First++
+	g.Clusters = &gap
+	if g.Validate() == nil {
+		t.Fatal("accepted clusters that do not tile Order")
+	}
+
+	short2 := *set
+	short2.Clusters = set.Clusters[:len(set.Clusters)-1]
+	g.Clusters = &short2
+	if g.Validate() == nil {
+		t.Fatal("accepted clusters that do not cover Order")
+	}
+
+	empty := *set
+	empty.Clusters = slices.Clone(set.Clusters)
+	empty.Clusters[0].Count = 0
+	g.Clusters = &empty
+	if g.Validate() == nil {
+		t.Fatal("accepted an empty cluster")
+	}
+}
+
+func TestPointUpdateDropsClusters(t *testing.T) {
+	g, positions := clusteredGaussians(t, 100)
+	set, err := nt3dclod.Build(positions, nt3dclod.Options{ClusterSize: 16})
+	check(t, err)
+	g.Clusters = set
+	s := NewScene()
+	id, err := s.SetGeometry("splats", g)
+	check(t, err)
+	if frame(t, s).Geometry[0].Clusters == nil {
+		t.Fatal("SetGeometry dropped the clusters")
+	}
+	update := []Point{g.Points[3]}
+	check(t, s.UpdateNodePoints(id, 3, update, g.Bounds))
+	if frame(t, s).Geometry[0].Clusters != nil {
+		t.Fatal("UpdateNodePoints kept the clusters")
+	}
+
+	id, err = s.SetGeometry("again", g)
+	check(t, err)
+	check(t, s.SetNodePoints(id, g.Points, g.Bounds))
+	f := frame(t, s)
+	for _, fg := range f.Geometry {
+		if fg.Clusters != nil {
+			t.Fatal("SetNodePoints kept the clusters")
+		}
+	}
+}
+
+func TestMergeAndTransformDropClusters(t *testing.T) {
+	g, positions := clusteredGaussians(t, 100)
+	set, err := nt3dclod.Build(positions, nt3dclod.Options{ClusterSize: 16})
+	check(t, err)
+	g.Clusters = set
+	moved, err := TransformGeometry(g, nt3dmath.Translation(nt3dmath.Vec3{X: 1}))
+	check(t, err)
+	if moved.Clusters != nil {
+		t.Fatal("TransformGeometry kept the clusters")
+	}
+	if g.Clusters != set {
+		t.Fatal("TransformGeometry changed its input")
+	}
+	one, err := MergeGeometry(g)
+	check(t, err)
+	if one.Clusters != nil {
+		t.Fatal("MergeGeometry of one kept the clusters")
+	}
+	two, err := MergeGeometry(g, g)
+	check(t, err)
+	if two.Clusters != nil || len(two.Points) != 200 {
+		t.Fatal("MergeGeometry kept the clusters")
 	}
 }

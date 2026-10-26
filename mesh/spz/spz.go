@@ -127,6 +127,9 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 		return nil, err
 	}
 	m := &nt3dmesh.Model{Format: SPZ, Objects: nt3dmesh.PointPieces(nt3dmesh.Object{Geometry: g})}
+	if err := nt3dmesh.ClusterPieces(m.Objects, o); err != nil {
+		return nil, err
+	}
 	for _, piece := range m.Objects {
 		if err := piece.Geometry.Validate(); err != nil {
 			return nil, err
