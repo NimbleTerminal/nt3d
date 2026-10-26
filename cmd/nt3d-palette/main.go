@@ -295,8 +295,9 @@ func merge(objects []nt3dmesh.Object) (nt3d.Geometry, error) {
 }
 
 // writeAtomic writes through a temporary file beside path and renames it
-// into place; on any error the temporary file is removed and path is left
-// as it was.
+// into place, with an ordinary file's permissions rather than the temporary
+// file's private ones; on any error the temporary file is removed and path
+// is left as it was.
 func writeAtomic(path string, write func(w io.Writer) error) (err error) {
 	f, err := os.CreateTemp(filepath.Dir(path), ".nt3d-palette-*")
 	if err != nil {
@@ -308,6 +309,9 @@ func writeAtomic(path string, write func(w io.Writer) error) (err error) {
 			os.Remove(f.Name())
 		}
 	}()
+	if err = f.Chmod(0o644); err != nil {
+		return err
+	}
 	w := bufio.NewWriter(f)
 	if err = write(w); err != nil {
 		return err

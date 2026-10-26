@@ -136,6 +136,10 @@ func TestRunBuildsAndRoundTrips(t *testing.T) {
 	if !bytes.Equal(readFile(t, in), readFile(t, ringPLY)) {
 		t.Fatal("the input changed")
 	}
+	// The temporary file it was written through must not leave it private.
+	if info, err := os.Stat(written); err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("output mode %v, %v", info.Mode(), err)
+	}
 }
 
 func TestOutputPath(t *testing.T) {
