@@ -215,7 +215,9 @@ const (
 	SHPaletteKeep SHPaletteMode = iota
 	// SHPaletteBuild gives every cloud with higher-order bands a palette,
 	// building one with DefaultPaletteOptions (see BuildSHPalette) when the
-	// file has none. Clouds of degree 0 are left alone.
+	// file has none. The build runs on the whole cloud before it is split
+	// into pieces, so the pieces share one palette, and clouds too large for
+	// one geometry build as well. Clouds of degree 0 are left alone.
 	SHPaletteBuild
 	// SHPaletteExpand gives every cloud per-splat coefficients, expanding a
 	// SOG's palette. The geometry is what v0.5.0 decoded.

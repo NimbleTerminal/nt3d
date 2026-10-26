@@ -175,3 +175,43 @@ func TestBuildSHPaletteWorkers(t *testing.T) {
 	}
 	check(t, one.Validate())
 }
+
+// The builder needs not a valid geometry but only the splats and SH it reads:
+// decoders run it on whole clouds larger than one geometry may hold. An
+// incomplete triangle stands in for the size limits such a cloud breaks: the
+// builder does not read it, and Validate rejects it.
+func TestBuildSHPaletteUnvalidatedCloud(t *testing.T) {
+	g := randomCloud(600, 2, 40)
+	g.Indices = []uint32{0}
+	if g.Validate() == nil {
+		t.Fatal("the incomplete triangle validates")
+	}
+	rep, err := BuildSHPalette(context.Background(), &g, PaletteOptions{Centroids: 64})
+	check(t, err)
+	if rep.Centroids != 40 || g.GaussianSHPalette == nil {
+		t.Fatalf("%+v, palette %v", rep, g.GaussianSHPalette)
+	}
+	g.Indices = nil
+	g.Bounds = nt3d.GeometryBounds(g)
+	check(t, g.Validate())
+	defer func(f func(int) int) { maxGaussians = f }(maxGaussians)
+	maxGaussians = func(int) int { return 250 }
+	pieces := PointPieces(Object{Geometry: g})
+	if len(pieces) != 3 {
+		t.Fatalf("%d pieces", len(pieces))
+	}
+	for i, p := range pieces {
+		if p.Geometry.GaussianSHPalette != g.GaussianSHPalette {
+			t.Fatalf("piece %d has its own palette", i)
+		}
+		check(t, p.Geometry.Validate())
+	}
+}
+
+func TestBuildSHPaletteRejectsNonFinite(t *testing.T) {
+	g := randomCloud(10, 1, 0)
+	g.GaussianSH[5][1] = float32(math.NaN())
+	if _, err := BuildSHPalette(context.Background(), &g, PaletteOptions{}); err == nil || g.GaussianSHPalette != nil {
+		t.Fatalf("NaN coefficient: %v", err)
+	}
+}

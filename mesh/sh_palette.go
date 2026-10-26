@@ -59,6 +59,11 @@ type PaletteReport struct {
 // result is deterministic for the same geometry and options, whatever
 // o.Workers is. It never writes into g's existing slices; g changes only on
 // success. An already paletted geometry is left as it is.
+//
+// The geometry need not fit one GPU geometry: decoders build before
+// PointPieces splits a cloud, so BuildSHPalette checks only what it reads (a
+// Gaussian style, splats, one degree 1 to 3 coefficient set each, all finite)
+// and leaves bounds, point caps, and the rest to Validate after splitting.
 func BuildSHPalette(ctx context.Context, g *nt3d.Geometry, o PaletteOptions) (PaletteReport, error) {
 	if g.PointStyle.Shape != nt3d.GaussianPoint || len(g.Points) == 0 {
 		return PaletteReport{}, errors.New("nt3dmesh: an SH palette needs Gaussian splats")
@@ -75,9 +80,6 @@ func BuildSHPalette(ctx context.Context, g *nt3d.Geometry, o PaletteOptions) (Pa
 	}
 	if o.Workers == 0 {
 		o.Workers = d.Workers
-	}
-	if err := g.Validate(); err != nil {
-		return PaletteReport{}, err
 	}
 	report := func(centroids int, rms float32) PaletteReport {
 		return PaletteReport{Centroids: centroids, RMSError: rms, MetBudget: o.MaxRMSError == 0 || rms <= o.MaxRMSError}
@@ -99,6 +101,13 @@ func BuildSHPalette(ctx context.Context, g *nt3d.Geometry, o PaletteOptions) (Pa
 	count := len(g.GaussianSH) / n
 	if deg := nt3dsh.Degree(count); deg < 1 || deg > 3 || len(g.GaussianSH) != n*count {
 		return PaletteReport{}, errors.New("nt3dmesh: an SH palette needs degree 1 to 3 coefficients")
+	}
+	for _, c := range g.GaussianSH {
+		for _, v := range c {
+			if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+				return PaletteReport{}, errors.New("nt3dmesh: nonfinite Gaussian SH coefficient")
+			}
+		}
 	}
 	b := &paletteBuild{ctx: ctx, sh: g.GaussianSH, count: count, s: count - 1, n: n, workers: o.Workers}
 	progress(0)
