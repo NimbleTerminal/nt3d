@@ -81,7 +81,7 @@ Point maps use six 1024² depth faces on the GPU and for complete software frame
 
 ## Limits
 
-- One geometry holds at most `MaxMeshTriangles` (932,067) triangles, so its records fit the 128 MiB storage binding WebGPU guarantees on every device. Larger meshes are split across nodes, as the [mesh readers](../meshes/) do. A frame has no total limit beyond the GPU's memory.
+- One geometry holds at most `MaxMeshTriangles` (932,067) triangles, so its records fit the 128 MiB storage binding WebGPU guarantees on every device (`DefaultBindingLimit`). Larger meshes are split across nodes, as the [mesh readers](../meshes/) do. A frame has no total limit beyond the GPU's memory. A capable device holds more: `nt3d.SetBindingLimit(bytes)`, or `nt3d.AdoptBindingLimit(renderer)` with the GPU renderer, raises the limit every geometry is measured against, up to `MaxBindingLimit` (1 GiB), and `MeshTriangleLimit()`, `MeshIndexLimit()`, and `PointLimit()` give the counts in force; a geometry never holds more than `MaxPointIndex` (16,777,216) points, whatever the limit. Raise it once at startup, before anything is stored or decoded. The GPU renderer refuses a geometry its own device cannot hold with a frame error naming both sizes, so a limit raised past the device fails cleanly. In the browser the device holds the baseline until ntgpuimage can request the adapter's limits.
 - Frames are at most 4096 × 2160 pixels, and textures 8192 pixels a side.
 - Errors wrapping `ErrGPUUnavailable` mean the device itself (no adapter, failed setup). Other errors concern the frame, such as running out of memory, and a smaller scene may still render.
 
@@ -284,8 +284,9 @@ Wireframe draws the existing sampled point centers (up to about 2,000), without
 ellipse shape or alpha. Start with **up to 10,000 splats on GPU** and **about
 1,000 in software** for interactive use; these are conservative starting
 budgets, not measured frame-rate guarantees. Coverage, resolution, and
-supersampling matter as much as count. The hard limit is the 128 MiB storage
-binding WebGPU guarantees, per buffer of one geometry. The GPU stores splats
+supersampling matter as much as count. The hard limit is the storage binding,
+per buffer of one geometry: the 128 MiB WebGPU guarantees unless
+`SetBindingLimit` raises it (see [Limits](#limits)). The GPU stores splats
 compactly by default: axes as half floats (24 bytes a splat) and each
 spherical-harmonic channel as one byte at SPZ's quantization, the color byte
 for the first coefficient and `(b-128)/128` for the bands, which clamp to
@@ -298,10 +299,10 @@ zero. The first coefficient saturates beyond about ±3.33, a base color outside
 roughly −0.44 to 1.44. Scenes in unusual units, like millimetres with 65 m
 background splats or kilometres with millimetre splats, or with extreme colors,
 should set `Precise`. `nt3d.MaxGaussians(n)` gives the most compact
-splats with `n` SH coefficients each (2,796,202 at degree 3, 4,971,026 at
-degree 2, 5,592,405 at degree 0 or 1 or without SH), and
-`nt3d.MaxPreciseGaussians(n)` the most with `Precise` (699,050 at degree 3,
-2,796,202 without SH). A larger cloud is [split into slabs](../meshes/#staying-safe-with-big-or-hostile-files).
+splats with `n` SH coefficients each at the limit in force (at the default,
+2,796,202 at degree 3, 4,971,026 at degree 2, 5,592,405 at degree 0 or 1 or
+without SH), and `nt3d.MaxPreciseGaussians(n)` the most with `Precise`
+(699,050 at degree 3, 2,796,202 without SH). A larger cloud is [split into slabs](../meshes/#staying-safe-with-big-or-hostile-files).
 The decoders split at the compact limit; to draw a decoded cloud `Precise`, set
 `PointStyle.Precise` on each object's geometry and pass it through
 `nt3dmesh.PointPieces` again, which re-splits at the precise limit.
@@ -313,7 +314,7 @@ take about 92 MB compact and 260 MB precise. With an [SH palette](#sh-palettes)
 a splat holds 5 bytes of SH compact (49 in all, plus 45 bytes per centroid)
 and 14 precise (82 in all, plus 180 per centroid), so a million paletted
 splats take about 49 MB plus up to 2.9 MB compact. SH uses a separate buffer,
-keeping each storage buffer below WebGPU's 128 MiB baseline even at the hard
+keeping each storage buffer within the binding limit even at the hard
 count limit. The frame-wide sort adds 16 bytes per alpha point drawn in a
 frame (two key and two index buffers), shared by all geometries and kept
 between frames at the most a frame has needed, plus about 17 KiB a geometry

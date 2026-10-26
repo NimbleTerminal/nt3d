@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `nt3d.SetBindingLimit` and `AdoptBindingLimit(renderer)` raise the per-geometry storage limit above WebGPU's 128 MiB baseline on capable devices, up to 1 GiB, with points still capped at 16,777,216 a geometry; `Validate`, `MaxGaussians`, the new `PointLimit`, `MeshTriangleLimit`, and `MeshIndexLimit`, and the decoders' piece splitting follow it, and the GPU renderer refuses a geometry past its device's own limit with a clear frame error. The demos adopt the device's limit before loading.
+
 - The software renderer blends transparent fragments with headroom above white, as the GPU's 16-bit float target does, clamping once per pixel instead of at every blend, so splats whose spherical harmonics evaluate above 1 match the GPU renderer where they overlap.
 
 - `nt3d-palette` (`cmd/nt3d-palette`, built to `bin/`) reads PLY, compressed PLY, SPZ, or SOG, builds an SH palette with `BuildSHPalette`, and writes a SOG v2 bundle through the new `nt3dsog.Encode`, so later loads keep the palette and skip the k-means; a SOG that already holds one passes through unchanged. The bundle's images are PNG, not WebP.

@@ -47,11 +47,12 @@ Nothing queued; the sections below are the open work.
 
 - [ ] **Test a real GPU running out of memory**; failure reporting is only
   tested with a fake renderer.
-- [ ] **Optionally request larger GPU limits** on capable adapters, for
-  fewer mesh pieces.
-
 ## Web demos
 
+- [ ] **Request the adapter's storage limits in ntgpuimage** (an option on
+  `ntgpuimage.Options`, and a `Limits()` accessor), so a browser build can
+  raise `nt3d.SetBindingLimit` past the 128 MiB a default device gets; the
+  native backend already hands out the adapter's full limits.
 - [ ] **The touch-control bar's wasm cost**: about 640 KB per demo, from
   `bubbles/help` and booba's help publishing.
 - [ ] **The action list's 2048-byte limit**: the terrain scene has room for
