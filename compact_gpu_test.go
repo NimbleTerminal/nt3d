@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+	nt3dsh "nimbleterminal.dev/nt3d/sh"
 )
 
 // splatRow is n Gaussians without SH across the view, each a little
@@ -50,25 +51,38 @@ func gpuMatchesSoftware(t *testing.T, r *gpuRenderer, f Frame, budget int) {
 	}
 }
 
-// Compact splats without SH still upload a 48-byte SH header (its flag
-// selects the compact decode) and 24 bytes of half axes a splat.
+// Compact splats without SH still upload a 64-byte SH header (its flag
+// selects the compact decode) and 24 bytes of half axes a splat; beside
+// them in the same frame, a degree-0 cloud (one coefficient a splat) adds
+// only its SH bytes.
 func TestGPUCompactDegreeZero(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
 	for _, n := range []int{1, 5, 7} {
 		g := splatRow(n)
-		f := flatFrame(80, 80, g)
+		dc := splatRow(n)
+		dc.GaussianSH = make([]nt3dsh.RGB, n)
+		for i := range dc.Points {
+			dc.Points[i].Position.Y -= .25
+			dc.GaussianSH[i] = nt3dsh.RGB{.3, -.2, .1 * float32(i)}
+		}
+		check(t, dc.Validate())
+		f := flatFrame(80, 80, g, dc)
 		f.Revision = nextRevision.Add(1)
 		gpuMatchesSoftware(t, r, f, 12)
-		node := r.nodes[0]
-		if node.axes.size != uint64(24*n) {
-			t.Errorf("%d splats: compact axis buffer is %d bytes, want %d", n, node.axes.size, 24*n)
+		for i, node := range r.nodes {
+			if node.axes.size != uint64(24*n) {
+				t.Errorf("%d splats, geometry %d: compact axis buffer is %d bytes, want %d", n, i, node.axes.size, 24*n)
+			}
+			if node.sh.size != 64 {
+				t.Errorf("%d splats, geometry %d: SH header buffer is %d bytes, want 64", n, i, node.sh.size)
+			}
+			if node.sprite.buffer != nil {
+				t.Errorf("%d splats, geometry %d: compact geometry uploaded float axes", n, i)
+			}
 		}
-		if node.sh.size != 48 {
-			t.Errorf("%d splats: SH header buffer is %d bytes, want 48", n, node.sh.size)
-		}
-		if node.sprite.buffer != nil {
-			t.Errorf("%d splats: compact geometry uploaded float axes", n)
+		if len(r.nodes) != 2 || r.nodes[0].shBytes.buffer != nil || r.nodes[1].shBytes.size != uint64((3*n+3)&^3) {
+			t.Errorf("%d splats: SH bytes wrong for the no-SH or degree-0 cloud", n)
 		}
 	}
 }

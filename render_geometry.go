@@ -180,6 +180,8 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					node.release()
 					return err
 				}
+			}
+			if compactGaussians(geom.PointStyle) || geom.GaussianSHPalette != nil {
 				if err := g.uploadData(dev, &node.shBytes, compactSHData(&geom), 4); err != nil {
 					node.release()
 					return err
@@ -349,7 +351,7 @@ func (g *gpuRenderer) bindPoints(dev *wgpu.Device, node *gpuGeometry, s *instanc
 		s.binds[0] = nil
 	}
 	entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: g.zeros, Size: 48}, {Binding: 2, Buffer: s.transform, Size: uint64(s.capacity) * instanceRecordSize}, {Binding: 3, Buffer: b.buffer, Size: b.size}, {Binding: 4, Buffer: order, Size: orderSize}}
-	sh, shSize := g.zeros, uint64(48)
+	sh, shSize := g.zeros, uint64(4*shHeaderFloats)
 	if node.sh.buffer != nil {
 		sh, shSize = node.sh.buffer, node.sh.size
 	}
@@ -662,28 +664,79 @@ func orderData(order []uint32) []byte {
 	return data
 }
 
-// compactSHData is the compact Gaussians' SH, a byte a channel as SPZ stores
-// it (packSHDC for each splat's first coefficient, packSHBand for the rest),
-// in the float coefficients' order and padded to whole words.
+// compactSHData is binding 8's SH bytes. Compact Gaussians store a byte a
+// channel as SPZ does (packSHDC for each splat's first coefficient,
+// packSHBand for the rest), in the float coefficients' order and padded to
+// whole words. A palette adds each splat's 16-bit label, little-endian and
+// padded to whole words, at shLayout's labelsAt; compact palettes follow
+// them as packSHBand bytes, centroid-major, at paletteAt. A Precise palette
+// keeps only the labels here, at byte 0, and its floats in gaussianSHData.
 func compactSHData(g *Geometry) []byte {
-	if len(g.GaussianSH) == 0 {
+	compact, p := compactGaussians(g.PointStyle), g.GaussianSHPalette
+	if len(g.GaussianSH) == 0 || !compact && p == nil {
 		return nil
 	}
-	count := gaussianSHCount(g)
-	data := make([]byte, 0, (3*len(g.GaussianSH)+3)&^3)
-	for i, c := range g.GaussianSH {
-		for _, v := range c {
-			if i%count == 0 {
-				data = append(data, packSHDC(v))
-			} else {
+	labelsAt, paletteAt := shLayout(g)
+	size := labelsAt
+	if p != nil {
+		size = (2*len(g.Points)+3)&^3 + labelsAt
+		if compact {
+			size = (paletteAt + 3*len(p.Coefficients) + 3) &^ 3
+		}
+	}
+	data := make([]byte, 0, size)
+	if compact {
+		count := gaussianSHCount(g)
+		for i, c := range g.GaussianSH {
+			for _, v := range c {
+				if i%count == 0 {
+					data = append(data, packSHDC(v))
+				} else {
+					data = append(data, packSHBand(v))
+				}
+			}
+		}
+		data = padWords(data)
+	}
+	if p == nil {
+		return data
+	}
+	for _, l := range g.GaussianSHLabels {
+		data = binary.LittleEndian.AppendUint16(data, l)
+	}
+	data = padWords(data)
+	if compact {
+		for _, c := range p.Coefficients {
+			for _, v := range c {
 				data = append(data, packSHBand(v))
 			}
 		}
+		data = padWords(data)
 	}
+	return data
+}
+
+// padWords pads data with zeros to whole 4-byte words.
+func padWords(data []byte) []byte {
 	for len(data)%4 != 0 {
 		data = append(data, 0)
 	}
 	return data
+}
+
+// shLayout is where a palette's labels and centroids sit: labelsAt is a
+// byte offset in compactSHData; paletteAt is a byte offset there too for
+// compact Gaussians, or a float index in gaussianSHData with Precise. Both
+// are 0 without a palette.
+func shLayout(g *Geometry) (labelsAt, paletteAt int) {
+	if g.GaussianSHPalette == nil {
+		return 0, 0
+	}
+	if !compactGaussians(g.PointStyle) {
+		return 0, shHeaderFloats + 3*len(g.GaussianSH)
+	}
+	labelsAt = (3*len(g.GaussianSH) + 3) &^ 3
+	return labelsAt, labelsAt + (2*len(g.Points)+3)&^3
 }
 
 func dropShadowData(g *Geometry) []byte {
@@ -695,25 +748,36 @@ func dropShadowData(g *Geometry) []byte {
 	return appendFloats(nil, a.X, a.Y, a.Z, g.DropShadow.Strength, b.X, b.Y, b.Z, g.DropShadow.Radius, g.DropShadow.FloorZ, fixed, 0, 0)
 }
 
+// shHeaderFloats is the SH header's length: 16 floats, 64 bytes.
+const shHeaderFloats = 16
+
 // SH storage is separate from point/axis records so ordinary points pay no
 // extra GPU memory and 500k degree-three splats stay below 128 MiB per buffer.
-// Every Gaussian geometry has the 48-byte header, with or without SH: its
-// last word flags the compact records (1) or the float ones (0), and only
-// Precise geometries' float coefficients follow it.
+// Every Gaussian geometry has the 64-byte header, with or without SH:
+// [0..8] the SH-from-local 3×3; [9] RGB entries a point in GaussianSH (1
+// with a palette); [10] coefficients evaluated (gaussianSHTotal, or 1 under
+// SHDCOnly); [11] 1 for the compact records, 0 for the float ones; [12] the
+// palette's centroid count (0 without one); [13] and [14] shLayout's
+// labelsAt and paletteAt (exact as floats: compact offsets are whole words
+// under 2²⁶ bytes, and a Precise float index stays under 2²⁴); [15] 0. Only
+// Precise geometries' float coefficients follow it, and then a Precise
+// palette's.
 func gaussianSHData(g *Geometry) []byte {
 	if g.PointStyle.Shape != GaussianPoint || len(g.Points) == 0 {
 		return nil
 	}
-	compact := compactGaussians(g.PointStyle)
-	size := 48
+	compact, p := compactGaussians(g.PointStyle), g.GaussianSHPalette
+	size := 4 * shHeaderFloats
 	if !compact {
 		size += len(g.GaussianSH) * 12
+		if p != nil {
+			size += len(p.Coefficients) * 12
+		}
 	}
 	data := make([]byte, 0, size)
 	m := gaussianSHMatrix(g)
 	data = appendFloats(data, m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10])
-	count := gaussianSHCount(g)
-	active := count
+	active := gaussianSHTotal(g)
 	if g.PointStyle.SHDCOnly {
 		active = 1
 	}
@@ -721,12 +785,18 @@ func gaussianSHData(g *Geometry) []byte {
 	if compact {
 		flag = 1
 	}
-	data = appendFloats(data, float32(count), float32(active), flag)
+	labelsAt, paletteAt := shLayout(g)
+	data = appendFloats(data, float32(gaussianSHCount(g)), float32(active), flag, float32(p.Count()), float32(labelsAt), float32(paletteAt), 0)
 	if compact {
 		return data
 	}
 	for _, c := range g.GaussianSH {
 		data = appendFloats(data, c[:]...)
+	}
+	if p != nil {
+		for _, c := range p.Coefficients {
+			data = appendFloats(data, c[:]...)
+		}
 	}
 	return data
 }

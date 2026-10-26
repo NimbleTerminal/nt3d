@@ -353,9 +353,7 @@ func validateGeometry(g Geometry) error {
 	// A palette adds its centroids' coefficients, and in the compact records
 	// the 16-bit labels, 2 bytes a point (rounded up to 4); Precise labels
 	// fill a buffer of their own that the point count already bounds.
-	// The compact header is always small enough to need no check. (The header
-	// is 64 bytes for every Gaussian geometry; the upload follows in a
-	// later change.)
+	// The compact header is always small enough to need no check.
 	axis := 48
 	if g.PointStyle.Shape == GaussianPoint && !g.PointStyle.Precise {
 		axis = 24

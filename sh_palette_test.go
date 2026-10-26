@@ -3,13 +3,15 @@ package nt3d
 
 import (
 	"math"
+	"math/rand/v2"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/sh"
 	"slices"
 	"testing"
 )
 
-// paletteGeometry is n splats of degree 3 whose bands are k distinct sets.
+// paletteGeometry is n splats of degree 3 whose bands are k distinct sets
+// of bounded size, at seeded random positions in [-1, 1]³.
 func paletteGeometry(t *testing.T, n, k int) Geometry {
 	t.Helper()
 	g := shGaussianGeometry(3)
@@ -19,12 +21,18 @@ func paletteGeometry(t *testing.T, n, k int) Geometry {
 	g.GaussianSHLabels = make([]uint16, n)
 	p := &SHPalette{Degree: 3}
 	for c := range k {
+		// Centroids spread over the same range whatever k is: past it, an
+		// overbright splat's color differs between the renderers, palette
+		// or not.
+		s := float32(c) * 8 / float32(k)
 		for j := range 15 {
-			p.Coefficients = append(p.Coefficients, nt3dsh.RGB{float32(c)*.01 + float32(j)*.001, float32(c) * .02, -float32(j) * .003})
+			p.Coefficients = append(p.Coefficients, nt3dsh.RGB{s*.01 + float32(j)*.001, s * .02, -float32(j) * .003})
 		}
 	}
+	rng := rand.New(rand.NewPCG(3, 5))
+	coordinate := func() float32 { return 2*rng.Float32() - 1 }
 	for i := range n {
-		base.Position = nt3dmath.Vec3{X: float32(i%7) * .1, Y: float32(i%5) * .1, Z: float32(i%3) * .1}
+		base.Position = nt3dmath.Vec3{X: coordinate(), Y: coordinate(), Z: coordinate()}
 		g.Points[i] = base
 		g.GaussianSH = append(g.GaussianSH, nt3dsh.RGB{.2, .3, .4})
 		g.GaussianSHLabels[i] = uint16(i % k)

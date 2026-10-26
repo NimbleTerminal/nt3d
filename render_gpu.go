@@ -193,7 +193,7 @@ func (g *gpuRenderer) setup() (err error) {
 		if g.dropPipeline, err = pointPipeline(dev, g.layout, g.shader, "vs_drop", "fs_point_alpha_soft", false); err != nil {
 			return err
 		}
-		if g.zeros, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 48, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
+		if g.zeros, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 4 * shHeaderFloats, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
 			return err
 		}
 		if g.zeroRun, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: sortRecord, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst}); err != nil {
