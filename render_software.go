@@ -96,17 +96,6 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			}
 		}
 	}
-	put := func(x, y int, z float32, c color.RGBA) {
-		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
-			return
-		}
-		i := y*f.Width + x
-		if z <= depth[i]+.00001 {
-			depth[i] = z
-			off := i * 4
-			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = c.R, c.G, c.B
-		}
-	}
 	// Surfaces are shaded in 0..255, in linear light or as encoded, as the
 	// frame works; pixels are 8-bit sRGB.
 	linear, rig, aniso := f.Linear, newRig(&f), f.anisotropy()
@@ -125,6 +114,36 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			return srgbDecode[p] * 255
 		}
 		return float32(p)
+	}
+	// acc holds the blended pixels' color with headroom above 255, as the
+	// GPU's float target does, so a splat whose color evaluates above 1 is
+	// clamped once, in the pixel, rather than at every blend over it. The
+	// first blended fragment allocates it from what is drawn so far; put
+	// keeps it current after that.
+	var acc []float32
+	accumulate := func() {
+		if acc != nil {
+			return
+		}
+		acc = make([]float32, len(depth)*3)
+		for i := range depth {
+			off := i * 4
+			acc[i*3], acc[i*3+1], acc[i*3+2] = fromPixel(img.Pix[off]), fromPixel(img.Pix[off+1]), fromPixel(img.Pix[off+2])
+		}
+	}
+	put := func(x, y int, z float32, c color.RGBA) {
+		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
+			return
+		}
+		i := y*f.Width + x
+		if z <= depth[i]+.00001 {
+			depth[i] = z
+			off := i * 4
+			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = c.R, c.G, c.B
+			if acc != nil {
+				acc[i*3], acc[i*3+1], acc[i*3+2] = fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)
+			}
+		}
 	}
 	// Fog mixes toward its color, in the working space.
 	fogged := f.Fog.on()
@@ -161,9 +180,11 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		i := y*f.Width + x
 		if z <= depth[i]+.00001 {
 			alpha = max(0, min(1, alpha))
-			off := i * 4
+			accumulate()
+			off, a := i*4, acc[i*3:i*3+3]
 			for k, v := range rgb {
-				img.Pix[off+k] = toPixel(v*alpha + fromPixel(img.Pix[off+k])*(1-alpha))
+				a[k] = v*alpha + a[k]*(1-alpha)
+				img.Pix[off+k] = toPixel(a[k])
 			}
 		}
 	}
@@ -175,9 +196,11 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		}
 		i := y*f.Width + x
 		if z <= depth[i]+.00001 {
-			off := i * 4
+			accumulate()
+			off, a := i*4, acc[i*3:i*3+3]
 			for k, v := range rgb {
-				img.Pix[off+k] = toPixel(fromPixel(img.Pix[off+k]) + v*alpha)
+				a[k] += v * alpha
+				img.Pix[off+k] = toPixel(a[k])
 			}
 		}
 	}

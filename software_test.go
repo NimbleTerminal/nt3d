@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 )
 
 func depthAt(r SoftwareResult, x, y int) float32 { return r.Depth[y*r.Width+x] }
@@ -174,5 +175,37 @@ func TestSoftwareUnlimitedBudgetMatchesUnclustered(t *testing.T) {
 	}
 	if !bytes.Equal(render(clustered), render(plain)) {
 		t.Fatal("an unlimited budget changes the picture")
+	}
+}
+
+// Blended color accumulates with headroom, as the GPU's float target does:
+// a splat whose SH evaluates above 1 leaves more behind a darker splat in
+// front of it than a pixel clamped at each step would.
+func TestSoftwareBlendKeepsHeadroom(t *testing.T) {
+	g := shGaussianGeometry(0)
+	far := g.Points[0]
+	far.Position.Z, far.Color.A = .6, 204
+	near := far
+	near.Position.Z = .4
+	g.Points = []Point{far, near}
+	render := func(sh ...nt3dsh.RGB) color.RGBA {
+		h := g
+		h.Points, h.GaussianSH = g.Points[:len(sh)], sh
+		f := flatFrame(80, 80, h)
+		f.Linear = false
+		return at(softwareRender(f), 40, 40)
+	}
+	// A degree-0 splat's color is .5 + .2820948·DC. Calibrate: a lone DC 0
+	// splat, color .5, leaves 127.5·a at the center, a being its alpha there
+	// after the falloff.
+	a := float64(render(nt3dsh.RGB{}).R) / 127.5
+	// The far splat, DC 6, evaluates to 2.19: 559·a over black, well past
+	// 255. The near one, DC -2, is black at the same alpha: 559·a·(1-a)
+	// remains, not the 255·(1-a) a sum clamped at every blend would leave.
+	bright := (.5 + .2820948*6) * 255
+	c := render(nt3dsh.RGB{6, 6, 6}, nt3dsh.RGB{-2, -2, -2})
+	want := bright * a * (1 - a)
+	if math.Abs(float64(c.R)-want) > 3 || c.G != c.R || c.B != c.R {
+		t.Fatalf("center pixel %v, want about %.0f gray (alpha %.3f; clamped blending gives %.0f)", c, want, a, 255*(1-a))
 	}
 }

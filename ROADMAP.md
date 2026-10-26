@@ -21,12 +21,6 @@ Nothing queued; the sections below are the open work.
   sorted index from a 2.5× larger buffer, which only compacting the
   selection into a dense per-frame buffer would address.
 
-- [ ] **Overbright SH on the GPU**: for splats whose SH evaluates far above
-  1, the GPU and software renderers differ by tens of pixels in the parity
-  tests (found while testing palettes; the palette tests bound their
-  centroids to avoid it). Find whether it is clamping order or the sRGB
-  encode of out-of-range values.
-
 - [ ] **Shared points, lines, and boxes**, only if something needs them
   (particles don't: they are many positions, not many copies): charts
   keep all their markers in one geometry, already one upload and draw,

@@ -14,6 +14,14 @@ import (
 // of bounded size, at seeded random positions in [-1, 1]³.
 func paletteGeometry(t *testing.T, n, k int) Geometry {
 	t.Helper()
+	return paletteGeometrySpread(t, n, k, 8)
+}
+
+// paletteGeometrySpread is paletteGeometry with the centroids spread over
+// [0, spread), the same range whatever k is; past 8 the splats evaluate
+// well above 1.
+func paletteGeometrySpread(t *testing.T, n, k int, spread float32) Geometry {
+	t.Helper()
 	g := shGaussianGeometry(3)
 	base := g.Points[0]
 	g.Points = make([]Point, n)
@@ -21,10 +29,7 @@ func paletteGeometry(t *testing.T, n, k int) Geometry {
 	g.GaussianSHLabels = make([]uint16, n)
 	p := &SHPalette{Degree: 3}
 	for c := range k {
-		// Centroids spread over the same range whatever k is: past it, an
-		// overbright splat's color differs between the renderers, palette
-		// or not.
-		s := float32(c) * 8 / float32(k)
+		s := float32(c) * spread / float32(k)
 		for j := range 15 {
 			p.Coefficients = append(p.Coefficients, nt3dsh.RGB{s*.01 + float32(j)*.001, s * .02, -float32(j) * .003})
 		}

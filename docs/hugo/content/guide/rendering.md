@@ -134,7 +134,9 @@ is normalized. SH degree 0 through 3 is supported: `f_dc_0..2` plus zero,
 9, 24, or 45 contiguous `f_rest_*` properties. PLY's channel-major values
 are converted to point-major RGB coefficients. The renderer evaluates them
 in the local camera-to-splat direction and adds 0.5; negative colors are
-clamped before the normal sRGB/linear conversion. Orthographic cameras use
+clamped before the normal sRGB/linear conversion, and colors above 1 keep
+their headroom while splats blend, in both renderers, clamping once per
+pixel at the end. Orthographic cameras use
 parallel rays. Coefficients remain float32; opacity is quantized to eight
 bits. Wireframe uses clamped sRGB8 DC color. Normals and unrelated scalar
 properties are ignored. Incomplete SH bands, nonfinite coefficients,
