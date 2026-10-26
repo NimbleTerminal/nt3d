@@ -13,10 +13,13 @@ Nothing queued; the sections below are the open work.
   item and indirect buffers; hierarchical levels that draw an interior node
   as one aggregate (a preprocessing tool's job); per-frame rebuilds cheap
   enough for moving particles.
-- [ ] **Gaussian splatting follow-ups**: SOG's SH palette on the GPU; store
-  points in cluster order at upload so budgeted gathers are contiguous (the
-  budgeted 2.5M frame is 11 ms against 7 for 1M); streaming and partial
-  loading; budgeted plain point clouds.
+- [ ] **Gaussian splatting follow-ups**: SOG's SH palette on the GPU;
+  streaming and partial loading; budgeted plain point clouds. Measured and
+  dropped (2026-10-26): storing points in cluster order so budgeted gathers
+  are contiguous saved only 0.5 ms of the budgeted 2.5M frame's 12 ms
+  (against 7 for 1M unbudgeted); the gap is the draw pass gathering by
+  sorted index from a 2.5× larger buffer, which only compacting the
+  selection into a dense per-frame buffer would address.
 
 - [ ] **Shared points, lines, and boxes**, only if something needs them
   (particles don't: they are many positions, not many copies): charts
