@@ -14,5 +14,7 @@
 // shN.count and shN.bands, which the centroid image supplies. SOG files store the coordinates of the PLY they
 // were made from, so Options.Up applies as it does for PLY. The "model" tag
 // some files carry is ignored. A cloud larger than one geometry holds is
-// split as nt3dmesh.PointPieces splits it.
+// split as nt3dmesh.PointPieces splits it. Encode writes a cloud whose
+// bands above DC are a palette back out as a version 2 bundle, with
+// lossless PNG images in place of WebP.
 package nt3dsog
