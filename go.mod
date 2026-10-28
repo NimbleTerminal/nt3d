@@ -3,8 +3,8 @@ module nimbleterminal.dev/nt3d
 go 1.26.8
 
 require (
-	charm.land/bubbletea/v2 v2.1.0
-	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4
+	charm.land/bubbletea/v2 v2.1.1
+	github.com/charmbracelet/ultraviolet v0.0.0-20261023060817-a45b7c86333f
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/gogpu/gputypes v0.8.0
 	github.com/gogpu/wgpu v0.34.5
@@ -13,9 +13,9 @@ require (
 	github.com/qmuntal/gltf v0.29.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/image v0.47.0
-	nimbleterminal.dev/ntcanvas v0.1.1
-	nimbleterminal.dev/ntgpuimage v0.4.0
-	nimbleterminal.dev/ntpicture v0.1.1
+	nimbleterminal.dev/ntcanvas v0.1.2
+	nimbleterminal.dev/ntgpuimage v0.5.0
+	nimbleterminal.dev/ntpicture v0.1.2
 )
 
 require (

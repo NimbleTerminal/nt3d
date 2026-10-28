@@ -4,19 +4,19 @@ go 1.26.8
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.1.0
-	github.com/NimbleMarkets/go-booba v0.10.2
+	charm.land/bubbletea/v2 v2.1.1
+	github.com/NimbleMarkets/go-booba v0.10.5
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	github.com/qmuntal/gltf v0.29.0
 	github.com/spf13/pflag v1.0.10
-	nimbleterminal.dev/nt3d v0.3.0
-	nimbleterminal.dev/ntpicture v0.1.1
+	nimbleterminal.dev/nt3d v0.5.0
+	nimbleterminal.dev/ntpicture v0.1.2
 )
 
 require (
 	charm.land/lipgloss/v2 v2.0.6 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20261023060817-a45b7c86333f // indirect
 	github.com/charmbracelet/x/ansi v0.11.9 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
@@ -38,8 +38,8 @@ require (
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	nimbleterminal.dev/ntcanvas v0.1.1 // indirect
-	nimbleterminal.dev/ntgpuimage v0.4.0 // indirect
+	nimbleterminal.dev/ntcanvas v0.1.2 // indirect
+	nimbleterminal.dev/ntgpuimage v0.5.0 // indirect
 )
 
 replace nimbleterminal.dev/nt3d => ../..
