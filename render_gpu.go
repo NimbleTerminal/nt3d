@@ -6,7 +6,9 @@ import (
 	"context"
 	_ "embed"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"github.com/gogpu/gpucontext"
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
 	"image"
@@ -47,9 +49,15 @@ type gpuRenderer struct {
 	screen                 sceneSnapshot
 	reflection             reflectionTexture
 	environmentSource      *Environment
-	environmentTexture     *gpuimage.Texture
+	environmentTexture     *gpuTexture
 	environmentPipeline    *wgpu.RenderPipeline
 	environmentBind        *wgpu.BindGroup
+	sampledLayout          *wgpu.BindGroupLayout
+	mipGenShader           *wgpu.ShaderModule
+	mipGenLayout           *wgpu.PipelineLayout
+	mipGenSampler          *wgpu.Sampler
+	mipGenPipelines        [2]*wgpu.RenderPipeline
+	mipSink                *wgpu.Buffer
 	skinPipeline           *wgpu.ComputePipeline
 	skinLayout             *wgpu.BindGroupLayout
 	sort                   gpuSort   // The frame-wide blended point sort.
@@ -79,7 +87,7 @@ type gpuRenderer struct {
 	spritePipelines [3]*wgpu.RenderPipeline
 	pointBlends     [2][3]*wgpu.RenderPipeline
 	zeros, zeroRun  *wgpu.Buffer
-	textures        map[textureKey]*gpuimage.Texture // Image textures, by addressing.
+	textures        map[textureKey]*gpuTexture // Image textures, by addressing.
 	procedural      map[proceduralKey]*proceduralTexture
 	geometries      map[geometryKey]*gpuGeometry
 	nodes           []*gpuGeometry // By frame geometry index.
@@ -136,110 +144,147 @@ func (g *gpuRenderer) setup() (err error) {
 		g.r = nil
 		return gpuimage.ErrNoAdapter
 	}
-	return g.r.Do(func(dev *wgpu.Device) error {
-		g.deviceLimit = deviceBinding(dev.Limits())
-		g.sort.deviceLimit = g.deviceLimit
-		g.shader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d", WGSL: sceneShaderSource()})
+	if err = g.r.Do(func(dev *wgpu.Device) error {
+		return g.setupDevice(dev)
+	}); err != nil {
+		_ = g.r.Close()
+		g.r = nil
+		return err
+	}
+	return nil
+}
+
+func (g *gpuRenderer) setupDevice(dev *wgpu.Device) (err error) {
+	defer func() {
 		if err != nil {
-			return err
+			g.releaseResources()
 		}
-		g.bindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, {Binding: 1, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}, {Binding: 2, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}}})
-		if err != nil {
-			return err
-		}
-		g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}, {Binding: 3, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 4, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}}})
-		if err != nil {
-			return err
-		}
-		g.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout}})
-		if err != nil {
-			return err
-		}
-		// Metal binds a group's buffers to consecutive slots, while the
-		// translated shader reads binding n from slot n, so the bindings run
-		// 0 to 8 without a gap. The shader also reads array lengths, for its
-		// bounds checks, from its first unused slot, 1 in the point entry
-		// points; zeros there leave them unchecked, as an unbound slot
-		// leaves the other entry points.
-		storage := func(binding uint32) gputypes.BindGroupLayoutEntry {
-			return gputypes.BindGroupLayoutEntry{Binding: binding, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}
-		}
-		g.pointBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, storage(1), storage(2), storage(3), storage(4), storage(5), {Binding: 6, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform, HasDynamicOffset: true, MinBindingSize: 16}}, storage(7), storage(8)}})
-		if err != nil {
-			return err
-		}
-		g.pointLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.pointBindLayout, g.shadowLayout}})
-		if err != nil {
-			return err
-		}
-		for i, entry := range []string{"vs_point", "vs_mesh", "vs_box", "vs_line", "vs_ui", "vs_dynamic", "vs_arrow"} {
-			primitive := gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}
-			if i == 0 {
-				primitive.CullMode = gputypes.CullModeNone
-			}
-			if i == 3 {
-				primitive.CullMode = gputypes.CullModeNone
-			}
-			if i >= 4 {
-				primitive.CullMode = gputypes.CullModeNone
-			}
-			fragment := "fs_main"
-			if i == 4 {
-				fragment = "fs_overlay" // Overlays: no highlight or fog.
-			}
-			layout := g.layout
-			if i == 0 {
-				layout = g.pointLayout
-			}
-			g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
-			if err != nil {
-				return err
-			}
-		}
-		for i, entry := range []string{"vs_mesh_back", "vs_mesh"} {
-			if g.blendPipelines[i], err = blendPipeline(dev, g.layout, g.shader, entry, "fs_main", i); err != nil {
-				return err
-			}
-		}
-		for blend, vertex := range [2]string{"vs_point_sorted", "vs_point"} {
-			for shape, fragment := range [2][3]string{{"fs_point_alpha", "fs_point_alpha_soft", "fs_gaussian"}, {"fs_point_add", "fs_point_add_soft", "fs_gaussian"}}[blend] {
-				if blend == 1 && shape == int(GaussianPoint) {
-					continue
-				} // Gaussians require alpha blending.
-				entry := vertex
-				if shape == int(GaussianPoint) {
-					entry = "vs_gaussian"
-				}
-				if g.pointBlends[blend][shape], err = pointPipeline(dev, g.pointLayout, g.shader, entry, fragment, blend == 1); err != nil {
-					return err
-				}
-			}
-		}
-		if g.dropPipeline, err = pointPipeline(dev, g.layout, g.shader, "vs_drop", "fs_point_alpha_soft", false); err != nil {
-			return err
-		}
-		if g.zeros, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 4 * shHeaderFloats, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
-			return err
-		}
-		if g.zeroRun, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: sortRecord, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst}); err != nil {
-			return err
-		}
-		g.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
-		if err != nil {
-			return err
-		}
-		if err = g.prepareSnapshot(dev, 1, 1); err != nil {
-			return err
-		}
-		if err = g.updateReflection(dev, nil); err != nil {
-			return err
-		}
-		g.noShadow, err = g.makeShadowTarget(dev, 1, 1)
-		if err != nil {
-			return err
-		}
-		return g.setupShadowPipelines(dev)
+	}()
+	g.deviceLimit = deviceBinding(dev.Limits())
+	g.sort.deviceLimit = g.deviceLimit
+	g.sampledLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Label: "nt3d sampled texture",
+		Entries: []gputypes.BindGroupLayoutEntry{
+			{
+				Binding:    0,
+				Visibility: gputypes.ShaderStageVertex | gputypes.ShaderStageFragment | gputypes.ShaderStageCompute,
+				Texture: &gputypes.TextureBindingLayout{
+					SampleType:    gputypes.TextureSampleTypeFloat,
+					ViewDimension: gputypes.TextureViewDimension2D,
+				},
+			},
+			{
+				Binding:    1,
+				Visibility: gputypes.ShaderStageVertex | gputypes.ShaderStageFragment | gputypes.ShaderStageCompute,
+				Sampler: &gputypes.SamplerBindingLayout{
+					Type: gputypes.SamplerBindingTypeFiltering,
+				},
+			},
+		},
 	})
+	if err != nil {
+		return err
+	}
+	g.shader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d", WGSL: sceneShaderSource()})
+	if err != nil {
+		return err
+	}
+	g.bindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, {Binding: 1, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}, {Binding: 2, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}}})
+	if err != nil {
+		return err
+	}
+	g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}, {Binding: 3, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 4, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}}})
+	if err != nil {
+		return err
+	}
+	g.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout}})
+	if err != nil {
+		return err
+	}
+	// Metal binds a group's buffers to consecutive slots, while the
+	// translated shader reads binding n from slot n, so the bindings run
+	// 0 to 8 without a gap. The shader also reads array lengths, for its
+	// bounds checks, from its first unused slot, 1 in the point entry
+	// points; zeros there leave them unchecked, as an unbound slot
+	// leaves the other entry points.
+	storage := func(binding uint32) gputypes.BindGroupLayoutEntry {
+		return gputypes.BindGroupLayoutEntry{Binding: binding, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}}
+	}
+	g.pointBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}, storage(1), storage(2), storage(3), storage(4), storage(5), {Binding: 6, Visibility: wgpu.ShaderStageVertex, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform, HasDynamicOffset: true, MinBindingSize: 16}}, storage(7), storage(8)}})
+	if err != nil {
+		return err
+	}
+	g.pointLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.pointBindLayout, g.shadowLayout}})
+	if err != nil {
+		return err
+	}
+	for i, entry := range []string{"vs_point", "vs_mesh", "vs_box", "vs_line", "vs_ui", "vs_dynamic", "vs_arrow"} {
+		primitive := gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}
+		if i == 0 {
+			primitive.CullMode = gputypes.CullModeNone
+		}
+		if i == 3 {
+			primitive.CullMode = gputypes.CullModeNone
+		}
+		if i >= 4 {
+			primitive.CullMode = gputypes.CullModeNone
+		}
+		fragment := "fs_main"
+		if i == 4 {
+			fragment = "fs_overlay" // Overlays: no highlight or fog.
+		}
+		layout := g.layout
+		if i == 0 {
+			layout = g.pointLayout
+		}
+		g.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
+		if err != nil {
+			return err
+		}
+	}
+	for i, entry := range []string{"vs_mesh_back", "vs_mesh"} {
+		if g.blendPipelines[i], err = blendPipeline(dev, g.layout, g.shader, entry, "fs_main", i); err != nil {
+			return err
+		}
+	}
+	for blend, vertex := range [2]string{"vs_point_sorted", "vs_point"} {
+		for shape, fragment := range [2][3]string{{"fs_point_alpha", "fs_point_alpha_soft", "fs_gaussian"}, {"fs_point_add", "fs_point_add_soft", "fs_gaussian"}}[blend] {
+			if blend == 1 && shape == int(GaussianPoint) {
+				continue
+			} // Gaussians require alpha blending.
+			entry := vertex
+			if shape == int(GaussianPoint) {
+				entry = "vs_gaussian"
+			}
+			if g.pointBlends[blend][shape], err = pointPipeline(dev, g.pointLayout, g.shader, entry, fragment, blend == 1); err != nil {
+				return err
+			}
+		}
+	}
+	if g.dropPipeline, err = pointPipeline(dev, g.layout, g.shader, "vs_drop", "fs_point_alpha_soft", false); err != nil {
+		return err
+	}
+	if g.zeros, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 4 * shHeaderFloats, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst}); err != nil {
+		return err
+	}
+	if g.zeroRun, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: sortRecord, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst}); err != nil {
+		return err
+	}
+	g.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+	if err != nil {
+		return err
+	}
+	if err = g.prepareSnapshot(dev, 1, 1); err != nil {
+		return err
+	}
+	if err = g.updateReflection(dev, nil); err != nil {
+		return err
+	}
+	g.noShadow, err = g.makeShadowTarget(dev, 1, 1)
+	if err != nil {
+		return err
+	}
+	return g.setupShadowPipelines(dev)
 }
 
 func floats(values ...float32) []byte { return appendFloats(make([]byte, 0, len(values)*4), values...) }
@@ -330,17 +375,38 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 			return nil, err
 		}
 	}
-	if err := g.prepareProcedural(f); err != nil {
-		return nil, err
+	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
+		return g.encode(frame.Device, frame.Encoder, f, GPUTarget{
+			Color:  frame.Color,
+			Format: gputypes.TextureFormatRGBA8Unorm,
+			Width:  f.Width,
+			Height: f.Height,
+		})
+	})
+	return img, err
+}
+
+func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame, target GPUTarget) (err error) {
+	defer func() {
+		if err != nil {
+			for _, node := range g.geometries {
+				if node.skin != nil {
+					node.skin.revision = 0
+				}
+			}
+		}
+	}()
+	if err = g.prepareProcedural(dev, f); err != nil {
+		return err
 	}
-	if err := g.prepareTextures(f); err != nil {
-		return nil, err
+	if err = g.prepareTextures(dev, f); err != nil {
+		return err
 	}
-	if err := g.prepareEnvironment(f); err != nil {
-		return nil, err
+	if err = g.prepareEnvironment(dev, f); err != nil {
+		return err
 	}
-	if err := g.prepareTarget(f); err != nil {
-		return nil, err
+	if err = g.prepareTarget(dev, f); err != nil {
+		return err
 	}
 	perspective, linear := float32(0), float32(0)
 	if f.Perspective {
@@ -388,7 +454,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	snapshot := needsSceneSnapshot(f, drawn)
 	plan, err := f.planBlend(drawn)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	g.plan = plan
 	g.lod = f.planLOD(&g.plan)
@@ -422,89 +488,81 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	}
 	inverse, _ := inverseProjection(f.Matrix)
 	ub = append(ub, floats(inverse[:]...)...)
-	img, _, err := g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
-		if err := g.drawProcedural(frame); err != nil {
+	if err = g.drawProcedural(dev, encoder); err != nil {
+		return err
+	}
+	if snapshot {
+		if err = g.prepareSnapshot(dev, g.target.w, g.target.h); err != nil {
 			return err
-		}
-		dev := frame.Device
-		if snapshot {
-			if err := g.prepareSnapshot(dev, g.target.w, g.target.h); err != nil {
-				return err
-			}
-		}
-		if err := g.prepareOutlines(dev, f); err != nil {
-			return err
-		}
-		if g.shadowActive && (g.shadowTarget.texture == nil || g.shadowTarget.size != size || len(g.shadowTarget.faces) != len(views)) {
-			g.shadowTarget.release()
-			var err error
-			g.shadowTarget, err = g.makeShadowTarget(dev, size, len(views))
-			if err != nil {
-				return err
-			}
-		}
-		if err := g.uploadIdentity(dev); err != nil {
-			return err
-		}
-		// The sort's buffers grow before the point bind groups that hold
-		// them are made, and it sorts once the points are on the device.
-		if g.plan.points > 0 {
-			if err := g.initSort(dev); err != nil {
-				return err
-			}
-			if err := g.sort.ensure(dev, g.plan.points, len(g.plan.slots)); err != nil {
-				return err
-			}
-		}
-		if err := g.prepareGeometry(dev, f, drawn); err != nil {
-			return err
-		}
-		if err := g.skinGeometry(dev, frame.Encoder, f); err != nil {
-			return err
-		}
-		if err := g.encodeSort(dev, frame.Encoder, f, &g.plan, &g.lod); err != nil {
-			return err
-		}
-		if err := g.uploadLines(dev, f); err != nil {
-			return err
-		}
-		if err := g.uploadUI(dev, f); err != nil {
-			return err
-		}
-		if err := dev.Queue().WriteBuffer(g.uniform, 0, ub); err != nil {
-			return err
-		}
-		// The scene draws into the scene target, which a resolve pass
-		// averages down and encodes. Pixel sizes stay the frame's, through
-		// the uniform viewport, so points and lines keep their size when
-		// supersampled.
-		return g.renderScene(frame, f, func(color, depth *wgpu.TextureView) error {
-			return g.drawScene(f, snapshot, frame.Encoder, color, depth)
-		})
-	})
-	if err != nil {
-		for _, node := range g.geometries {
-			if node.skin != nil {
-				node.skin.revision = 0
-			}
 		}
 	}
-	return img, err
+	if err = g.prepareOutlines(dev, f); err != nil {
+		return err
+	}
+	if g.shadowActive && (g.shadowTarget.texture == nil || g.shadowTarget.size != size || len(g.shadowTarget.faces) != len(views)) {
+		g.shadowTarget.release()
+		g.shadowTarget, err = g.makeShadowTarget(dev, size, len(views))
+		if err != nil {
+			return err
+		}
+	}
+	if err = g.uploadIdentity(dev); err != nil {
+		return err
+	}
+	// The sort's buffers grow before the point bind groups that hold
+	// them are made, and it sorts once the points are on the device.
+	if g.plan.points > 0 {
+		if err = g.initSort(dev); err != nil {
+			return err
+		}
+		if err = g.sort.ensure(dev, g.plan.points, len(g.plan.slots)); err != nil {
+			return err
+		}
+	}
+	if err = g.prepareGeometry(dev, f, drawn); err != nil {
+		return err
+	}
+	if err = g.skinGeometry(dev, encoder, f); err != nil {
+		return err
+	}
+	if err = g.encodeSort(dev, encoder, f, &g.plan, &g.lod); err != nil {
+		return err
+	}
+	if err = g.uploadLines(dev, f); err != nil {
+		return err
+	}
+	if err = g.uploadUI(dev, f); err != nil {
+		return err
+	}
+	if err = dev.Queue().WriteBuffer(g.uniform, 0, ub); err != nil {
+		return err
+	}
+	// The scene draws into the scene target, which a resolve pass
+	// averages down and encodes. Pixel sizes stay the frame's, through
+	// the uniform viewport, so points and lines keep their size when
+	// supersampled.
+	return g.renderScene(dev, encoder, f, target, func(color, depth *wgpu.TextureView) error {
+		return g.drawScene(f, snapshot, target.Load, encoder, color, depth)
+	})
 }
 
 // background is the frame's background in the scene target's color space.
-func background(f Frame) gputypes.Color {
+func background(f Frame, load bool) gputypes.Color {
 	c := [3]float64{float64(f.Background.R) / 255, float64(f.Background.G) / 255, float64(f.Background.B) / 255}
 	if f.Linear {
 		for i := range c {
 			c[i] = decodeSRGB(c[i])
 		}
 	}
+	if load {
+		a := float64(f.Background.A) / 255
+		return gputypes.Color{R: c[0] * a, G: c[1] * a, B: c[2] * a, A: a}
+	}
 	return gputypes.Color{R: c[0], G: c[1], B: c[2], A: 1}
 }
 
 // drawScene records the scene's pass into a color and depth target.
-func (g *gpuRenderer) drawScene(f Frame, snapshot bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
+func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
 		if g.shadowActive {
 			if err := g.drawShadow(f, encoder); err != nil {
@@ -512,7 +570,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot bool, encoder *wgpu.CommandEnc
 			}
 		}
 
-		pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: background(f)}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpClear, DepthStoreOp: gputypes.StoreOpStore, DepthClearValue: 1, StencilReadOnly: true}})
+		pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: background(f, load)}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpClear, DepthStoreOp: gputypes.StoreOpStore, DepthClearValue: 1, StencilReadOnly: true}})
 		if err != nil {
 			return err
 		}
@@ -749,6 +807,171 @@ func pointPipeline(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.S
 	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: fragment, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})
 }
 
+func (g *gpuRenderer) releaseResources() {
+	if g.environmentTexture != nil {
+		g.environmentTexture.release()
+		g.environmentTexture = nil
+	}
+	g.environmentSource = nil
+	for src, t := range g.procedural {
+		g.releaseProcedural(t)
+		delete(g.procedural, src)
+	}
+	for src, t := range g.textures {
+		t.release()
+		delete(g.textures, src)
+	}
+	for i, p := range g.mipGenPipelines {
+		if p != nil {
+			p.Release()
+			g.mipGenPipelines[i] = nil
+		}
+	}
+	if g.mipSink != nil {
+		g.mipSink.Release()
+		g.mipSink = nil
+	}
+	if g.mipGenSampler != nil {
+		g.mipGenSampler.Release()
+		g.mipGenSampler = nil
+	}
+	if g.mipGenLayout != nil {
+		g.mipGenLayout.Release()
+		g.mipGenLayout = nil
+	}
+	if g.mipGenShader != nil {
+		g.mipGenShader.Release()
+		g.mipGenShader = nil
+	}
+	if g.environmentBind != nil {
+		g.environmentBind.Release()
+		g.environmentBind = nil
+	}
+	if g.environmentPipeline != nil {
+		g.environmentPipeline.Release()
+		g.environmentPipeline = nil
+	}
+	if g.skinPipeline != nil {
+		g.skinPipeline.Release()
+		g.skinPipeline = nil
+	}
+	if g.skinLayout != nil {
+		g.skinLayout.Release()
+		g.skinLayout = nil
+	}
+	g.sort.release()
+	for key, node := range g.geometries {
+		node.release()
+		delete(g.geometries, key)
+	}
+	g.nodes = nil
+	if g.dropPipeline != nil {
+		g.dropPipeline.Release()
+		g.dropPipeline = nil
+	}
+	if g.cutoutPipeline != nil {
+		g.cutoutPipeline.Release()
+		g.cutoutPipeline = nil
+	}
+	if g.texturePipeline != nil {
+		g.texturePipeline.Release()
+		g.texturePipeline = nil
+	}
+	for _, p := range slices.Concat(g.blendPipelines[:], g.textureBlends[:], g.pointBlends[0][:], g.pointBlends[1][:], g.spritePipelines[:]) {
+		if p != nil {
+			p.Release()
+		}
+	}
+	g.blendPipelines = [2]*wgpu.RenderPipeline{}
+	g.textureBlends = [2]*wgpu.RenderPipeline{}
+	g.pointBlends = [2][3]*wgpu.RenderPipeline{}
+	g.spritePipelines = [3]*wgpu.RenderPipeline{}
+	if g.spriteLayout != nil {
+		g.spriteLayout.Release()
+		g.spriteLayout = nil
+	}
+	if g.textureLayout != nil {
+		g.textureLayout.Release()
+		g.textureLayout = nil
+	}
+	for i, b := range g.batches {
+		if b.bind != nil {
+			b.bind.Release()
+		}
+		if b.buffer != nil {
+			b.buffer.Release()
+		}
+		g.batches[i] = gpuBatch{}
+	}
+	for i, p := range g.outlinePipelines {
+		if p != nil {
+			p.Release()
+			g.outlinePipelines[i] = nil
+		}
+	}
+	for i, p := range g.pipelines {
+		if p != nil {
+			p.Release()
+			g.pipelines[i] = nil
+		}
+	}
+	if g.transforms != nil {
+		g.transforms.Release()
+		g.transforms = nil
+	}
+	if g.uniform != nil {
+		g.uniform.Release()
+		g.uniform = nil
+	}
+	if g.zeros != nil {
+		g.zeros.Release()
+		g.zeros = nil
+	}
+	if g.zeroRun != nil {
+		g.zeroRun.Release()
+		g.zeroRun = nil
+	}
+	if g.pointLayout != nil {
+		g.pointLayout.Release()
+		g.pointLayout = nil
+	}
+	if g.pointBindLayout != nil {
+		g.pointBindLayout.Release()
+		g.pointBindLayout = nil
+	}
+	if g.layout != nil {
+		g.layout.Release()
+		g.layout = nil
+	}
+	if g.bindLayout != nil {
+		g.bindLayout.Release()
+		g.bindLayout = nil
+	}
+	for i, p := range g.shadowPipelines {
+		if p != nil {
+			p.Release()
+			g.shadowPipelines[i] = nil
+		}
+	}
+	g.noShadow.release()
+	g.shadowTarget.release()
+	g.reflection.release()
+	g.screen.release()
+	if g.shadowLayout != nil {
+		g.shadowLayout.Release()
+		g.shadowLayout = nil
+	}
+	if g.sampledLayout != nil {
+		g.sampledLayout.Release()
+		g.sampledLayout = nil
+	}
+	if g.shader != nil {
+		g.shader.Release()
+		g.shader = nil
+	}
+	g.target.release()
+}
+
 func (g *gpuRenderer) Close() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -756,122 +979,147 @@ func (g *gpuRenderer) Close() error {
 	if g.r == nil {
 		return nil
 	}
-	if g.environmentTexture != nil {
-		_ = g.environmentTexture.Close()
-		g.environmentTexture = nil
-	}
-	for src, t := range g.procedural {
-		g.releaseProcedural(t)
-		delete(g.procedural, src)
-	}
-	for src, t := range g.textures {
-		_ = t.Close()
-		delete(g.textures, src)
-	}
 	_ = g.r.Do(func(*wgpu.Device) error {
-		if g.environmentBind != nil {
-			g.environmentBind.Release()
-		}
-		if g.environmentPipeline != nil {
-			g.environmentPipeline.Release()
-		}
-		if g.skinPipeline != nil {
-			g.skinPipeline.Release()
-			g.skinPipeline = nil
-		}
-		if g.skinLayout != nil {
-			g.skinLayout.Release()
-			g.skinLayout = nil
-		}
-		g.sort.release()
-		for key, node := range g.geometries {
-			node.release()
-			delete(g.geometries, key)
-		}
-		g.nodes = nil
-		if g.dropPipeline != nil {
-			g.dropPipeline.Release()
-		}
-		if g.cutoutPipeline != nil {
-			g.cutoutPipeline.Release()
-		}
-		if g.texturePipeline != nil {
-			g.texturePipeline.Release()
-		}
-		for _, p := range slices.Concat(g.blendPipelines[:], g.textureBlends[:], g.pointBlends[0][:], g.pointBlends[1][:], g.spritePipelines[:]) {
-			if p != nil {
-				p.Release()
-			}
-		}
-		if g.spriteLayout != nil {
-			g.spriteLayout.Release()
-		}
-		if g.textureLayout != nil {
-			g.textureLayout.Release()
-		}
-		for _, b := range g.batches {
-			if b.bind != nil {
-				b.bind.Release()
-			}
-			if b.buffer != nil {
-				b.buffer.Release()
-			}
-		}
-		for _, p := range g.outlinePipelines {
-			if p != nil {
-				p.Release()
-			}
-		}
-		for _, p := range g.pipelines {
-			if p != nil {
-				p.Release()
-			}
-		}
-		if g.transforms != nil {
-			g.transforms.Release()
-		}
-		if g.uniform != nil {
-			g.uniform.Release()
-		}
-		if g.zeros != nil {
-			g.zeros.Release()
-		}
-		if g.zeroRun != nil {
-			g.zeroRun.Release()
-		}
-		if g.pointLayout != nil {
-			g.pointLayout.Release()
-		}
-		if g.pointBindLayout != nil {
-			g.pointBindLayout.Release()
-		}
-		if g.layout != nil {
-			g.layout.Release()
-		}
-		if g.bindLayout != nil {
-			g.bindLayout.Release()
-		}
-		for _, p := range g.shadowPipelines {
-			if p != nil {
-				p.Release()
-			}
-		}
-		g.noShadow.release()
-		g.shadowTarget.release()
-		g.reflection.release()
-		g.screen.release()
-		if g.shadowLayout != nil {
-			g.shadowLayout.Release()
-		}
-		if g.shader != nil {
-			g.shader.Release()
-		}
+		g.releaseResources()
 		return nil
 	})
-	g.releaseTarget()
 	err := g.r.Close()
 	g.r = nil
 	return err
+}
+
+// GPUTarget describes a caller-owned render target view that a GPUSession
+// resolves a Frame into.
+type GPUTarget struct {
+	// Color is the destination texture view for the final resolve pass.
+	Color *wgpu.TextureView
+	// Format is the texture format of Color (RGBA8Unorm, RGBA8UnormSrgb,
+	// BGRA8Unorm, BGRA8UnormSrgb, or RGBA16Float).
+	Format gputypes.TextureFormat
+	// Width and Height are the pixel dimensions of Color and must match
+	// Frame.Width and Frame.Height.
+	Width, Height int
+	// Load preserves existing pixels in Color and alpha-composites the
+	// resolved scene over them when true; otherwise the resolve pass
+	// overwrites Color.
+	Load bool
+}
+
+// GPUSession renders Frames into caller-supplied targets on a host-owned
+// WebGPU device, retaining uploaded geometry, textures, and pipelines across
+// frames without owning a swapchain or reading pixels back to the CPU.
+// Calls are serialized; Close releases NT3D's GPU resources while leaving the
+// caller's Device open.
+type GPUSession struct {
+	dev *wgpu.Device
+	g   gpuRenderer
+}
+
+// NewGPUSession creates a GPU rendering session on a caller-owned device.
+func NewGPUSession(dev *wgpu.Device) (*GPUSession, error) {
+	if dev == nil {
+		return nil, fmt.Errorf("%w: nil device", ErrGPUUnavailable)
+	}
+	s := &GPUSession{dev: dev}
+	if err := s.g.setupDevice(dev); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrGPUUnavailable, err)
+	}
+	return s, nil
+}
+
+// NewGPUSessionFromProvider creates a GPU rendering session from a
+// gpucontext.DeviceProvider (such as gogpu.App.GPUContextProvider()).
+func NewGPUSessionFromProvider(provider gpucontext.DeviceProvider) (*GPUSession, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("%w: nil device provider", ErrGPUUnavailable)
+	}
+	dev := provider.Device()
+	if dev.IsNil() {
+		return nil, fmt.Errorf("%w: nil device handle", ErrGPUUnavailable)
+	}
+	return NewGPUSession((*wgpu.Device)(dev.Pointer()))
+}
+
+// BindingLimit returns the bytes one storage binding on the session's device
+// holds, at most MaxBindingLimit; see SetBindingLimit.
+func (s *GPUSession) BindingLimit() (int, error) {
+	s.g.mu.Lock()
+	defer s.g.mu.Unlock()
+	if s.g.closed || s.dev == nil {
+		return 0, fmt.Errorf("%w: session closed", ErrGPUUnavailable)
+	}
+	return min(s.g.deviceLimit, MaxBindingLimit), nil
+}
+
+// Encode uploads any changed scene resources and records the frame's compute,
+// shadow, scene, and resolve passes into enc, resolving the final image into
+// target. The caller finishes and submits enc.
+func (s *GPUSession) Encode(f Frame, enc *wgpu.CommandEncoder, target GPUTarget) error {
+	s.g.mu.Lock()
+	defer s.g.mu.Unlock()
+	if s.g.closed || s.dev == nil {
+		return fmt.Errorf("%w: session closed", ErrGPUUnavailable)
+	}
+	if enc == nil {
+		return errors.New("nt3d: nil GPU command encoder")
+	}
+	if err := validateFrame(f); err != nil {
+		return err
+	}
+	if err := validateTarget(f, target); err != nil {
+		return err
+	}
+	return s.g.encode(s.dev, enc, f, target)
+}
+
+// Render encodes f into target on a fresh command encoder and submits the
+// command buffer to the session's device queue.
+func (s *GPUSession) Render(f Frame, target GPUTarget) error {
+	s.g.mu.Lock()
+	defer s.g.mu.Unlock()
+	if s.g.closed || s.dev == nil {
+		return fmt.Errorf("%w: session closed", ErrGPUUnavailable)
+	}
+	if err := validateFrame(f); err != nil {
+		return err
+	}
+	if err := validateTarget(f, target); err != nil {
+		return err
+	}
+	enc, err := s.dev.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "nt3d session"})
+	if err != nil {
+		return err
+	}
+	if err := s.g.encode(s.dev, enc, f, target); err != nil {
+		enc.DiscardEncoding()
+		return err
+	}
+	cmd, err := enc.Finish()
+	if err != nil {
+		return err
+	}
+	if _, err := s.dev.Queue().Submit(cmd); err != nil {
+		cmd.Release()
+		return err
+	}
+	s.dev.Poll(wgpu.PollWait)
+	s.dev.FreeCommandBuffer(cmd)
+	return nil
+}
+
+// Close releases all GPU buffers, textures, bind groups, and pipelines
+// retained by the session. Close is idempotent and does not close the caller's
+// Device.
+func (s *GPUSession) Close() error {
+	s.g.mu.Lock()
+	defer s.g.mu.Unlock()
+	s.g.closed = true
+	if s.dev == nil {
+		return nil
+	}
+	s.g.releaseResources()
+	s.dev = nil
+	return nil
 }
 
 // Dynamic world-space decorations always use an identity transform.

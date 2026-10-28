@@ -6,8 +6,149 @@ import (
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
 	"image"
-	"nimbleterminal.dev/ntgpuimage"
 )
+
+type gpuTexture struct {
+	texture    *wgpu.Texture
+	view       *wgpu.TextureView
+	sampler    *wgpu.Sampler
+	group      *wgpu.BindGroup
+	mipViews   []*wgpu.TextureView
+	mipGroups  []*wgpu.BindGroup
+	mipScratch []*wgpu.Texture
+	scratchMip []*wgpu.TextureView
+	format     gputypes.TextureFormat
+	width      int
+	height     int
+	levels     int
+	written    bool
+	mipsFilled bool
+}
+
+func (t *gpuTexture) BindGroup() *wgpu.BindGroup { return t.group }
+
+func (t *gpuTexture) release() {
+	if t == nil {
+		return
+	}
+	for _, v := range t.scratchMip {
+		if v != nil {
+			v.Release()
+		}
+	}
+	for _, tex := range t.mipScratch {
+		if tex != nil {
+			tex.Release()
+		}
+	}
+	for _, g := range t.mipGroups {
+		if g != nil {
+			g.Release()
+		}
+	}
+	for _, v := range t.mipViews {
+		if v != nil {
+			v.Release()
+		}
+	}
+	if t.group != nil {
+		t.group.Release()
+	}
+	if t.sampler != nil {
+		t.sampler.Release()
+	}
+	if t.view != nil {
+		t.view.Release()
+	}
+	if t.texture != nil {
+		t.texture.Release()
+	}
+	*t = gpuTexture{}
+}
+
+func (g *gpuRenderer) uploadTextureLevels(dev *wgpu.Device, levels []*image.NRGBA, srgb bool, addrU, addrV gputypes.AddressMode, aniso int) (*gpuTexture, error) {
+	w, h := levels[0].Bounds().Dx(), levels[0].Bounds().Dy()
+	format := gputypes.TextureFormatRGBA8Unorm
+	if srgb {
+		format = gputypes.TextureFormatRGBA8UnormSrgb
+	}
+	anisoClamp := uint16(max(1, min(aniso, MaxAnisotropy)))
+	mipFilter := gputypes.FilterModeNearest
+	if len(levels) > 1 || anisoClamp > 1 {
+		mipFilter = gputypes.FilterModeLinear
+	}
+	t := &gpuTexture{format: format, width: w, height: h, levels: len(levels)}
+	var err error
+	defer func() {
+		if err != nil {
+			t.release()
+		}
+	}()
+	t.texture, err = dev.CreateTexture(&wgpu.TextureDescriptor{
+		Label:         "nt3d texture",
+		Size:          wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1},
+		MipLevelCount: uint32(len(levels)),
+		SampleCount:   1,
+		Dimension:     gputypes.TextureDimension2D,
+		Format:        format,
+		Usage:         gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i, level := range levels {
+		lw, lh := level.Bounds().Dx(), level.Bounds().Dy()
+		pix := level.Pix
+		if level.Stride != lw*4 || level.Rect.Min != (image.Point{}) {
+			pix = make([]byte, lw*lh*4)
+			for y := range lh {
+				srcOff := level.PixOffset(level.Rect.Min.X, level.Rect.Min.Y+y)
+				copy(pix[y*lw*4:(y+1)*lw*4], level.Pix[srcOff:srcOff+lw*4])
+			}
+		} else {
+			pix = pix[:lw*lh*4]
+		}
+		if err = dev.Queue().WriteTexture(
+			&wgpu.ImageCopyTexture{Texture: t.texture, MipLevel: uint32(i), Aspect: gputypes.TextureAspectAll},
+			pix,
+			&wgpu.ImageDataLayout{BytesPerRow: uint32(lw * 4), RowsPerImage: uint32(lh)},
+			&wgpu.Extent3D{Width: uint32(lw), Height: uint32(lh), DepthOrArrayLayers: 1},
+		); err != nil {
+			return nil, err
+		}
+	}
+	t.view, err = dev.CreateTextureView(t.texture, nil)
+	if err != nil {
+		return nil, err
+	}
+	t.sampler, err = dev.CreateSampler(&wgpu.SamplerDescriptor{
+		Label:        "nt3d sampler",
+		AddressModeU: addrU,
+		AddressModeV: addrV,
+		AddressModeW: gputypes.AddressModeClampToEdge,
+		MagFilter:    gputypes.FilterModeLinear,
+		MinFilter:    gputypes.FilterModeLinear,
+		MipmapFilter: mipFilter,
+		LodMinClamp:  0,
+		LodMaxClamp:  float32(len(levels)),
+		Anisotropy:   anisoClamp,
+	})
+	if err != nil {
+		return nil, err
+	}
+	t.group, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  "nt3d texture bind",
+		Layout: g.sampledLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, TextureView: t.view},
+			{Binding: 1, Sampler: t.sampler},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
 
 func releaseBatch(b gpuBatch) {
 	if b.bind != nil {
@@ -78,14 +219,13 @@ func baseKey(m *Material, aniso int) textureKey {
 	return key
 }
 
-// prepareTextures runs outside GPU callbacks: ntgpuimage owns allocation,
-// upload, sampling resources and cleanup on its executor thread.
-func (g *gpuRenderer) prepareTextures(f Frame) error {
+// prepareTextures uploads any new image textures and releases unused ones.
+func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 	if g.textures == nil {
-		g.textures = make(map[textureKey]*ntgpuimage.Texture)
+		g.textures = make(map[textureKey]*gpuTexture)
 	}
 	used := make(map[textureKey]bool)
-	var sampledLayout *wgpu.BindGroupLayout
+	hasTextures := false
 	for _, geom := range f.Geometry {
 		var keys []textureKey
 		if mapped(geom) && len(geom.Indices) > 0 {
@@ -95,9 +235,9 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 			keys = append(keys, textureKey{src: geom.PointStyle.Texture, aniso: f.anisotropy()})
 		}
 		for _, key := range keys {
+			hasTextures = true
 			src := key.src
 			if src.shader != "" {
-				sampledLayout = g.procedural[proceduralKey{src, key.repeat}].target.BindGroupLayout()
 				continue
 			}
 			used[key] = true
@@ -112,44 +252,34 @@ func (g *gpuRenderer) prepareTextures(f Frame) error {
 				if key.fullSize {
 					chain = chain[:1]
 				}
-				var levels []image.Image
-				for _, level := range chain {
-					levels = append(levels, level)
-				}
-				options := ntgpuimage.TextureOptions{SRGB: !src.data, Anisotropy: uint16(key.aniso)}
+				addr := gputypes.AddressModeClampToEdge
 				if key.repeat {
-					options.AddressModeU, options.AddressModeV = gputypes.AddressModeRepeat, gputypes.AddressModeRepeat
+					addr = gputypes.AddressModeRepeat
 				}
 				var err error
-				if t, err = g.r.UploadTextureLevels(levels, options); err != nil {
+				if t, err = g.uploadTextureLevels(dev, chain, !src.data, addr, addr, key.aniso); err != nil {
 					return err
 				}
 				g.textures[key] = t
 				g.textureUploads++
 			}
-			sampledLayout = t.BindGroupLayout()
 		}
 	}
 	for key, t := range g.textures {
 		if !used[key] {
-			if err := t.Close(); err != nil {
-				return err
-			}
+			t.release()
 			delete(g.textures, key)
 		}
 	}
-	if sampledLayout != nil && (g.texturePipeline == nil || g.spriteLayout == nil) {
-		return g.r.Do(func(dev *wgpu.Device) error {
-			if g.texturePipeline == nil {
-				if err := g.setupTextures(dev, sampledLayout); err != nil {
-					return err
-				}
+	if hasTextures && (g.texturePipeline == nil || g.spriteLayout == nil) {
+		if g.texturePipeline == nil {
+			if err := g.setupTextures(dev, g.sampledLayout); err != nil {
+				return err
 			}
-			if g.spriteLayout == nil {
-				return g.setupSprites(dev, sampledLayout)
-			}
-			return nil
-		})
+		}
+		if g.spriteLayout == nil {
+			return g.setupSprites(dev, g.sampledLayout)
+		}
 	}
 	return nil
 }

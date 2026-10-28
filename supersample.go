@@ -3,12 +3,13 @@ package nt3d
 
 import (
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"image"
 	"math"
 
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
-	gpuimage "nimbleterminal.dev/ntgpuimage"
 )
 
 // MaxSupersample is the largest Frame.Supersample.
@@ -31,7 +32,8 @@ func supersampleFactor(f Frame) int {
 // floats, at the frame's supersampling factor, so blending works in the
 // shaders' color space: linear light when the frame asks for it. A resolve
 // pass then averages each s × s block into one pixel of the frame, a box
-// filter exact for integer factors, encoding linear light as sRGB.
+// filter exact for integer factors, encoding or decoding sRGB as the target
+// format requires.
 const resolveShader = `
 struct Resolve { factor: vec4<f32> };
 @group(0) @binding(0) var<uniform> r: Resolve;
@@ -44,8 +46,13 @@ fn encode(c: vec3<f32>) -> vec3<f32> {
  let v = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
  return select(1.055 * pow(v, vec3<f32>(1.0 / 2.4)) - 0.055, v * 12.92, v <= vec3<f32>(0.0031308));
 }
+fn decode(c: vec3<f32>) -> vec3<f32> {
+ let v = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
+ return select(pow((v + 0.055) / 1.055, vec3<f32>(2.4)), v / 12.92, v <= vec3<f32>(0.04045));
+}
 @fragment fn fs_resolve(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
  let s = i32(r.factor.x);
+ let n = f32(s * s);
  let base = vec2<i32>(floor(p.xy)) * s;
  var sum = vec4<f32>(0.0);
  for (var y = 0; y < s; y++) {
@@ -53,15 +60,33 @@ fn encode(c: vec3<f32>) -> vec3<f32> {
    sum += textureLoad(src, base + vec2<i32>(x, y), 0);
   }
  }
- var rgb = sum.rgb / f32(s * s);
- if r.factor.y > 0.5 { rgb = encode(rgb); }
- return vec4<f32>(rgb, 1.0);
+ var rgb = sum.rgb / n;
+ var a = 1.0;
+ if r.factor.z > 0.5 {
+  a = clamp(sum.a / n, 0.0, 1.0);
+  if sum.a > 1e-6 {
+   rgb = sum.rgb / sum.a;
+  } else {
+   rgb = vec3<f32>(0.0);
+  }
+ }
+ if r.factor.y > 0.5 {
+  rgb = encode(rgb);
+ } else if r.factor.y < -0.5 {
+  rgb = decode(rgb);
+ }
+ return vec4<f32>(rgb, a);
 }
 `
 
 // sceneFormat is the scene target's format: floats, which blend in whatever
 // color space the shaders write.
 const sceneFormat = gputypes.TextureFormatRGBA16Float
+
+type resolveKey struct {
+	format gputypes.TextureFormat
+	load   bool
+}
 
 // sceneTarget is the GPU renderer's scene target and resolve pass.
 type sceneTarget struct {
@@ -70,6 +95,7 @@ type sceneTarget struct {
 	colorView, depthView *wgpu.TextureView
 	sampled              *wgpu.BindGroup // colorView, for the resolve.
 	pipeline             *wgpu.RenderPipeline
+	pipelines            map[resolveKey]*wgpu.RenderPipeline
 	layout               *wgpu.PipelineLayout
 	group, sampledGroup  *wgpu.BindGroupLayout
 	uniform              *wgpu.Buffer
@@ -77,7 +103,43 @@ type sceneTarget struct {
 	shader               *wgpu.ShaderModule
 }
 
-// releaseTextures frees the target's textures, on the GPU's executor.
+func validateTarget(f Frame, target GPUTarget) error {
+	if target.Color == nil {
+		return errors.New("nt3d: nil GPU target color view")
+	}
+	if target.Width != f.Width || target.Height != f.Height {
+		return fmt.Errorf("nt3d: GPU target dimensions %dx%d do not match frame %dx%d", target.Width, target.Height, f.Width, f.Height)
+	}
+	switch target.Format {
+	case gputypes.TextureFormatRGBA8Unorm,
+		gputypes.TextureFormatRGBA8UnormSrgb,
+		gputypes.TextureFormatBGRA8Unorm,
+		gputypes.TextureFormatBGRA8UnormSrgb,
+		gputypes.TextureFormatRGBA16Float:
+		return nil
+	default:
+		return fmt.Errorf("nt3d: unsupported GPU target format %v", target.Format)
+	}
+}
+
+func resolveTransfer(linear bool, format gputypes.TextureFormat) float32 {
+	switch format {
+	case gputypes.TextureFormatRGBA8Unorm, gputypes.TextureFormatBGRA8Unorm:
+		if linear {
+			return 1
+		}
+		return 0
+	case gputypes.TextureFormatRGBA8UnormSrgb, gputypes.TextureFormatBGRA8UnormSrgb:
+		if linear {
+			return 0
+		}
+		return -1
+	default:
+		return 0
+	}
+}
+
+// releaseTextures frees the target's textures.
 func (t *sceneTarget) releaseTextures() {
 	if t.sampled != nil {
 		t.sampled.Release()
@@ -96,47 +158,45 @@ func (t *sceneTarget) releaseTextures() {
 }
 
 // prepareTarget sizes the scene target for this frame, creating the resolve
-// pass the first time, outside GPU callbacks as ntgpuimage requires.
-func (g *gpuRenderer) prepareTarget(f Frame) error {
+// pass the first time.
+func (g *gpuRenderer) prepareTarget(dev *wgpu.Device, f Frame) (err error) {
 	s := supersampleFactor(f)
 	w, h := f.Width*s, f.Height*s
 	t := &g.target
 	if t.pipeline != nil && t.w == w && t.h == h {
 		return nil
 	}
-	return g.r.Do(func(dev *wgpu.Device) (err error) {
-		if t.pipeline == nil {
-			if err = t.setup(dev); err != nil {
-				return err
-			}
+	if t.pipeline == nil {
+		if err = t.setup(dev); err != nil {
+			return err
 		}
+	}
+	t.releaseTextures()
+	texture := func(label string, format gputypes.TextureFormat, usage gputypes.TextureUsage) (*wgpu.Texture, *wgpu.TextureView, error) {
+		x, err := dev.CreateTexture(&wgpu.TextureDescriptor{Label: label, Size: wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}, MipLevelCount: 1, SampleCount: 1, Dimension: wgpu.TextureDimension2D, Format: format, Usage: usage})
+		if err != nil {
+			return nil, nil, err
+		}
+		v, err := dev.CreateTextureView(x, nil)
+		if err != nil {
+			x.Release()
+			return nil, nil, err
+		}
+		return x, v, nil
+	}
+	if t.color, t.colorView, err = texture("nt3d scene", sceneFormat, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
+		return err
+	}
+	if t.depth, t.depthView, err = texture("nt3d scene depth", gputypes.TextureFormatDepth32Float, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
 		t.releaseTextures()
-		texture := func(label string, format gputypes.TextureFormat, usage gputypes.TextureUsage) (*wgpu.Texture, *wgpu.TextureView, error) {
-			x, err := dev.CreateTexture(&wgpu.TextureDescriptor{Label: label, Size: wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}, MipLevelCount: 1, SampleCount: 1, Dimension: wgpu.TextureDimension2D, Format: format, Usage: usage})
-			if err != nil {
-				return nil, nil, err
-			}
-			v, err := dev.CreateTextureView(x, nil)
-			if err != nil {
-				x.Release()
-				return nil, nil, err
-			}
-			return x, v, nil
-		}
-		if t.color, t.colorView, err = texture("nt3d scene", sceneFormat, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
-			return err
-		}
-		if t.depth, t.depthView, err = texture("nt3d scene depth", gputypes.TextureFormatDepth32Float, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
-			t.releaseTextures()
-			return err
-		}
-		if t.sampled, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: t.sampledGroup, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: t.colorView}}}); err != nil {
-			t.releaseTextures()
-			return err
-		}
-		t.w, t.h = w, h
-		return nil
-	})
+		return err
+	}
+	if t.sampled, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: t.sampledGroup, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: t.colorView}}}); err != nil {
+		t.releaseTextures()
+		return err
+	}
+	t.w, t.h = w, h
+	return nil
 }
 
 // setup creates the resolve pass.
@@ -159,70 +219,101 @@ func (t *sceneTarget) setup(dev *wgpu.Device) (err error) {
 	if t.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{t.group, t.sampledGroup}}); err != nil {
 		return err
 	}
-	t.pipeline, err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "nt3d resolve", Layout: t.layout,
-		Vertex:      wgpu.VertexState{Module: t.shader, EntryPoint: "vs_resolve"},
-		Primitive:   gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
-		Multisample: gputypes.DefaultMultisampleState(),
-		Fragment:    &wgpu.FragmentState{Module: t.shader, EntryPoint: "fs_resolve", Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatRGBA8Unorm, WriteMask: gputypes.ColorWriteMaskAll}}}})
+	t.pipelines = make(map[resolveKey]*wgpu.RenderPipeline)
+	t.pipeline, err = t.resolvePipeline(dev, gputypes.TextureFormatRGBA8Unorm, false)
 	return err
 }
 
+func (t *sceneTarget) resolvePipeline(dev *wgpu.Device, format gputypes.TextureFormat, load bool) (*wgpu.RenderPipeline, error) {
+	key := resolveKey{format: format, load: load}
+	if p := t.pipelines[key]; p != nil {
+		return p, nil
+	}
+	target := gputypes.ColorTargetState{Format: format, WriteMask: gputypes.ColorWriteMaskAll}
+	if load {
+		blend := gputypes.BlendStateAlpha()
+		target.Blend = &blend
+	}
+	p, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label:       "nt3d resolve",
+		Layout:      t.layout,
+		Vertex:      wgpu.VertexState{Module: t.shader, EntryPoint: "vs_resolve"},
+		Primitive:   gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
+		Multisample: gputypes.DefaultMultisampleState(),
+		Fragment:    &wgpu.FragmentState{Module: t.shader, EntryPoint: "fs_resolve", Targets: []gputypes.ColorTargetState{target}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	t.pipelines[key] = p
+	return p, nil
+}
+
 // renderScene draws the scene into the scene target, then resolves it into
-// the frame.
-func (g *gpuRenderer) renderScene(frame *gpuimage.Frame, f Frame, draw func(color, depth *wgpu.TextureView) error) error {
+// target.
+func (g *gpuRenderer) renderScene(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame, target GPUTarget, draw func(color, depth *wgpu.TextureView) error) error {
 	t := &g.target
-	if err := draw(t.colorView, t.depthView); err != nil {
-		return err
-	}
-	linear := float32(0)
-	if f.Linear {
-		linear = 1
-	}
-	var factor [16]byte
-	binary.LittleEndian.PutUint32(factor[:], math.Float32bits(float32(supersampleFactor(f))))
-	binary.LittleEndian.PutUint32(factor[4:], math.Float32bits(linear))
-	if err := frame.Device.Queue().WriteBuffer(t.uniform, 0, factor[:]); err != nil {
-		return err
-	}
-	pass, err := frame.Encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: frame.Color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore}}})
+	pipeline, err := t.resolvePipeline(dev, target.Format, target.Load)
 	if err != nil {
 		return err
 	}
-	pass.SetPipeline(t.pipeline)
+	if err := draw(t.colorView, t.depthView); err != nil {
+		return err
+	}
+	load := float32(0)
+	if target.Load {
+		load = 1
+	}
+	var factor [16]byte
+	binary.LittleEndian.PutUint32(factor[:], math.Float32bits(float32(supersampleFactor(f))))
+	binary.LittleEndian.PutUint32(factor[4:], math.Float32bits(resolveTransfer(f.Linear, target.Format)))
+	binary.LittleEndian.PutUint32(factor[8:], math.Float32bits(load))
+	if err := dev.Queue().WriteBuffer(t.uniform, 0, factor[:]); err != nil {
+		return err
+	}
+	loadOp := gputypes.LoadOpClear
+	if target.Load {
+		loadOp = gputypes.LoadOpLoad
+	}
+	pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: target.Color, LoadOp: loadOp, StoreOp: gputypes.StoreOpStore}}})
+	if err != nil {
+		return err
+	}
+	pass.SetPipeline(pipeline)
 	pass.SetBindGroup(0, t.bind, nil)
 	pass.SetBindGroup(1, t.sampled, nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: 3, InstanceCount: 1})
 	return pass.End()
 }
 
-// releaseTarget frees the scene target and resolve pass, on the GPU's executor.
-func (g *gpuRenderer) releaseTarget() {
-	t := g.target
-	g.target = sceneTarget{}
-	_ = g.r.Do(func(*wgpu.Device) error {
-		t.releaseTextures()
-		if t.pipeline != nil {
-			t.pipeline.Release()
+// release frees the scene target and resolve pass.
+func (t *sceneTarget) release() {
+	t.releaseTextures()
+	for key, p := range t.pipelines {
+		if p != nil {
+			p.Release()
 		}
-		if t.layout != nil {
-			t.layout.Release()
+		delete(t.pipelines, key)
+	}
+	t.pipeline = nil
+	if t.layout != nil {
+		t.layout.Release()
+	}
+	if t.bind != nil {
+		t.bind.Release()
+	}
+	if t.uniform != nil {
+		t.uniform.Release()
+	}
+	for _, l := range []*wgpu.BindGroupLayout{t.group, t.sampledGroup} {
+		if l != nil {
+			l.Release()
 		}
-		if t.bind != nil {
-			t.bind.Release()
-		}
-		if t.uniform != nil {
-			t.uniform.Release()
-		}
-		for _, l := range []*wgpu.BindGroupLayout{t.group, t.sampledGroup} {
-			if l != nil {
-				l.Release()
-			}
-		}
-		if t.shader != nil {
-			t.shader.Release()
-		}
-		return nil
-	})
+	}
+	if t.shader != nil {
+		t.shader.Release()
+	}
+	*t = sceneTarget{}
 }
 
 // shrink averages each s × s block of a software rendering into one pixel,
