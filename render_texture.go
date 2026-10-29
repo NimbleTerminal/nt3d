@@ -6,148 +6,55 @@ import (
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
 	"image"
+	gpuimage "nimbleterminal.dev/ntgpuimage"
 )
 
 type gpuTexture struct {
-	texture    *wgpu.Texture
-	view       *wgpu.TextureView
-	sampler    *wgpu.Sampler
-	group      *wgpu.BindGroup
-	mipViews   []*wgpu.TextureView
-	mipGroups  []*wgpu.BindGroup
-	mipScratch []*wgpu.Texture
-	scratchMip []*wgpu.TextureView
-	format     gputypes.TextureFormat
-	width      int
-	height     int
-	levels     int
-	written    bool
-	mipsFilled bool
+	tex    *gpuimage.Texture
+	shared *gpuShared
+	key    textureKey
+	refs   int
 }
 
-func (t *gpuTexture) BindGroup() *wgpu.BindGroup { return t.group }
+func (t *gpuTexture) BindGroup() *wgpu.BindGroup             { return t.tex.BindGroup() }
+func (t *gpuTexture) BindGroupLayout() *wgpu.BindGroupLayout { return t.tex.BindGroupLayout() }
 
 func (t *gpuTexture) release() {
 	if t == nil {
 		return
 	}
-	for _, v := range t.scratchMip {
-		if v != nil {
-			v.Release()
+	if t.shared != nil {
+		t.shared.mu.Lock()
+		t.refs--
+		if t.refs > 0 {
+			t.shared.mu.Unlock()
+			return
 		}
+		delete(t.shared.textures, t.key)
+		t.shared.mu.Unlock()
 	}
-	for _, tex := range t.mipScratch {
-		if tex != nil {
-			tex.Release()
-		}
-	}
-	for _, g := range t.mipGroups {
-		if g != nil {
-			g.Release()
-		}
-	}
-	for _, v := range t.mipViews {
-		if v != nil {
-			v.Release()
-		}
-	}
-	if t.group != nil {
-		t.group.Release()
-	}
-	if t.sampler != nil {
-		t.sampler.Release()
-	}
-	if t.view != nil {
-		t.view.Release()
-	}
-	if t.texture != nil {
-		t.texture.Release()
+	if t.tex != nil {
+		_ = t.tex.Close()
+		t.tex = nil
 	}
 	*t = gpuTexture{}
 }
 
-func (g *gpuRenderer) uploadTextureLevels(dev *wgpu.Device, levels []*image.NRGBA, srgb bool, addrU, addrV gputypes.AddressMode, aniso int) (*gpuTexture, error) {
-	w, h := levels[0].Bounds().Dx(), levels[0].Bounds().Dy()
-	format := gputypes.TextureFormatRGBA8Unorm
-	if srgb {
-		format = gputypes.TextureFormatRGBA8UnormSrgb
-	}
-	anisoClamp := uint16(max(1, min(aniso, MaxAnisotropy)))
-	mipFilter := gputypes.FilterModeNearest
-	if len(levels) > 1 || anisoClamp > 1 {
-		mipFilter = gputypes.FilterModeLinear
-	}
-	t := &gpuTexture{format: format, width: w, height: h, levels: len(levels)}
-	var err error
-	defer func() {
-		if err != nil {
-			t.release()
-		}
-	}()
-	t.texture, err = dev.CreateTexture(&wgpu.TextureDescriptor{
-		Label:         "nt3d texture",
-		Size:          wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1},
-		MipLevelCount: uint32(len(levels)),
-		SampleCount:   1,
-		Dimension:     gputypes.TextureDimension2D,
-		Format:        format,
-		Usage:         gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst,
-	})
-	if err != nil {
-		return nil, err
-	}
+func (g *gpuRenderer) uploadTextureLevels(levels []*image.NRGBA, srgb bool, addrU, addrV gputypes.AddressMode, aniso int) (*gpuTexture, error) {
+	imgs := make([]image.Image, len(levels))
 	for i, level := range levels {
-		lw, lh := level.Bounds().Dx(), level.Bounds().Dy()
-		pix := level.Pix
-		if level.Stride != lw*4 || level.Rect.Min != (image.Point{}) {
-			pix = make([]byte, lw*lh*4)
-			for y := range lh {
-				srcOff := level.PixOffset(level.Rect.Min.X, level.Rect.Min.Y+y)
-				copy(pix[y*lw*4:(y+1)*lw*4], level.Pix[srcOff:srcOff+lw*4])
-			}
-		} else {
-			pix = pix[:lw*lh*4]
-		}
-		if err = dev.Queue().WriteTexture(
-			&wgpu.ImageCopyTexture{Texture: t.texture, MipLevel: uint32(i), Aspect: gputypes.TextureAspectAll},
-			pix,
-			&wgpu.ImageDataLayout{BytesPerRow: uint32(lw * 4), RowsPerImage: uint32(lh)},
-			&wgpu.Extent3D{Width: uint32(lw), Height: uint32(lh), DepthOrArrayLayers: 1},
-		); err != nil {
-			return nil, err
-		}
+		imgs[i] = level
 	}
-	t.view, err = dev.CreateTextureView(t.texture, nil)
-	if err != nil {
-		return nil, err
-	}
-	t.sampler, err = dev.CreateSampler(&wgpu.SamplerDescriptor{
-		Label:        "nt3d sampler",
+	tex, err := g.shared.texR.UploadTextureLevels(imgs, gpuimage.TextureOptions{
+		SRGB:         srgb,
 		AddressModeU: addrU,
 		AddressModeV: addrV,
-		AddressModeW: gputypes.AddressModeClampToEdge,
-		MagFilter:    gputypes.FilterModeLinear,
-		MinFilter:    gputypes.FilterModeLinear,
-		MipmapFilter: mipFilter,
-		LodMinClamp:  0,
-		LodMaxClamp:  float32(len(levels)),
-		Anisotropy:   anisoClamp,
+		Anisotropy:   uint16(max(1, min(aniso, MaxAnisotropy))),
 	})
 	if err != nil {
 		return nil, err
 	}
-	t.group, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{
-		Label:  "nt3d texture bind",
-		Layout: g.sampledLayout,
-		Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, TextureView: t.view},
-			{Binding: 1, Sampler: t.sampler},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return t, nil
+	return &gpuTexture{tex: tex}, nil
 }
 
 func releaseBatch(b gpuBatch) {
@@ -225,7 +132,7 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 		g.textures = make(map[textureKey]*gpuTexture)
 	}
 	used := make(map[textureKey]bool)
-	hasTextures := false
+	var sampledLayout *wgpu.BindGroupLayout
 	for _, geom := range f.Geometry {
 		var keys []textureKey
 		if mapped(geom) && len(geom.Indices) > 0 {
@@ -235,13 +142,22 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 			keys = append(keys, textureKey{src: geom.PointStyle.Texture, aniso: f.anisotropy()})
 		}
 		for _, key := range keys {
-			hasTextures = true
 			src := key.src
 			if src.shader != "" {
+				sampledLayout = g.procedural[proceduralKey{src, key.repeat}].target.BindGroupLayout()
 				continue
 			}
 			used[key] = true
 			t := g.textures[key]
+			if t == nil && g.shared != nil {
+				g.shared.mu.Lock()
+				if cached := g.shared.textures[key]; cached != nil {
+					cached.refs++
+					t = cached
+					g.textures[key] = t
+				}
+				g.shared.mu.Unlock()
+			}
 			if t == nil {
 				// Color textures decode sRGB; normal maps keep linear vector data.
 				// Both use the software renderer's mip chain and hardware repeat.
@@ -257,12 +173,21 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 					addr = gputypes.AddressModeRepeat
 				}
 				var err error
-				if t, err = g.uploadTextureLevels(dev, chain, !src.data, addr, addr, key.aniso); err != nil {
+				if t, err = g.uploadTextureLevels(chain, !src.data, addr, addr, key.aniso); err != nil {
 					return err
+				}
+				if g.shared != nil {
+					g.shared.mu.Lock()
+					t.shared = g.shared
+					t.key = key
+					t.refs = 1
+					g.shared.textures[key] = t
+					g.shared.mu.Unlock()
 				}
 				g.textures[key] = t
 				g.textureUploads++
 			}
+			sampledLayout = t.BindGroupLayout()
 		}
 	}
 	for key, t := range g.textures {
@@ -271,14 +196,47 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 			delete(g.textures, key)
 		}
 	}
-	if hasTextures && (g.texturePipeline == nil || g.spriteLayout == nil) {
+	if sampledLayout != nil && (g.texturePipeline == nil || g.spriteLayout == nil) {
+		if g.shared != nil {
+			g.shared.mu.Lock()
+			defer g.shared.mu.Unlock()
+			if g.shared.texturePipeline == nil {
+				if err := g.setupTextures(dev, sampledLayout); err != nil {
+					return err
+				}
+				g.shared.textureLayout = g.textureLayout
+				g.shared.texturePipeline = g.texturePipeline
+				g.shared.cutoutPipeline = g.cutoutPipeline
+				g.shared.textureBlends = g.textureBlends
+				g.shared.shadowPipelines[2] = g.shadowPipelines[2]
+				g.shared.shadowPipelines[3] = g.shadowPipelines[3]
+			} else {
+				g.textureLayout = g.shared.textureLayout
+				g.texturePipeline = g.shared.texturePipeline
+				g.cutoutPipeline = g.shared.cutoutPipeline
+				g.textureBlends = g.shared.textureBlends
+				g.shadowPipelines[2] = g.shared.shadowPipelines[2]
+				g.shadowPipelines[3] = g.shared.shadowPipelines[3]
+			}
+			if g.shared.spriteLayout == nil {
+				if err := g.setupSprites(dev, sampledLayout); err != nil {
+					return err
+				}
+				g.shared.spriteLayout = g.spriteLayout
+				g.shared.spritePipelines = g.spritePipelines
+			} else {
+				g.spriteLayout = g.shared.spriteLayout
+				g.spritePipelines = g.shared.spritePipelines
+			}
+			return nil
+		}
 		if g.texturePipeline == nil {
-			if err := g.setupTextures(dev, g.sampledLayout); err != nil {
+			if err := g.setupTextures(dev, sampledLayout); err != nil {
 				return err
 			}
 		}
 		if g.spriteLayout == nil {
-			return g.setupSprites(dev, g.sampledLayout)
+			return g.setupSprites(dev, sampledLayout)
 		}
 	}
 	return nil

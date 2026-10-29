@@ -27,7 +27,7 @@ require (
 	github.com/go-webgpu/webgpu v0.5.5 // indirect
 	github.com/gogpu/gpucontext v0.31.3 // indirect
 	github.com/gogpu/gputypes v0.8.0 // indirect
-	github.com/gogpu/naga v0.20.3 // indirect
+	github.com/gogpu/naga v0.20.4 // indirect
 	github.com/gogpu/wgpu v0.34.5 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
@@ -39,7 +39,7 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	nimbleterminal.dev/ntcanvas v0.1.2 // indirect
-	nimbleterminal.dev/ntgpuimage v0.5.0 // indirect
+	nimbleterminal.dev/ntgpuimage v0.6.0 // indirect
 )
 
 replace nimbleterminal.dev/nt3d => ../..

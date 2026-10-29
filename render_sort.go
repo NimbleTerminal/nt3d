@@ -73,6 +73,43 @@ func (g *gpuRenderer) initSort(dev *wgpu.Device) error {
 	if s.keyPipeline != nil {
 		return nil
 	}
+	if g.shared != nil {
+		g.shared.mu.Lock()
+		defer g.shared.mu.Unlock()
+		if g.shared.sortKeyPipeline == nil {
+			if err := s.initPipelines(dev); err != nil {
+				return err
+			}
+			g.shared.sortKeyLayout = s.keyLayout
+			g.shared.sortKeyClusteredLayout = s.keyClusteredLayout
+			g.shared.sortLayout = s.sortLayout
+			g.shared.sortRunLayout = s.runLayout
+			g.shared.sortKeyPipeline = s.keyPipeline
+			g.shared.sortKeyClustered = s.keyClusteredPipeline
+			g.shared.sortHistPipeline = s.histPipeline
+			g.shared.sortScanPipeline = s.scanPipeline
+			g.shared.sortScatterPipeline = s.scatterPipeline
+			g.shared.sortCountPipeline = s.countPipeline
+			g.shared.sortRunPipeline = s.runPipeline
+			return nil
+		}
+		s.keyLayout = g.shared.sortKeyLayout
+		s.keyClusteredLayout = g.shared.sortKeyClusteredLayout
+		s.sortLayout = g.shared.sortLayout
+		s.runLayout = g.shared.sortRunLayout
+		s.keyPipeline = g.shared.sortKeyPipeline
+		s.keyClusteredPipeline = g.shared.sortKeyClustered
+		s.histPipeline = g.shared.sortHistPipeline
+		s.scanPipeline = g.shared.sortScanPipeline
+		s.scatterPipeline = g.shared.sortScatterPipeline
+		s.countPipeline = g.shared.sortCountPipeline
+		s.runPipeline = g.shared.sortRunPipeline
+		return nil
+	}
+	return s.initPipelines(dev)
+}
+
+func (s *gpuSort) initPipelines(dev *wgpu.Device) error {
 	uniform := gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform, HasDynamicOffset: true}
 	read := gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeReadOnlyStorage}
 	write := gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeStorage}
@@ -490,6 +527,18 @@ func (s *gpuSort) releaseLODBinds() {
 		}
 	}
 	s.lodBinds, s.lodPoints, s.lodOrders = nil, nil, nil
+}
+
+// releaseBuffers frees the sort's per-view buffers and bind groups, leaving
+// shared layouts and pipelines to gpuShared.
+func (s *gpuSort) releaseBuffers() {
+	s.releaseBinds()
+	for _, b := range []*wgpu.Buffer{s.keys[0], s.keys[1], s.payload[0], s.payload[1], s.hist, s.counts, s.runs, s.args, s.params, s.ranges} {
+		if b != nil {
+			b.Release()
+		}
+	}
+	*s = gpuSort{}
 }
 
 // release frees the sort's buffers, bind groups, layouts and pipelines.

@@ -93,6 +93,10 @@ func (g *gpuRenderer) setupShadowPipelines(dev *wgpu.Device) (err error) {
 			return
 		}
 	}
+	return g.clearNoShadow(dev)
+}
+
+func (g *gpuRenderer) clearNoShadow(dev *wgpu.Device) error {
 	// Initialize the fallback once; queue submission precedes all scene renders.
 	enc, err := dev.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "clear no shadow"})
 	if err != nil {

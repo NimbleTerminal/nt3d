@@ -14,7 +14,7 @@ All scene construction (`Scene`), hierarchy, materials, lighting, shadow mapping
 
 ## 2. Public API (`nimbleterminal.dev/nt3d`)
 
-The host-supplied GPU rendering API lives directly in the root `nt3d` package and consists of two types (`GPUTarget`, `GPUSession`), two constructors, and four methods:
+The host-supplied GPU rendering API lives directly in the root `nt3d` package and consists of two types (`GPUTarget`, `GPUSession`), two constructors, and eight methods:
 
 ```go
 // GPUTarget describes a caller-owned color attachment view to render a Frame into.
@@ -65,6 +65,13 @@ func NewGPUSession(dev *wgpu.Device) (*GPUSession, error)
 // gpucontext.DeviceProvider (such as gogpu's app.GPUContextProvider()).
 func NewGPUSessionFromProvider(provider gpucontext.DeviceProvider) (*GPUSession, error)
 
+// NewView creates a secondary GPU rendering session on the same device that
+// shares compiled pipelines, bind group layouts, shaders, and uploaded
+// geometry, splat, and texture caches with s while maintaining its own
+// per-view uniforms, instance transforms, depth sort buffers, shadow maps, and
+// supersampling target.
+func (s *GPUSession) NewView() (*GPUSession, error)
+
 // BindingLimit returns the maximum bindings per bind group supported by the
 // session's device, clamped to maxBindingLimit.
 func (s *GPUSession) BindingLimit() (int, error)
@@ -79,6 +86,28 @@ func (s *GPUSession) Encode(f Frame, enc *wgpu.CommandEncoder, target GPUTarget)
 // target via Encode, finishes the encoder, and submits the command buffer to
 // dev.Queue().
 func (s *GPUSession) Render(f Frame, target GPUTarget) error
+
+// RenderToImage encodes and renders f into an internal offscreen RGBA8Unorm
+// target on the session's device and reads the resolved pixels back into an
+// *image.NRGBA, reusing all geometry, splat, texture, and pipeline caches held
+// by the session.
+func (s *GPUSession) RenderToImage(f Frame) (*image.NRGBA, error)
+
+// RenderToImageInto encodes and renders f into an internal offscreen RGBA8Unorm
+// target on the session's device and reads the resolved pixels back into dst,
+// avoiding a per-frame image allocation during multi-frame captures.
+func (s *GPUSession) RenderToImageInto(f Frame, dst *image.NRGBA) error
+
+// ReadDepth reads the hardware depth buffer from the session's most recently
+// encoded or rendered Frame at pixel (x, y), searching within tolerance pixels
+// when the target pixel is background, and unprojects the nearest sample into
+// world space.
+func (s *GPUSession) ReadDepth(f Frame, x, y, tolerance float32) (world nt3dmath.Vec3, depth float32, ok bool, err error)
+
+// Pick tests visible instances in f against pixel (x, y) using the session's
+// GPU depth buffer to accelerate picking on unindexed, procedural, or skinned
+// meshes while warming static mesh BVH indexes in the background.
+func (s *GPUSession) Pick(scene *Scene, camera Camera, f Frame, x, y, tolerance float32) *Hit
 
 // Close releases all GPU resources created by the session without closing or
 // destroying the caller-owned *wgpu.Device.
@@ -148,13 +177,13 @@ When `target.Viewport` is non-zero (for example, rendering a 3D pane inside a la
 2. The resolve pass opens `target.Color` with `gputypes.LoadOpLoad` so all pixels outside `target.Viewport` remain untouched, sets both `pass.SetViewport(...)` and `pass.SetScissorRect(...)` to `target.Viewport`, and passes `r.origin.xy = (Viewport.Min.X, Viewport.Min.Y)` in the resolve uniform so `fs_resolve` subtracts the viewport origin from `@builtin(position).xy` before indexing `sceneTarget`.
 3. Inside `target.Viewport`, `Load: false` overwrites the rectangle with the resolved 3D frame (`Blend == nil`), while `Load: true` alpha-blends the resolved 3D frame over the existing pixels inside `target.Viewport` (`BlendStateAlpha()`).
 
-### 3.5 Device-Native Textures & Procedural Mipmap Generation
+### 3.5 Borrowed-Device `ntgpuimage` Integration (Textures, Procedural Mipmaps & Offscreen Readback)
 
-To operate without `ntgpuimage.Renderer`, `gpuRenderer` manages textures directly on `*wgpu.Device` via `gpuTexture`:
+`GPUSession` shares texture upload, procedural render-to-texture mipmap generation, and offscreen image readback with `ntgpuimage` via borrowed-device renderers (`ntgpuimage.NewFromDevice(dev, gpuimage.Options{...})`):
 
-- **Image & Environment Textures (`render_texture.go`, `render_environment.go`)**: Uploaded directly via `dev.Queue().WriteTexture` with cached bind groups matching `g.sampledLayout`.
-- **Procedural GPU Textures (`render_procedural.go`)**: Rendered into level 0 of a device-native texture (`TextureUsageTextureBinding | TextureUsageCopyDst | TextureUsageCopySrc | TextureUsageRenderAttachment`), followed by box-filter mipmap generation across levels `1..mipLevelCount-1`.
-- **Per-Level Scratch Textures for Mip Generation**: Because `gogpu/wgpu` tracks texture usage per `*wgpu.Texture` across a `CommandEncoder` scope (`CoreCommandEncoder.populateTextureScope`), each mip level `1..mipLevelCount-1` renders into its own 1-level scratch texture `t.mipScratch[level-1]` (`ColorTarget` $\to$ `CopySrc`) and copies into `t.tex` at `MipLevel: level` (`CopyDst`), followed by a 1-texel copy to `g.mipSink` so the encoder's read/write tracker retains the copy dependency before the main scene pass samples `t.tex`.
+- **Shared Texture Renderer (`gpuShared.texR`)**: Created once per shared device hierarchy (`NewFromDevice(dev, Options{Label: "nt3d-tex"})`) with deferred `0×0` main-target allocation. All image textures (`UploadTextureLevels`), environment panoramas (`UploadTexture`), and procedural textures (`NewTexture(..., TextureOptions{RenderTarget: true, Mipmaps: true})`) are allocated on `texR` so primary and `NewView()` sessions share identical `*gpuimage.Texture` handles and bind group layouts.
+- **Host-Encoded Procedural Textures (`render_procedural.go`)**: Recorded directly into the caller's `*wgpu.CommandEncoder` via `texR.RenderTexture(enc, t.target, ...)`, which renders level 0 and encodes box-filter GPU mipmap generation across levels `1..mipLevelCount-1` in the same submission.
+- **Per-Session Offscreen Readback (`s.g.r`)**: Each `GPUSession` holds a borrowed `*gpuimage.Renderer` (`NewFromDevice(dev, Options{Label: "nt3d"})`) whose offscreen target is allocated lazily on the first `RenderToImage` or `RenderToImageInto` call via `Resize(f.Width, f.Height)` and read back via `Render` or `RenderToTexture` + `ReadPixelsInto`.
 
 ---
 
@@ -222,9 +251,11 @@ _ = session.Encode(frame, dc.CommandEncoder(), nt3d.GPUTarget{
 dc.MarkPreserveContent()
 ```
 
-### 5.3 Sub-Viewport / Picture-in-Picture (`GPUTarget.Viewport`)
+### 5.3 Sub-Viewport / Picture-in-Picture (`session.NewView()` + `GPUTarget.Viewport`)
 
 ```go
+pipSession, _ := session.NewView() // Shares all pipelines, geometry, and texture caches
+
 pipRect := image.Rect(w-240-16, 16, w-16, 16+180)
 pipFrame, _ := scene.Frame(topCamera, pipRect.Dx(), pipRect.Dy())
 

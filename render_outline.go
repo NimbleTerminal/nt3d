@@ -18,6 +18,14 @@ func (g *gpuRenderer) prepareOutlines(dev *wgpu.Device, f Frame) error {
 		if g.outlinePipelines[kind] != nil {
 			continue
 		}
+		if g.shared != nil {
+			g.shared.mu.Lock()
+			if g.shared.outlinePipelines[kind] != nil {
+				g.outlinePipelines[kind] = g.shared.outlinePipelines[kind]
+				g.shared.mu.Unlock()
+				continue
+			}
+		}
 		layout, vertex, fragment := g.layout, "vs_outline", "fs_main"
 		if mapped(*geom) {
 			layout, vertex = g.textureLayout, "vs_outline_map"
@@ -39,6 +47,10 @@ func (g *gpuRenderer) prepareOutlines(dev *wgpu.Device, f Frame) error {
 				Multisample:  gputypes.DefaultMultisampleState(),
 				Fragment:     &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}},
 			})
+		}
+		if g.shared != nil {
+			g.shared.outlinePipelines[kind] = g.outlinePipelines[kind]
+			g.shared.mu.Unlock()
 		}
 		if err != nil {
 			return err

@@ -410,9 +410,9 @@ struct SkyOut { @builtin(position) clip:vec4<f32>, @location(0) ray:vec3<f32> };
 }
 @fragment fn fs_environment(o:SkyOut)->@location(0) vec4<f32> {
  let d=normalize(o.ray);
- let half=0.5/f32(textureDimensions(mapTexture).y);
+ let half=0.5/f32(textureDimensions(reflectionMap).y);
  let uv=vec2<f32>(atan2(d.y,d.x)/6.28318530718+0.5,clamp(acos(clamp(d.z,-1.0,1.0))/3.14159265359,half,1.0-half));
- let c=textureSampleLevel(mapTexture,mapSampler,uv,0.0).rgb;
+ let c=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
  if u.viewport.z<0.5 {return vec4<f32>(select(1.055*pow(c,vec3<f32>(1.0/2.4))-0.055,c*12.92,c<=vec3<f32>(0.0031308)),1.0);}
  return vec4<f32>(c,1.0);
 }

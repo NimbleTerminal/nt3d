@@ -62,6 +62,9 @@ func TestGPUEnvironment(t *testing.T) {
 	if cached != r.environmentTexture {
 		t.Fatal("unchanged environment was uploaded again")
 	}
+	if r.reflection.texture != r.environmentTexture.texture {
+		t.Fatal("reflection did not share environment panorama texture")
+	}
 	f.Environment = nil
 	_, err = r.Render(f)
 	check(t, err)

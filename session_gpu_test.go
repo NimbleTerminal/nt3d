@@ -642,7 +642,338 @@ func TestGPUSessionValidationAndLifecycle(t *testing.T) {
 	if _, err := session.BindingLimit(); !errors.Is(err, ErrGPUUnavailable) {
 		t.Fatalf("BindingLimit after Close = %v, want ErrGPUUnavailable", err)
 	}
+	if _, err := session.NewView(); !errors.Is(err, ErrGPUUnavailable) {
+		t.Fatalf("NewView after Close = %v, want ErrGPUUnavailable", err)
+	}
 	if err := session.Render(f, GPUTarget{Color: view, Format: gputypes.TextureFormatRGBA8Unorm, Width: 32, Height: 32}); !errors.Is(err, ErrGPUUnavailable) {
 		t.Fatalf("Render after Close = %v, want ErrGPUUnavailable", err)
+	}
+}
+
+func TestGPUSessionNewViewSharesResources(t *testing.T) {
+	_, _, dev := newTestHostDevice(t)
+	primary, err := NewGPUSession(dev)
+	check(t, err)
+	defer primary.Close()
+
+	secondary, err := primary.NewView()
+	check(t, err)
+	defer secondary.Close()
+
+	ref := NewGPURenderer()
+	defer ref.Close()
+
+	scene := NewScene()
+	scene.SetEnvironment(testEnvironment(t))
+
+	tex := testTexture(t, color.RGBA{220, 100, 50, 255})
+	sphere, err := BuildSphere(Sphere{
+		Radius: 0.55,
+		Color:  color.RGBA{255, 255, 255, 255},
+		Material: &Material{
+			Texture:      tex,
+			Specular:     0.5,
+			Shininess:    32,
+			Reflectivity: 0.25,
+		},
+	})
+	check(t, err)
+	sphere.Outline = OutlineStyle{Width: 2, Color: color.RGBA{255, 220, 60, 255}}
+	_, err = scene.SetGeometry("sphere", sphere)
+	check(t, err)
+
+	// Add a Gaussian splat cloud to verify per-view depth sorting over shared
+	// splat buffers.
+	splats := styled(PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend},
+		Point{Position: nt3dmath.Vec3{X: -0.45, Y: 0.35, Z: 0.2}, Radius: 1, Color: color.RGBA{80, 220, 255, 190}, GaussianAxes: [3]nt3dmath.Vec3{{X: 0.16}, {Y: 0.16}, {Z: 0.12}}},
+		Point{Position: nt3dmath.Vec3{X: 0.45, Y: -0.35, Z: -0.15}, Radius: 1, Color: color.RGBA{255, 90, 190, 190}, GaussianAxes: [3]nt3dmath.Vec3{{X: 0.16}, {Y: 0.16}, {Z: 0.12}}},
+	)
+	_, err = scene.SetGeometry("splats", splats)
+	check(t, err)
+
+	const (
+		fullW, fullH = 128, 64
+		paneW, paneH = 64, 64
+	)
+	format := gputypes.TextureFormatBGRA8UnormSrgb
+	targetTex, targetView := createHostTarget(t, dev, fullW, fullH, format)
+
+	camFront := DefaultCamera()
+	camFront.Alpha = 18
+	camFront.Beta = -30
+	fFront, err := scene.Frame(camFront, paneW, paneH)
+	check(t, err)
+
+	camTop := DefaultCamera()
+	camTop.Alpha = 78
+	camTop.Beta = 60
+	fTop, err := scene.Frame(camTop, paneW, paneH)
+	check(t, err)
+
+	// Encode both views on the same CommandEncoder into left/right split-screen panes.
+	enc, err := dev.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "multi-view frame"})
+	check(t, err)
+	leftRect := image.Rect(0, 0, paneW, paneH)
+	rightRect := image.Rect(paneW, 0, fullW, fullH)
+	check(t, primary.Encode(fFront, enc, GPUTarget{
+		Color:    targetView,
+		Format:   format,
+		Width:    fullW,
+		Height:   fullH,
+		Viewport: leftRect,
+	}))
+	check(t, secondary.Encode(fTop, enc, GPUTarget{
+		Color:    targetView,
+		Format:   format,
+		Width:    fullW,
+		Height:   fullH,
+		Viewport: rightRect,
+	}))
+	cmd, err := enc.Finish()
+	check(t, err)
+	_, err = dev.Queue().Submit(cmd)
+	check(t, err)
+	dev.Poll(wgpu.PollWait)
+	dev.FreeCommandBuffer(cmd)
+
+	// Primary uploaded geometry and textures once; secondary reused them with 0 uploads.
+	if primary.g.uploads != 2 || primary.g.textureUploads == 0 {
+		t.Fatalf("primary uploads = (%d geom, %d tex), want (2, >0)", primary.g.uploads, primary.g.textureUploads)
+	}
+	if secondary.g.uploads != 0 || secondary.g.textureUploads != 0 {
+		t.Fatalf("secondary uploads = (%d geom, %d tex), want (0, 0)", secondary.g.uploads, secondary.g.textureUploads)
+	}
+	if secondary.g.environmentTexture != primary.g.environmentTexture {
+		t.Fatal("expected secondary view to share primary environment texture")
+	}
+	if primary.g.reflection.texture != primary.g.environmentTexture.texture || secondary.g.reflection.texture != primary.g.environmentTexture.texture {
+		t.Fatal("expected primary and secondary reflections to share environment panorama texture")
+	}
+	if secondary.g.nodes[0].batches[7].buffer != primary.g.nodes[0].batches[7].buffer {
+		t.Fatal("expected secondary view to share primary mesh vertex buffer")
+	}
+	if secondary.g.nodes[1].batches[0].buffer != primary.g.nodes[1].batches[0].buffer {
+		t.Fatal("expected secondary view to share primary splat point buffer")
+	}
+	if secondary.g.uniform == primary.g.uniform || secondary.g.target.color == primary.g.target.color {
+		t.Fatal("expected secondary view to own distinct uniform and sceneTarget buffers")
+	}
+
+	gotSplit := readHostTarget(t, dev, targetTex, fullW, fullH, format, true)
+	wantFront, err := ref.Render(fFront)
+	check(t, err)
+	wantTop, err := ref.Render(fTop)
+	check(t, err)
+
+	for paneIdx, want := range []image.Image{wantFront, wantTop} {
+		ox := paneIdx * paneW
+		off := 0
+		for y := range paneH {
+			for x := range paneW {
+				if !closeRGB(at(gotSplit, ox+x, y), at(want, x, y), 2) {
+					off++
+				}
+			}
+		}
+		if off > 4 {
+			t.Fatalf("pane %d: %d pixels differ from reference renderer", paneIdx, off)
+		}
+	}
+
+	// Closing the primary session must leave shared resources intact for the
+	// secondary view and any view derived from it.
+	check(t, primary.Close())
+
+	tertiary, err := secondary.NewView()
+	check(t, err)
+	defer tertiary.Close()
+
+	soloTex, soloView := createHostTarget(t, dev, paneW, paneH, format)
+	check(t, tertiary.Render(fTop, GPUTarget{
+		Color:  soloView,
+		Format: format,
+		Width:  paneW,
+		Height: paneH,
+	}))
+	if tertiary.g.uploads != 0 || tertiary.g.textureUploads != 0 {
+		t.Fatalf("tertiary uploads after primary close = (%d geom, %d tex), want (0, 0)", tertiary.g.uploads, tertiary.g.textureUploads)
+	}
+	gotTertiary := readHostTarget(t, dev, soloTex, paneW, paneH, format, true)
+	off := 0
+	for y := range paneH {
+		for x := range paneW {
+			if !closeRGB(at(gotTertiary, x, y), at(wantTop, x, y), 2) {
+				off++
+			}
+		}
+	}
+	if off > 4 {
+		t.Fatalf("tertiary after primary close: %d pixels differ from reference renderer", off)
+	}
+}
+
+func TestGPUSessionReadDepthAndPick(t *testing.T) {
+	_, _, dev := newTestHostDevice(t)
+	sess, err := NewGPUSession(dev)
+	check(t, err)
+	defer sess.Close()
+
+	s := NewScene()
+	// Disable CPU BVH pick indexing so GPUSession.Pick exercises the GPU
+	// depth-buffer unproject and spatial AABB triangle filter path.
+	s.SetPickIndexing(false)
+
+	sphere, err := BuildSphere(Sphere{Radius: 0.7, Segments: 64, Rings: 32, Color: color.RGBA{220, 90, 60, 255}})
+	check(t, err)
+	sphereID, err := s.SetGeometry("sphere", sphere)
+	check(t, err)
+
+	cube, err := BuildCuboid(Cuboid{
+		Size:  nt3dmath.Vec3{X: 0.6, Y: 0.6, Z: 0.6},
+		Color: color.RGBA{70, 160, 240, 255},
+	})
+	check(t, err)
+	cubeID, err := s.SetGeometry("cube", cube)
+	check(t, err)
+	check(t, s.SetTransform(cubeID, nt3dmath.Translation(nt3dmath.Vec3{X: 1.4, Y: 0, Z: 0})))
+
+	cam := DefaultCamera()
+	cam.Alpha = 20
+	cam.Beta = -35
+	cam.Distance = 3.6
+
+	const w, h = 160, 120
+	format := gputypes.TextureFormatRGBA8Unorm
+	_, targetView := createHostTarget(t, dev, w, h, format)
+
+	for _, ss := range []int{1, 2} {
+		f, err := s.Frame(cam, w, h)
+		check(t, err)
+		f.Supersample = ss
+
+		check(t, sess.Render(f, GPUTarget{
+			Color:  targetView,
+			Format: format,
+			Width:  w,
+			Height: h,
+		}))
+
+		// 1. Background pixel near corner should report ok == false.
+		if _, _, ok, err := sess.ReadDepth(f, 2, 2, 0); err != nil || ok {
+			t.Fatalf("ss=%d: ReadDepth on background = (ok=%v, err=%v), want (false, nil)", ss, ok, err)
+		}
+
+		// 2. Center of sphere should report a valid depth and world position matching CPU Pick.
+		sx, sy, _, ok := f.Matrix.Project(nt3dmath.Vec3{}, w, h)
+		if !ok {
+			t.Fatal("sphere center not in view")
+		}
+		world, depth, ok, err := sess.ReadDepth(f, sx, sy, 2)
+		check(t, err)
+		if !ok || depth <= 0 || depth >= 1 {
+			t.Fatalf("ss=%d: ReadDepth on sphere = (world=%v, depth=%v, ok=%v)", ss, world, depth, ok)
+		}
+
+		wantHit := s.Pick(cam, f, sx, sy, 2)
+		if wantHit == nil || wantHit.Node != sphereID {
+			t.Fatalf("ss=%d: CPU Pick missed sphere: %+v", ss, wantHit)
+		}
+		if d := world.Sub(wantHit.Position); d.Dot(d) > 2e-3 {
+			t.Fatalf("ss=%d: ReadDepth world %v differs from CPU Pick %v", ss, world, wantHit.Position)
+		}
+
+		// 3. GPUSession.Pick on unindexed high-poly sphere matches CPU Pick.
+		gotHit := sess.Pick(s, cam, f, sx, sy, 2)
+		if gotHit == nil || gotHit.Node != sphereID || gotHit.Index != wantHit.Index {
+			t.Fatalf("ss=%d: GPUSession.Pick got %+v, want %+v", ss, gotHit, wantHit)
+		}
+
+		// 4. GPUSession.Pick with nil scene still resolves the frame's geometry.
+		nilSceneHit := sess.Pick(nil, cam, f, sx, sy, 2)
+		if nilSceneHit == nil || nilSceneHit.Node != sphereID || nilSceneHit.Index != wantHit.Index {
+			t.Fatalf("ss=%d: GPUSession.Pick(nil) got %+v, want %+v", ss, nilSceneHit, wantHit)
+		}
+
+		// 5. GPUSession.Pick on the cube hits the cube.
+		cx, cy, _, ok := f.Matrix.Project(nt3dmath.Vec3{X: 1.4}, w, h)
+		if !ok {
+			t.Fatal("cube center not in view")
+		}
+		cubeHit := sess.Pick(s, cam, f, cx, cy, 2)
+		if cubeHit == nil || cubeHit.Node != cubeID {
+			t.Fatalf("ss=%d: GPUSession.Pick on cube got %+v, want node %d", ss, cubeHit, cubeID)
+		}
+	}
+}
+
+func TestGPUSessionRenderToImage(t *testing.T) {
+	_, _, dev := newTestHostDevice(t)
+	sess, err := NewGPUSession(dev)
+	check(t, err)
+	defer sess.Close()
+
+	ref := NewGPURenderer()
+	defer ref.Close()
+
+	s := NewScene()
+	s.SetEnvironment(testEnvironment(t))
+	sphere, err := BuildSphere(Sphere{
+		Radius: 0.65,
+		Color:  color.RGBA{235, 110, 55, 255},
+		Material: &Material{
+			Specular:     0.6,
+			Shininess:    48,
+			Reflectivity: 0.3,
+		},
+	})
+	check(t, err)
+	_, err = s.SetGeometry("sphere", sphere)
+	check(t, err)
+
+	cam := DefaultCamera()
+	cam.Alpha = 20
+	cam.Beta = -35
+
+	reusable := image.NewNRGBA(image.Rect(0, 0, 96, 72))
+	if err := sess.RenderToImageInto(Frame{Width: 96, Height: 72}, nil); err == nil {
+		t.Fatal("expected error for nil destination image in RenderToImageInto")
+	}
+	if err := sess.RenderToImageInto(Frame{Width: 96, Height: 72}, image.NewNRGBA(image.Rect(0, 0, 32, 32))); err == nil {
+		t.Fatal("expected error for mismatched destination image size in RenderToImageInto")
+	}
+
+	for step := range 3 {
+		cam.Beta = float64(-35 + step*45)
+		f, err := s.Frame(cam, 96, 72)
+		check(t, err)
+		f.Supersample = 2
+
+		got, err := sess.RenderToImage(f)
+		check(t, err)
+		check(t, sess.RenderToImageInto(f, reusable))
+		want, err := ref.Render(f)
+		check(t, err)
+
+		if got.Bounds() != want.Bounds() {
+			t.Fatalf("step %d: bounds %v != %v", step, got.Bounds(), want.Bounds())
+		}
+		off := 0
+		for y := range 72 {
+			for x := range 96 {
+				if !closeRGB(at(got, x, y), at(want, x, y), 2) {
+					off++
+				}
+				if at(reusable, x, y) != at(got, x, y) {
+					t.Fatalf("step %d: RenderToImageInto pixel (%d,%d) = %v, want %v",
+						step, x, y, at(reusable, x, y), at(got, x, y))
+				}
+			}
+		}
+		if off > 4 {
+			t.Fatalf("step %d: %d pixels differ from reference renderer", step, off)
+		}
+	}
+	if sess.g.uploads != 1 {
+		t.Fatalf("uploads across 3 turntable frames = %d, want 1", sess.g.uploads)
 	}
 }

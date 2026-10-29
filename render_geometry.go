@@ -4,6 +4,7 @@ package nt3d
 import (
 	"encoding/binary"
 	"slices"
+	"unsafe"
 
 	"github.com/gogpu/wgpu"
 
@@ -21,6 +22,62 @@ type geometryKey struct {
 	shared   uint64
 }
 
+type manualSignature struct {
+	vertices *Vertex
+	nVerts   int
+	indices  *uint32
+	nIndices int
+	points   *Point
+	nPoints  int
+	boxes    *Box
+	nBoxes   int
+	lines    *Vertex
+	nLines   int
+	arrows   *Arrow
+	nArrows  int
+	material Material
+	hasMat   bool
+	style    PointStyle
+	drop     DropShadow
+}
+
+func manualSig(geom Geometry) manualSignature {
+	sig := manualSignature{
+		vertices: unsafe.SliceData(geom.Vertices),
+		nVerts:   len(geom.Vertices),
+		indices:  unsafe.SliceData(geom.Indices),
+		nIndices: len(geom.Indices),
+		points:   unsafe.SliceData(geom.Points),
+		nPoints:  len(geom.Points),
+		boxes:    unsafe.SliceData(geom.Boxes),
+		nBoxes:   len(geom.Boxes),
+		lines:    unsafe.SliceData(geom.Lines),
+		nLines:   len(geom.Lines),
+		arrows:   unsafe.SliceData(geom.Arrows),
+		nArrows:  len(geom.Arrows),
+		style:    geom.PointStyle,
+		drop:     geom.DropShadow,
+	}
+	if geom.Material != nil {
+		sig.material = *geom.Material
+		sig.hasMat = true
+	}
+	return sig
+}
+
+type sharedGeometry struct {
+	key           geometryKey
+	manual        manualSignature
+	refs          int
+	sh            gpuBatch
+	sprite        gpuBatch
+	axes, shBytes gpuBatch
+	order         gpuBatch
+	pointRevision uint64
+	skin          *gpuSkin
+	batches       [9]gpuBatch
+}
+
 // gpuGeometry is a geometry's uploaded primitives and the instance sets that
 // draw them: one set for each draw of the frame, reused across frames.
 type gpuGeometry struct {
@@ -33,9 +90,37 @@ type gpuGeometry struct {
 	batches       [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
 	sets          []*instanceSet
 	used          int // Sets drawn from this frame.
+	shared        *sharedGeometry
 }
 
-func (n *gpuGeometry) release() {
+func (n *gpuGeometry) release(shared *gpuShared) {
+	for _, s := range n.sets {
+		s.release()
+	}
+	n.sets = nil
+	if n.shared != nil && shared != nil {
+		shared.mu.Lock()
+		n.shared.refs--
+		if n.shared.refs > 0 {
+			shared.mu.Unlock()
+			return
+		}
+		if shared.geometries[n.shared.key] == n.shared {
+			delete(shared.geometries, n.shared.key)
+		}
+		sg := n.shared
+		shared.mu.Unlock()
+		sg.skin.release()
+		releaseBatch(sg.sprite)
+		releaseBatch(sg.sh)
+		releaseBatch(sg.axes)
+		releaseBatch(sg.shBytes)
+		releaseBatch(sg.order)
+		for _, b := range sg.batches {
+			releaseBatch(b)
+		}
+		return
+	}
 	n.skin.release()
 	releaseBatch(n.sprite)
 	releaseBatch(n.sh)
@@ -44,9 +129,6 @@ func (n *gpuGeometry) release() {
 	releaseBatch(n.order)
 	for _, b := range n.batches {
 		releaseBatch(b)
-	}
-	for _, s := range n.sets {
-		s.release()
 	}
 }
 
@@ -128,7 +210,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 	}
 	for key, node := range g.geometries {
 		if !used[key] {
-			node.release()
+			node.release(g.shared)
 			delete(g.geometries, key)
 		}
 		node.used = 0
@@ -149,6 +231,25 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 	g.nodes = make([]*gpuGeometry, len(f.Geometry))
 	for i, geom := range f.Geometry {
 		node := g.geometries[keys[i]]
+		if node == nil && g.shared != nil {
+			g.shared.mu.Lock()
+			if sg := g.shared.geometries[keys[i]]; sg != nil && (!keys[i].manual || sg.manual == manualSig(geom)) {
+				sg.refs++
+				node = &gpuGeometry{
+					sh:            sg.sh,
+					sprite:        sg.sprite,
+					axes:          sg.axes,
+					shBytes:       sg.shBytes,
+					order:         sg.order,
+					pointRevision: sg.pointRevision,
+					skin:          sg.skin,
+					batches:       sg.batches,
+					shared:        sg,
+				}
+				g.geometries[keys[i]] = node
+			}
+			g.shared.mu.Unlock()
+		}
 		if node == nil {
 			node = &gpuGeometry{}
 			for kind, data := range geometryData(geom) {
@@ -157,7 +258,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					record = pointRecord
 				}
 				if err := g.uploadData(dev, &node.batches[kind], data, record); err != nil {
-					node.release()
+					node.release(nil)
 					return err
 				}
 			}
@@ -168,33 +269,58 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				node.pointRevision = geom.pointUpdate.revision
 			}
 			if err := g.uploadData(dev, &node.sh, gaussianSHData(&geom), 4); err != nil {
-				node.release()
+				node.release(nil)
 				return err
 			}
 			if err := g.uploadData(dev, &node.sprite, spriteData(geom.PointStyle, geom.Points), 48); err != nil {
-				node.release()
+				node.release(nil)
 				return err
 			}
 			if compactGaussians(geom.PointStyle) {
 				if err := g.uploadData(dev, &node.axes, compactAxisData(geom.Points), 4); err != nil {
-					node.release()
+					node.release(nil)
 					return err
 				}
 			}
 			if compactGaussians(geom.PointStyle) || geom.GaussianSHPalette != nil {
 				if err := g.uploadData(dev, &node.shBytes, compactSHData(&geom), 4); err != nil {
-					node.release()
+					node.release(nil)
 					return err
 				}
 			}
 			if geom.Clusters != nil && geom.PointStyle.Shape == GaussianPoint {
 				if err := g.uploadData(dev, &node.order, orderData(geom.Clusters.Order), 4); err != nil {
-					node.release()
+					node.release(nil)
 					return err
 				}
 			}
+			if g.shared != nil {
+				sg := &sharedGeometry{
+					key:           keys[i],
+					refs:          1,
+					sh:            node.sh,
+					sprite:        node.sprite,
+					axes:          node.axes,
+					shBytes:       node.shBytes,
+					order:         node.order,
+					pointRevision: node.pointRevision,
+					batches:       node.batches,
+				}
+				if keys[i].manual {
+					sg.manual = manualSig(geom)
+				}
+				node.shared = sg
+				g.shared.mu.Lock()
+				g.shared.geometries[keys[i]] = sg
+				g.shared.mu.Unlock()
+			}
 			g.geometries[keys[i]] = node
 			g.uploads++
+		}
+		if node.shared != nil {
+			node.order = node.shared.order
+			node.pointRevision = node.shared.pointRevision
+			node.skin = node.shared.skin
 		}
 		if geom.Clusters == nil && node.order.buffer != nil {
 			// A point update dropped the clusters the order was uploaded for.
@@ -237,6 +363,10 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				}
 			}
 			node.pointRevision = revision
+		}
+		if node.shared != nil {
+			node.shared.order = node.order
+			node.shared.pointRevision = node.pointRevision
 		}
 		g.nodes[i] = node
 		if !drawn[i] {

@@ -196,3 +196,70 @@ func TestNodePickIndexing(t *testing.T) {
 		t.Fatal("accepted an unknown node")
 	}
 }
+
+func TestWarmPickIndices(t *testing.T) {
+	sphere, err := BuildSphere(Sphere{Radius: .6, Segments: 64, Rings: 32})
+	check(t, err)
+	shared, err := NewSharedGeometry(sphere)
+	check(t, err)
+
+	s := NewScene()
+	nodeID, err := s.SetGeometry("solo", sphere)
+	check(t, err)
+	_, err = s.SetShared("inst-1", shared)
+	check(t, err)
+	_, err = s.SetShared("inst-2", shared)
+	check(t, err)
+
+	// Before warming or picking, neither slot has started.
+	if s.nodes[nodeID].pickIndex != nil || shared.pick != nil {
+		t.Fatal("pick index started before WarmPickIndices or Pick")
+	}
+
+	<-s.WarmPickIndices()
+
+	if s.nodes[nodeID].pickIndex == nil || s.nodes[nodeID].pickIndex.index.Load() == nil {
+		t.Fatal("solo node BVH not warmed")
+	}
+	if shared.pick == nil || shared.pick.index.Load() == nil {
+		t.Fatal("shared geometry BVH not warmed")
+	}
+
+	camera := DefaultCamera()
+	f, err := s.Frame(camera, 320, 240)
+	check(t, err)
+	if s.hasUnindexedLargeMesh(f) {
+		t.Fatal("expected all large meshes to be indexed after WarmPickIndices")
+	}
+	hit := s.Pick(camera, f, 160, 120, 0)
+	if hit == nil || hit.Primitive != TrianglePrimitive {
+		t.Fatalf("expected triangle hit after WarmPickIndices, got %+v", hit)
+	}
+}
+
+func TestFrameUnproject(t *testing.T) {
+	s := NewScene()
+	for _, proj := range []Projection{Perspective, Orthographic} {
+		cam := DefaultCamera()
+		cam.Projection = proj
+		cam.Alpha = 25
+		cam.Beta = -40
+		cam.Distance = 3.5
+		f, err := s.Frame(cam, 640, 480)
+		check(t, err)
+
+		want := nt3dmath.Vec3{X: 0.35, Y: -0.25, Z: 0.45}
+		px, py, pz, ok := f.Matrix.Project(want, f.Width, f.Height)
+		if !ok {
+			t.Fatalf("proj %v: Project failed for %v", proj, want)
+		}
+		got, ok := f.Unproject(px, py, pz)
+		if !ok {
+			t.Fatalf("proj %v: Unproject failed", proj)
+		}
+		diff := got.Sub(want)
+		if diff.Dot(diff) > 1e-8 {
+			t.Fatalf("proj %v: Unproject(%v, %v, %v) = %v, want %v", proj, px, py, pz, got, want)
+		}
+	}
+}

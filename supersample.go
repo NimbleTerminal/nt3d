@@ -190,7 +190,7 @@ func (g *gpuRenderer) prepareTarget(dev *wgpu.Device, f Frame) (err error) {
 		return nil
 	}
 	if t.pipeline == nil {
-		if err = t.setup(dev); err != nil {
+		if err = t.setup(dev, g.shared); err != nil {
 			return err
 		}
 	}
@@ -223,7 +223,43 @@ func (g *gpuRenderer) prepareTarget(dev *wgpu.Device, f Frame) (err error) {
 }
 
 // setup creates the resolve pass.
-func (t *sceneTarget) setup(dev *wgpu.Device) (err error) {
+func (t *sceneTarget) setup(dev *wgpu.Device, shared *gpuShared) (err error) {
+	if shared != nil {
+		shared.mu.Lock()
+		if shared.resolveShader == nil {
+			if err = t.setupShared(dev); err != nil {
+				shared.mu.Unlock()
+				return err
+			}
+			shared.resolveShader = t.shader
+			shared.resolveGroup = t.group
+			shared.resolveSampledGroup = t.sampledGroup
+			shared.resolveLayout = t.layout
+			shared.resolvePipelines = t.pipelines
+		} else {
+			t.shader = shared.resolveShader
+			t.group = shared.resolveGroup
+			t.sampledGroup = shared.resolveSampledGroup
+			t.layout = shared.resolveLayout
+			t.pipelines = shared.resolvePipelines
+			t.pipeline = t.pipelines[resolveKey{format: gputypes.TextureFormatRGBA8Unorm, load: false}]
+		}
+		shared.mu.Unlock()
+	} else if err = t.setupShared(dev); err != nil {
+		return err
+	}
+	if t.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 32, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst}); err != nil {
+		return err
+	}
+	if t.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: t.group, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: t.uniform, Size: 32}}}); err != nil {
+		t.uniform.Release()
+		t.uniform = nil
+		return err
+	}
+	return nil
+}
+
+func (t *sceneTarget) setupShared(dev *wgpu.Device) (err error) {
 	if t.shader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d resolve", WGSL: resolveShader}); err != nil {
 		return err
 	}
@@ -233,21 +269,19 @@ func (t *sceneTarget) setup(dev *wgpu.Device) (err error) {
 	if t.sampledGroup, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}}}); err != nil {
 		return err
 	}
-	if t.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 32, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst}); err != nil {
-		return err
-	}
-	if t.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: t.group, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: t.uniform, Size: 32}}}); err != nil {
-		return err
-	}
 	if t.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{t.group, t.sampledGroup}}); err != nil {
 		return err
 	}
 	t.pipelines = make(map[resolveKey]*wgpu.RenderPipeline)
-	t.pipeline, err = t.resolvePipeline(dev, gputypes.TextureFormatRGBA8Unorm, false)
+	t.pipeline, err = t.resolvePipeline(dev, nil, gputypes.TextureFormatRGBA8Unorm, false)
 	return err
 }
 
-func (t *sceneTarget) resolvePipeline(dev *wgpu.Device, format gputypes.TextureFormat, load bool) (*wgpu.RenderPipeline, error) {
+func (t *sceneTarget) resolvePipeline(dev *wgpu.Device, shared *gpuShared, format gputypes.TextureFormat, load bool) (*wgpu.RenderPipeline, error) {
+	if shared != nil {
+		shared.mu.Lock()
+		defer shared.mu.Unlock()
+	}
 	key := resolveKey{format: format, load: load}
 	if p := t.pipelines[key]; p != nil {
 		return p, nil
@@ -276,7 +310,7 @@ func (t *sceneTarget) resolvePipeline(dev *wgpu.Device, format gputypes.TextureF
 // target.
 func (g *gpuRenderer) renderScene(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame, target GPUTarget, draw func(color, depth *wgpu.TextureView) error) error {
 	t := &g.target
-	pipeline, err := t.resolvePipeline(dev, target.Format, target.Load)
+	pipeline, err := t.resolvePipeline(dev, g.shared, target.Format, target.Load)
 	if err != nil {
 		return err
 	}
@@ -327,6 +361,19 @@ func (g *gpuRenderer) renderScene(dev *wgpu.Device, encoder *wgpu.CommandEncoder
 	pass.SetBindGroup(1, t.sampled, nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: 3, InstanceCount: 1})
 	return pass.End()
+}
+
+// releaseView frees the per-view scene target resources, leaving shared
+// resolve pipelines and layouts to gpuShared.
+func (t *sceneTarget) releaseView() {
+	t.releaseTextures()
+	if t.bind != nil {
+		t.bind.Release()
+	}
+	if t.uniform != nil {
+		t.uniform.Release()
+	}
+	*t = sceneTarget{}
 }
 
 // release frees the scene target and resolve pass.

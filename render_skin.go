@@ -35,6 +35,14 @@ func (g *gpuRenderer) initSkin(dev *wgpu.Device) error {
 	if g.skinPipeline != nil {
 		return nil
 	}
+	if g.shared != nil {
+		g.shared.mu.Lock()
+		defer g.shared.mu.Unlock()
+		if g.shared.skinPipeline != nil {
+			g.skinLayout, g.skinPipeline = g.shared.skinLayout, g.shared.skinPipeline
+			return nil
+		}
+	}
 	var entries []gputypes.BindGroupLayoutEntry
 	for i := range 4 {
 		typ := gputypes.BufferBindingTypeReadOnlyStorage
@@ -65,6 +73,9 @@ func (g *gpuRenderer) initSkin(dev *wgpu.Device) error {
 		return err
 	}
 	g.skinLayout, g.skinPipeline = layout, pipeline
+	if g.shared != nil {
+		g.shared.skinLayout, g.shared.skinPipeline = layout, pipeline
+	}
 	return nil
 }
 
@@ -77,6 +88,9 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 			continue
 		}
 		node := g.nodes[i]
+		if node.shared != nil && node.skin == nil {
+			node.skin = node.shared.skin
+		}
 		if node.skin != nil && node.skin.revision == p.revision {
 			continue
 		}
@@ -127,6 +141,9 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 				return err
 			}
 			skin.bind = bind
+			if node.shared != nil {
+				node.shared.skin = skin
+			}
 		}
 		skin := node.skin
 		if skin.sourceRevision != p.sourceRevision {
