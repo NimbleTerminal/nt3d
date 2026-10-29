@@ -35,7 +35,10 @@ func supersampleFactor(f Frame) int {
 // filter exact for integer factors, encoding or decoding sRGB as the target
 // format requires.
 const resolveShader = `
-struct Resolve { factor: vec4<f32> };
+struct Resolve {
+ factor: vec4<f32>,
+ origin: vec4<i32>,
+};
 @group(0) @binding(0) var<uniform> r: Resolve;
 @group(1) @binding(0) var src: texture_2d<f32>;
 @vertex fn vs_resolve(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
@@ -53,7 +56,7 @@ fn decode(c: vec3<f32>) -> vec3<f32> {
 @fragment fn fs_resolve(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
  let s = i32(r.factor.x);
  let n = f32(s * s);
- let base = vec2<i32>(floor(p.xy)) * s;
+ let base = (vec2<i32>(floor(p.xy)) - r.origin.xy) * s;
  var sum = vec4<f32>(0.0);
  for (var y = 0; y < s; y++) {
   for (var x = 0; x < s; x++) {
@@ -103,12 +106,32 @@ type sceneTarget struct {
 	shader               *wgpu.ShaderModule
 }
 
+func targetViewport(target GPUTarget) image.Rectangle {
+	if target.Viewport == (image.Rectangle{}) {
+		return image.Rect(0, 0, target.Width, target.Height)
+	}
+	return target.Viewport
+}
+
 func validateTarget(f Frame, target GPUTarget) error {
 	if target.Color == nil {
 		return errors.New("nt3d: nil GPU target color view")
 	}
-	if target.Width != f.Width || target.Height != f.Height {
-		return fmt.Errorf("nt3d: GPU target dimensions %dx%d do not match frame %dx%d", target.Width, target.Height, f.Width, f.Height)
+	if target.Width <= 0 || target.Height <= 0 {
+		return fmt.Errorf("nt3d: invalid GPU target dimensions %dx%d", target.Width, target.Height)
+	}
+	if target.Viewport == (image.Rectangle{}) {
+		if target.Width != f.Width || target.Height != f.Height {
+			return fmt.Errorf("nt3d: GPU target dimensions %dx%d do not match frame %dx%d", target.Width, target.Height, f.Width, f.Height)
+		}
+	} else {
+		vp := target.Viewport
+		if vp.Min.X < 0 || vp.Min.Y < 0 || vp.Max.X > target.Width || vp.Max.Y > target.Height || vp.Dx() <= 0 || vp.Dy() <= 0 {
+			return fmt.Errorf("nt3d: GPU target viewport %v out of target bounds %dx%d", vp, target.Width, target.Height)
+		}
+		if vp.Dx() != f.Width || vp.Dy() != f.Height {
+			return fmt.Errorf("nt3d: GPU target viewport dimensions %dx%d do not match frame %dx%d", vp.Dx(), vp.Dy(), f.Width, f.Height)
+		}
 	}
 	switch target.Format {
 	case gputypes.TextureFormatRGBA8Unorm,
@@ -210,10 +233,10 @@ func (t *sceneTarget) setup(dev *wgpu.Device) (err error) {
 	if t.sampledGroup, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}}}); err != nil {
 		return err
 	}
-	if t.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 16, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst}); err != nil {
+	if t.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 32, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst}); err != nil {
 		return err
 	}
-	if t.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: t.group, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: t.uniform, Size: 16}}}); err != nil {
+	if t.bind, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: t.group, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: t.uniform, Size: 32}}}); err != nil {
 		return err
 	}
 	if t.layout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{t.group, t.sampledGroup}}); err != nil {
@@ -260,24 +283,44 @@ func (g *gpuRenderer) renderScene(dev *wgpu.Device, encoder *wgpu.CommandEncoder
 	if err := draw(t.colorView, t.depthView); err != nil {
 		return err
 	}
+	vp := targetViewport(target)
+	fullTarget := vp.Min.X == 0 && vp.Min.Y == 0 && vp.Max.X == target.Width && vp.Max.Y == target.Height
 	load := float32(0)
 	if target.Load {
 		load = 1
 	}
-	var factor [16]byte
-	binary.LittleEndian.PutUint32(factor[:], math.Float32bits(float32(supersampleFactor(f))))
-	binary.LittleEndian.PutUint32(factor[4:], math.Float32bits(resolveTransfer(f.Linear, target.Format)))
-	binary.LittleEndian.PutUint32(factor[8:], math.Float32bits(load))
-	if err := dev.Queue().WriteBuffer(t.uniform, 0, factor[:]); err != nil {
+	var uniform [32]byte
+	binary.LittleEndian.PutUint32(uniform[0:], math.Float32bits(float32(supersampleFactor(f))))
+	binary.LittleEndian.PutUint32(uniform[4:], math.Float32bits(resolveTransfer(f.Linear, target.Format)))
+	binary.LittleEndian.PutUint32(uniform[8:], math.Float32bits(load))
+	binary.LittleEndian.PutUint32(uniform[16:], uint32(int32(vp.Min.X)))
+	binary.LittleEndian.PutUint32(uniform[20:], uint32(int32(vp.Min.Y)))
+	if err := dev.Queue().WriteBuffer(t.uniform, 0, uniform[:]); err != nil {
 		return err
 	}
 	loadOp := gputypes.LoadOpClear
-	if target.Load {
+	if target.Load || !fullTarget {
 		loadOp = gputypes.LoadOpLoad
 	}
 	pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: target.Color, LoadOp: loadOp, StoreOp: gputypes.StoreOpStore}}})
 	if err != nil {
 		return err
+	}
+	if !fullTarget {
+		pass.SetViewport(gputypes.Viewport{
+			X:        float32(vp.Min.X),
+			Y:        float32(vp.Min.Y),
+			Width:    float32(vp.Dx()),
+			Height:   float32(vp.Dy()),
+			MinDepth: 0,
+			MaxDepth: 1,
+		})
+		pass.SetScissorRect(gputypes.ScissorRect{
+			X:      uint32(vp.Min.X),
+			Y:      uint32(vp.Min.Y),
+			Width:  uint32(vp.Dx()),
+			Height: uint32(vp.Dy()),
+		})
 	}
 	pass.SetPipeline(pipeline)
 	pass.SetBindGroup(0, t.bind, nil)

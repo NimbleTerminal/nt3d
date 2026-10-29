@@ -7,6 +7,7 @@
 //   - Left-mouse drag: orbit camera
 //   - Mouse wheel: zoom camera
 //   - Space: toggle scene animation
+//   - V: toggle picture-in-picture sub-viewport (GPUTarget.Viewport)
 //   - L: toggle Load compositing mode over GoGPU background
 //   - S: cycle supersampling (1x / 2x)
 //   - 2: open a second GoGPU window sharing the same GPU device
@@ -16,6 +17,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
 	"image/color"
 	"log"
 	"math"
@@ -135,11 +137,13 @@ func main() {
 
 	var (
 		session     *nt3d.GPUSession
+		pipSession  *nt3d.GPUSession
 		secondSess  *nt3d.GPUSession
 		dragging    bool
 		lastX       float64
 		lastY       float64
 		animate     = true
+		pipView     = true
 		loadCompose = false
 		supersample = 1
 		angle       float64
@@ -151,6 +155,9 @@ func main() {
 	defer func() {
 		if secondSess != nil {
 			_ = secondSess.Close()
+		}
+		if pipSession != nil {
+			_ = pipSession.Close()
 		}
 		if session != nil {
 			_ = session.Close()
@@ -187,6 +194,9 @@ func main() {
 			app.Quit()
 		case gpucontext.KeySpace:
 			animate = !animate
+		case gpucontext.KeyV:
+			pipView = !pipView
+			fmt.Printf("Sub-viewport inset: %v\n", pipView)
 		case gpucontext.KeyL:
 			loadCompose = !loadCompose
 			fmt.Printf("Load composition mode: %v\n", loadCompose)
@@ -296,6 +306,35 @@ func main() {
 		}); err != nil {
 			log.Printf("session.Encode: %v", err)
 			return
+		}
+
+		if pipView && int(w) >= 320 && int(h) >= 240 {
+			if pipSession == nil {
+				var err error
+				pipSession, err = nt3d.NewGPUSessionFromProvider(app.GPUContextProvider())
+				if err != nil {
+					log.Printf("NewGPUSessionFromProvider (pip): %v", err)
+				}
+			}
+			if pipSession != nil {
+				pipW, pipH := max(160, int(w)/4), max(120, int(h)/4)
+				margin := 16
+				pipRect := image.Rect(int(w)-pipW-margin, margin, int(w)-margin, margin+pipH)
+				topCam := camera
+				topCam.Alpha = 78
+				topCam.Beta = camera.Beta + 90
+				if pipFrame, err := scene.Frame(topCam, pipW, pipH); err == nil {
+					if err := pipSession.Encode(pipFrame, dc.CommandEncoder(), nt3d.GPUTarget{
+						Color:    dc.SurfaceView(),
+						Format:   dc.Format(),
+						Width:    int(w),
+						Height:   int(h),
+						Viewport: pipRect,
+					}); err != nil {
+						log.Printf("pipSession.Encode: %v", err)
+					}
+				}
+			}
 		}
 		dc.MarkPreserveContent()
 

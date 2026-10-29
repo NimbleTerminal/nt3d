@@ -145,6 +145,13 @@ func readHostTarget(t *testing.T, dev *wgpu.Device, tex *wgpu.Texture, w, h int,
 		BufferLayout: wgpu.ImageDataLayout{Offset: 0, BytesPerRow: uint32(bytesPerRow), RowsPerImage: uint32(h)},
 		Size:         wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1},
 	}})
+	enc.TransitionTextures([]wgpu.TextureBarrier{{
+		Texture: tex,
+		Usage: wgpu.TextureUsageTransition{
+			OldUsage: gputypes.TextureUsageCopySrc,
+			NewUsage: gputypes.TextureUsageRenderAttachment,
+		},
+	}})
 	cmd, err := enc.Finish()
 	if err != nil {
 		t.Fatalf("Finish: %v", err)
@@ -410,6 +417,157 @@ func TestGPUSessionSharedDeviceAndResize(t *testing.T) {
 	}
 }
 
+func TestGPUSessionSubViewportAndSplitScreen(t *testing.T) {
+	_, _, dev := newTestHostDevice(t)
+	session, err := NewGPUSession(dev)
+	check(t, err)
+	defer session.Close()
+
+	ref := NewGPURenderer()
+	defer ref.Close()
+
+	scene := NewScene()
+	cube, err := BuildCuboid(Cuboid{
+		Size:  nt3dmath.Vec3{X: 1.1, Y: 0.9, Z: 0.8},
+		Color: color.RGBA{230, 80, 50, 255},
+	})
+	check(t, err)
+	_, err = scene.SetGeometry("cube", cube)
+	check(t, err)
+
+	ball, err := BuildSphere(Sphere{
+		Radius: 0.45,
+		Color:  color.RGBA{50, 180, 240, 255},
+	})
+	check(t, err)
+	ballID, err := scene.SetGeometry("ball", ball)
+	check(t, err)
+	check(t, scene.SetTransform(ballID, nt3dmath.Translation(nt3dmath.Vec3{X: 0.85, Y: -0.35, Z: 0.25})))
+
+	const (
+		fullW, fullH = 128, 96
+		paneW, paneH = 64, 48
+	)
+	format := gputypes.TextureFormatBGRA8UnormSrgb
+	tex, view := createHostTarget(t, dev, fullW, fullH, format)
+
+	// Clear the full target first so we verify each sub-viewport preserves
+	// previous quadrants while overwriting its own rectangle.
+	enc, err := dev.CreateCommandEncoder(nil)
+	check(t, err)
+	pass, err := enc.BeginRenderPass(&wgpu.RenderPassDescriptor{
+		ColorAttachments: []wgpu.RenderPassColorAttachment{{
+			View:       view,
+			LoadOp:     gputypes.LoadOpClear,
+			StoreOp:    gputypes.StoreOpStore,
+			ClearValue: gputypes.Color{R: 0, G: 0, B: 0, A: 1},
+		}},
+	})
+	check(t, err)
+	check(t, pass.End())
+	cmd, err := enc.Finish()
+	check(t, err)
+	_, err = dev.Queue().Submit(cmd)
+	check(t, err)
+	dev.Poll(wgpu.PollWait)
+	dev.FreeCommandBuffer(cmd)
+
+	type paneSpec struct {
+		name        string
+		rect        image.Rectangle
+		alpha, beta float64
+		bg          color.RGBA
+		supersample int
+	}
+	panes := []paneSpec{
+		{name: "top-left", rect: image.Rect(0, 0, paneW, paneH), alpha: 20, beta: -35, bg: color.RGBA{24, 30, 48, 255}, supersample: 1},
+		{name: "top-right", rect: image.Rect(paneW, 0, fullW, paneH), alpha: 75, beta: 0, bg: color.RGBA{44, 24, 36, 255}, supersample: 2},
+		{name: "bottom-left", rect: image.Rect(0, paneH, paneW, fullH), alpha: 5, beta: 90, bg: color.RGBA{20, 44, 32, 255}, supersample: 1},
+		{name: "bottom-right", rect: image.Rect(paneW, paneH, fullW, fullH), alpha: -25, beta: 140, bg: color.RGBA{46, 38, 20, 255}, supersample: 2},
+	}
+
+	wants := make([]image.Image, len(panes))
+	for i, p := range panes {
+		cam := DefaultCamera()
+		cam.Alpha = p.alpha
+		cam.Beta = p.beta
+		f, err := scene.Frame(cam, p.rect.Dx(), p.rect.Dy())
+		check(t, err)
+		f.Background = p.bg
+		f.Supersample = p.supersample
+
+		want, err := ref.Render(f)
+		check(t, err)
+		wants[i] = want
+
+		check(t, session.Render(f, GPUTarget{
+			Color:    view,
+			Format:   format,
+			Width:    fullW,
+			Height:   fullH,
+			Viewport: p.rect,
+		}))
+	}
+
+	gotFull := readHostTarget(t, dev, tex, fullW, fullH, format, true)
+	for i, p := range panes {
+		off := 0
+		for y := range paneH {
+			for x := range paneW {
+				if !closeRGB(at(gotFull, p.rect.Min.X+x, p.rect.Min.Y+y), at(wants[i], x, y), 2) {
+					off++
+				}
+			}
+		}
+		if off > 0 {
+			t.Fatalf("pane %s (%v): %d pixels differ by >2", p.name, p.rect, off)
+		}
+	}
+
+	// Now composite a transparent picture-in-picture overlay into a centered
+	// sub-viewport with Load: true and verify outside pixels and uncovered
+	// inside pixels remain intact while the overlay's center is drawn.
+	pipRect := image.Rect(40, 24, 88, 72)
+	overlayScene := NewScene()
+	marker, err := BuildSphere(Sphere{
+		Radius:   0.65,
+		Color:    color.RGBA{250, 230, 40, 255},
+		Material: &Material{Unlit: true},
+	})
+	check(t, err)
+	_, err = overlayScene.SetGeometry("marker", marker)
+	check(t, err)
+	pipFrame, err := overlayScene.Frame(DefaultCamera(), pipRect.Dx(), pipRect.Dy())
+	check(t, err)
+	pipFrame.Background = color.RGBA{0, 0, 0, 0}
+	pipFrame.Supersample = 2
+
+	check(t, session.Render(pipFrame, GPUTarget{
+		Color:    view,
+		Format:   format,
+		Width:    fullW,
+		Height:   fullH,
+		Viewport: pipRect,
+		Load:     true,
+	}))
+
+	gotOverlay := readHostTarget(t, dev, tex, fullW, fullH, format, true)
+	// Outside pipRect must be completely unchanged.
+	if at(gotOverlay, 10, 10) != at(gotFull, 10, 10) {
+		t.Fatalf("outside pixel (10,10) changed from %v to %v", at(gotFull, 10, 10), at(gotOverlay, 10, 10))
+	}
+	// Corner inside pipRect (41, 25) is uncovered by the sphere, so Load: true
+	// preserves the underlying split-screen pixel.
+	if !closeRGB(at(gotOverlay, 41, 25), at(gotFull, 41, 25), 2) {
+		t.Fatalf("uncovered pip corner (41,25) = %v, want underlying %v", at(gotOverlay, 41, 25), at(gotFull, 41, 25))
+	}
+	// Center of pipRect (64, 48) must show the yellow unlit marker sphere.
+	center := at(gotOverlay, 64, 48)
+	if !closeRGB(center, color.RGBA{250, 230, 40, 255}, 3) {
+		t.Fatalf("pip center (64,48) = %v, want yellow marker", center)
+	}
+}
+
 func TestGPUSessionValidationAndLifecycle(t *testing.T) {
 	if _, err := NewGPUSession(nil); !errors.Is(err, ErrGPUUnavailable) {
 		t.Fatalf("NewGPUSession(nil) = %v, want ErrGPUUnavailable", err)
@@ -454,6 +612,18 @@ func TestGPUSessionValidationAndLifecycle(t *testing.T) {
 	// Dimension mismatch.
 	if err := session.Render(f, GPUTarget{Color: view, Format: gputypes.TextureFormatRGBA8Unorm, Width: 64, Height: 32}); err == nil {
 		t.Fatal("expected error for target dimension mismatch")
+	}
+	// Out-of-bounds viewport.
+	if err := session.Render(f, GPUTarget{Color: view, Format: gputypes.TextureFormatRGBA8Unorm, Width: 64, Height: 64, Viewport: image.Rect(40, 0, 72, 32)}); err == nil {
+		t.Fatal("expected error for out-of-bounds target viewport")
+	}
+	// Negative viewport origin.
+	if err := session.Render(f, GPUTarget{Color: view, Format: gputypes.TextureFormatRGBA8Unorm, Width: 64, Height: 64, Viewport: image.Rect(-4, 0, 28, 32)}); err == nil {
+		t.Fatal("expected error for negative target viewport origin")
+	}
+	// Viewport dimension mismatch against Frame.
+	if err := session.Render(f, GPUTarget{Color: view, Format: gputypes.TextureFormatRGBA8Unorm, Width: 64, Height: 64, Viewport: image.Rect(0, 0, 16, 16)}); err == nil {
+		t.Fatal("expected error for viewport dimension mismatch")
 	}
 	// Unsupported format.
 	if err := session.Render(f, GPUTarget{Color: view, Format: gputypes.TextureFormatDepth32Float, Width: 32, Height: 32}); err == nil {

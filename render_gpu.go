@@ -996,12 +996,20 @@ type GPUTarget struct {
 	// Format is the texture format of Color (RGBA8Unorm, RGBA8UnormSrgb,
 	// BGRA8Unorm, BGRA8UnormSrgb, or RGBA16Float).
 	Format gputypes.TextureFormat
-	// Width and Height are the pixel dimensions of Color and must match
-	// Frame.Width and Frame.Height.
+	// Width and Height are the pixel dimensions of Color. When Viewport is
+	// zero, they must match Frame.Width and Frame.Height.
 	Width, Height int
-	// Load preserves existing pixels in Color and alpha-composites the
-	// resolved scene over them when true; otherwise the resolve pass
-	// overwrites Color.
+	// Viewport is an optional sub-rectangle of Color, in pixel coordinates
+	// within (0, 0)-(Width, Height), to resolve the Frame into. When zero,
+	// the Frame resolves into the full (0, 0)-(Width, Height) bounds of
+	// Color. When non-zero, Viewport must lie within (0, 0)-(Width, Height)
+	// and its dimensions (Viewport.Dx(), Viewport.Dy()) must match
+	// Frame.Width and Frame.Height.
+	Viewport image.Rectangle
+	// Load preserves existing pixels in the resolved region of Color and
+	// alpha-composites the resolved scene over them when true; otherwise the
+	// resolve pass overwrites the resolved region. Pixels outside a
+	// sub-rectangle Viewport are always preserved.
 	Load bool
 }
 

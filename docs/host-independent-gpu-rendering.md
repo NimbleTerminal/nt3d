@@ -33,13 +33,22 @@ type GPUTarget struct {
 	Format gputypes.TextureFormat
 
 	// Width and Height are the pixel dimensions of Color (required).
-	// They must match Frame.Width and Frame.Height.
+	// When Viewport is zero, they must match Frame.Width and Frame.Height.
 	Width  int
 	Height int
 
-	// Load preserves the existing contents of Color and alpha-blends the
-	// resolved 3D frame over it when true. When false, Color is cleared
-	// or overwritten by the resolved frame.
+	// Viewport is an optional sub-rectangle of Color, in pixel coordinates
+	// within (0, 0)-(Width, Height), to resolve the Frame into. When zero,
+	// the Frame resolves into the full (0, 0)-(Width, Height) bounds of
+	// Color. When non-zero, Viewport must lie within (0, 0)-(Width, Height)
+	// and its dimensions (Viewport.Dx(), Viewport.Dy()) must match
+	// Frame.Width and Frame.Height.
+	Viewport image.Rectangle
+
+	// Load preserves the existing contents of the resolved region of Color and
+	// alpha-blends the resolved 3D frame over it when true. When false, the
+	// resolved region of Color is overwritten by the resolved frame. Pixels
+	// outside a sub-rectangle Viewport are always preserved.
 	Load bool
 }
 
@@ -131,7 +140,15 @@ When `target.Load == true` (for example, overlaying a 3D viewport or gizmo on to
    - For $\alpha > 0$, the un-premultiplied color is $\text{rgb} = \frac{\sum \text{rgb}_i}{\sum a_i}$, which is then passed through the sRGB transfer function (`encode` or `decode`) without darkening semi-transparent or supersampled silhouette edges.
 3. The resolve pipeline uses `gputypes.LoadOpLoad` on `target.Color` and `gputypes.BlendStateAlpha()` (`SrcAlpha, OneMinusSrcAlpha`), compositing the resolved 3D frame cleanly over prior host content.
 
-### 3.4 Device-Native Textures & Procedural Mipmap Generation
+### 3.4 Sub-Viewport & Split-Screen Resolve (`GPUTarget.Viewport`)
+
+When `target.Viewport` is non-zero (for example, rendering a 3D pane inside a larger window swapchain, a 2×2 quad split-screen, or a picture-in-picture inset):
+
+1. `validateTarget` verifies that `target.Viewport` lies within `(0, 0)-(target.Width, target.Height)` and that `(target.Viewport.Dx(), target.Viewport.Dy()) == (f.Width, f.Height)`.
+2. The resolve pass opens `target.Color` with `gputypes.LoadOpLoad` so all pixels outside `target.Viewport` remain untouched, sets both `pass.SetViewport(...)` and `pass.SetScissorRect(...)` to `target.Viewport`, and passes `r.origin.xy = (Viewport.Min.X, Viewport.Min.Y)` in the resolve uniform so `fs_resolve` subtracts the viewport origin from `@builtin(position).xy` before indexing `sceneTarget`.
+3. Inside `target.Viewport`, `Load: false` overwrites the rectangle with the resolved 3D frame (`Blend == nil`), while `Load: true` alpha-blends the resolved 3D frame over the existing pixels inside `target.Viewport` (`BlendStateAlpha()`).
+
+### 3.5 Device-Native Textures & Procedural Mipmap Generation
 
 To operate without `ntgpuimage.Renderer`, `gpuRenderer` manages textures directly on `*wgpu.Device` via `gpuTexture`:
 
@@ -205,7 +222,23 @@ _ = session.Encode(frame, dc.CommandEncoder(), nt3d.GPUTarget{
 dc.MarkPreserveContent()
 ```
 
-### 5.3 Standalone Offscreen `wgpu.TextureView` (`session.Render`)
+### 5.3 Sub-Viewport / Picture-in-Picture (`GPUTarget.Viewport`)
+
+```go
+pipRect := image.Rect(w-240-16, 16, w-16, 16+180)
+pipFrame, _ := scene.Frame(topCamera, pipRect.Dx(), pipRect.Dy())
+
+_ = pipSession.Encode(pipFrame, dc.CommandEncoder(), nt3d.GPUTarget{
+	Color:    dc.SurfaceView(),
+	Format:   dc.Format(),
+	Width:    int(w),
+	Height:   int(h),
+	Viewport: pipRect,
+})
+dc.MarkPreserveContent()
+```
+
+### 5.4 Standalone Offscreen `wgpu.TextureView` (`session.Render`)
 
 ```go
 err := session.Render(frame, nt3d.GPUTarget{
@@ -216,4 +249,4 @@ err := session.Render(frame, nt3d.GPUTarget{
 })
 ```
 
-See [`examples/gogpu/main.go`](../examples/gogpu/main.go) for a complete interactive example with orbit camera controls, supersampling toggle, `Load: true` composition mode, and a second window sharing the same GPU device.
+See [`examples/gogpu/main.go`](../examples/gogpu/main.go) for a complete interactive example with orbit camera controls, picture-in-picture sub-viewport toggle (`V`), supersampling toggle (`S`), `Load: true` composition mode (`L`), and a second window sharing the same GPU device (`2`).
