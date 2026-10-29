@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `GPUSession` and `GPUTarget` (`NewGPUSession`, `NewGPUSessionFromProvider`, `Encode`, `Render`, `BindingLimit`, `Close`) render frames directly into a caller-supplied `*wgpu.TextureView` on a caller-owned `*wgpu.Device` and `*wgpu.CommandEncoder` without CPU readback, adapting sRGB and linear transfer curves across `RGBA8Unorm`, `RGBA8UnormSrgb`, `BGRA8Unorm`, `BGRA8UnormSrgb`, and `RGBA16Float` targets. `GPUTarget.Load` alpha-composites the resolved frame over existing target contents, `GPUTarget.Viewport` resolves into a sub-rectangle for split-screen panes or picture-in-picture insets, `AdoptBindingLimit` accepts any `BindingLimiter` (including `*GPUSession`), and `examples/gogpu` (`task gogpu`) demonstrates native GoGPU window and multi-window embedding.
+
 ## v0.7.0
 
 - Update dependencies: `ntpicture` v0.1.2, `ntcanvas` v0.1.2, `ntgpuimage` v0.5.0, `go-booba` v0.10.5, Bubble Tea v2.1.1, and Ultraviolet at `a45b7c86333f`; synchronize the library and demo modules.

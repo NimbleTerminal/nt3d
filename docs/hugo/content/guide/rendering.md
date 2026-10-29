@@ -36,7 +36,37 @@ Units are world units and nothing is rescaled for you. The near and far planes s
 
 ## The three renderers
 
-**WebGPU** draws on the GPU, through [ntgpuimage](https://github.com/NimbleTerminal/ntgpuimage): textured triangles, instanced points, boxes, and arrows, thick lines, and lighting. Meshes stay on the GPU between frames, so only what changed is uploaded.
+**WebGPU** draws on the GPU, through [ntgpuimage](https://github.com/NimbleTerminal/ntgpuimage) when `NewGPURenderer` owns the device and reads back an `image.Image`, or straight into a host window's swapchain or texture view through `GPUSession` and `GPUTarget` without copying pixels back to the CPU: textured triangles, instanced points, boxes, and arrows, thick lines, and lighting. Meshes stay on the GPU between frames, so only what changed is uploaded.
+
+### Host-owned GPU targets (`GPUSession`)
+
+When a desktop window or GPU framework such as [GoGPU](https://github.com/gogpu/gogpu) already owns the WebGPU device, swapchain, and frame command encoder, open a `GPUSession` on its `*wgpu.Device` (or `gpucontext.DeviceProvider`) and resolve each `Frame` directly into a `GPUTarget`:
+
+```go
+session, err := nt3d.NewGPUSessionFromProvider(app.GPUContextProvider())
+if err != nil { panic(err) }
+defer session.Close()
+_, _ = nt3d.AdoptBindingLimit(session)
+
+// Inside the host's draw callback:
+frame, err := scene.Frame(camera, width, height)
+if err != nil { return }
+err = session.Encode(frame, dc.CommandEncoder(), nt3d.GPUTarget{
+    Color:  dc.SurfaceView(),
+    Format: dc.Format(), // RGBA8Unorm, RGBA8UnormSrgb, BGRA8Unorm, BGRA8UnormSrgb, or RGBA16Float
+    Width:  width,
+    Height: height,
+})
+dc.MarkPreserveContent()
+```
+
+- `session.Encode(frame, enc, target)` records compute, shadow, scene, and resolve passes onto `enc` and leaves `enc.Finish()` and queue submission to the host.
+- `session.Render(frame, target)` creates an encoder, encodes `frame`, and submits to the device queue for standalone offscreen texture views.
+- `target.Viewport` (`image.Rectangle`) resolves `frame` into a sub-rectangle of `target.Color` (such as a split-screen pane or picture-in-picture inset) while preserving pixels outside the rectangle; `frame.Width` and `frame.Height` match `Viewport.Dx()` and `Viewport.Dy()`.
+- `target.Load` preserves existing pixels inside the resolved region and alpha-composites the 3D scene over them (for example, with `frame.Background = color.RGBA{0, 0, 0, 0}` and `frame.Environment = nil`).
+- `session.Close()` releases only nt3d's pipelines, buffers, and textures, leaving the caller's `*wgpu.Device` open.
+
+Run `task gogpu` (or `task gogpu -- -file scene.sog` for any `.glb`, `.gltf`, `.sog`, `.spz`, `.ply`, `.stl`, `.obj`, or `.3mf` file) in `examples/gogpu` for an interactive native window viewer with orbit/pan/zoom, click picking with outline highlight, animation clip cycling (`C`), Gaussian SH and splat budget controls (`H`, `U`/`Y`/`Z`), a picture-in-picture sub-viewport (`V`), `Load` compositing (`L`), supersampling (`S`), and a second window sharing the same GPU device (`2`).
 
 **Software** draws the same picture on the CPU, with the same primitives, textures, and lighting. It's the fallback when there's no GPU, and it's slower: in interactive frames it thins out points, lines, and arrows, and the widget lowers its resolution, then switches to wireframe if frames are still too slow. `Snapshot` always draws everything. `RenderSoftware(frame)` also returns the depth buffer, for outlines or compositing done afterwards. Both its image and depth are independently owned.
 
@@ -81,7 +111,7 @@ Point maps use six 1024² depth faces on the GPU and for complete software frame
 
 ## Limits
 
-- One geometry holds at most `MaxMeshTriangles` (932,067) triangles, so its records fit the 128 MiB storage binding WebGPU guarantees on every device (`DefaultBindingLimit`). Larger meshes are split across nodes, as the [mesh readers](../meshes/) do. A frame has no total limit beyond the GPU's memory. A capable device holds more: `nt3d.SetBindingLimit(bytes)`, or `nt3d.AdoptBindingLimit(renderer)` with the GPU renderer, raises the limit every geometry is measured against, up to `MaxBindingLimit` (1 GiB), and `MeshTriangleLimit()`, `MeshIndexLimit()`, and `PointLimit()` give the counts in force; a geometry never holds more than `MaxPointIndex` (16,777,216) points, whatever the limit. Raise it once at startup, before anything is stored or decoded. The GPU renderer refuses a geometry its own device cannot hold with a frame error naming both sizes, so a limit raised past the device fails cleanly. In the browser the device holds the baseline until ntgpuimage can request the adapter's limits.
+- One geometry holds at most `MaxMeshTriangles` (932,067) triangles, so its records fit the 128 MiB storage binding WebGPU guarantees on every device (`DefaultBindingLimit`). Larger meshes are split across nodes, as the [mesh readers](../meshes/) do. A frame has no total limit beyond the GPU's memory. A capable device holds more: `nt3d.SetBindingLimit(bytes)`, or `nt3d.AdoptBindingLimit(renderer)` with the GPU renderer or a `GPUSession`, raises the limit every geometry is measured against, up to `MaxBindingLimit` (1 GiB), and `MeshTriangleLimit()`, `MeshIndexLimit()`, and `PointLimit()` give the counts in force; a geometry never holds more than `MaxPointIndex` (16,777,216) points, whatever the limit. Raise it once at startup, before anything is stored or decoded. The GPU renderer refuses a geometry its own device cannot hold with a frame error naming both sizes, so a limit raised past the device fails cleanly. In the browser the device holds the baseline until ntgpuimage can request the adapter's limits.
 - Frames are at most 4096 × 2160 pixels, and textures 8192 pixels a side.
 - Errors wrapping `ErrGPUUnavailable` mean the device itself (no adapter, failed setup). Other errors concern the frame, such as running out of memory, and a smaller scene may still render.
 

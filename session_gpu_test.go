@@ -593,6 +593,12 @@ func TestGPUSessionValidationAndLifecycle(t *testing.T) {
 	if limit < DefaultBindingLimit || limit > MaxBindingLimit {
 		t.Fatalf("BindingLimit() = %d, out of range [%d, %d]", limit, DefaultBindingLimit, MaxBindingLimit)
 	}
+	defer setBindingLimit(DefaultBindingLimit)
+	adopted, err := AdoptBindingLimit(session)
+	check(t, err)
+	if adopted != limit || BindingLimit() != limit {
+		t.Fatalf("AdoptBindingLimit(session) = %d (BindingLimit() = %d), want %d", adopted, BindingLimit(), limit)
+	}
 
 	s := NewScene()
 	_, err = s.SetGeometry("p", pointGeometry())

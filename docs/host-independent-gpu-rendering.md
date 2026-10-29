@@ -249,4 +249,4 @@ err := session.Render(frame, nt3d.GPUTarget{
 })
 ```
 
-See [`examples/gogpu/main.go`](../examples/gogpu/main.go) for a complete interactive example with orbit camera controls, picture-in-picture sub-viewport toggle (`V`), supersampling toggle (`S`), `Load: true` composition mode (`L`), and a second window sharing the same GPU device (`2`).
+See [`examples/gogpu/main.go`](../examples/gogpu/main.go) (`task gogpu` or `task gogpu -- -file model.glb`) for a complete interactive 3D model and Gaussian splat viewer with orbit/pan/zoom camera controls, camera fit (`F`), click picking with selection outlines, glTF animation playback (`C`), Gaussian SH and budget controls (`H`, `U`/`Y`/`Z`), picture-in-picture sub-viewport toggle (`V`), supersampling toggle (`S`), `Load: true` composition mode (`L`), and a second window sharing the same GPU device (`2`).

@@ -21,7 +21,7 @@ view := nt3dwidget.New(scene, 80, 24) // a Bubble Tea model you can drag to orbi
 ## What's inside
 
 - A scene graph with transforms, visibility, and shared, instanced geometry
-- WebGPU, software, and wireframe renderers that draw the same picture
+- WebGPU, software, and wireframe renderers that draw the same picture, plus `GPUSession` / `GPUTarget` to render straight into a host window's WebGPU swapchain or sub-viewport without CPU readback
 - Textures with mipmaps, transparency, cutouts, highlights, shadows, fog, shader textures, and fur
 - STL, OBJ, 3MF, PLY, and glTF files, read within memory and size limits
 - A Bubble Tea widget that falls back gracefully when the GPU or terminal can't keep up
