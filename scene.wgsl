@@ -149,20 +149,26 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
 // radius as it is, a world radius by the projection's vertical scale at the
 // point's depth (the matrix's clip-y row over w), clamped to half a pixel
 // and maxPointPixels. Blended points carry their alpha in cut.
-fn pointOutput(vi:u32,index:u32)->Out {
+fn pointOutput(vi:u32,packed:u32)->Out {
  var corners=array<vec2<f32>,6>(vec2<f32>(-1.,-1.),vec2<f32>(1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,-1.),vec2<f32>(1.,1.),vec2<f32>(-1.,1.));
+ let index=packed & 0xFFFFFFu;
+ var lodScale=1.0;
+ let f8=packed>>24u;
+ if f8>0u && f8<255u {lodScale=inverseSqrt(f32(f8)/255.0);}
  let p=points[index];let corner=corners[vi];
  let c=vec4<f32>(f32(p.color&255u),f32((p.color>>8u)&255u),f32((p.color>>16u)&255u),f32(p.color>>24u))/255.0;
  var o=output(vec3<f32>(p.x,p.y,p.z),vec3<f32>(0.0),vec4<f32>(c.rgb,0.0));
- var r=p.radius;
+ var r=p.radius*lodScale;
  if r<0.0 {
   let row=vec3<f32>(u.matrix[0][1],u.matrix[1][1],u.matrix[2][1]);
   r=clamp(-r*length(row)*u.viewport.y*0.5/o.clip.w,0.5,maxPointPixels);
+ } else if lodScale>1.0 {
+  r=min(r,32.0);
  }
  o.clip=vec4<f32>(o.clip.xy+corner*r*2.0/u.viewport.xy*o.clip.w,o.clip.zw);o.uv=corner;o.point=1.0;o.cut=c.a;return o;
 }
 @vertex fn vs_point(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,ii);}
-@vertex fn vs_point_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,order[run.start+ii] & 0xFFFFFFu);}
+@vertex fn vs_point_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,order[run.start+ii]);}
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
 // Meshes are drawn instanced: each instance's transform is its own.
@@ -419,21 +425,31 @@ struct SkyOut { @builtin(position) clip:vec4<f32>, @location(0) ray:vec3<f32> };
 
 // Inverted hull: expand back faces in output pixels along the projected normal.
 // Use the same records (and GPU skin output) as the surface; no mesh reupload.
-fn outlineOutput(input:Out,vi:u32,ii:u32)->Out {
+fn unpackOutlineNormal(code:u32)->vec3<f32> {
+ return normalize((vec3<f32>(f32(code&63u),f32((code>>6u)&63u),f32((code>>12u)&63u))-32.0)/31.0);
+}
+fn outlineOutput(input:Out,vi:u32,ii:u32,code:u32)->Out {
  var o=input; let inst=instances[ii];
- let n=(inst.normal*vec4<f32>(items[vi].b.xyz,0.0)).xyz;
+ var localN=items[vi].b.xyz;
+ if code!=0u {localN=unpackOutlineNormal(code);}
+ let n=(inst.normal*vec4<f32>(localN,0.0)).xyz;
  let d=u.matrix*vec4<f32>(n,0.0);
  let direction=(d.xy*o.clip.w-o.clip.xy*d.w)*u.viewport.xy;
+ var width=inst.outline.w;
+ if width<0.0 {
+  let row=vec3<f32>(u.matrix[0][1],u.matrix[1][1],u.matrix[2][1]);
+  width=clamp(-width*length(row)*u.viewport.y*0.5/max(o.clip.w,0.00001),0.0,32.0);
+ }
  if o.clip.w>0.00001 && length(direction)>0.000001 {
-  o.clip=vec4<f32>(o.clip.xy+normalize(direction)*inst.outline.w*2.0/u.viewport.xy*o.clip.w,o.clip.zw);
+  o.clip=vec4<f32>(o.clip.xy+normalize(direction)*width*2.0/u.viewport.xy*o.clip.w,o.clip.zw);
  }
  o.color=vec4<f32>(decode(inst.outline.rgb),o.color.a);
  o.normal=vec3<f32>(0.0);o.normalStrength=0.0;o.optics=vec4<f32>(0.0);
- if inst.outline.w<=0.0 {o.clip=vec4<f32>(0.0,0.0,2.0,1.0);}
+ if width<=0.0 {o.clip=vec4<f32>(0.0,0.0,2.0,1.0);}
  return o;
 }
-@vertex fn vs_outline(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return outlineOutput(meshOutput(vi,ii,1.0),vi,ii);}
-@vertex fn vs_outline_map(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return outlineOutput(mapOutput(vi,ii,1.0),vi,ii);}
+@vertex fn vs_outline(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return outlineOutput(meshOutput(vi,ii,1.0),vi,ii,u32(items[vi].color.w));}
+@vertex fn vs_outline_map(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return outlineOutput(mapOutput(vi,ii,1.0),vi,ii,u32(items[vi].color.y)>>6u);}
 @fragment fn fs_outline_cutout(o:Out)->@location(0) vec4<f32> {
  if sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat).a<o.cut {discard;}
  return vec4<f32>(finish(o,o.color.rgb),1.0);
@@ -445,12 +461,12 @@ fn outlineOutput(input:Out,vi:u32,ii:u32)->Out {
 
 // Sprite atlas cells sample level zero and clamp to texel centers, so bilinear
 // filtering cannot leak neighboring frames into a sprite.
-fn spriteOutput(vi:u32,index:u32)->Out {
- var o=pointOutput(vi,index);o.rect=items[index].a;
+fn spriteOutput(vi:u32,packed:u32)->Out {
+ var o=pointOutput(vi,packed);o.rect=items[packed & 0xFFFFFFu].a;
  o.uv=vec2<f32>((o.uv.x+1.0)*0.5,(1.0-o.uv.y)*0.5);return o;
 }
 @vertex fn vs_sprite(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,ii);}
-@vertex fn vs_sprite_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,order[run.start+ii] & 0xFFFFFFu);}
+@vertex fn vs_sprite_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return spriteOutput(vi,order[run.start+ii]);}
 fn spriteSample(o:Out)->vec4<f32> {
  let halfTexel=0.5/vec2<f32>(textureDimensions(mapTexture));
  let uv=clamp(o.rect.xy+o.uv*o.rect.zw,o.rect.xy+halfTexel,o.rect.xy+o.rect.zw-halfTexel);

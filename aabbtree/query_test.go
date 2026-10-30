@@ -182,6 +182,23 @@ func TestRayCastInsideAndParallel(t *testing.T) {
 	if !slices.Equal(hits, []string{"home"}) {
 		t.Fatalf("zero direction hit %v", hits)
 	}
+	negZero := float32(math.Copysign(0, -1))
+	hits = nil
+	tr.RayCast(nt3dmath.Ray{Origin: origin, Direction: nt3dmath.Vec3{X: 1, Y: negZero, Z: negZero}}, collect)
+	slices.Sort(hits)
+	if !slices.Equal(hits, []string{"east", "home"}) {
+		t.Fatalf("negative-zero parallel components hit %v", hits)
+	}
+	hits = nil
+	tr.RayCast(nt3dmath.Ray{Origin: nt3dmath.Vec3{X: .5, Y: 5.5, Z: .5}, Direction: nt3dmath.Vec3{X: 1, Y: negZero, Z: negZero}}, collect)
+	if !slices.Equal(hits, []string{"northeast"}) {
+		t.Fatalf("negative-zero outside Y slab hit %v", hits)
+	}
+	hits = nil
+	tr.RayCast(nt3dmath.Ray{Origin: origin, Direction: nt3dmath.Vec3{X: negZero, Y: negZero, Z: negZero}}, collect)
+	if !slices.Equal(hits, []string{"home"}) {
+		t.Fatalf("negative-zero direction hit %v", hits)
+	}
 }
 
 func TestRayCastEarlyOut(t *testing.T) {

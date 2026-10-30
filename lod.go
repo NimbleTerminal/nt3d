@@ -54,7 +54,7 @@ func (f Frame) planLOD(plan *blendPlan) lodPlan {
 	for k, gi := range plan.slots {
 		g := &f.Geometry[gi]
 		lod.resident += len(g.Points)
-		if g.Clusters == nil || g.PointStyle.Shape != GaussianPoint || budget < 0 {
+		if g.Clusters == nil || budget < 0 {
 			lod.slots[k].selected = len(g.Points)
 			fixed += len(g.Points)
 			continue

@@ -5,3 +5,6 @@ go.work.sum
 /examples/terrain/web/
 .DS_Store
 /.worktrees/
+/out.png
+/nt3d-screenshot-*.png
+/nt3d-turntable-*.gif

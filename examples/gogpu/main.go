@@ -14,8 +14,9 @@
 //   - Left-mouse drag: orbit camera (Alt + Left-drag: rotate sun/key light direction)
 //   - Right-mouse drag (or Shift + Left-drag): pan camera
 //   - Left-mouse click: pick object/primitive under cursor (3D annotation + outline + gizmo)
-//   - Left-mouse drag on 3D Gizmo axis/ring: translate or rotate selected node in 3D
-//   - W or F11: cycle 3D Transform Gizmo mode (Translate -> Rotate -> Off)
+//   - Left-mouse drag on 3D Gizmo axis/ring/cube: translate, rotate, or scale selected node in 3D
+//   - Click top-right 3D Camera Orientation Triad (+X/-X/+Y/-Y/+Z/-Z): snap camera to cardinal view
+//   - W or F11: cycle 3D Transform Gizmo mode (Translate -> Rotate -> Scale -> Off)
 //   - Backspace / Delete: reset selected node's transform to its original pose
 //   - Mouse wheel: zoom camera
 //   - E or F6: cycle Environment / IBL skybox preset (or dropped panorama)
@@ -70,6 +71,7 @@ type gizmoMode int
 const (
 	gizmoTranslate gizmoMode = iota
 	gizmoRotate
+	gizmoScale
 	gizmoOff
 )
 
@@ -109,6 +111,7 @@ type viewerState struct {
 	gizmoStartLocal   nt3dmath.Mat4
 	gizmoStartWorld   nt3dmath.Mat4
 	gizmoStartPivot   nt3dmath.Vec3
+	orientHoverAxis   int // ±1 (±X), ±2 (±Y), ±3 (±Z) on top-right orientation triad
 }
 
 func (v *viewerState) close() {
@@ -874,6 +877,8 @@ func (v *viewerState) gizmoModeName() string {
 		return "translate"
 	case gizmoRotate:
 		return "rotate"
+	case gizmoScale:
+		return "scale"
 	default:
 		return "off"
 	}
@@ -890,6 +895,8 @@ func (v *viewerState) cycleGizmoMode() {
 	case gizmoTranslate:
 		v.gizmoMode = gizmoRotate
 	case gizmoRotate:
+		v.gizmoMode = gizmoScale
+	case gizmoScale:
 		v.gizmoMode = gizmoOff
 	default:
 		v.gizmoMode = gizmoTranslate
@@ -950,6 +957,19 @@ func gizmoAxisRotation(axis int, radians float64) nt3dmath.Mat4 {
 	return m
 }
 
+func gizmoAxisScale(axis int, s float32) nt3dmath.Mat4 {
+	switch axis {
+	case 1:
+		return nt3dmath.Scaling(nt3dmath.Vec3{X: s, Y: 1, Z: 1})
+	case 2:
+		return nt3dmath.Scaling(nt3dmath.Vec3{X: 1, Y: s, Z: 1})
+	case 3:
+		return nt3dmath.Scaling(nt3dmath.Vec3{X: 1, Y: 1, Z: s})
+	default:
+		return nt3dmath.Scaling(nt3dmath.Vec3{X: s, Y: s, Z: s})
+	}
+}
+
 func (v *viewerState) gizmoRadius(camera nt3d.Camera) float32 {
 	return float32(max(0.10, camera.Distance*0.17))
 }
@@ -980,10 +1000,13 @@ func (v *viewerState) hitTestGizmo(f nt3d.Frame, camera nt3d.Camera, px, py floa
 	}
 	radius := v.gizmoRadius(camera)
 
-	if v.gizmoMode == gizmoTranslate {
+	if v.gizmoMode == gizmoTranslate || v.gizmoMode == gizmoScale {
 		ox, oy, _, okO := f.Matrix.Project(origin, f.Width, f.Height)
 		if !okO {
 			return 0
+		}
+		if v.gizmoMode == gizmoScale && float32(math.Hypot(float64(px-ox), float64(py-oy))) < 11.0 {
+			return 4 // Center handle: uniform X/Y/Z scale
 		}
 		bestAxis := 0
 		bestTipDist := float32(13.0)
@@ -1110,6 +1133,35 @@ func (v *viewerState) updateGizmoDrag(f nt3d.Frame, camera nt3d.Camera, px, py f
 		return
 	}
 
+	if v.gizmoMode == gizmoScale {
+		var factor float32 = 1.0
+		if v.gizmoActiveAxis == 4 {
+			factor = float32(math.Exp(float64((px-v.gizmoStartX)-(py-v.gizmoStartY)) * 0.008))
+		} else {
+			x0, y0, _, ok0 := f.Matrix.Project(v.gizmoStartPivot, f.Width, f.Height)
+			x1, y1, _, ok1 := f.Matrix.Project(v.gizmoStartPivot.Add(axisVec.Scale(radius)), f.Width, f.Height)
+			if !ok0 || !ok1 {
+				return
+			}
+			dxS, dyS := x1-x0, y1-y0
+			len2 := dxS*dxS + dyS*dyS
+			if len2 <= 1e-3 {
+				return
+			}
+			t := ((px-v.gizmoStartX)*dxS + (py-v.gizmoStartY)*dyS) / len2
+			factor = 1.0 + t
+		}
+		factor = min(20.0, max(0.05, factor))
+		scaleMat := gizmoAxisScale(v.gizmoActiveAxis, factor)
+		worldDelta := nt3dmath.Translation(v.gizmoStartPivot).
+			Mul(scaleMat).
+			Mul(nt3dmath.Translation(v.gizmoStartPivot.Scale(-1)))
+		newLocal := parentInv.Mul(worldDelta).Mul(v.gizmoStartWorld)
+		_ = v.scene.SetTransform(v.selectedNode, newLocal)
+		v.updatePickAnnotation(camera, showHUD)
+		return
+	}
+
 	// gizmoRotate: compute rotation angle around v.gizmoStartPivot.
 	cx, cy, _, okC := f.Matrix.Project(v.gizmoStartPivot, f.Width, f.Height)
 	var angleRad float64
@@ -1208,6 +1260,9 @@ func (v *viewerState) decorateFrame(f *nt3d.Frame, camera nt3d.Camera, showAnnot
 				f.Instances[i].Visible = false
 			}
 		}
+	}
+	if showAnnotations && !isInset {
+		v.drawOrientationTriad(f, camera)
 	}
 	if !showAnnotations || v.selectedHit == nil {
 		return
@@ -1357,6 +1412,84 @@ func (v *viewerState) decorateFrame(f *nt3d.Frame, camera nt3d.Camera, showAnnot
 					}
 				}
 			}
+
+		case gizmoScale:
+			boxHalf := radius * 0.065
+			for axis := 1; axis <= 3; axis++ {
+				col := axisColors[axis-1]
+				if hiAxis == axis || hiAxis == 4 {
+					col = hiColor
+				}
+				dir := gizmoAxisVec(axis)
+				u, w := gizmoPlaneBasis(axis)
+				tip := worldPos.Add(dir.Scale(radius))
+
+				f.DynamicLines = append(f.DynamicLines,
+					nt3d.Vertex{Position: worldPos, Color: col},
+					nt3d.Vertex{Position: tip, Color: col},
+				)
+				if hiAxis == axis || hiAxis == 4 {
+					off := u.Scale(radius * 0.018)
+					f.DynamicLines = append(f.DynamicLines,
+						nt3d.Vertex{Position: worldPos.Add(off), Color: col},
+						nt3d.Vertex{Position: tip.Add(off), Color: col},
+					)
+				}
+
+				// 3D wireframe cube at the scale tip.
+				var c [8]nt3dmath.Vec3
+				for i := range 8 {
+					sx, sy, sz := float32(-1), float32(-1), float32(-1)
+					if i&1 != 0 {
+						sx = 1
+					}
+					if i&2 != 0 {
+						sy = 1
+					}
+					if i&4 != 0 {
+						sz = 1
+					}
+					c[i] = tip.Add(dir.Scale(sx * boxHalf)).Add(u.Scale(sy * boxHalf)).Add(w.Scale(sz * boxHalf))
+				}
+				edges := [12][2]int{
+					{0, 1}, {2, 3}, {4, 5}, {6, 7},
+					{0, 2}, {1, 3}, {4, 6}, {5, 7},
+					{0, 4}, {1, 5}, {2, 6}, {3, 7},
+				}
+				for _, e := range edges {
+					f.DynamicLines = append(f.DynamicLines,
+						nt3d.Vertex{Position: c[e[0]], Color: col},
+						nt3d.Vertex{Position: c[e[1]], Color: col},
+					)
+				}
+				if !isInset {
+					if tx, ty, _, ok := f.Matrix.Project(tip, f.Width, f.Height); ok {
+						hx, hy := int(math.Round(float64(tx))), int(math.Round(float64(ty)))
+						sz := 6
+						if hiAxis == axis || hiAxis == 4 {
+							sz = 8
+						}
+						f.Overlays = append(f.Overlays,
+							nt3d.OverlayRect{X: hx - sz/2, Y: hy - sz/2, Width: sz, Height: sz, Color: col},
+						)
+					}
+				}
+			}
+			// Center uniform-scale handle box.
+			if !isInset {
+				if cx, cy, _, ok := f.Matrix.Project(worldPos, f.Width, f.Height); ok {
+					ix, iy := int(math.Round(float64(cx))), int(math.Round(float64(cy)))
+					col := gold
+					sz := 7
+					if hiAxis == 4 {
+						col = hiColor
+						sz = 9
+					}
+					f.Overlays = append(f.Overlays,
+						nt3d.OverlayRect{X: ix - sz/2, Y: iy - sz/2, Width: sz, Height: sz, Color: col},
+					)
+				}
+			}
 		}
 	}
 
@@ -1380,6 +1513,149 @@ func (v *viewerState) decorateFrame(f *nt3d.Frame, camera nt3d.Camera, showAnnot
 				nt3d.OverlayRect{X: cx + r - thick + 1, Y: cy + r - lenB + 1, Width: thick, Height: lenB, Color: gold},
 			)
 		}
+	}
+}
+
+type triadEndpoint struct {
+	axis   int // ±1 (±X), ±2 (±Y), ±3 (±Z)
+	sx, sy float32
+	depth  float32
+	color  color.RGBA
+}
+
+func orientationTriadEndpoints(f *nt3d.Frame, camera nt3d.Camera) (cx, cy float32, endpoints [6]triadEndpoint, ok bool) {
+	if f.Width < 240 || f.Height < 180 {
+		return 0, 0, endpoints, false
+	}
+	cx, cy = float32(f.Width-46), 46
+	const arm = 28.0
+	rotCam := nt3d.Camera{
+		Alpha:    camera.Alpha,
+		Beta:     camera.Beta,
+		Distance: 4.0,
+		Near:     0.1,
+		Far:      10.0,
+	}
+	m := rotCam.Matrix(1)
+	ox, oy, _, _ := m.Transform(nt3dmath.Vec3{})
+	dirs := [6]struct {
+		axis int
+		vec  nt3dmath.Vec3
+		col  color.RGBA
+	}{
+		{+1, nt3dmath.Vec3{X: 1}, color.RGBA{255, 85, 85, 255}},
+		{-1, nt3dmath.Vec3{X: -1}, color.RGBA{145, 55, 55, 220}},
+		{+2, nt3dmath.Vec3{Y: 1}, color.RGBA{85, 230, 125, 255}},
+		{-2, nt3dmath.Vec3{Y: -1}, color.RGBA{50, 135, 75, 220}},
+		{+3, nt3dmath.Vec3{Z: 1}, color.RGBA{85, 170, 255, 255}},
+		{-3, nt3dmath.Vec3{Z: -1}, color.RGBA{50, 95, 150, 220}},
+	}
+	for i, d := range dirs {
+		tx, ty, tz, _ := m.Transform(d.vec)
+		dx, dy := tx-ox, -(ty - oy)
+		endpoints[i] = triadEndpoint{
+			axis:  d.axis,
+			sx:    cx + dx*arm,
+			sy:    cy + dy*arm,
+			depth: tz,
+			color: d.col,
+		}
+	}
+	return cx, cy, endpoints, true
+}
+
+func (v *viewerState) drawOrientationTriad(f *nt3d.Frame, camera nt3d.Camera) {
+	cx, cy, eps, ok := orientationTriadEndpoints(f, camera)
+	if !ok {
+		return
+	}
+	// Sort back-to-front (largest depth first) so front-facing axes draw on top.
+	slices.SortFunc(eps[:], func(a, b triadEndpoint) int {
+		if a.depth > b.depth {
+			return -1
+		}
+		if a.depth < b.depth {
+			return 1
+		}
+		return 0
+	})
+	hiColor := color.RGBA{255, 235, 80, 255}
+	icx, icy := int(math.Round(float64(cx))), int(math.Round(float64(cy)))
+	for _, ep := range eps {
+		col := ep.color
+		if v != nil && v.orientHoverAxis == ep.axis {
+			col = hiColor
+		}
+		// Draw positive axis shafts from center to endpoint using small overlay steps.
+		if ep.axis > 0 {
+			const steps = 10
+			for s := 1; s < steps; s++ {
+				t := float32(s) / float32(steps)
+				px := int(math.Round(float64(cx + (ep.sx-cx)*t)))
+				py := int(math.Round(float64(cy + (ep.sy-cy)*t)))
+				f.Overlays = append(f.Overlays,
+					nt3d.OverlayRect{X: px - 1, Y: py - 1, Width: 2, Height: 2, Color: col},
+				)
+			}
+		}
+		sz := 6
+		if ep.axis > 0 {
+			sz = 8
+		}
+		if v != nil && v.orientHoverAxis == ep.axis {
+			sz += 2
+		}
+		hx, hy := int(math.Round(float64(ep.sx))), int(math.Round(float64(ep.sy)))
+		f.Overlays = append(f.Overlays,
+			nt3d.OverlayRect{X: hx - sz/2, Y: hy - sz/2, Width: sz, Height: sz, Color: col},
+		)
+	}
+	// Center hub dot.
+	f.Overlays = append(f.Overlays,
+		nt3d.OverlayRect{X: icx - 2, Y: icy - 2, Width: 4, Height: 4, Color: color.RGBA{220, 230, 245, 255}},
+	)
+}
+
+func hitTestOrientationTriad(f *nt3d.Frame, camera nt3d.Camera, px, py float32) int {
+	_, _, eps, ok := orientationTriadEndpoints(f, camera)
+	if !ok {
+		return 0
+	}
+	bestAxis := 0
+	bestDist := float32(10.0)
+	for _, ep := range eps {
+		d := float32(math.Hypot(float64(px-ep.sx), float64(py-ep.sy)))
+		if d < bestDist {
+			bestDist = d
+			bestAxis = ep.axis
+		}
+	}
+	return bestAxis
+}
+
+func snapCameraToAxis(cam nt3d.Camera, axis int) (nt3d.Camera, string) {
+	cam.Pose = nt3dmath.Mat4{}
+	switch axis {
+	case +1:
+		cam.Alpha, cam.Beta = 0, 0
+		return cam, "+X (Right)"
+	case -1:
+		cam.Alpha, cam.Beta = 0, 180
+		return cam, "-X (Left)"
+	case +2:
+		cam.Alpha, cam.Beta = 0, 90
+		return cam, "+Y (Back)"
+	case -2:
+		cam.Alpha, cam.Beta = 0, -90
+		return cam, "-Y (Front)"
+	case +3:
+		cam.Alpha, cam.Beta = 89, -90
+		return cam, "+Z (Top)"
+	case -3:
+		cam.Alpha, cam.Beta = -89, -90
+		return cam, "-Z (Bottom)"
+	default:
+		return cam, ""
 	}
 }
 
@@ -2452,6 +2728,22 @@ func main() {
 
 		switch button {
 		case gpucontext.MouseButtonLeft:
+			if viewer != nil && hasFrame && showHUD && !altDown && !shiftDown {
+				if axis := hitTestOrientationTriad(&lastFrame, camera, float32(px), float32(py)); axis != 0 {
+					if viewer.runner != nil {
+						viewer.runner.DetachSampleCamera()
+						camera = viewer.runner.Camera()
+					}
+					var viewName string
+					camera, viewName = snapCameraToAxis(camera, axis)
+					if viewer.runner != nil {
+						viewer.runner.SetCamera(camera)
+					}
+					uiConsumedMouse = true
+					fmt.Printf("Camera snapped to %s\n", viewName)
+					return
+				}
+			}
 			if viewer != nil && hasFrame && !altDown && !shiftDown &&
 				viewer.beginGizmoDrag(lastFrame, camera, float32(px), float32(py)) {
 				leftDown = true
@@ -2540,7 +2832,13 @@ func main() {
 		}
 		if uiConsumedMouse || (!leftDown && !rightDown) {
 			if viewer != nil && hasFrame && !menuOpen {
-				viewer.gizmoHoverAxis = viewer.hitTestGizmo(lastFrame, camera, float32(x*scale), float32(y*scale))
+				fpx, fpy := float32(x*scale), float32(y*scale)
+				if showHUD {
+					viewer.orientHoverAxis = hitTestOrientationTriad(&lastFrame, camera, fpx, fpy)
+				} else {
+					viewer.orientHoverAxis = 0
+				}
+				viewer.gizmoHoverAxis = viewer.hitTestGizmo(lastFrame, camera, fpx, fpy)
 			}
 			return
 		}

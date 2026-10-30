@@ -7,6 +7,9 @@ import "nimbleterminal.dev/nt3d/math"
 // (points, line widths, arrow heads) may reach past its bounds, plus one.
 func overhang(g *Geometry) float32 {
 	r := g.Outline.Width
+	if g.Outline.Units == WorldUnits && g.Outline.Width > 0 {
+		r = 32 // As far as a world-unit outline reaches on screen.
+	}
 	if len(g.Lines) > 0 {
 		r = max(r, lineWidth(g.LineWidth))
 	}

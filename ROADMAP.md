@@ -13,8 +13,7 @@ Nothing queued; the sections below are the open work.
   item and indirect buffers; hierarchical levels that draw an interior node
   as one aggregate (a preprocessing tool's job); per-frame rebuilds cheap
   enough for moving particles.
-- [ ] **Gaussian splatting follow-ups**: streaming and partial loading;
-  budgeted plain point clouds. Measured and
+- [ ] **Gaussian splatting follow-ups**: streaming and partial loading. Measured and
   dropped (2026-10-26): storing points in cluster order so budgeted gathers
   are contiguous saved only 0.5 ms of the budgeted 2.5M frame's 12 ms
   (against 7 for 1M unbudgeted); the gap is the draw pass gathering by
@@ -26,8 +25,7 @@ Nothing queued; the sections below are the open work.
   keep all their markers in one geometry, already one upload and draw,
   and sharing them means instancing shaders that index primitives by
   instance today.
-- [ ] **Outline follow-ups**: sharp-crease edges, world-unit widths, and seamless
-  contours for meshes with split normals.
+- [ ] **Outline follow-ups**: sharp-crease edges.
 - [ ] **Order-independent transparency**: only if scenes hit the sorting
   limits (intersecting glass, overlapping layers of one mesh).
 - [ ] **Fur fins don't sway** with the wind; only slightly visible.
@@ -36,12 +34,6 @@ Nothing queued; the sections below are the open work.
 
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
   exact rendering means subdividing them.
-
-## Spatial index
-
-- [ ] **AABB tree follow-ups**: `RayCast` slab-tests each leaf twice (once
-  to order the children, again when popped); a test for negative-zero ray
-  directions, which the slab test handles through `1/-0 = -Inf`.
 
 ## Robustness
 
@@ -62,12 +54,24 @@ Nothing queued; the sections below are the open work.
 
 - [ ] **Re-record the cloud poster** with `task tapes -- cloud`; `web/assets/cloud.png`
   is a `--snapshot` of the demo for now.
-- [ ] **`.gitignore` root snapshots** (such as a stray `out.png`).
 - [ ] **Report the shader translator bug upstream**: WGSL functions named
   `texture…` are miscompiled (an empty body, and the call turned into a
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **GPUSession, GoGPU desktop viewer, world-unit & split-normal outlines, budgeted plain point clouds, and single-pass AABB raycast**:
+  `GPUSession` / `GPUTarget` / `NewView()` / `Pick()` / `RenderToImage()` render
+  directly into a host WebGPU swapchain or offscreen target without CPU
+  readback, sharing geometry, textures (`ntgpuimage` `v0.6.0` borrowed device),
+  pipelines, and environment/reflection panoramas across views; `examples/gogpu`
+  runs all 18 gallery demos and a desktop model/splat viewer with HUD dropdown
+  menu, 3D translate/rotate/scale gizmo, camera orientation triad, and PNG/GIF
+  turntable capture. `OutlineStyle.Units` (`WorldUnits`) scales outlines with
+  distance, and vertices sharing a position with split normals expand along
+  their averaged contour normal on both GPU and software. Clustered plain
+  alpha-blended point clouds participate in `Frame.SplatBudget`, and
+  `nt3daabbtree.Tree.RayCast` slab-tests each leaf once.
 
 - **`v0.6.0`** (`f44ada1`…`e2664cf`): spherical-harmonic palettes below.
 - **SH palettes**: a Gaussian geometry keeps its spherical-harmonic bands

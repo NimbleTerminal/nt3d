@@ -288,7 +288,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					return err
 				}
 			}
-			if geom.Clusters != nil && geom.PointStyle.Shape == GaussianPoint {
+			if geom.Clusters != nil && geom.PointStyle.Blend == AlphaBlend {
 				if err := g.uploadData(dev, &node.order, orderData(geom.Clusters.Order), 4); err != nil {
 					node.release(nil)
 					return err
@@ -326,7 +326,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			// A point update dropped the clusters the order was uploaded for.
 			releaseBatch(node.order)
 			node.order = gpuBatch{}
-		} else if geom.Clusters != nil && geom.PointStyle.Shape == GaussianPoint && node.order.buffer == nil {
+		} else if geom.Clusters != nil && geom.PointStyle.Blend == AlphaBlend && node.order.buffer == nil {
 			// An older snapshot, from before that update, still has them.
 			if err := g.uploadData(dev, &node.order, orderData(geom.Clusters.Order), 4); err != nil {
 				return err
@@ -561,7 +561,11 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 	}
 	data := append(floats(world[:]...), floats(normal[:]...)...)
 	c := outline.Color
-	data = appendFloats(data, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, outline.Width)
+	outlineW := outline.Width
+	if outline.Units == WorldUnits {
+		outlineW = -outlineW
+	}
+	data = appendFloats(data, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, outlineW)
 	return appendFloats(data, optics[:]...)
 }
 
@@ -656,8 +660,16 @@ func geometryData(geom Geometry) (data [9][]byte) {
 		data[0] = binary.LittleEndian.AppendUint32(data[0], uint32(p.Color.R)|uint32(p.Color.G)<<8|uint32(p.Color.B)<<16|uint32(p.Color.A)<<24)
 	}
 	blended := transparent(&geom)
+	var outlineCodes []uint32
+	if len(geom.Indices) > 0 && geom.posed == nil {
+		outlineCodes = outlineNormals(geom.Vertices)
+	}
 	for _, index := range geom.Indices {
 		v := geom.Vertices[index]
+		var outlineCode uint32
+		if outlineCodes != nil {
+			outlineCode = outlineCodes[index]
+		}
 		// Opaque triangles are wholly opaque; transparent ones carry their
 		// vertices' alpha, where a mesh's radius or a texture's cutout
 		// threshold would be.
@@ -669,10 +681,10 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			// The texture gives color, so the color slot carries the cutout
 			// threshold (or a transparent vertex's opacity), flags (1 repeat,
 			// 2 edge-on, 4 tint, 8 extension records follow, 16 they carry
-			// tangent frames), and, for a
-			// tint, the vertex color as a 24-bit integer, which a float
-			// holds exactly.
-			m, flags, cut := geom.Material, 0, geom.Material.threshold()
+			// tangent frames, and bits 6..23 carry any smooth outline normal),
+			// and, for a tint, the vertex color as a 24-bit integer, which a
+			// float holds exactly.
+			m, flags, cut := geom.Material, int(outlineCode)<<6, geom.Material.threshold()
 			if m.NormalRepeat {
 				flags |= 32
 			}
@@ -702,7 +714,7 @@ func geometryData(geom Geometry) (data [9][]byte) {
 			uv := geom.UV[index]
 			data[7] = appendFloats(data[7], v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, strength)
 		} else {
-			vertex(1, v, opacity)
+			data[1] = appendFloats(data[1], v.Position.X, v.Position.Y, v.Position.Z, opacity, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, float32(outlineCode))
 		}
 	}
 	// A normal-mapped mesh with tangents or independent normal UVs has an

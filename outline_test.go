@@ -115,6 +115,15 @@ func TestOutlineValidationAndCulling(t *testing.T) {
 			t.Fatalf("accepted %v", w)
 		}
 	}
+	if validateGeometry(Geometry{Outline: OutlineStyle{Width: 40, Units: WorldUnits}}) != nil {
+		t.Fatal("rejected valid world-unit outline width > 32")
+	}
+	if validateGeometry(Geometry{Outline: OutlineStyle{Width: -0.1, Units: WorldUnits}}) == nil {
+		t.Fatal("accepted negative world-unit outline width")
+	}
+	if validateGeometry(Geometry{Outline: OutlineStyle{Width: 1, Units: PointUnits(99)}}) == nil {
+		t.Fatal("accepted unknown outline units")
+	}
 	g := quad(.02, .5, white, nil, false)
 	g.Outline.Width = 4
 	f := flatFrame(100, 100, g)
@@ -126,6 +135,48 @@ func TestOutlineValidationAndCulling(t *testing.T) {
 	f.Geometry[0].Outline.Width = 0
 	if f.drawn(1)[0] {
 		t.Fatal("test mesh should be outside without hull")
+	}
+}
+
+func TestOutlineWorldUnitsAndSplitNormals(t *testing.T) {
+	// A world-unit outline shrinks with perspective distance.
+	near := outlineFrame(t)
+	near.Geometry[0].Outline = OutlineStyle{Width: .08, Color: outlineInk, Units: WorldUnits}
+	camNear := DefaultCamera()
+	camNear.Projection, camNear.Distance = Perspective, 2.5
+	near.Matrix, near.Perspective = camNear.Matrix(1), true
+	far := near
+	camFar := camNear
+	camFar.Distance = 5.0
+	far.Matrix = camFar.Matrix(1)
+	nearPx := coloredPixels(softwareRender(near), outlineInk)
+	farPx := coloredPixels(softwareRender(far), outlineInk)
+	if nearPx < 100 || farPx < 20 || nearPx <= farPx {
+		t.Fatalf("world-unit outline pixels: near=%d, far=%d", nearPx, farPx)
+	}
+
+	// A faceted box (split vertex normals at all 8 corners) produces smooth
+	// averaged contour normals and a continuous silhouette.
+	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{Unlit: true}})
+	check(t, err)
+	codes := outlineNormals(cube.Vertices)
+	if len(codes) != len(cube.Vertices) {
+		t.Fatalf("expected split-normal codes for box, got %d", len(codes))
+	}
+	for i, c := range codes {
+		if c == 0 {
+			t.Fatalf("vertex %d missing smooth outline normal", i)
+		}
+		n := unpackOutlineNormal(c)
+		want := cube.Vertices[i].Position.Normalize()
+		if diff := n.Sub(want); diff.Dot(diff) > 0.001 {
+			t.Fatalf("vertex %d outline normal %v, want %v", i, n, want)
+		}
+	}
+	// Smooth sphere has no split normals at shared positions.
+	sphere := outlineFrame(t).Geometry[0]
+	if outlineNormals(sphere.Vertices) != nil {
+		t.Fatal("smooth sphere reported split outline normals")
 	}
 }
 

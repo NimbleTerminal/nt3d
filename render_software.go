@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"slices"
 
 	"nimbleterminal.dev/nt3d/math"
 )
@@ -414,7 +415,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 				}
 			}
 			if hull {
-				expandOutline(&corners[k], normals.Direction(vertices[i].Normal), &f, outline.Width*px)
+				expandOutline(&corners[k], normals.Direction(vertices[i].Normal), &f, f.outlineWidth(outline, corners[k].w, px))
 			}
 		}
 		// Most triangles lie wholly past the near plane: cull those facing
@@ -505,7 +506,14 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			return
 		}
 		x, y, z := (cx/cw+1)*float32(f.Width)*.5, (1-cy/cw)*float32(f.Height)*.5, cz/cw
-		radius := f.pointRadius(style, p.Radius, cw, px)
+		r := p.Radius
+		if style.Shape != GaussianPoint && scale != 1 {
+			r *= scale
+			if style.Units == PixelUnits {
+				r = min(32, r)
+			}
+		}
+		radius := f.pointRadius(style, r, cw, px)
 		var ellipse gaussianEllipse
 		if style.Shape == GaussianPoint {
 			q := p
@@ -666,8 +674,19 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			material = *g.Material
 			material.Unlit = true
 		}
+		verts := g.Vertices
+		if g.posed == nil {
+			if codes := outlineNormals(verts); codes != nil {
+				verts = slices.Clone(verts)
+				for i, code := range codes {
+					if code != 0 {
+						verts[i].Normal = unpackOutlineNormal(code)
+					}
+				}
+			}
+		}
 		for i := 0; i+2 < len(g.Indices); i += 3 {
-			tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, &material, side, g.Outline)
+			tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, &material, side, g.Outline)
 		}
 	}
 	for gi := range f.Geometry {

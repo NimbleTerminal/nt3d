@@ -213,11 +213,34 @@ func TestGPULODPointUpdateDropsOrder(t *testing.T) {
 	if node := render(); node.order.buffer != nil || r.plan.points != 4096 {
 		t.Fatalf("updated cloud: order %v, %d sorted", node.order.buffer, r.plan.points)
 	}
-	// The snapshot from before the update keeps its clusters, and renders.
+	// A snapshot from before the update keeps its clusters, and renders.
 	if _, err := r.Render(before); err != nil {
 		t.Fatalf("older snapshot after the update: %v", err)
 	}
 	if r.plan.points >= 4096 {
 		t.Fatalf("older snapshot drew %d splats, not its selection", r.plan.points)
+	}
+}
+
+func TestGPULODPlainPointCloudMatchesSoftware(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	cloud := lodCloud(t, 4096, 64)
+	cloud.PointStyle = PointStyle{Shape: SoftPoint, Units: WorldUnits, Blend: AlphaBlend}
+	for i := range cloud.Points {
+		cloud.Points[i].Radius = 0.05
+	}
+	f := lodGPUFrame(lodPerspective(20, cloud), 500)
+	drawn, resident := f.SplatSelection()
+	if drawn == 0 || drawn >= resident {
+		t.Fatalf("plain point cloud selected %d of %d", drawn, resident)
+	}
+	gpu, err := r.Render(f)
+	check(t, err)
+	if r.plan.points != drawn {
+		t.Fatalf("sorted %d, selected %d", r.plan.points, drawn)
+	}
+	if off := lodOff(gpu, softwareRender(f)); off > 12 {
+		t.Fatalf("plain point cloud LOD (%d of %d drawn): %d pixels differ", drawn, resident, off)
 	}
 }

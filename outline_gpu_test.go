@@ -11,7 +11,7 @@ import (
 func TestGPUOutlines(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
-	for i, kind := range []string{"unlit", "lit", "texture", "normal map", "cutout", "transparent", "texture transparent", "perspective", "transform", "supersample", "encoded", "fog", "hidden alpha", "occluded"} {
+	for i, kind := range []string{"unlit", "lit", "texture", "normal map", "cutout", "transparent", "texture transparent", "perspective", "transform", "supersample", "encoded", "fog", "hidden alpha", "occluded", "world units", "split normals", "split normals textured"} {
 		t.Run(kind, func(t *testing.T) {
 			f := outlineFrame(t)
 			// Manual revisions give each test's altered geometry a distinct cache key.
@@ -49,6 +49,21 @@ func TestGPUOutlines(t *testing.T) {
 				c.Projection = Perspective
 				f.Matrix = c.Matrix(1)
 				f.Perspective = true
+			case "world units":
+				c := DefaultCamera()
+				c.Projection = Perspective
+				f.Matrix = c.Matrix(1)
+				f.Perspective = true
+				g.Outline.Width = .06
+				g.Outline.Units = WorldUnits
+			case "split normals", "split normals textured":
+				box, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{Unlit: true}})
+				check(t, err)
+				box.Outline = OutlineStyle{Width: 3, Color: outlineInk}
+				if kind == "split normals textured" {
+					box.Material.Texture = testTexture(t, color.RGBA{220, 220, 220, 255})
+				}
+				*g = box
 			case "transform":
 				f.Instances = []Instance{{World: nt3dmath.RotationZ(.6).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: .9, Y: 1.2, Z: .6})), Visible: true}}
 			case "supersample":

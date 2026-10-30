@@ -54,14 +54,23 @@ func (t *Tree[T]) RayCast(ray nt3dmath.Ray, fn func(id ID, value T, t float32) b
 	}
 	origin := [3]float32{ray.Origin.X, ray.Origin.Y, ray.Origin.Z}
 	inverse := [3]float32{1 / ray.Direction.X, 1 / ray.Direction.Y, 1 / ray.Direction.Z} // ±Inf for a zero component.
-	stack := make([]int32, 1, 64)
-	stack[0] = t.root
+	root := &t.nodes[t.root]
+	d, ok := slab(origin, inverse, root.min, root.max)
+	if !ok {
+		return
+	}
+	type entry struct {
+		index int32
+		t     float32
+	}
+	stack := make([]entry, 1, 64)
+	stack[0] = entry{t.root, d}
 	for len(stack) > 0 {
-		i := stack[len(stack)-1]
+		e := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		n := &t.nodes[i]
+		n := &t.nodes[e.index]
 		if n.child1 == null {
-			if d, ok := slab(origin, inverse, n.min, n.max); ok && !fn(ID(i), t.values[i], d) {
+			if !fn(ID(e.index), t.values[e.index], e.t) {
 				return
 			}
 			continue
@@ -72,13 +81,13 @@ func (t *Tree[T]) RayCast(ray nt3dmath.Ray, fn func(id ID, value T, t float32) b
 		// Push the farther child first so the nearer is visited first.
 		switch {
 		case ok1 && ok2 && d1 <= d2:
-			stack = append(stack, n.child2, n.child1)
+			stack = append(stack, entry{n.child2, d2}, entry{n.child1, d1})
 		case ok1 && ok2:
-			stack = append(stack, n.child1, n.child2)
+			stack = append(stack, entry{n.child1, d1}, entry{n.child2, d2})
 		case ok1:
-			stack = append(stack, n.child1)
+			stack = append(stack, entry{n.child1, d1})
 		case ok2:
-			stack = append(stack, n.child2)
+			stack = append(stack, entry{n.child2, d2})
 		}
 	}
 }
