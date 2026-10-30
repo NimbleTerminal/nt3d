@@ -88,7 +88,8 @@ Give indexed meshes a dark contour with `Geometry.Outline`:
 
 ```go
 mesh.Outline = nt3d.OutlineStyle{
-    Width: 2, // output pixels; zero disables, maximum 32
+    Width: 2, // output pixels by default, or world units with Units: nt3d.WorldUnits
+    Units: nt3d.PixelUnits,
     Color: color.RGBA{R: 18, G: 22, B: 30, A: 255},
 }
 scene.SetGeometry("model", mesh)
@@ -96,7 +97,9 @@ scene.SetGeometry("model", mesh)
 
 The GPU and software renderer draw an expanded back-face hull in an unlit
 color, making the outer silhouette stand out against busy backgrounds.
-Width stays constant with distance and supersampling. Color uses RGB;
+`Units` is `PixelUnits` by default (up to 32 output pixels, constant with
+distance and supersampling) or `WorldUnits` (scaling with distance and
+clamped to 32 output pixels). Color uses RGB;
 its alpha is ignored. Nearer opaque geometry hides the contour, fog fades
 it, and transparent meshes retain their vertex/texture opacity. Cutout
 materials keep their alpha test. Morphs and skinning use the current posed
@@ -105,12 +108,13 @@ For a loaded character or an already animated subtree, use
 `scene.SetOutline(root, nt3d.OutlineStyle{Width: 2})`. This preserves the
 current pose and shared buffers; pass a zero style to turn it off.
 
-This inexpensive technique works best on closed meshes with smooth,
-outward normals. Flat or split normals can leave gaps at corners, and open
+Vertices that share a position with split normals (such as `BuildCuboid`,
+cylinders, cones, and faceted meshes) expand along their averaged unit normal
+on both renderers so their corners stay joined without gaps. Open
 sheets do not acquire a full contour. It outlines the expanded geometry,
 not sharp creases or alpha-mask boundaries; a back surface can show through
 holes or glass. Outlines do not change picking or cast shadows. Wireframe
-keeps its existing edge logic. World-unit widths are not supported yet.
+keeps its existing edge logic.
 
 Try the [shapes demo](https://nimbleterminal.github.io/nt3d/shapes/): press
 `b` to toggle outlines (also available in the [characters demo](https://nimbleterminal.github.io/nt3d/characters/)), `s` to compare normal styles, and `1` / `2` to compare

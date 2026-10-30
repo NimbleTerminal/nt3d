@@ -60,18 +60,41 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
-- **GPUSession, GoGPU desktop viewer, world-unit & split-normal outlines, budgeted plain point clouds, and single-pass AABB raycast**:
-  `GPUSession` / `GPUTarget` / `NewView()` / `Pick()` / `RenderToImage()` render
-  directly into a host WebGPU swapchain or offscreen target without CPU
-  readback, sharing geometry, textures (`ntgpuimage` `v0.6.0` borrowed device),
-  pipelines, and environment/reflection panoramas across views; `examples/gogpu`
-  runs all 18 gallery demos and a desktop model/splat viewer with HUD dropdown
-  menu, 3D translate/rotate/scale gizmo, camera orientation triad, and PNG/GIF
-  turntable capture. `OutlineStyle.Units` (`WorldUnits`) scales outlines with
-  distance, and vertices sharing a position with split normals expand along
-  their averaged contour normal on both GPU and software. Clustered plain
-  alpha-blended point clouds participate in `Frame.SplatBudget`, and
-  `nt3daabbtree.Tree.RayCast` slab-tests each leaf once.
+- **GPUSession, GoGPU desktop viewer, world-unit & split-normal outlines, budgeted plain point clouds, and single-pass AABB raycast** (`ba2f565`…`adac237`):
+  - **Host-supplied GPU rendering (`GPUSession` / `GPUTarget`)**: `NewGPUSession`,
+    `NewGPUSessionFromProvider`, `Encode`, and `Render` resolve frames directly into a
+    caller-owned `*wgpu.TextureView` (`RGBA8Unorm`, `RGBA8UnormSrgb`, `BGRA8Unorm`,
+    `BGRA8UnormSrgb`, or `RGBA16Float`) on a caller-owned `*wgpu.Device` and
+    `*wgpu.CommandEncoder` without CPU readback, with sub-rectangle resolve
+    (`GPUTarget.Viewport`) and coverage-preserving alpha composition (`GPUTarget.Load`).
+  - **Shared GPU resources (`NewView` & `ntgpuimage` `v0.6.0`)**: `(*GPUSession).NewView()`
+    shares compiled pipelines, bind group layouts, shaders, and ref-counted geometry,
+    Gaussian splat, procedural/image texture (`ntgpuimage.NewFromDevice`), and
+    environment/reflection panorama (`Texture.View()` / `Texture.Sampler()`) caches
+    across viewports and windows while isolating per-view uniforms, transforms, sort
+    buffers, and targets. `Pick` / `ReadDepth` read the session's hardware depth buffer
+    to accelerate picking while warming static BVH indexes in the background, and
+    `RenderToImage` / `RenderToImageInto` capture offscreen `*image.NRGBA` frames on the
+    session's device reusing its caches (`ba2f565`…`1452f77`).
+  - **Desktop GoGPU application (`examples/gogpu`)**: `task gogpu` runs all 18 gallery
+    demos (`-demo <name>`, `[` / `]`, interactive HUD dropdown menu `M`, and demo
+    shortcuts) plus a 3D model and Gaussian splat viewer (`-file <path>` and window
+    drag-and-drop) with GPU-depth picking, 3D callout annotations, a 3D transform
+    gizmo (`G`: `Translate` -> `Rotate` -> `Scale` -> `Off` with per-axis and uniform
+    handles), an interactive top-right 3D Camera Orientation Triad (`+X`/`-X`/`+Y`/`-Y`/`+Z`/`-Z`),
+    lighting/environment/shadow controls (`1`–`5`, `E`, `K`), PNG screenshot (`P`) and
+    animated GIF turntable capture (`T`), picture-in-picture sub-viewport (`V`), `Load`
+    compositing (`L`), supersampling (`S`), and multi-window GPU sharing (`2`).
+  - **Outlines, budgeted point clouds, and AABB raycast** (`adac237`):
+    `OutlineStyle.Units` (`WorldUnits`) scales outlines with distance, and vertices
+    sharing a position with split normals expand along their 18-bit position-averaged
+    contour normal on both GPU and software. Clustered plain alpha-blended point clouds
+    (`HardPoint`, `SoftPoint`, sprites) participate in `Frame.SplatBudget`, and
+    `nt3daabbtree.Tree.RayCast` slab-tests each leaf once.
+- **`v0.7.0`** (`0293cb9`…`9e2c4b6`): `SetBindingLimit` / `AdoptBindingLimit` up to
+  1 GiB, `nt3d-palette` and `nt3dsog.Encode` for SOG v2 SH-palette bundles, and
+  unclamped software transparent blending headroom matching the GPU's `RGBA16Float`
+  target.
 
 - **`v0.6.0`** (`f44ada1`…`e2664cf`): spherical-harmonic palettes below.
 - **SH palettes**: a Gaussian geometry keeps its spherical-harmonic bands
