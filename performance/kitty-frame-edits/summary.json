@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-30",
+  "nt3d_base_revision": "1452f77388aa75d7c65a334d20aea2629f5bac80",
+  "nt3d_has_uncommitted_benchmark_changes": true,
+  "ntpicture_revision": "6501a5b0c833ecf810b7f8dde24263168d8f339e",
+  "scope": "Headless protocol/preparation benchmark, not terminal FPS or upload latency. Same image in each pair; alternating order; 960x640, WebGPU, zlib/direct, 10 warmup plus 120 measured frames per trial. Three sequential trials per scene configuration. Minor byte variation across trials can come from generated image ID digit counts.",
+  "results": [
+    {
+      "case": "animation",
+      "reports": [
+        "animation-1.json",
+        "animation-2.json",
+        "animation-3.json"
+      ],
+      "trials": 3,
+      "measured_frames_per_trial": 120,
+      "camera_scale": 1,
+      "off": {
+        "mean_protocol_bytes": 12629.875,
+        "mean_uploaded_pixels": 614400,
+        "mean_prepare_encode_ms": 1.4419815805555556
+      },
+      "on": {
+        "mean_protocol_bytes": 2411.741666666667,
+        "mean_uploaded_pixels": 38763.166666666664,
+        "mean_prepare_encode_ms": 0.6002864416666667
+      },
+      "protocol_byte_reduction_percent": 80.9044692313529,
+      "prepare_encode_time_change_percent": -58.37072749324628,
+      "mean_scene_render_ms": 0.8180781083333334
+    },
+    {
+      "case": "animation-zoomed-out",
+      "reports": [
+        "animation-zoomed-out-1.json",
+        "animation-zoomed-out-2.json",
+        "animation-zoomed-out-3.json"
+      ],
+      "trials": 3,
+      "measured_frames_per_trial": 120,
+      "camera_scale": 2,
+      "off": {
+        "mean_protocol_bytes": 7792.066666666667,
+        "mean_uploaded_pixels": 614400,
+        "mean_prepare_encode_ms": 1.3945436194444447
+      },
+      "on": {
+        "mean_protocol_bytes": 765.7333333333333,
+        "mean_uploaded_pixels": 8422.45,
+        "mean_prepare_encode_ms": 0.38459479999999996
+      },
+      "protocol_byte_reduction_percent": 90.17291090938647,
+      "prepare_encode_time_change_percent": -72.42145784201328,
+      "mean_scene_render_ms": 0.8237525361111111
+    },
+    {
+      "case": "water",
+      "reports": [
+        "water-1.json",
+        "water-2.json",
+        "water-3.json"
+      ],
+      "trials": 3,
+      "measured_frames_per_trial": 120,
+      "camera_scale": 1,
+      "off": {
+        "mean_protocol_bytes": 856020.4916666666,
+        "mean_uploaded_pixels": 614400,
+        "mean_prepare_encode_ms": 6.694485536111113
+      },
+      "on": {
+        "mean_protocol_bytes": 835469.1583333333,
+        "mean_uploaded_pixels": 412826.94166666665,
+        "mean_prepare_encode_ms": 6.900351227777776
+      },
+      "protocol_byte_reduction_percent": 2.4007992254157284,
+      "prepare_encode_time_change_percent": 3.0751532818495297,
+      "mean_scene_render_ms": 5.2550195777777775
+    }
+  ]
+}

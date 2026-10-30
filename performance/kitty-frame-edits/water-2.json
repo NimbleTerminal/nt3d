@@ -1,0 +1,2193 @@
+{
+  "schema": 1,
+  "scope": "Headless paired component benchmark: zlib/direct, stable ID, identical rendered frames, alternating order. Includes image preparation, diffing, encoding, command execution and byte counting. Excludes terminal IO, Bubble Tea rendering/scheduling and terminal painting. Render time is measured separately.",
+  "scene": "water",
+  "backend": "WebGPU",
+  "platform": "darwin/arm64",
+  "go_version": "go1.27.3",
+  "width": 960,
+  "height": 640,
+  "camera_scale": 1,
+  "warmup_frames": 10,
+  "simulation_step_seconds": 0.03333333333333333,
+  "off": {
+    "mean_protocol_bytes": 856019.825,
+    "mean_uploaded_pixels": 614400,
+    "mean_prepare_encode_ms": 6.702987883333335,
+    "p50_prepare_encode_ms": 6.706625,
+    "p95_prepare_encode_ms": 6.957167,
+    "full_uploads": 120,
+    "frame_edits": 0
+  },
+  "on": {
+    "mean_protocol_bytes": 835468.4916666667,
+    "mean_uploaded_pixels": 412826.94166666665,
+    "mean_prepare_encode_ms": 6.878404441666666,
+    "p50_prepare_encode_ms": 6.87025,
+    "p95_prepare_encode_ms": 7.159083,
+    "full_uploads": 0,
+    "frame_edits": 120
+  },
+  "samples": [
+    {
+      "frame": 0,
+      "render_ms": 5.205125,
+      "off": {
+        "protocol_bytes": 864464,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 7.05875
+      },
+      "on": {
+        "protocol_bytes": 843053,
+        "uploaded_pixels": 410410,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.996208
+      }
+    },
+    {
+      "frame": 1,
+      "render_ms": 4.838042,
+      "off": {
+        "protocol_bytes": 864296,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.333958
+      },
+      "on": {
+        "protocol_bytes": 843165,
+        "uploaded_pixels": 410410,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.110167
+      }
+    },
+    {
+      "frame": 2,
+      "render_ms": 5.343708,
+      "off": {
+        "protocol_bytes": 863716,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.7955
+      },
+      "on": {
+        "protocol_bytes": 842905,
+        "uploaded_pixels": 409950,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.919208
+      }
+    },
+    {
+      "frame": 3,
+      "render_ms": 5.699917,
+      "off": {
+        "protocol_bytes": 865812,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.687625
+      },
+      "on": {
+        "protocol_bytes": 845078,
+        "uploaded_pixels": 409488,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.634208
+      }
+    },
+    {
+      "frame": 4,
+      "render_ms": 5.438375,
+      "off": {
+        "protocol_bytes": 870237,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.681167
+      },
+      "on": {
+        "protocol_bytes": 848387,
+        "uploaded_pixels": 408111,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.946041
+      }
+    },
+    {
+      "frame": 5,
+      "render_ms": 5.135667,
+      "off": {
+        "protocol_bytes": 873402,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.503917
+      },
+      "on": {
+        "protocol_bytes": 851844,
+        "uploaded_pixels": 407644,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.146833
+      }
+    },
+    {
+      "frame": 6,
+      "render_ms": 5.213542,
+      "off": {
+        "protocol_bytes": 870961,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.779666
+      },
+      "on": {
+        "protocol_bytes": 849415,
+        "uploaded_pixels": 407175,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.786459
+      }
+    },
+    {
+      "frame": 7,
+      "render_ms": 5.480958,
+      "off": {
+        "protocol_bytes": 869785,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.63075
+      },
+      "on": {
+        "protocol_bytes": 848699,
+        "uploaded_pixels": 407620,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.705083
+      }
+    },
+    {
+      "frame": 8,
+      "render_ms": 5.2395,
+      "off": {
+        "protocol_bytes": 866224,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.740375
+      },
+      "on": {
+        "protocol_bytes": 844138,
+        "uploaded_pixels": 406704,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.159083
+      }
+    },
+    {
+      "frame": 9,
+      "render_ms": 5.221708,
+      "off": {
+        "protocol_bytes": 867028,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.431125
+      },
+      "on": {
+        "protocol_bytes": 846326,
+        "uploaded_pixels": 412920,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.829666
+      }
+    },
+    {
+      "frame": 10,
+      "render_ms": 5.321917,
+      "off": {
+        "protocol_bytes": 867649,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.706625
+      },
+      "on": {
+        "protocol_bytes": 847070,
+        "uploaded_pixels": 413364,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.587875
+      }
+    },
+    {
+      "frame": 11,
+      "render_ms": 5.326167,
+      "off": {
+        "protocol_bytes": 867693,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.624
+      },
+      "on": {
+        "protocol_bytes": 846482,
+        "uploaded_pixels": 413319,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.947375
+      }
+    },
+    {
+      "frame": 12,
+      "render_ms": 5.479166,
+      "off": {
+        "protocol_bytes": 865516,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.639959
+      },
+      "on": {
+        "protocol_bytes": 844814,
+        "uploaded_pixels": 413762,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.672
+      }
+    },
+    {
+      "frame": 13,
+      "render_ms": 5.801875,
+      "off": {
+        "protocol_bytes": 862551,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.705542
+      },
+      "on": {
+        "protocol_bytes": 841017,
+        "uploaded_pixels": 413712,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.074541
+      }
+    },
+    {
+      "frame": 14,
+      "render_ms": 5.098709,
+      "off": {
+        "protocol_bytes": 861911,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.78225
+      },
+      "on": {
+        "protocol_bytes": 840393,
+        "uploaded_pixels": 413217,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.014959
+      }
+    },
+    {
+      "frame": 15,
+      "render_ms": 5.183875,
+      "off": {
+        "protocol_bytes": 855006,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.563375
+      },
+      "on": {
+        "protocol_bytes": 834875,
+        "uploaded_pixels": 413217,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.8535
+      }
+    },
+    {
+      "frame": 16,
+      "render_ms": 5.464625,
+      "off": {
+        "protocol_bytes": 850316,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.718
+      },
+      "on": {
+        "protocol_bytes": 828834,
+        "uploaded_pixels": 412720,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.595084
+      }
+    },
+    {
+      "frame": 17,
+      "render_ms": 5.788,
+      "off": {
+        "protocol_bytes": 847036,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.583917
+      },
+      "on": {
+        "protocol_bytes": 825585,
+        "uploaded_pixels": 412720,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.749166
+      }
+    },
+    {
+      "frame": 18,
+      "render_ms": 5.188291,
+      "off": {
+        "protocol_bytes": 843211,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.888708
+      },
+      "on": {
+        "protocol_bytes": 821292,
+        "uploaded_pixels": 412720,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.824458
+      }
+    },
+    {
+      "frame": 19,
+      "render_ms": 5.048209,
+      "off": {
+        "protocol_bytes": 836593,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.456083
+      },
+      "on": {
+        "protocol_bytes": 815075,
+        "uploaded_pixels": 411343,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.832
+      }
+    },
+    {
+      "frame": 20,
+      "render_ms": 6.243666,
+      "off": {
+        "protocol_bytes": 839214,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.7245
+      },
+      "on": {
+        "protocol_bytes": 816723,
+        "uploaded_pixels": 410904,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.718667
+      }
+    },
+    {
+      "frame": 21,
+      "render_ms": 5.469625,
+      "off": {
+        "protocol_bytes": 836237,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 7.022625
+      },
+      "on": {
+        "protocol_bytes": 813478,
+        "uploaded_pixels": 409968,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.58375
+      }
+    },
+    {
+      "frame": 22,
+      "render_ms": 5.012625,
+      "off": {
+        "protocol_bytes": 837249,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.427416
+      },
+      "on": {
+        "protocol_bytes": 813374,
+        "uploaded_pixels": 409092,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.619208
+      }
+    },
+    {
+      "frame": 23,
+      "render_ms": 5.090625,
+      "off": {
+        "protocol_bytes": 833644,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.988083
+      },
+      "on": {
+        "protocol_bytes": 811334,
+        "uploaded_pixels": 409148,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.189541
+      }
+    },
+    {
+      "frame": 24,
+      "render_ms": 5.278292,
+      "off": {
+        "protocol_bytes": 835613,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.652834
+      },
+      "on": {
+        "protocol_bytes": 813178,
+        "uploaded_pixels": 409640,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.710042
+      }
+    },
+    {
+      "frame": 25,
+      "render_ms": 5.463542,
+      "off": {
+        "protocol_bytes": 836621,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.823625
+      },
+      "on": {
+        "protocol_bytes": 814663,
+        "uploaded_pixels": 409689,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.925
+      }
+    },
+    {
+      "frame": 26,
+      "render_ms": 5.195667,
+      "off": {
+        "protocol_bytes": 839298,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.498042
+      },
+      "on": {
+        "protocol_bytes": 817591,
+        "uploaded_pixels": 409734,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.897625
+      }
+    },
+    {
+      "frame": 27,
+      "render_ms": 5.552625,
+      "off": {
+        "protocol_bytes": 842166,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.80875
+      },
+      "on": {
+        "protocol_bytes": 820860,
+        "uploaded_pixels": 408850,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.861625
+      }
+    },
+    {
+      "frame": 28,
+      "render_ms": 5.08225,
+      "off": {
+        "protocol_bytes": 842074,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.856084
+      },
+      "on": {
+        "protocol_bytes": 820480,
+        "uploaded_pixels": 408889,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.691833
+      }
+    },
+    {
+      "frame": 29,
+      "render_ms": 5.305583,
+      "off": {
+        "protocol_bytes": 841214,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.7285
+      },
+      "on": {
+        "protocol_bytes": 819236,
+        "uploaded_pixels": 408924,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.696708
+      }
+    },
+    {
+      "frame": 30,
+      "render_ms": 5.492542,
+      "off": {
+        "protocol_bytes": 839634,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.692166
+      },
+      "on": {
+        "protocol_bytes": 818155,
+        "uploaded_pixels": 408036,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.904333
+      }
+    },
+    {
+      "frame": 31,
+      "render_ms": 4.997375,
+      "off": {
+        "protocol_bytes": 837969,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.49075
+      },
+      "on": {
+        "protocol_bytes": 816991,
+        "uploaded_pixels": 408955,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.651792
+      }
+    },
+    {
+      "frame": 32,
+      "render_ms": 5.608375,
+      "off": {
+        "protocol_bytes": 840350,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.808542
+      },
+      "on": {
+        "protocol_bytes": 819020,
+        "uploaded_pixels": 408982,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.765125
+      }
+    },
+    {
+      "frame": 33,
+      "render_ms": 5.112541,
+      "off": {
+        "protocol_bytes": 841982,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.297792
+      },
+      "on": {
+        "protocol_bytes": 820180,
+        "uploaded_pixels": 407198,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.92275
+      }
+    },
+    {
+      "frame": 34,
+      "render_ms": 6.204417,
+      "off": {
+        "protocol_bytes": 845455,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.735167
+      },
+      "on": {
+        "protocol_bytes": 823101,
+        "uploaded_pixels": 407217,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.658958
+      }
+    },
+    {
+      "frame": 35,
+      "render_ms": 5.759042,
+      "off": {
+        "protocol_bytes": 850797,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.8455
+      },
+      "on": {
+        "protocol_bytes": 828102,
+        "uploaded_pixels": 408590,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.785041
+      }
+    },
+    {
+      "frame": 36,
+      "render_ms": 5.270667,
+      "off": {
+        "protocol_bytes": 858842,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.544042
+      },
+      "on": {
+        "protocol_bytes": 838352,
+        "uploaded_pixels": 413140,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.934541
+      }
+    },
+    {
+      "frame": 37,
+      "render_ms": 5.088875,
+      "off": {
+        "protocol_bytes": 865668,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.957167
+      },
+      "on": {
+        "protocol_bytes": 846514,
+        "uploaded_pixels": 416780,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.9415
+      }
+    },
+    {
+      "frame": 38,
+      "render_ms": 5.291333,
+      "off": {
+        "protocol_bytes": 870061,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.803208
+      },
+      "on": {
+        "protocol_bytes": 852196,
+        "uploaded_pixels": 418600,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.246208
+      }
+    },
+    {
+      "frame": 39,
+      "render_ms": 5.41375,
+      "off": {
+        "protocol_bytes": 874206,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.825
+      },
+      "on": {
+        "protocol_bytes": 857317,
+        "uploaded_pixels": 419971,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.086958
+      }
+    },
+    {
+      "frame": 40,
+      "render_ms": 5.217459,
+      "off": {
+        "protocol_bytes": 875775,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.739
+      },
+      "on": {
+        "protocol_bytes": 859009,
+        "uploaded_pixels": 420432,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.711041
+      }
+    },
+    {
+      "frame": 41,
+      "render_ms": 5.338375,
+      "off": {
+        "protocol_bytes": 876947,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.81925
+      },
+      "on": {
+        "protocol_bytes": 859553,
+        "uploaded_pixels": 420432,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.110416
+      }
+    },
+    {
+      "frame": 42,
+      "render_ms": 5.328709,
+      "off": {
+        "protocol_bytes": 878135,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.541709
+      },
+      "on": {
+        "protocol_bytes": 860334,
+        "uploaded_pixels": 419520,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.693167
+      }
+    },
+    {
+      "frame": 43,
+      "render_ms": 5.144208,
+      "off": {
+        "protocol_bytes": 877983,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.4985
+      },
+      "on": {
+        "protocol_bytes": 860758,
+        "uploaded_pixels": 419067,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.258375
+      }
+    },
+    {
+      "frame": 44,
+      "render_ms": 5.214792,
+      "off": {
+        "protocol_bytes": 874998,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.816791
+      },
+      "on": {
+        "protocol_bytes": 857753,
+        "uploaded_pixels": 418612,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.049958
+      }
+    },
+    {
+      "frame": 45,
+      "render_ms": 4.901041,
+      "off": {
+        "protocol_bytes": 870521,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.519459
+      },
+      "on": {
+        "protocol_bytes": 852628,
+        "uploaded_pixels": 418608,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.953459
+      }
+    },
+    {
+      "frame": 46,
+      "render_ms": 5.333959,
+      "off": {
+        "protocol_bytes": 869405,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.8475
+      },
+      "on": {
+        "protocol_bytes": 851295,
+        "uploaded_pixels": 418134,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.920958
+      }
+    },
+    {
+      "frame": 47,
+      "render_ms": 5.174208,
+      "off": {
+        "protocol_bytes": 869261,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.606583
+      },
+      "on": {
+        "protocol_bytes": 851532,
+        "uploaded_pixels": 419042,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.86775
+      }
+    },
+    {
+      "frame": 48,
+      "render_ms": 5.367042,
+      "off": {
+        "protocol_bytes": 869973,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.662792
+      },
+      "on": {
+        "protocol_bytes": 851616,
+        "uploaded_pixels": 418572,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.875625
+      }
+    },
+    {
+      "frame": 49,
+      "render_ms": 5.178958,
+      "off": {
+        "protocol_bytes": 871218,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.848584
+      },
+      "on": {
+        "protocol_bytes": 852548,
+        "uploaded_pixels": 418100,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.77475
+      }
+    },
+    {
+      "frame": 50,
+      "render_ms": 5.093375,
+      "off": {
+        "protocol_bytes": 872374,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.745833
+      },
+      "on": {
+        "protocol_bytes": 853752,
+        "uploaded_pixels": 418552,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.902
+      }
+    },
+    {
+      "frame": 51,
+      "render_ms": 4.79325,
+      "off": {
+        "protocol_bytes": 871214,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.701667
+      },
+      "on": {
+        "protocol_bytes": 852164,
+        "uploaded_pixels": 419004,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.885791
+      }
+    },
+    {
+      "frame": 52,
+      "render_ms": 5.338084,
+      "off": {
+        "protocol_bytes": 866952,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.988417
+      },
+      "on": {
+        "protocol_bytes": 848727,
+        "uploaded_pixels": 419456,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.85825
+      }
+    },
+    {
+      "frame": 53,
+      "render_ms": 5.092708,
+      "off": {
+        "protocol_bytes": 863540,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.90825
+      },
+      "on": {
+        "protocol_bytes": 844366,
+        "uploaded_pixels": 418979,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.0025
+      }
+    },
+    {
+      "frame": 54,
+      "render_ms": 4.945291,
+      "off": {
+        "protocol_bytes": 859551,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.641209
+      },
+      "on": {
+        "protocol_bytes": 840557,
+        "uploaded_pixels": 418979,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.836792
+      }
+    },
+    {
+      "frame": 55,
+      "render_ms": 5.287917,
+      "off": {
+        "protocol_bytes": 855394,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.892167
+      },
+      "on": {
+        "protocol_bytes": 837348,
+        "uploaded_pixels": 419430,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.022875
+      }
+    },
+    {
+      "frame": 56,
+      "render_ms": 5.168125,
+      "off": {
+        "protocol_bytes": 854725,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.709166
+      },
+      "on": {
+        "protocol_bytes": 836000,
+        "uploaded_pixels": 419430,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.928458
+      }
+    },
+    {
+      "frame": 57,
+      "render_ms": 5.357875,
+      "off": {
+        "protocol_bytes": 853293,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.834167
+      },
+      "on": {
+        "protocol_bytes": 834427,
+        "uploaded_pixels": 418500,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.809541
+      }
+    },
+    {
+      "frame": 58,
+      "render_ms": 4.9495,
+      "off": {
+        "protocol_bytes": 851861,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.48575
+      },
+      "on": {
+        "protocol_bytes": 832875,
+        "uploaded_pixels": 418500,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.660583
+      }
+    },
+    {
+      "frame": 59,
+      "render_ms": 5.503042,
+      "off": {
+        "protocol_bytes": 851221,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.729625
+      },
+      "on": {
+        "protocol_bytes": 831375,
+        "uploaded_pixels": 418019,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.022041
+      }
+    },
+    {
+      "frame": 60,
+      "render_ms": 4.974625,
+      "off": {
+        "protocol_bytes": 846852,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 7.01675
+      },
+      "on": {
+        "protocol_bytes": 827606,
+        "uploaded_pixels": 418019,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.701167
+      }
+    },
+    {
+      "frame": 61,
+      "render_ms": 5.626125,
+      "off": {
+        "protocol_bytes": 844315,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.772709
+      },
+      "on": {
+        "protocol_bytes": 824829,
+        "uploaded_pixels": 416640,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.87025
+      }
+    },
+    {
+      "frame": 62,
+      "render_ms": 5.8535,
+      "off": {
+        "protocol_bytes": 845187,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.745125
+      },
+      "on": {
+        "protocol_bytes": 825289,
+        "uploaded_pixels": 416157,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.028291
+      }
+    },
+    {
+      "frame": 63,
+      "render_ms": 5.364917,
+      "off": {
+        "protocol_bytes": 846728,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.851083
+      },
+      "on": {
+        "protocol_bytes": 826661,
+        "uploaded_pixels": 415226,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.945833
+      }
+    },
+    {
+      "frame": 64,
+      "render_ms": 5.406375,
+      "off": {
+        "protocol_bytes": 846692,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.787917
+      },
+      "on": {
+        "protocol_bytes": 825877,
+        "uploaded_pixels": 413850,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.935542
+      }
+    },
+    {
+      "frame": 65,
+      "render_ms": 5.45475,
+      "off": {
+        "protocol_bytes": 842138,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.841125
+      },
+      "on": {
+        "protocol_bytes": 821120,
+        "uploaded_pixels": 411990,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.929834
+      }
+    },
+    {
+      "frame": 66,
+      "render_ms": 5.373,
+      "off": {
+        "protocol_bytes": 839554,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.965125
+      },
+      "on": {
+        "protocol_bytes": 818183,
+        "uploaded_pixels": 411060,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.881
+      }
+    },
+    {
+      "frame": 67,
+      "render_ms": 5.156584,
+      "off": {
+        "protocol_bytes": 838686,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.504792
+      },
+      "on": {
+        "protocol_bytes": 815875,
+        "uploaded_pixels": 408760,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.515708
+      }
+    },
+    {
+      "frame": 68,
+      "render_ms": 5.16375,
+      "off": {
+        "protocol_bytes": 834349,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.634375
+      },
+      "on": {
+        "protocol_bytes": 811986,
+        "uploaded_pixels": 407831,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.72525
+      }
+    },
+    {
+      "frame": 69,
+      "render_ms": 4.764666,
+      "off": {
+        "protocol_bytes": 836081,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.562042
+      },
+      "on": {
+        "protocol_bytes": 813190,
+        "uploaded_pixels": 405536,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.694709
+      }
+    },
+    {
+      "frame": 70,
+      "render_ms": 5.155875,
+      "off": {
+        "protocol_bytes": 835457,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.8445
+      },
+      "on": {
+        "protocol_bytes": 811402,
+        "uploaded_pixels": 404172,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.966625
+      }
+    },
+    {
+      "frame": 71,
+      "render_ms": 4.816291,
+      "off": {
+        "protocol_bytes": 834425,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.514334
+      },
+      "on": {
+        "protocol_bytes": 810662,
+        "uploaded_pixels": 403736,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.700291
+      }
+    },
+    {
+      "frame": 72,
+      "render_ms": 5.322709,
+      "off": {
+        "protocol_bytes": 833508,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.783875
+      },
+      "on": {
+        "protocol_bytes": 808921,
+        "uploaded_pixels": 403300,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.833583
+      }
+    },
+    {
+      "frame": 73,
+      "render_ms": 5.015875,
+      "off": {
+        "protocol_bytes": 834401,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.727834
+      },
+      "on": {
+        "protocol_bytes": 810025,
+        "uploaded_pixels": 403300,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.629791
+      }
+    },
+    {
+      "frame": 74,
+      "render_ms": 4.880042,
+      "off": {
+        "protocol_bytes": 836301,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.787833
+      },
+      "on": {
+        "protocol_bytes": 811358,
+        "uploaded_pixels": 402428,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.828958
+      }
+    },
+    {
+      "frame": 75,
+      "render_ms": 5.178125,
+      "off": {
+        "protocol_bytes": 840678,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.615666
+      },
+      "on": {
+        "protocol_bytes": 815895,
+        "uploaded_pixels": 402428,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.182542
+      }
+    },
+    {
+      "frame": 76,
+      "render_ms": 4.812584,
+      "off": {
+        "protocol_bytes": 839546,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.644208
+      },
+      "on": {
+        "protocol_bytes": 814795,
+        "uploaded_pixels": 401070,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.71025
+      }
+    },
+    {
+      "frame": 77,
+      "render_ms": 5.238583,
+      "off": {
+        "protocol_bytes": 841562,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.922625
+      },
+      "on": {
+        "protocol_bytes": 816407,
+        "uploaded_pixels": 400635,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.597917
+      }
+    },
+    {
+      "frame": 78,
+      "render_ms": 5.119417,
+      "off": {
+        "protocol_bytes": 842819,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.604375
+      },
+      "on": {
+        "protocol_bytes": 818207,
+        "uploaded_pixels": 401556,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.71975
+      }
+    },
+    {
+      "frame": 79,
+      "render_ms": 5.119542,
+      "off": {
+        "protocol_bytes": 847440,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.753417
+      },
+      "on": {
+        "protocol_bytes": 822476,
+        "uploaded_pixels": 400200,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.115209
+      }
+    },
+    {
+      "frame": 80,
+      "render_ms": 5.022959,
+      "off": {
+        "protocol_bytes": 852465,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.485792
+      },
+      "on": {
+        "protocol_bytes": 827466,
+        "uploaded_pixels": 400635,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.707417
+      }
+    },
+    {
+      "frame": 81,
+      "render_ms": 5.05925,
+      "off": {
+        "protocol_bytes": 857574,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.577042
+      },
+      "on": {
+        "protocol_bytes": 832971,
+        "uploaded_pixels": 399714,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.643458
+      }
+    },
+    {
+      "frame": 82,
+      "render_ms": 5.3625,
+      "off": {
+        "protocol_bytes": 862671,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.533708
+      },
+      "on": {
+        "protocol_bytes": 838640,
+        "uploaded_pixels": 401556,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.801
+      }
+    },
+    {
+      "frame": 83,
+      "render_ms": 4.826375,
+      "off": {
+        "protocol_bytes": 868849,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.86275
+      },
+      "on": {
+        "protocol_bytes": 845862,
+        "uploaded_pixels": 405680,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.699541
+      }
+    },
+    {
+      "frame": 84,
+      "render_ms": 4.834208,
+      "off": {
+        "protocol_bytes": 873286,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.491375
+      },
+      "on": {
+        "protocol_bytes": 851792,
+        "uploaded_pixels": 409812,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.73075
+      }
+    },
+    {
+      "frame": 85,
+      "render_ms": 5.402708,
+      "off": {
+        "protocol_bytes": 877955,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.708208
+      },
+      "on": {
+        "protocol_bytes": 859173,
+        "uploaded_pixels": 415350,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.154792
+      }
+    },
+    {
+      "frame": 86,
+      "render_ms": 5.278209,
+      "off": {
+        "protocol_bytes": 883797,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.888542
+      },
+      "on": {
+        "protocol_bytes": 866611,
+        "uploaded_pixels": 420888,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.882417
+      }
+    },
+    {
+      "frame": 87,
+      "render_ms": 4.877208,
+      "off": {
+        "protocol_bytes": 886185,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.351041
+      },
+      "on": {
+        "protocol_bytes": 870344,
+        "uploaded_pixels": 424116,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.82125
+      }
+    },
+    {
+      "frame": 88,
+      "render_ms": 5.827083,
+      "off": {
+        "protocol_bytes": 885017,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.864625
+      },
+      "on": {
+        "protocol_bytes": 869448,
+        "uploaded_pixels": 425040,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.035458
+      }
+    },
+    {
+      "frame": 89,
+      "render_ms": 5.002875,
+      "off": {
+        "protocol_bytes": 887958,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.701458
+      },
+      "on": {
+        "protocol_bytes": 872509,
+        "uploaded_pixels": 425503,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.863334
+      }
+    },
+    {
+      "frame": 90,
+      "render_ms": 5.004333,
+      "off": {
+        "protocol_bytes": 888574,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.922875
+      },
+      "on": {
+        "protocol_bytes": 872961,
+        "uploaded_pixels": 425503,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.850125
+      }
+    },
+    {
+      "frame": 91,
+      "render_ms": 5.071417,
+      "off": {
+        "protocol_bytes": 889866,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.596667
+      },
+      "on": {
+        "protocol_bytes": 874225,
+        "uploaded_pixels": 426888,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.933041
+      }
+    },
+    {
+      "frame": 92,
+      "render_ms": 5.192959,
+      "off": {
+        "protocol_bytes": 889866,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.564125
+      },
+      "on": {
+        "protocol_bytes": 874525,
+        "uploaded_pixels": 427350,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.055709
+      }
+    },
+    {
+      "frame": 93,
+      "render_ms": 5.141875,
+      "off": {
+        "protocol_bytes": 890378,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.70325
+      },
+      "on": {
+        "protocol_bytes": 875229,
+        "uploaded_pixels": 427812,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.917209
+      }
+    },
+    {
+      "frame": 94,
+      "render_ms": 5.486792,
+      "off": {
+        "protocol_bytes": 889830,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.796458
+      },
+      "on": {
+        "protocol_bytes": 874457,
+        "uploaded_pixels": 427347,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.955208
+      }
+    },
+    {
+      "frame": 95,
+      "render_ms": 4.934667,
+      "off": {
+        "protocol_bytes": 891646,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.360042
+      },
+      "on": {
+        "protocol_bytes": 876794,
+        "uploaded_pixels": 427808,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.917209
+      }
+    },
+    {
+      "frame": 96,
+      "render_ms": 5.210042,
+      "off": {
+        "protocol_bytes": 886525,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.463792
+      },
+      "on": {
+        "protocol_bytes": 871396,
+        "uploaded_pixels": 428269,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.065417
+      }
+    },
+    {
+      "frame": 97,
+      "render_ms": 5.073667,
+      "off": {
+        "protocol_bytes": 882580,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.615792
+      },
+      "on": {
+        "protocol_bytes": 866739,
+        "uploaded_pixels": 427340,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.800625
+      }
+    },
+    {
+      "frame": 98,
+      "render_ms": 4.974125,
+      "off": {
+        "protocol_bytes": 879448,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.94975
+      },
+      "on": {
+        "protocol_bytes": 864219,
+        "uploaded_pixels": 427800,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.900791
+      }
+    },
+    {
+      "frame": 99,
+      "render_ms": 5.2905,
+      "off": {
+        "protocol_bytes": 875663,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.524459
+      },
+      "on": {
+        "protocol_bytes": 860078,
+        "uploaded_pixels": 426870,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.867417
+      }
+    },
+    {
+      "frame": 100,
+      "render_ms": 5.81275,
+      "off": {
+        "protocol_bytes": 870209,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.874875
+      },
+      "on": {
+        "protocol_bytes": 854216,
+        "uploaded_pixels": 425940,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.972459
+      }
+    },
+    {
+      "frame": 101,
+      "render_ms": 5.107917,
+      "off": {
+        "protocol_bytes": 866612,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.650541
+      },
+      "on": {
+        "protocol_bytes": 849739,
+        "uploaded_pixels": 425010,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.896166
+      }
+    },
+    {
+      "frame": 102,
+      "render_ms": 5.327667,
+      "off": {
+        "protocol_bytes": 857430,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.692166
+      },
+      "on": {
+        "protocol_bytes": 840133,
+        "uploaded_pixels": 423150,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.986125
+      }
+    },
+    {
+      "frame": 103,
+      "render_ms": 4.914542,
+      "off": {
+        "protocol_bytes": 849152,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.629917
+      },
+      "on": {
+        "protocol_bytes": 831779,
+        "uploaded_pixels": 421766,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.856667
+      }
+    },
+    {
+      "frame": 104,
+      "render_ms": 4.925125,
+      "off": {
+        "protocol_bytes": 840314,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.940833
+      },
+      "on": {
+        "protocol_bytes": 822636,
+        "uploaded_pixels": 420384,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.016083
+      }
+    },
+    {
+      "frame": 105,
+      "render_ms": 4.909459,
+      "off": {
+        "protocol_bytes": 837181,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.456958
+      },
+      "on": {
+        "protocol_bytes": 819772,
+        "uploaded_pixels": 420384,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.050542
+      }
+    },
+    {
+      "frame": 106,
+      "render_ms": 5.1215,
+      "off": {
+        "protocol_bytes": 836165,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.656292
+      },
+      "on": {
+        "protocol_bytes": 818031,
+        "uploaded_pixels": 419004,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.82725
+      }
+    },
+    {
+      "frame": 107,
+      "render_ms": 5.318208,
+      "off": {
+        "protocol_bytes": 835997,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.659208
+      },
+      "on": {
+        "protocol_bytes": 811870,
+        "uploaded_pixels": 405449,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.711708
+      }
+    },
+    {
+      "frame": 108,
+      "render_ms": 4.94825,
+      "off": {
+        "protocol_bytes": 832928,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.563125
+      },
+      "on": {
+        "protocol_bytes": 809869,
+        "uploaded_pixels": 405000,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.976541
+      }
+    },
+    {
+      "frame": 109,
+      "render_ms": 5.377792,
+      "off": {
+        "protocol_bytes": 832460,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.601042
+      },
+      "on": {
+        "protocol_bytes": 807837,
+        "uploaded_pixels": 403200,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.958166
+      }
+    },
+    {
+      "frame": 110,
+      "render_ms": 5.000208,
+      "off": {
+        "protocol_bytes": 832140,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.902917
+      },
+      "on": {
+        "protocol_bytes": 808445,
+        "uploaded_pixels": 403194,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.726625
+      }
+    },
+    {
+      "frame": 111,
+      "render_ms": 5.422875,
+      "off": {
+        "protocol_bytes": 833824,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.554125
+      },
+      "on": {
+        "protocol_bytes": 809293,
+        "uploaded_pixels": 402725,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.700542
+      }
+    },
+    {
+      "frame": 112,
+      "render_ms": 5.389041,
+      "off": {
+        "protocol_bytes": 837665,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.895709
+      },
+      "on": {
+        "protocol_bytes": 813878,
+        "uploaded_pixels": 403152,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.765417
+      }
+    },
+    {
+      "frame": 113,
+      "render_ms": 5.500125,
+      "off": {
+        "protocol_bytes": 839978,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.8945
+      },
+      "on": {
+        "protocol_bytes": 816311,
+        "uploaded_pixels": 402220,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.067792
+      }
+    },
+    {
+      "frame": 114,
+      "render_ms": 4.958583,
+      "off": {
+        "protocol_bytes": 842879,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.816041
+      },
+      "on": {
+        "protocol_bytes": 818539,
+        "uploaded_pixels": 401280,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.281167
+      }
+    },
+    {
+      "frame": 115,
+      "render_ms": 5.299125,
+      "off": {
+        "protocol_bytes": 841614,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.640541
+      },
+      "on": {
+        "protocol_bytes": 817667,
+        "uploaded_pixels": 401246,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.6485
+      }
+    },
+    {
+      "frame": 116,
+      "render_ms": 5.341125,
+      "off": {
+        "protocol_bytes": 841866,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.748375
+      },
+      "on": {
+        "protocol_bytes": 817515,
+        "uploaded_pixels": 399855,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.769708
+      }
+    },
+    {
+      "frame": 117,
+      "render_ms": 4.732958,
+      "off": {
+        "protocol_bytes": 839846,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.605833
+      },
+      "on": {
+        "protocol_bytes": 814370,
+        "uploaded_pixels": 398025,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 7.013917
+      }
+    },
+    {
+      "frame": 118,
+      "render_ms": 5.288125,
+      "off": {
+        "protocol_bytes": 837693,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.763375
+      },
+      "on": {
+        "protocol_bytes": 812162,
+        "uploaded_pixels": 398895,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.810041
+      }
+    },
+    {
+      "frame": 119,
+      "render_ms": 4.728167,
+      "off": {
+        "protocol_bytes": 833532,
+        "uploaded_pixels": 614400,
+        "full_uploads": 1,
+        "frame_edits": 0,
+        "prepare_encode_ms": 6.593208
+      },
+      "on": {
+        "protocol_bytes": 808045,
+        "uploaded_pixels": 397978,
+        "full_uploads": 0,
+        "frame_edits": 1,
+        "prepare_encode_ms": 6.939
+      }
+    }
+  ]
+}
