@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Refresh dependencies across the library and examples: ntpicture v0.1.4,
+  go-booba v0.10.7, terminfo v1.3.0, and the browser-compatible Bubble Tea fork
+  at `536722b0bdb6`. Keep ntgpuimage at the current v0.6.0 release, align the
+  demos' nt3d requirement with v0.7.0, and update the GoGPU example's requirement
+  to published v0.54.0, removing the sibling-checkout requirement.
+
 - Add paired headless Kitty benchmarks to animation and water, recording per-frame
   protocol bytes, uploaded area, preparation/encoding time, and scene render time.
 

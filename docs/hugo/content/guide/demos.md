@@ -38,9 +38,8 @@ The default, `auto`, uses capability queries and may fall back to full uploads
 even on terminals that support edits but do not answer those queries.
 The status line reports `frame edits` or `full uploads` when Kitty is active.
 
-Use the same window size, camera, and backend for both runs. Keep the local
-`ntpicture` synchronized-upload fix enabled in both (use `task workspace` when
-developing against that checkout). The FPS counter measures application frame
+Use the same window size, camera, and backend for both runs. Both modes use
+synchronized uploads through ntpicture v0.1.4 or later. The FPS counter measures application frame
 completion, not the terminal's display rate; render milliseconds exclude upload
 and terminal painting. Water changes much of the scene, so it may benefit less
 from partial updates than a mostly static scene.
