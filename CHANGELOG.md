@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add paired headless Kitty benchmarks to animation and water, recording per-frame
+  protocol bytes, uploaded area, preparation/encoding time, and scene render time.
+
+- Add demo flag `--kitty-frame-edits=auto|on|off` and active update-mode status for
+  comparing Kitty partial-frame updates with full image uploads.
+
 - `GPUSession` and `GPUTarget` (`NewGPUSession`, `NewGPUSessionFromProvider`, `NewView`, `Encode`, `Render`, `BindingLimit`, `Close`) render frames directly into a caller-supplied `*wgpu.TextureView` on a caller-owned `*wgpu.Device` and `*wgpu.CommandEncoder` without CPU readback, adapting sRGB and linear transfer curves across `RGBA8Unorm`, `RGBA8UnormSrgb`, `BGRA8Unorm`, `BGRA8UnormSrgb`, and `RGBA16Float` targets. `(*GPUSession).NewView()` shares compiled pipelines and ref-counted geometry, Gaussian splat, and texture caches across viewports and windows while isolating per-view uniforms, transforms, sort buffers, and targets. `GPUTarget.Load` alpha-composites the resolved frame over existing target contents, `GPUTarget.Viewport` resolves into a sub-rectangle for split-screen panes or picture-in-picture insets, `AdoptBindingLimit` accepts any `BindingLimiter` (including `*GPUSession`), and `examples/gogpu` (`task gogpu`) provides an interactive GoGPU window and model/splat viewer with 3D pick annotations and a 2D HUD overlay.
 
 ## v0.7.0

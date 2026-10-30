@@ -27,6 +27,7 @@ type demo struct {
 	animation         *nt3d.Animation
 	animationTime     float64
 	view              *nt3dwidget.Model
+	kittySession      *ntpicture.TerminalSession
 	fog               bool // Fog that keeps its look as the camera zooms.
 	scene             *nt3d.Scene
 	group             nt3d.NodeID
@@ -570,6 +571,16 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (d *demo) rendering() string {
 	ms := min(999.9, float64(d.view.RenderTime().Microseconds())/1000)
 	s := fmt.Sprintf("%s · %3.0f fps · %5.1f ms", d.view.RenderMode(), min(999, d.view.FrameRate()), ms)
+	if d.kittySession != nil && d.view.PictureMode() == ntpicture.PictureKitty {
+		switch d.kittySession.Snapshot().FrameEdits {
+		case ntpicture.KittyCapabilitySupported:
+			s += " · frame edits"
+		case ntpicture.KittyCapabilityUnsupported:
+			s += " · full uploads"
+		default:
+			s += " · probing frame edits"
+		}
+	}
 	if d.fog {
 		s += " · fog"
 	}
@@ -680,7 +691,11 @@ func (d *demo) View() tea.View {
 		return v
 	}
 	if d.animation != nil {
-		v.Content = d.zones.Scan("nt3d glTF animation · a pause · 1/2/3 backend · q quit\n" + v.Content + "\nTwo joints, a morph target, and generic TRS tracks · drag orbit · wheel zoom")
+		state := "paused"
+		if d.animate {
+			state = "playing"
+		}
+		v.Content = d.zones.Scan("nt3d glTF animation · a pause · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.rendering() + " · " + state + " · drag orbit · wheel zoom")
 		return v
 	}
 	if d.dynamic != nil {
@@ -726,12 +741,20 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	mode := flag.String("render-mode", "gpu", "gpu, software, or wireframe")
 	shDC := flag.Bool("sh-dc", false, "show only DC Gaussian color (h toggles full SH)")
 	snapshot := flag.String("snapshot", "", "write a PNG without opening a terminal")
+	benchmark := flag.String("kitty-benchmark", "", "write a paired frame-edit benchmark JSON without opening a terminal (water or animation)")
+	benchmarkFrames := flag.Int("benchmark-frames", 120, "measured frames per Kitty benchmark, after 10 warmup frames")
+	benchmarkScale := flag.Float64("benchmark-camera-scale", 1, "camera distance multiplier for Kitty benchmark")
 	duration := flag.Duration("duration", 0, "exit after a duration")
 	medium := flag.String("medium", "auto", "auto, direct, or shm")
+	frameEdits := flag.String("kitty-frame-edits", "auto", "auto, on, or off; on forces Kitty partial-frame updates (requires terminal support)")
 	up := flag.String("up", "z", "mesh files' up axis: z, y, or -y for Y-down captures")
 	supersample := flag.Int("supersample", 0, "GPU supersampling, 1..4 (x cycles it in the fur demo)")
 	effectName := flag.String("effect", "none", "fur demo post effect: none, soft focus, or vignette")
 	flag.Parse()
+	frameCapability, err := parseKittyFrameEdits(*frameEdits)
+	if err != nil {
+		return err
+	}
 	upAxis := nt3dmesh.ZUp
 	switch *up {
 	case "z":
@@ -778,7 +801,6 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	}
 	d := &demo{scene: nt3d.NewScene(), zones: zone.New(), duration: *duration, animate: *animate}
 	defer d.zones.Close()
-	var err error
 	d.group, err = d.scene.Add(nt3d.Root, "island")
 	if err != nil {
 		return err
@@ -901,7 +923,9 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
 	}
 	camera.AutoRotate = proceduralDefault
-	options := []nt3dwidget.Option{nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate)}
+	d.kittySession = ntpicture.NewTerminalSession(ntpicture.TerminalOptions{FrameEdits: frameCapability})
+	defer d.kittySession.Close()
+	options := []nt3dwidget.Option{nt3dwidget.WithTerminalSession(d.kittySession), nt3dwidget.WithCamera(camera), nt3dwidget.WithRenderMode(renderMode), nt3dwidget.WithKittyMedium(transport), nt3dwidget.WithZoneManager(d.zones), nt3dwidget.WithFrameDecorator(d.decorate)}
 	if renderer != nil {
 		options = append(options, nt3dwidget.WithRenderer(renderer))
 	}
@@ -936,6 +960,9 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	}
 	if *supersample != 0 {
 		d.view.SetSupersample(*supersample)
+	}
+	if *benchmark != "" {
+		return d.benchmarkKitty(*benchmark, *benchmarkFrames, *benchmarkScale)
 	}
 	if *snapshot != "" {
 		img, used, err := d.view.Snapshot(960, 640)
