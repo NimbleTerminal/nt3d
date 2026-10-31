@@ -5,7 +5,7 @@ go 1.26.8
 require (
 	github.com/gogpu/gogpu v0.54.0
 	github.com/gogpu/gpucontext v0.31.3
-	nimbleterminal.dev/nt3d v0.7.0
+	nimbleterminal.dev/nt3d v0.8.0
 	nimbleterminal.dev/nt3d/examples/demos v0.0.0
 )
 
@@ -39,7 +39,7 @@ require (
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	nimbleterminal.dev/ntcanvas v0.1.2 // indirect
+	nimbleterminal.dev/ntcanvas v0.1.3 // indirect
 	nimbleterminal.dev/ntgpuimage v0.6.0 // indirect
 	nimbleterminal.dev/ntpicture v0.1.4 // indirect
 )

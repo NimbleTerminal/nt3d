@@ -9,7 +9,7 @@ require (
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	github.com/qmuntal/gltf v0.29.0
 	github.com/spf13/pflag v1.0.10
-	nimbleterminal.dev/nt3d v0.7.0
+	nimbleterminal.dev/nt3d v0.8.0
 	nimbleterminal.dev/ntpicture v0.1.4
 )
 
@@ -38,7 +38,7 @@ require (
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	nimbleterminal.dev/ntcanvas v0.1.2 // indirect
+	nimbleterminal.dev/ntcanvas v0.1.3 // indirect
 	nimbleterminal.dev/ntgpuimage v0.6.0 // indirect
 )
 

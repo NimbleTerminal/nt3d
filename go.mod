@@ -14,7 +14,7 @@ require (
 	github.com/qmuntal/gltf v0.29.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/image v0.47.0
-	nimbleterminal.dev/ntcanvas v0.1.2
+	nimbleterminal.dev/ntcanvas v0.1.3
 	nimbleterminal.dev/ntgpuimage v0.6.0
 	nimbleterminal.dev/ntpicture v0.1.4
 )

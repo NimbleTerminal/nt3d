@@ -2,25 +2,38 @@
 
 ## Unreleased
 
-- Refresh dependencies across the library and examples: ntpicture v0.1.4,
-  go-booba v0.10.7, terminfo v1.3.0, and the browser-compatible Bubble Tea fork
-  at `536722b0bdb6`. Keep ntgpuimage at the current v0.6.0 release, align the
-  demos' nt3d requirement with v0.7.0, and update the GoGPU example's requirement
-  to published v0.54.0, removing the sibling-checkout requirement.
+## v0.8.0 (2026-10-30)
 
-- Add paired headless Kitty benchmarks to animation and water, recording per-frame
-  protocol bytes, uploaded area, preparation/encoding time, and scene render time.
-
-- Add demo flag `--kitty-frame-edits=auto|on|off` and active update-mode status for
-  comparing Kitty partial-frame updates with full image uploads.
-
-- `GPUSession` and `GPUTarget` (`NewGPUSession`, `NewGPUSessionFromProvider`, `NewView`, `Encode`, `Render`, `RenderToImage`, `RenderToImageInto`, `Pick`, `ReadDepth`, `BindingLimit`, `Close`) render frames directly into a caller-supplied `*wgpu.TextureView` on a caller-owned `*wgpu.Device` and `*wgpu.CommandEncoder` without CPU readback, adapting sRGB and linear transfer curves across `RGBA8Unorm`, `RGBA8UnormSrgb`, `BGRA8Unorm`, `BGRA8UnormSrgb`, and `RGBA16Float` targets. `(*GPUSession).NewView()` shares compiled pipelines and ref-counted geometry, Gaussian splat, texture (`ntgpuimage` `v0.6.0` borrowed device via `NewFromDevice`), and environment/reflection panorama (`Texture.View()` / `Texture.Sampler()`) caches across viewports and windows while isolating per-view uniforms, transforms, sort buffers, and targets. `GPUTarget.Load` alpha-composites the resolved frame over existing target contents, `GPUTarget.Viewport` resolves into a sub-rectangle for split-screen panes or picture-in-picture insets, `AdoptBindingLimit` accepts any `BindingLimiter` (including `*GPUSession`), and `examples/gogpu` (`task gogpu`) provides a complete desktop application running all 18 gallery demos and a 3D model/splat viewer with drag-and-drop, interactive HUD dropdown menu, GPU-depth picking with 3D callout annotations, 3D translate/rotate/scale transform gizmo, 3D camera orientation triad, lighting/shadow presets, and PNG/GIF turntable capture.
-
-- `OutlineStyle.Units` (`WorldUnits`) scales outline widths with distance, and meshes with split vertex normals (such as `BuildCuboid`, cylinders, cones, and faceted meshes) expand along position-averaged contour normals so corners stay seamless on both GPU and software renderers.
-
-- Clustered plain alpha-blended point clouds (`HardPoint`, `SoftPoint`, and sprites with `Geometry.Clusters`) participate in `Frame.SplatBudget` continuous LOD selection and scale their radius by 1/√f when thinned.
-
-- `nt3daabbtree.Tree.RayCast` carries leaf entry distances on its traversal stack so leaves are slab-tested once instead of twice.
+- Add `GPUSession` and `GPUTarget` for rendering into host-owned WebGPU devices,
+  command encoders, and texture views without CPU readback. Support sRGB and
+  linear RGBA/BGRA targets, RGBA16Float, alpha composition with `GPUTarget.Load`,
+  and sub-viewports through `GPUTarget.Viewport`.
+- Add `GPUSession.NewView` to share pipelines, geometry, splat, texture, and
+  environment/reflection caches across views while keeping per-view state
+  independent. Use ntgpuimage's borrowed-device support and accept any
+  `BindingLimiter` in `AdoptBindingLimit`.
+- Add GPU-depth picking, `ReadDepth`, `RenderToImage`, and `RenderToImageInto`,
+  plus asynchronous BVH warming for CPU picking.
+- Expand the GoGPU desktop example into an 18-demo gallery and model/splat
+  viewer with file dialogs and drag-and-drop, HUD controls, pick annotations,
+  translate/rotate/scale gizmos, a camera orientation triad, lighting and shadow
+  presets, and PNG/GIF turntable capture. Pin published GoGPU v0.54.0 so no
+  sibling GoGPU checkout is required.
+- Add world-unit outlines with `OutlineStyle.Units` (`WorldUnits`) and
+  position-averaged contour normals for seamless expansion of split-normal
+  meshes on both GPU and software renderers.
+- Include clustered alpha-blended point clouds in `Frame.SplatBudget` continuous
+  LOD selection, scaling retained point radii by 1/√f. Carry leaf entry distances
+  through `nt3daabbtree.Tree.RayCast` so each leaf is slab-tested once.
+- Add `--kitty-frame-edits=auto|on|off`, active update-mode status, and an FPS
+  readout for the animation demo. Add paired headless benchmarks for animation
+  and water, with per-frame protocol bytes, uploaded pixel area, preparation/
+  encoding time, and scene render time; include the recorded comparison results.
+- Update ntcanvas to v0.1.3, ntgpuimage to v0.6.0, ntpicture to v0.1.4, go-booba
+  to v0.10.7, terminfo to v1.3.0, and the browser-compatible Bubble Tea fork to
+  `536722b0bdb6`. ntpicture brings unknown-terminal capability probing,
+  synchronized image uploads to prevent replacement flicker, and cleanup of
+  unanswered shared-memory probes.
 
 ## v0.7.0
 
