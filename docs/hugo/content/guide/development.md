@@ -17,7 +17,7 @@ task ci
 
 To change ntpicture alongside nt3d, clone it beside nt3d and run `task workspace`, which copies `go.work.example` to `go.work` (git ignores it) so the build uses your checkout instead of the published module.
 
-The library is one module. The demos in `examples/demos` are a second module, so that go-booba and the Bubble Tea fork the browser needs never become requirements of the library.
+The library is one module. The demos in `examples/demos` are a second module, so that booba and the Bubble Tea fork the browser needs never become requirements of the library.
 
 ## Tasks
 

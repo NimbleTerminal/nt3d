@@ -5,7 +5,7 @@ import (
 	"nimbleterminal.dev/nt3d"
 	"testing"
 
-	"github.com/NimbleMarkets/go-booba/actions/bubblehelp"
+	"nimbleterminal.dev/booba/actions/bubblehelp"
 )
 
 // Every scene's keys become touch controls: all expressible, within the

@@ -166,7 +166,7 @@ task build-web  # or task build-site, to include this guide at /docs/
 task serve      # then open http://localhost:8768
 ```
 
-The gallery links to every demo, each running inside [go-booba](https://github.com/NimbleMarkets/go-booba) with GPU, software, and wireframe rendering. The site's sources are in `web/`, and the built site in `dist/web/` can be served from any subdirectory.
+The gallery links to every demo, each running inside [booba](https://github.com/NimbleTerminal/booba) with GPU, software, and wireframe rendering. The site's sources are in `web/`, and the built site in `dist/web/` can be served from any subdirectory.
 
 ## Animation
 

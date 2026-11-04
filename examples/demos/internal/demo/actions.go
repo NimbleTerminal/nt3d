@@ -4,7 +4,7 @@ package demo
 import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"github.com/NimbleMarkets/go-booba/actions/bubblehelp"
+	"nimbleterminal.dev/booba/actions/bubblehelp"
 )
 
 // keys is a scene's help: its own controls first, then the view's.

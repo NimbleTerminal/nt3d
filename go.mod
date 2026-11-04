@@ -7,16 +7,16 @@ require (
 	github.com/charmbracelet/ultraviolet v0.0.0-20261023060817-a45b7c86333f
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/gogpu/gpucontext v0.31.3
-	github.com/gogpu/gputypes v0.8.0
+	github.com/gogpu/gputypes v0.8.2
 	github.com/gogpu/wgpu v0.34.5
 	github.com/klauspost/compress v1.20.3
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	github.com/qmuntal/gltf v0.29.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/image v0.47.0
-	nimbleterminal.dev/ntcanvas v0.1.3
+	nimbleterminal.dev/ntcanvas v0.1.4
 	nimbleterminal.dev/ntgpuimage v0.6.0
-	nimbleterminal.dev/ntpicture v0.1.4
+	nimbleterminal.dev/ntpicture v0.1.5
 )
 
 require (
@@ -28,7 +28,7 @@ require (
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/go-webgpu/goffi v0.6.7 // indirect
+	github.com/go-webgpu/goffi v0.6.8 // indirect
 	github.com/go-webgpu/webgpu v0.5.5 // indirect
 	github.com/gogpu/naga v0.20.4 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect

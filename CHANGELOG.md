@@ -1,15 +1,16 @@
 # Changelog
 
-## Next booba dependency bump
-
-When adopting booba v0.11.0 or later, regenerate browser assets with
-`booba-assets` and move imports from `ghostty-web/ghostty-web.js` to
-`ntwebterm/ntwebterm.js` (under `static/` for served pages). The engine is
-ntwebterm, formerly NimbleMarkets' ghostty-web fork. Booba 0.11 retains the
-old module as a re-export and the old WASM path; those compatibility paths
-are scheduled for removal in 0.12. Existing dependency pins are unchanged.
-
 ## Unreleased
+
+- Update gputypes to v0.8.2 and goffi to v0.6.8 across all three Go modules.
+  Retain wgpu v0.34.5 and naga v0.20.4: wgpu v0.34.6/v0.34.7 fail Metal
+  hardware tests with their matching naga versions.
+
+- Update ntcanvas to v0.1.4 and ntpicture to v0.1.5 across the library and
+  example modules; ntgpuimage remains at v0.6.0.
+- Migrate the browser demos and asset tool from `github.com/NimbleMarkets/go-booba`
+  v0.10.7 to `nimbleterminal.dev/booba` v0.12.1. Regenerate browser assets with
+  `task build-web` to pick up the bundled ntwebterm v0.4.2 runtime.
 
 ## v0.8.0 (2026-10-30)
 
