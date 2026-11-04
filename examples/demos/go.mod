@@ -9,7 +9,7 @@ require (
 	github.com/qmuntal/gltf v0.29.0
 	github.com/spf13/pflag v1.0.10
 	nimbleterminal.dev/booba v0.12.1
-	nimbleterminal.dev/nt3d v0.8.0
+	nimbleterminal.dev/nt3d v0.8.1
 	nimbleterminal.dev/ntpicture v0.1.5
 )
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.8.1 (2026-11-04)
+
 - Update gputypes to v0.8.2 and goffi to v0.6.8 across all three Go modules.
   Retain wgpu v0.34.5 and naga v0.20.4: wgpu v0.34.6/v0.34.7 fail Metal
   hardware tests with their matching naga versions.
