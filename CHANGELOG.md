@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add native Go fuzz targets for the NimbleTerminal fuzzing fleet
+  (fuzz.nimbleterminal.com): every mesh decoder (STL, OBJ, PLY with its
+  Gaussian and compressed variants, 3MF, Stanford .conf, glTF, SOG, SPZ)
+  under small triangle and byte budgets, with encode/decode round trips for
+  STL, OBJ, and PLY; polygon triangulation; AABB tree operations against a
+  brute-force oracle; spherical-harmonic rotation; and line clipping.
+  `task fuzz-smoke` runs each target briefly the way the fleet does.
+
 ## v0.8.1 (2026-11-04)
 
 - Update gputypes to v0.8.2 and goffi to v0.6.8 across all three Go modules.

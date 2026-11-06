@@ -9,6 +9,10 @@ vars:
   DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water
   # Every tool: a command in cmd/nt3d-NAME, built to bin/nt3d-NAME.
   TOOLS: palette
+  # Every fuzz target, as package:Function; fuzz-smoke runs each briefly, and
+  # the NimbleTerminal fuzzing fleet (fuzz.nimbleterminal.com) runs them continuously.
+  FUZZ_TARGETS: .:FuzzClipLine aabbtree:FuzzTreeOperations sh:FuzzRotateEvaluate mesh:FuzzDecodeSTL mesh:FuzzDecodeOBJ mesh:FuzzDecodePLY mesh:FuzzDecode3MF mesh:FuzzDecodeConf mesh:FuzzTriangulate mesh/gltf:FuzzDecode mesh/sog:FuzzDecode mesh/spz:FuzzDecode
+  FUZZTIME: 10s
 
 tasks:
   default:
@@ -33,6 +37,11 @@ tasks:
     cmds:
       - go test -mod=readonly -race ./...
       - go -C examples/demos test -mod=readonly -race ./...
+  fuzz-smoke:
+    desc: Run every fuzz target for FUZZTIME (default 10s) as the fleet does, one process on one CPU
+    cmds:
+      - for: {var: FUZZ_TARGETS}
+        cmd: GOMAXPROCS=1 go test -mod=readonly -parallel=1 -run='^$' -fuzz='^{{index (splitList ":" .ITEM) 1}}$' -fuzztime={{.FUZZTIME}} ./{{index (splitList ":" .ITEM) 0}}
   test-gpu:
     desc: Explicit hardware GPU tests (fail if no GPU is available)
     cmds:
