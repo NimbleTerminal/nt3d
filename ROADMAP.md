@@ -29,6 +29,8 @@ Nothing queued; the sections below are the open work.
   transparent, cutout, and transmissive meshes draw the hull alone.
 - [ ] **Toon cast shadows are stair-stepped** over a large scene: the bands
   threshold the shadow map's texels hard, as the toon demo's ground shows.
+  Accepted as it is for now (2026-11-09); blending the shadow term across
+  the band threshold would smooth it, at the cost of the crisp edge.
 - [ ] **A general `Scene.SetMaterial` for a subtree**, possibly: `SetToon`
   is the third one-off setter for a single material field, after
   `SetTexture` and `SetNormalMap`. It has to decide what happens to textures
