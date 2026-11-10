@@ -20,10 +20,19 @@ import (
 // Vertices that share a position with different normals are expanded along
 // their averaged contour normal so faceted meshes (boxes, prisms, cylinders)
 // form seamless silhouettes. Open sheets have no back-face contour.
+//
+// Crease, in degrees from 0 (disabled) to 180, also draws a line of the
+// outline's width and color along every edge where the mesh's two faces turn
+// by more than that angle, along open borders, and along edges three or more
+// faces share: the edges inside a silhouette that the hull cannot show, such
+// as a box's near corner. Faces are joined by vertex position. Only opaque,
+// rigid meshes draw them: transparent, cutout, transmissive, skinned, and
+// morphed meshes keep the hull alone.
 type OutlineStyle struct {
-	Width float32
-	Color color.RGBA
-	Units PointUnits
+	Width  float32
+	Color  color.RGBA
+	Units  PointUnits
+	Crease float32
 }
 
 func (o OutlineStyle) validate() error {
@@ -32,6 +41,9 @@ func (o OutlineStyle) validate() error {
 	}
 	if !validFloat(o.Width) || o.Width < 0 || (o.Units == PixelUnits && o.Width > 32) {
 		return fmt.Errorf("nt3d: outline width must be 0..32 pixels")
+	}
+	if !validFloat(o.Crease) || o.Crease < 0 || o.Crease > 180 {
+		return fmt.Errorf("nt3d: outline crease must be 0..180 degrees")
 	}
 	return nil
 }
