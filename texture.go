@@ -109,6 +109,8 @@ type Material struct {
 	Transparent    bool
 	Specular       float32
 	Shininess      float32
+	// Toon shades in flat bands; see ToonStyle. The zero value is off.
+	Toon ToonStyle
 }
 
 // transparent reports whether a geometry's triangles are blended.

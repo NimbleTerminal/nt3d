@@ -254,3 +254,65 @@ func (r *lightRig) highlightNormal(m *Material, n, p, view, geometric nt3dmath.V
 	}
 	return c
 }
+
+// toonLight is lightNormal for a toon material: flat ambient tinted by the
+// style's shade, each light's cosine and cast shadow snapped to bands, and a
+// rim highlight on lit surface seen edge-on from unit direction view.
+func (r *lightRig) toonLight(rgb *[3]float32, t ToonStyle, n, p, geometric, view nt3dmath.Vec3) {
+	w := toonEdge(t.Softness, t.Bands)
+	var direct [3]float32
+	for i := range r.lights {
+		l := &r.lights[i]
+		dir, fade := l.toward(p)
+		s := n.Dot(dir)
+		if fade == 0 || s <= 0 {
+			continue
+		}
+		if i == r.shadowLight && r.shadow != nil {
+			s *= r.shadow.visibility(p, geometric, dir)
+		}
+		b := toonBand(s, t.Bands, w) * fade
+		for k := range direct {
+			direct[k] += l.color[k] * b
+		}
+	}
+	var rim float32
+	if t.Rim > 0 {
+		rim = t.Rim * toonStep(toonRim, w, 1-max(0, n.Dot(view)))
+	}
+	shade := t.shade()
+	for k := range rgb {
+		ambient := (r.ground[k] + r.sky[k]) * .5
+		if r.environmentActive {
+			ambient += max(0, r.environment[0][k]*.2820948)
+		}
+		rgb[k] = rgb[k]*(ambient*shade[k]+direct[k]) + rim*direct[k]
+	}
+}
+
+// toonHighlight is highlightNormal for a toon material: each light's
+// specular lobe becomes a flat spot.
+func (r *lightRig) toonHighlight(m *Material, n, p, view, geometric nt3dmath.Vec3) [3]float32 {
+	w := toonEdge(m.Toon.Softness, m.Toon.Bands)
+	var c [3]float32
+	for i := range r.lights {
+		l := &r.lights[i]
+		dir, fade := l.toward(p)
+		if fade == 0 || n.Dot(dir) <= 0 {
+			continue
+		}
+		h := dir.Add(view)
+		if h.Dot(h) == 0 {
+			continue
+		}
+		lobe := float32(math.Pow(float64(max(0, n.Dot(h.Normalize()))), float64(m.shininess())))
+		s := m.Specular * toonStep(toonSpot, w, lobe) * fade
+		if i == r.shadowLight && r.shadow != nil {
+			s *= r.shadow.visibility(p, geometric, dir)
+		}
+		for k := range c {
+			c[k] += l.color[k] * s
+		}
+	}
+	return c
+}
