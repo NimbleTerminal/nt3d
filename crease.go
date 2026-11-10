@@ -3,6 +3,10 @@ package nt3d
 
 import (
 	"math"
+	"sync"
+	"sync/atomic"
+	"unsafe"
+	"weak"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
@@ -81,4 +85,58 @@ func creaseEdges(vertices []Vertex, indices []uint32, degrees float32) []nt3dmat
 		}
 	}
 	return out
+}
+
+// creaseKey names a mesh's arrays and crease angle. Its addresses are only
+// compared: creaseEntry's weak pointers tell a live array from another that
+// later took its address.
+type creaseKey struct {
+	vertices, indices uintptr
+	nv, ni            int
+	degrees           float32
+}
+
+type creaseEntry struct {
+	vertices weak.Pointer[Vertex]
+	indices  weak.Pointer[uint32]
+	edges    []nt3dmath.Vec3
+}
+
+// creaseCache keeps each mesh's crease edges between frames, for the software
+// renderer, which has no per-geometry state of its own. Meshes are immutable
+// once drawn, so an entry holds while its arrays live; entries whose arrays
+// were collected are swept as the cache grows.
+var creaseCache = struct {
+	sync.Mutex
+	entries map[creaseKey]creaseEntry
+	sweepAt int
+}{entries: map[creaseKey]creaseEntry{}, sweepAt: 256}
+
+// creaseExtractions counts creaseEdges runs made for the cache.
+var creaseExtractions atomic.Int64
+
+// cachedCreaseEdges is creaseEdges for a creased geometry, kept between frames.
+func cachedCreaseEdges(g *Geometry) []nt3dmath.Vec3 {
+	if len(g.Vertices) == 0 || len(g.Indices) == 0 {
+		return nil
+	}
+	v, i := unsafe.SliceData(g.Vertices), unsafe.SliceData(g.Indices)
+	key := creaseKey{uintptr(unsafe.Pointer(v)), uintptr(unsafe.Pointer(i)), len(g.Vertices), len(g.Indices), g.Outline.Crease}
+	creaseCache.Lock()
+	defer creaseCache.Unlock()
+	if e, ok := creaseCache.entries[key]; ok && e.vertices.Value() == v && e.indices.Value() == i {
+		return e.edges
+	}
+	if len(creaseCache.entries) >= creaseCache.sweepAt {
+		for k, e := range creaseCache.entries {
+			if e.vertices.Value() == nil || e.indices.Value() == nil {
+				delete(creaseCache.entries, k)
+			}
+		}
+		creaseCache.sweepAt = max(256, 2*len(creaseCache.entries))
+	}
+	creaseExtractions.Add(1)
+	edges := creaseEdges(g.Vertices, g.Indices, g.Outline.Crease)
+	creaseCache.entries[key] = creaseEntry{weak.Make(v), weak.Make(i), edges}
+	return edges
 }

@@ -711,6 +711,31 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		}
 	}
 
+	// Crease lines are a pass of their own, after the hulls: strokes in the
+	// outline's color and width along the edges inside a silhouette, depth
+	// tested as lines are. Every edge is drawn; none are sampled away.
+	for gi := range f.Geometry {
+		g := &f.Geometry[gi]
+		if !drawn[gi] || !creased(g) {
+			continue
+		}
+		inst := instance(f, gi)
+		local := f
+		local.Matrix = f.Matrix.Mul(inst.World)
+		m := &local.Matrix
+		ink := color.RGBA{g.Outline.Color.R, g.Outline.Color.G, g.Outline.Color.B, 255}
+		edges := cachedCreaseEdges(g)
+		for i := 0; i+1 < len(edges); i += 2 {
+			a, b := edges[i], edges[i+1]
+			width := g.Outline.Width * px
+			if g.Outline.Units == WorldUnits {
+				mid := a.Add(b).Scale(.5)
+				width = f.outlineWidth(g.Outline, m[3]*mid.X+m[7]*mid.Y+m[11]*mid.Z+m[15], px)
+			}
+			rasterStroke(local, Vertex{Position: a, Color: ink}, Vertex{Position: b, Color: ink}, width, 0, lineBias, put, strokeFog(inst.World.Point(a), inst.World.Point(b)))
+		}
+	}
+
 	// rasterDisc draws a clipped shadow triangle without writing depth.
 	rasterDisc := func(a, b, c *clipCorner) {
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w

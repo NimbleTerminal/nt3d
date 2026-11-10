@@ -2,6 +2,9 @@
 package nt3d
 
 import (
+	"bytes"
+	"image"
+	"image/color"
 	"math"
 	"testing"
 
@@ -185,5 +188,184 @@ func TestCreasedEligibility(t *testing.T) {
 	check(t, s.SetOutline(Root, style))
 	if f := frame(t, s); f.Geometry[0].Outline != style || creased(&f.Geometry[0]) {
 		t.Fatal("a deformed mesh draws crease lines")
+	}
+}
+
+var creaseGray = color.RGBA{200, 200, 200, 255}
+
+// creaseStyle is the ink the crease tests look for.
+var creaseStyle = OutlineStyle{Width: 2, Color: outlineInk, Crease: 30}
+
+// creaseScene is evenly lit gray half-unit cubes, one per transform, each
+// with style.
+func creaseScene(t *testing.T, style OutlineStyle, m *Material, transforms ...nt3dmath.Mat4) (*Scene, Frame) {
+	t.Helper()
+	g, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .5, Y: .5, Z: .5}, Color: creaseGray, Material: m})
+	check(t, err)
+	g.Outline = style
+	s := NewScene()
+	for i, world := range transforms {
+		id, err := s.SetGeometry(string(rune('a'+i)), g)
+		check(t, err)
+		check(t, s.SetTransform(id, world))
+	}
+	return s, creaseFrame(t, s)
+}
+
+func creaseFrame(t *testing.T, s *Scene) Frame {
+	t.Helper()
+	f, err := s.Frame(DefaultCamera(), 200, 200)
+	check(t, err)
+	f.Lighting, f.Background = even, toonSky
+	return f
+}
+
+// cornerEdges are the midpoints, in world space, of the three edges that
+// meet at the corner of f's instance i nearest the viewer (or farthest).
+func cornerEdges(f Frame, i int, farthest bool) (mids []nt3dmath.Vec3) {
+	world := f.Instances[i].World
+	var corner nt3dmath.Vec3
+	best := float32(math.Inf(1))
+	for _, sx := range []float32{-.25, .25} {
+		for _, sy := range []float32{-.25, .25} {
+			for _, sz := range []float32{-.25, .25} {
+				c := nt3dmath.Vec3{X: sx, Y: sy, Z: sz}
+				_, _, z, _ := f.Matrix.Project(world.Point(c), f.Width, f.Height)
+				if farthest {
+					z = -z
+				}
+				if z < best {
+					best, corner = z, c
+				}
+			}
+		}
+	}
+	for axis := range 3 {
+		m := corner
+		*[]*float32{&m.X, &m.Y, &m.Z}[axis] = 0
+		mids = append(mids, world.Point(m))
+	}
+	return mids
+}
+
+// inked reports whether a pixel within a pixel of world point p is ink.
+func inked(f Frame, img image.Image, p nt3dmath.Vec3) bool {
+	x, y := pixel(f, p)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			if at(img, x+dx, y+dy) == outlineInk {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestCreaseLinesRendered(t *testing.T) {
+	_, f := creaseScene(t, creaseStyle, nil, nt3dmath.Identity())
+	img := softwareRender(f)
+	for _, mid := range cornerEdges(f, 0, false) {
+		if !inked(f, img, mid) {
+			x, y := pixel(f, mid)
+			t.Fatalf("no crease line at %v: %v", mid, at(img, x, y))
+		}
+	}
+	_, f = creaseScene(t, OutlineStyle{Width: 2, Color: outlineInk}, nil, nt3dmath.Identity())
+	img = softwareRender(f)
+	for _, mid := range cornerEdges(f, 0, false) {
+		if x, y := pixel(f, mid); at(img, x, y) != creaseGray {
+			t.Fatalf("without a crease angle, %v at %v", at(img, x, y), mid)
+		}
+	}
+}
+
+func TestCreaseZeroIsUnchanged(t *testing.T) {
+	// A smooth sphere has no crease edges: asking for them changes nothing.
+	f := outlineFrame(t)
+	plain := softwareRender(f).(*image.RGBA)
+	f.Geometry[0].Outline.Crease = 30
+	if !creased(&f.Geometry[0]) {
+		t.Fatal("the sphere is not eligible")
+	}
+	if with := softwareRender(f).(*image.RGBA); !bytes.Equal(plain.Pix, with.Pix) {
+		t.Fatal("a crease angle changed a mesh without crease edges")
+	}
+}
+
+func TestCreaseLinesHidden(t *testing.T) {
+	_, f := creaseScene(t, creaseStyle, nil, nt3dmath.Identity())
+	img := softwareRender(f)
+	for _, mid := range cornerEdges(f, 0, true) {
+		if inked(f, img, mid) {
+			t.Fatalf("a far edge shows through at %v", mid)
+		}
+	}
+}
+
+func TestCreaseLinesFollowInstances(t *testing.T) {
+	_, f := creaseScene(t, creaseStyle, nil,
+		nt3dmath.Translation(nt3dmath.Vec3{X: -.8}),
+		nt3dmath.Translation(nt3dmath.Vec3{X: .6}).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 2, Y: 1, Z: 1})))
+	img := softwareRender(f)
+	for i := range f.Geometry {
+		for _, mid := range cornerEdges(f, i, false) {
+			if !inked(f, img, mid) {
+				t.Fatalf("instance %d has no crease line at %v", i, mid)
+			}
+		}
+	}
+}
+
+func TestCreaseSkipsIneligible(t *testing.T) {
+	glass := &Material{Transparent: true}
+	_, with := creaseScene(t, creaseStyle, glass, nt3dmath.Identity())
+	_, without := creaseScene(t, OutlineStyle{Width: 2, Color: outlineInk}, glass, nt3dmath.Identity())
+	if !bytes.Equal(softwareRender(with).(*image.RGBA).Pix, softwareRender(without).(*image.RGBA).Pix) {
+		t.Fatal("a transparent mesh drew crease lines")
+	}
+	s, _, _ := animationSkinScene(t)
+	check(t, s.SetOutline(Root, OutlineStyle{Width: 2, Color: outlineInk}))
+	hull := softwareRender(frame(t, s)).(*image.RGBA)
+	check(t, s.SetOutline(Root, creaseStyle))
+	if !bytes.Equal(hull.Pix, softwareRender(frame(t, s)).(*image.RGBA).Pix) {
+		t.Fatal("a deformed mesh drew crease lines")
+	}
+}
+
+func TestCreaseSharedAngles(t *testing.T) {
+	g, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .5, Y: .5, Z: .5}, Color: creaseGray})
+	check(t, err)
+	shared, err := NewSharedGeometry(g)
+	check(t, err)
+	s := NewScene()
+	a, err := s.SetShared("a", shared)
+	check(t, err)
+	b, err := s.SetShared("b", shared)
+	check(t, err)
+	check(t, s.SetTransform(a, nt3dmath.Translation(nt3dmath.Vec3{X: -.6})))
+	check(t, s.SetTransform(b, nt3dmath.Translation(nt3dmath.Vec3{X: .6})))
+	check(t, s.SetOutline(a, creaseStyle))
+	check(t, s.SetOutline(b, OutlineStyle{Width: 2, Color: outlineInk}))
+	f := creaseFrame(t, s)
+	img := softwareRender(f)
+	for i := range f.Geometry {
+		want := f.Instances[i].Node == a
+		for _, mid := range cornerEdges(f, i, false) {
+			if inked(f, img, mid) != want {
+				t.Fatalf("node %d: crease line %v at %v", f.Instances[i].Node, !want, mid)
+			}
+		}
+	}
+}
+
+func TestCreaseCacheReuse(t *testing.T) {
+	// The scene keeps a copy of the mesh for each node: two meshes.
+	_, f := creaseScene(t, creaseStyle, nil, nt3dmath.Translation(nt3dmath.Vec3{X: -.6}), nt3dmath.Translation(nt3dmath.Vec3{X: .6}))
+	before := creaseExtractions.Load()
+	softwareRender(f)
+	first := creaseExtractions.Load() - before
+	softwareRender(f)
+	if again := creaseExtractions.Load() - before - first; first < 1 || first > 2 || again != 0 {
+		t.Fatalf("%d extractions in the first frame, %d in the second", first, again)
 	}
 }
