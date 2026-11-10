@@ -84,10 +84,16 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 	return nil
 }
 
+// maxCreaseAngles is how many crease angles' edges an uploaded mesh keeps
+// before those no draw has used lately are released.
+const maxCreaseAngles = 4
+
 // prepareCreases uploads the crease edges each draw of a creased mesh needs,
 // at its own crease angle, and pairs them with the draw's transforms. A mesh
-// keeps the edges of every angle its instances have used.
+// keeps the edges of the angles its instances use; past maxCreaseAngles,
+// those no draw has used in this frame or the last are released.
 func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
+	g.creaseFrame++
 	for _, d := range g.draws {
 		geom := &f.Geometry[d.index]
 		if !creased(geom) {
@@ -101,6 +107,21 @@ func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
 			for _, p := range edges {
 				data = appendFloats(data, p.X, p.Y, p.Z, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 			}
+			if len(d.geom.creases) >= maxCreaseAngles {
+				for angle, old := range d.geom.creases {
+					if old.used+1 >= g.creaseFrame {
+						continue
+					}
+					for _, set := range d.geom.sets {
+						if bind := set.creaseBinds[old]; bind != nil {
+							bind.Release()
+							delete(set.creaseBinds, old)
+						}
+					}
+					releaseBatch(old.batch)
+					delete(d.geom.creases, angle)
+				}
+			}
 			c = &gpuCrease{}
 			if err := g.uploadData(dev, &c.batch, data, 48); err != nil {
 				return err
@@ -110,6 +131,7 @@ func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
 			}
 			d.geom.creases[bits] = c
 		}
+		c.used = g.creaseFrame
 		if c.batch.buffer == nil || d.set.creaseBinds[c] != nil {
 			continue
 		}

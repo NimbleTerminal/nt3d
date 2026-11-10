@@ -175,8 +175,8 @@ models; on a large flat floor it draws an arc where the view grazes it.
 
 Textures, tint, normal maps, cutouts, transparency, reflections,
 transmission, and fog work as before around the banded light. `Unlit`
-materials ignore `Toon`; points, boxes, lines, splats, and fur are not
-affected. The GPU and software renderer agree away from band edges.
+materials ignore `Toon`; points, boxes, lines, and splats are not
+affected. [Fur](#toon-fur) is meshes, and takes it. The GPU and software renderer agree away from band edges.
 
 For geometry already in a scene, such as a loaded or animated model,
 `scene.SetToon(root, style)` sets the style on every indexed mesh under

@@ -369,3 +369,32 @@ func TestCreaseCacheReuse(t *testing.T) {
 		t.Fatalf("%d extractions in the first frame, %d in the second", first, again)
 	}
 }
+
+// A mesh keeps the edges of its last two crease angles, not of every angle
+// it ever had: an angle slider must not grow the cache.
+func TestCreaseCacheBounded(t *testing.T) {
+	_, f := creaseScene(t, creaseStyle, nil, nt3dmath.Identity())
+	softwareRender(f)
+	creaseCache.Lock()
+	meshes := len(creaseCache.entries)
+	creaseCache.Unlock()
+	for i := range 50 {
+		f.Geometry[0].Outline.Crease = float32(20 + i)
+		softwareRender(f)
+	}
+	creaseCache.Lock()
+	grown := len(creaseCache.entries) - meshes
+	creaseCache.Unlock()
+	if grown != 0 {
+		t.Fatalf("50 crease angles on one mesh added %d cache entries", grown)
+	}
+	// Flipping between two angles extracts nothing more.
+	before := creaseExtractions.Load()
+	for _, c := range []float32{69, 68, 69, 68} {
+		f.Geometry[0].Outline.Crease = c
+		softwareRender(f)
+	}
+	if n := creaseExtractions.Load() - before; n != 0 {
+		t.Fatalf("%d extractions flipping between the last two angles", n)
+	}
+}

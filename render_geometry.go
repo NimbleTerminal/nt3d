@@ -98,7 +98,10 @@ type gpuGeometry struct {
 }
 
 // gpuCrease is a mesh's crease edges at one angle: two line records a segment.
-type gpuCrease struct{ batch gpuBatch }
+type gpuCrease struct {
+	batch gpuBatch
+	used  uint64 // The crease frame a draw last used it in.
+}
 
 func (n *gpuGeometry) release(shared *gpuShared) {
 	for _, s := range n.sets {

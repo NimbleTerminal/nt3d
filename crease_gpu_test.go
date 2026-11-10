@@ -176,3 +176,67 @@ func TestGPUCreaseOffIsUnchanged(t *testing.T) {
 		t.Fatal("a crease angle changed a GPU mesh without crease edges")
 	}
 }
+
+// One shared mesh on three nodes with one style is a single instanced draw:
+// each instance, not only the first, gets its crease lines.
+func TestGPUCreaseInstancedDraw(t *testing.T) {
+	g, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .5, Y: .5, Z: .5}, Color: creaseGray})
+	check(t, err)
+	shared, err := NewSharedGeometry(g)
+	check(t, err)
+	s := NewScene()
+	for i, world := range []nt3dmath.Mat4{
+		nt3dmath.Translation(nt3dmath.Vec3{X: -1}),
+		nt3dmath.Translation(nt3dmath.Vec3{Y: .2}).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 1, Y: 1.5, Z: 1})),
+		nt3dmath.Translation(nt3dmath.Vec3{X: 1.1}).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 1.6, Y: 1, Z: .7})),
+	} {
+		id, err := s.SetShared(string(rune('a'+i)), shared)
+		check(t, err)
+		check(t, s.SetTransform(id, world))
+	}
+	check(t, s.SetOutline(Root, creaseStyle))
+	f := creaseFrame(t, s)
+	r := &gpuRenderer{}
+	defer r.Close()
+	gpu := creaseGPU(t, r, f)
+	if len(r.draws) != 1 || r.draws[0].count != 3 {
+		t.Fatalf("%d draws; want one of three instances", len(r.draws))
+	}
+	for i := range f.Geometry {
+		for _, mid := range cornerEdges(f, i, false) {
+			if !inked(f, gpu, mid) {
+				t.Fatalf("instance %d has no crease line at %v", i, mid)
+			}
+		}
+	}
+}
+
+// A mesh keeps few crease angles' buffers: an angle slider must not leak one
+// buffer and bind group a step.
+func TestGPUCreaseAnglesBounded(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	s, f := creaseScene(t, creaseStyle, nil, nt3dmath.Identity())
+	mids := cornerEdges(f, 0, false)
+	var img *image.RGBA
+	for i := range 30 {
+		check(t, s.SetOutline(Root, OutlineStyle{Width: 2, Color: outlineInk, Crease: float32(20 + i)}))
+		f = creaseFrame(t, s)
+		img = creaseGPU(t, r, f)
+	}
+	buffers, binds := 0, 0
+	for _, node := range r.geometries {
+		buffers += len(node.creases)
+		for _, set := range node.sets {
+			binds += len(set.creaseBinds)
+		}
+	}
+	if buffers > maxCreaseAngles || binds > maxCreaseAngles {
+		t.Fatalf("%d crease buffers and %d bind groups after 30 angles", buffers, binds)
+	}
+	for _, mid := range mids {
+		if !inked(f, img, mid) {
+			t.Fatalf("the latest angle draws no line at %v", mid)
+		}
+	}
+}

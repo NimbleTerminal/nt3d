@@ -121,21 +121,40 @@ fn toonBand(x:f32,bands:f32,w:f32)->f32 {
  for(var k=1.0;k<bands-0.5;k=k+1.0) {sum+=toonStep(k/bands,w,x);}
  return sum/(bands-1.0);
 }
+// viewAt is the unit direction from world point p toward the viewer.
+fn viewAt(p:vec3<f32>)->vec3<f32> {
+ if u.eye.w>0.5 {return normalize(u.eye.xyz-p);}
+ return -u.forward.xyz;
+}
+// toonCosine is the cosine between unit normal n at p and light l, and
+// toonLobe its specular lobe there: what the toon bands step on.
+fn toonCosine(n:vec3<f32>,p:vec3<f32>,l:Light)->f32 {return dot(n,toward(l,p).xyz);}
+fn toonLobe(n:vec3<f32>,p:vec3<f32>,l:Light,shininess:f32)->f32 {
+ let h=toward(l,p).xyz+viewAt(p);
+ if dot(h,h)<=0.0 {return 0.0;}
+ return pow(max(0.0,dot(n,normalize(h))),shininess);
+}
 // finish lights a surface, adds each light's specular highlight, and fades
 // into the fog. Fragments without a normal are unlit. A mesh's fragments
 // carry their instance (optics.w, one more than its index; zero otherwise)
 // to read its toon style: flat ambient tinted by the shade, each light's
 // cosine and cast shadow snapped to bands, a flat specular spot, and a rim.
-// Band edges blend across about a pixel, by the normal's screen derivatives,
-// which are taken here, before any branch on a varying.
+// Band edges blend across about a pixel: each stepped term is found again a
+// pixel over in x and in y, from the screen derivatives of the normal and
+// the world position, so a flat face under a point light or a perspective
+// view blends as a curved one does. The derivatives are taken here, before
+// any branch on a varying.
 fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {return finishNormal(o,rgb,o.normal);}
 fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
  var c=rgb;
  let nx=dpdx(shadeNormal);let ny=dpdy(shadeNormal);
+ let wx=dpdx(o.world);let wy=dpdy(o.world);
  if dot(o.normal,o.normal)>0.0 {
   let n=normalize(shadeNormal);
-  var view=-u.forward.xyz;
-  if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
+  let view=viewAt(o.world);
+  // The normal and position a pixel over, for the toon band edges.
+  let nX=normalize(shadeNormal+nx);let nY=normalize(shadeNormal+ny);
+  let pX=o.world+wx;let pY=o.world+wy;
   var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);
   if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;}
   let bands=style.x;let soft=style.y/max(bands,1.0);
@@ -147,7 +166,7 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
    for(var i=0u;i<u32(u.sky.w);i=i+1u) {
     let l=u.lights[i];let t=toward(l,o.world);let s=dot(n,t.xyz);
     if t.w>0.0 && s>0.0 {
-     let w=max(0.0001,abs(dot(nx,t.xyz))+abs(dot(ny,t.xyz))+soft);
+     let w=max(0.0001,abs(toonCosine(nX,pX,l)-s)+abs(toonCosine(nY,pY,l)-s)+soft);
      direct+=l.b.rgb*(t.w*toonBand(s*lightVisibility(i,o.world,geometric,t.xyz),bands,w));
     }
    }
@@ -173,7 +192,7 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
      let hn=normalize(h);let nh=max(0.0,dot(n,hn));
      var lobe=pow(nh,o.spec.y);
      if bands>0.5 {
-      let w=max(0.0001,o.spec.y*pow(nh,o.spec.y-1.0)*(abs(dot(nx,hn))+abs(dot(ny,hn)))+soft);
+      let w=max(0.0001,abs(toonLobe(nX,pX,l,o.spec.y)-lobe)+abs(toonLobe(nY,pY,l,o.spec.y)-lobe)+soft);
       lobe=toonStep(0.5,w,lobe);
      }
      c+=l.b.rgb*(lightVisibility(i,o.world,normalize(o.normal),t.xyz)*t.w*o.spec.x*lobe);
@@ -181,8 +200,9 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
    }
   }
   if bands>0.5 && toon.w>0.0 {
-   let w=max(0.0001,abs(dot(nx,view))+abs(dot(ny,view))+soft);
-   c+=direct*(toon.w*toonStep(0.7,w,1.0-max(0.0,dot(n,view))));
+   let facing=max(0.0,dot(n,view));
+   let w=max(0.0001,abs(max(0.0,dot(nX,viewAt(pX)))-facing)+abs(max(0.0,dot(nY,viewAt(pY)))-facing)+soft);
+   c+=direct*(toon.w*toonStep(0.7,w,1.0-facing));
   }
  }
  c=mix(c,u.fogColor.rgb,fogAmount(o.world));

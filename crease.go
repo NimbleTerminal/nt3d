@@ -87,19 +87,27 @@ func creaseEdges(vertices []Vertex, indices []uint32, degrees float32) []nt3dmat
 	return out
 }
 
-// creaseKey names a mesh's arrays and crease angle. Its addresses are only
-// compared: creaseEntry's weak pointers tell a live array from another that
-// later took its address.
+// creaseKey names a mesh's arrays. Its addresses are only compared:
+// creaseEntry's weak pointers tell a live array from another that later took
+// its address.
 type creaseKey struct {
 	vertices, indices uintptr
 	nv, ni            int
-	degrees           float32
 }
 
+// creaseEntry is a mesh's crease edges at the last two angles asked of it:
+// enough to flip between two looks, without keeping an angle slider's every
+// step.
 type creaseEntry struct {
 	vertices weak.Pointer[Vertex]
 	indices  weak.Pointer[uint32]
-	edges    []nt3dmath.Vec3
+	angles   [2]creaseAngle
+	next     int // The slot the next new angle replaces.
+}
+
+type creaseAngle struct {
+	degrees float32 // Zero is an empty slot: no mesh is creased at zero.
+	edges   []nt3dmath.Vec3
 }
 
 // creaseCache keeps each mesh's crease edges between frames, for the software
@@ -108,9 +116,9 @@ type creaseEntry struct {
 // were collected are swept as the cache grows.
 var creaseCache = struct {
 	sync.Mutex
-	entries map[creaseKey]creaseEntry
+	entries map[creaseKey]*creaseEntry
 	sweepAt int
-}{entries: map[creaseKey]creaseEntry{}, sweepAt: 256}
+}{entries: map[creaseKey]*creaseEntry{}, sweepAt: 256}
 
 // creaseExtractions counts creaseEdges runs made for the cache.
 var creaseExtractions atomic.Int64
@@ -121,22 +129,33 @@ func cachedCreaseEdges(g *Geometry) []nt3dmath.Vec3 {
 		return nil
 	}
 	v, i := unsafe.SliceData(g.Vertices), unsafe.SliceData(g.Indices)
-	key := creaseKey{uintptr(unsafe.Pointer(v)), uintptr(unsafe.Pointer(i)), len(g.Vertices), len(g.Indices), g.Outline.Crease}
+	key := creaseKey{uintptr(unsafe.Pointer(v)), uintptr(unsafe.Pointer(i)), len(g.Vertices), len(g.Indices)}
 	creaseCache.Lock()
 	defer creaseCache.Unlock()
-	if e, ok := creaseCache.entries[key]; ok && e.vertices.Value() == v && e.indices.Value() == i {
-		return e.edges
+	e := creaseCache.entries[key]
+	if e != nil && (e.vertices.Value() != v || e.indices.Value() != i) {
+		e = nil
 	}
-	if len(creaseCache.entries) >= creaseCache.sweepAt {
-		for k, e := range creaseCache.entries {
-			if e.vertices.Value() == nil || e.indices.Value() == nil {
-				delete(creaseCache.entries, k)
+	if e == nil {
+		if len(creaseCache.entries) >= creaseCache.sweepAt {
+			for k, old := range creaseCache.entries {
+				if old.vertices.Value() == nil || old.indices.Value() == nil {
+					delete(creaseCache.entries, k)
+				}
 			}
+			creaseCache.sweepAt = max(256, 2*len(creaseCache.entries))
 		}
-		creaseCache.sweepAt = max(256, 2*len(creaseCache.entries))
+		e = &creaseEntry{vertices: weak.Make(v), indices: weak.Make(i)}
+		creaseCache.entries[key] = e
+	}
+	for _, a := range e.angles {
+		if a.degrees == g.Outline.Crease {
+			return a.edges
+		}
 	}
 	creaseExtractions.Add(1)
 	edges := creaseEdges(g.Vertices, g.Indices, g.Outline.Crease)
-	creaseCache.entries[key] = creaseEntry{weak.Make(v), weak.Make(i), edges}
+	e.angles[e.next] = creaseAngle{g.Outline.Crease, edges}
+	e.next = (e.next + 1) % len(e.angles)
 	return edges
 }

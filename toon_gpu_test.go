@@ -151,3 +151,50 @@ func TestGPUToonLeavesPointsAndBoxes(t *testing.T) {
 		t.Fatal("the mesh itself is not toon shaded")
 	}
 }
+
+// A flat face has no normal derivative: under a point light its band edge
+// must still blend, by how the light's direction changes across a pixel.
+func TestGPUToonFlatFloorEdgeIsAntialiased(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	camera := DefaultCamera()
+	camera.Projection, camera.Alpha = Perspective, 89
+	s := NewScene()
+	_, err := s.SetGeometry("floor", quad(3, -1, white, &Material{Toon: ToonStyle{Bands: 2}}, false))
+	check(t, err)
+	f, err := s.Frame(camera, 400, 400)
+	check(t, err)
+	// The band edge is the circle 60 degrees off the light's foot.
+	f.Lighting = Lighting{Lights: []Light{{Kind: PointLight, Position: nt3dmath.Vec3{}, Range: 40}}}
+	img := toonGPU(t, r, f)
+	blended, rows := 0, 0
+	for y := 150; y < 250; y += 5 {
+		// The sharpest step right of the center, and whether a pixel beside
+		// it lies well between the tones on its two sides. An edge blended
+		// across one pixel shows such a pixel in most rows (not all: the edge
+		// can fall between two pixels); a hard step shows none.
+		best, edge := 0, 0
+		for x := 205; x < 394; x++ {
+			if d := absInt(int(at(img, x+1, y).R) - int(at(img, x, y).R)); d > best {
+				best, edge = d, x
+			}
+		}
+		if best < 20 {
+			continue
+		}
+		rows++
+		lo, hi := int(at(img, edge-2, y).R), int(at(img, edge+3, y).R)
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		for x := edge - 1; x <= edge+2; x++ {
+			if v := int(at(img, x, y).R); 10*v > 10*lo+(hi-lo) && 10*v < 10*hi-(hi-lo) {
+				blended++
+				break
+			}
+		}
+	}
+	if rows < 10 || blended*5 < rows*2 {
+		t.Fatalf("only %d of %d rows blend across the band edge", blended, rows)
+	}
+}

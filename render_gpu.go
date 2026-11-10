@@ -307,6 +307,7 @@ type gpuRenderer struct {
 	lod                    lodPlan   // The splats of plan's slots the sort keys: its points are their total.
 	dropPipeline           *wgpu.RenderPipeline
 	outlinePipelines       [6]*wgpu.RenderPipeline
+	creaseFrame            uint64 // Counts frames, to tell which crease edges are in use.
 	shadowLayout           *wgpu.BindGroupLayout
 	noShadow, shadowTarget shadowTarget
 	shadowActive           bool
