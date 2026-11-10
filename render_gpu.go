@@ -61,7 +61,7 @@ type gpuShared struct {
 	dropPipeline           *wgpu.RenderPipeline
 	zeros, zeroRun         *wgpu.Buffer
 	shadowPipelines        [4]*wgpu.RenderPipeline
-	outlinePipelines       [5]*wgpu.RenderPipeline
+	outlinePipelines       [6]*wgpu.RenderPipeline
 	textureLayout          *wgpu.PipelineLayout
 	texturePipeline        *wgpu.RenderPipeline
 	cutoutPipeline         *wgpu.RenderPipeline
@@ -306,7 +306,7 @@ type gpuRenderer struct {
 	plan                   blendPlan // The frame's blended work, as the sort and the draws see it.
 	lod                    lodPlan   // The splats of plan's slots the sort keys: its points are their total.
 	dropPipeline           *wgpu.RenderPipeline
-	outlinePipelines       [5]*wgpu.RenderPipeline
+	outlinePipelines       [6]*wgpu.RenderPipeline
 	shadowLayout           *wgpu.BindGroupLayout
 	noShadow, shadowTarget shadowTarget
 	shadowActive           bool
@@ -790,6 +790,9 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	if err = g.prepareGeometry(dev, f, drawn); err != nil {
 		return err
 	}
+	if err = g.prepareCreases(dev, f); err != nil {
+		return err
+	}
 	if err = g.skinGeometry(dev, encoder, f); err != nil {
 		return err
 	}
@@ -862,6 +865,9 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 					if !transparent(&f.Geometry[d.index]) {
 						g.drawOutline(pass, f, d)
 					}
+				}
+				for _, d := range g.draws {
+					g.drawCrease(pass, f, d)
 				}
 				for _, d := range g.draws {
 					if d.geom.batches[8].count > 0 {
@@ -1134,7 +1140,7 @@ func (g *gpuRenderer) releaseResources() {
 		g.spritePipelines = [3]*wgpu.RenderPipeline{}
 		g.spriteLayout = nil
 		g.textureLayout = nil
-		g.outlinePipelines = [5]*wgpu.RenderPipeline{}
+		g.outlinePipelines = [6]*wgpu.RenderPipeline{}
 		g.pipelines = [7]*wgpu.RenderPipeline{}
 		g.zeros = nil
 		g.zeroRun = nil

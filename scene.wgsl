@@ -279,6 +279,20 @@ fn lineOutput(vi:u32,ii:u32,bias:f32)->Out {
 }
 @vertex fn vs_line(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out { return lineOutput(vi,ii,-0.00001); }
 @vertex fn vs_dynamic(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out { return lineOutput(vi,ii,0.00002); }
+// Crease lines are a mesh's sharp edges, endpoint pairs in its own space,
+// drawn once for each of its instances: six vertices a segment, in the
+// instance's outline color and width (negative in world units, as the hull's).
+@vertex fn vs_crease(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
+ let s=vi/6u;let a=items[s*2u];let b=items[s*2u+1u];let inst=instances[ii];let index=f32(ii);
+ let ca=clipPosition(a.a.xyz,index);let cb=clipPosition(b.a.xyz,index);
+ var width=inst.outline.w;
+ if width<0.0 {
+  let row=vec3<f32>(u.matrix[0][1],u.matrix[1][1],u.matrix[2][1]);
+  width=clamp(-width*length(row)*u.viewport.y*0.5/max(0.5*(ca.w+cb.w),0.00001),0.0,32.0);
+ }
+ let ink=vec4<f32>(inst.outline.rgb,1.0);
+ return strokeOutput(vi%6u,ca,cb,ink,ink,width,0.0,-0.00001,worldPosition(a.a.xyz,index),worldPosition(b.a.xyz,index));
+}
 @vertex fn vs_arrow(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
  let a=items[ii];return strokeOutput(vi,clipPosition(a.a.xyz,a.color.w),clipPosition(a.b.xyz,a.color.w),a.color,a.color,a.a.w,a.b.w,0.0,worldPosition(a.a.xyz,a.color.w),worldPosition(a.b.xyz,a.color.w));
 }

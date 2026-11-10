@@ -91,13 +91,24 @@ type gpuGeometry struct {
 	sets          []*instanceSet
 	used          int // Sets drawn from this frame.
 	shared        *sharedGeometry
+	// creases are the mesh's crease edges, by the bits of each crease angle
+	// its instances have asked for: nodes that share the mesh may differ.
+	// They live as long as the uploaded mesh; SetOutline does not replace it.
+	creases map[uint32]*gpuCrease
 }
+
+// gpuCrease is a mesh's crease edges at one angle: two line records a segment.
+type gpuCrease struct{ batch gpuBatch }
 
 func (n *gpuGeometry) release(shared *gpuShared) {
 	for _, s := range n.sets {
 		s.release()
 	}
 	n.sets = nil
+	for _, c := range n.creases {
+		releaseBatch(c.batch)
+	}
+	n.creases = nil
 	if n.shared != nil && shared != nil {
 		shared.mu.Lock()
 		n.shared.refs--
@@ -140,7 +151,9 @@ type instanceSet struct {
 	transform *wgpu.Buffer
 	capacity  int
 	binds     [9]*wgpu.BindGroup
-	last      []transformState // What the buffer holds.
+	// creaseBinds pair the transforms with the geometry's crease edges.
+	creaseBinds map[*gpuCrease]*wgpu.BindGroup
+	last        []transformState // What the buffer holds.
 	// The order and run table binds[0] holds: the sort's, of the
 	// generation it was made in, or the stand-ins.
 	order, runs *wgpu.Buffer
@@ -153,6 +166,10 @@ func (s *instanceSet) release() {
 			b.Release()
 		}
 	}
+	for _, b := range s.creaseBinds {
+		b.Release()
+	}
+	s.creaseBinds = nil
 	if s.transform != nil {
 		s.transform.Release()
 	}
