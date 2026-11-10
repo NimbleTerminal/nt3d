@@ -112,13 +112,79 @@ Vertices that share a position with split normals (such as `BuildCuboid`,
 cylinders, cones, and faceted meshes) expand along their averaged unit normal
 on both renderers so their corners stay joined without gaps. Open
 sheets do not acquire a full contour. It outlines the expanded geometry,
-not sharp creases or alpha-mask boundaries; a back surface can show through
+not alpha-mask boundaries; a back surface can show through
 holes or glass. Outlines do not change picking or cast shadows. Wireframe
 keeps its existing edge logic.
+
+### Crease lines
+
+The hull only shows a silhouette: the edges of a box that face you get no
+line. `Crease` adds them:
+
+```go
+mesh.Outline = nt3d.OutlineStyle{Width: 2, Color: ink, Crease: 30}
+```
+
+`Crease` is an angle in degrees, 0 (off) to 180. Every edge where the mesh's
+two faces turn by more than that gets a line in the outline's color and
+width, in either unit. So does every open border, whatever the angle, and
+every edge three or more faces share. Faces are joined by vertex position,
+so meshes with a vertex per face corner (`BuildCuboid`, faceted imports)
+work, and the diagonal across a flat quad never gets a line. Lines are depth
+tested and fogged like the hull, and like it leave picking and shadows
+alone. `Scene.SetOutline` changes the angle on geometry already in a scene;
+nodes that show one `SharedGeometry` may each use their own.
+
+Crease lines are drawn on opaque, rigid meshes. Transparent, cutout,
+transmissive, skinned, and morphed meshes keep the hull alone. The edges
+are found once per mesh and angle.
 
 Try the [shapes demo](https://nimbleterminal.github.io/nt3d/shapes/): press
 `b` to toggle outlines (also available in the [characters demo](https://nimbleterminal.github.io/nt3d/characters/)), `s` to compare normal styles, and `1` / `2` to compare
 GPU and software.
+
+## Toon shading
+
+<img class="poster" src="../../posters/toon.png" alt="A cartoon cow and robot standing among inked city buildings">
+
+`Material.Toon` shades a mesh in flat bands, for a cel look:
+
+```go
+mesh.Material = &nt3d.Material{Toon: nt3d.ToonStyle{
+    Bands: 3,                                // tones from shade to fully lit, 2 to 8; 0 is off
+    Shade: color.RGBA{150, 160, 220, 255},   // tint of the unlit band; unset is white
+    Rim:   .3,                               // highlight where a lit surface turns away, 0 to 1
+}}
+mesh.Outline = nt3d.OutlineStyle{Width: 2, Color: ink, Crease: 30}
+```
+
+Each light's cosine, times its cast shadow, snaps to the nearest of `Bands`
+even levels, so a shadow map's soft edge becomes a hard one too. A point
+light's distance falloff is not banded: it stays smooth, and band edges
+follow shape and shadow only. `Softness` (0 to 1) widens the blend between
+two bands as a fraction of one band; at zero the GPU blends across about a
+pixel, so edges do not shimmer.
+
+A toon surface takes flat ambient light, the midpoint of the sky and ground
+colors plus an environment's constant term, since a gradient would bring the
+smooth shading back. `Shade` multiplies it: the unlit band is the base color
+times the ambient times `Shade`, which lets shadows turn cool or warm rather
+than only darker. `Specular` becomes a flat spot instead of a soft lobe, and
+`Rim` adds a flat highlight on lit surface seen edge-on. `Rim` suits rounded
+models; on a large flat floor it draws an arc where the view grazes it.
+
+Textures, tint, normal maps, cutouts, transparency, reflections,
+transmission, and fog work as before around the banded light. `Unlit`
+materials ignore `Toon`; points, boxes, lines, splats, and fur are not
+affected. The GPU and software renderer agree away from band edges.
+
+For geometry already in a scene, such as a loaded or animated model,
+`scene.SetToon(root, style)` sets the style on every indexed mesh under
+`root`, giving a material to those without one and keeping their other
+settings, poses, and buffers; the zero style turns it off.
+
+The [toon demo](https://nimbleterminal.github.io/nt3d/toon/) puts it together
+with outlines and crease lines: `t` flips the look, `n` changes the bands.
 
 ### Procedural normal maps
 

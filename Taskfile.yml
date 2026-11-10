@@ -6,7 +6,7 @@ env:
 
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
-  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water toon
   # Every tool: a command in cmd/nt3d-NAME, built to bin/nt3d-NAME.
   TOOLS: palette
   # Every fuzz target, as package:Function; fuzz-smoke runs each briefly, and
@@ -90,7 +90,7 @@ tasks:
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb dist/web/water
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb dist/web/water dist/web/toon
       - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
       - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -109,6 +109,7 @@ tasks:
       - go -C examples/demos build -mod=readonly -o ../../dist/web/cloud/app.wasm ./cmd/cloud
       - go -C examples/demos build -mod=readonly -o ../../dist/web/aabb/app.wasm ./cmd/aabb
       - go -C examples/demos build -mod=readonly -o ../../dist/web/water/app.wasm ./cmd/water
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/toon/app.wasm ./cmd/toon
   web-assets:
     cmds:
       - go -C examples/demos tool booba-assets ../../dist/web/terrain/
@@ -129,6 +130,7 @@ tasks:
       - go -C examples/demos tool booba-assets ../../dist/web/cloud/
       - go -C examples/demos tool booba-assets ../../dist/web/aabb/
       - go -C examples/demos tool booba-assets ../../dist/web/water/
+      - go -C examples/demos tool booba-assets ../../dist/web/toon/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -259,6 +261,11 @@ tasks:
     desc: Play the embedded CC0 Gobkit minion, corgi, and duck
     deps: [{task: build:demo, vars: {NAME: characters}}]
     cmds: ["bin/nt3d-characters {{.CLI_ARGS}}"]
+
+  toon:
+    desc: Cel shade Spot, a robot, and a city block, with inked outlines and crease lines
+    deps: [{task: build:demo, vars: {NAME: toon}}]
+    cmds: ["bin/nt3d-toon {{.CLI_ARGS}}"]
 
   cloud:
     desc: Show a galaxy of up to a million points, culled and thinned by clusters

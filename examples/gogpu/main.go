@@ -2,7 +2,7 @@
 
 // Command gogpu demonstrates embedding NT3D inside a GoGPU window using
 // nt3d.GPUSession and nt3d.GPUTarget without CPU readback. It serves as:
-//   - A unified desktop application for all 18 interactive NT3D demos
+//   - A unified desktop application for all 19 interactive NT3D demos
 //     (-demo <name>, or Tab / Shift+Tab / PageDown / PageUp to switch live).
 //   - An interactive desktop 3D model and Gaussian splat viewer when given
 //     -file or positional file paths (.glb, .gltf, .sog, .spz, .ply, .stl, .obj, .3mf).
@@ -27,7 +27,7 @@
 //   - Ctrl+S / Cmd+S (or Shift+P): save screenshot (.png) or turntable (.gif) via native Save dialog
 //   - [ / ] and , / .: adjust sun/key light azimuth and elevation (in showcase/viewer mode)
 //   - G: toggle studio shadow-catcher pedestal floor (in file viewer mode)
-//   - Tab / PageDown: switch to next interactive demo in the 18-demo gallery
+//   - Tab / PageDown: switch to next interactive demo in the 19-demo gallery
 //   - Shift+Tab / PageUp: switch to previous interactive demo in the gallery
 //   - ` (Grave) or F5: toggle interactive Demo Dropdown Menu (Up/Down + Enter or mouse click)
 //   - F1 (or I): toggle 2D HUD overlay and 3D pick annotations
@@ -2393,7 +2393,7 @@ func main() {
 	camera.Beta = -38
 	camera.Distance = 3.2
 
-	title := "NT3D + GoGPU (18 Interactive Demos & 3D Viewer)"
+	title := "NT3D + GoGPU (19 Interactive Demos & 3D Viewer)"
 	if *demoFlag != "" {
 		title = "NT3D + GoGPU — Demo: " + *demoFlag
 	} else if len(files) == 1 {

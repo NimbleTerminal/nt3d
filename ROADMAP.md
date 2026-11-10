@@ -25,7 +25,15 @@ Nothing queued; the sections below are the open work.
   keep all their markers in one geometry, already one upload and draw,
   and sharing them means instancing shaders that index primitives by
   instance today.
-- [ ] **Outline follow-ups**: sharp-crease edges.
+- [ ] **Crease lines on deforming and see-through meshes**: skinned, morphed,
+  transparent, cutout, and transmissive meshes draw the hull alone.
+- [ ] **Toon cast shadows are stair-stepped** over a large scene: the bands
+  threshold the shadow map's texels hard, as the toon demo's ground shows.
+- [ ] **A general `Scene.SetMaterial` for a subtree**, possibly: `SetToon`
+  is the third one-off setter for a single material field, after
+  `SetTexture` and `SetNormalMap`. It has to decide what happens to textures
+  and normal maps on replacement, and fields like `Transparent` and `Cutout`
+  move a mesh between render passes.
 - [ ] **Order-independent transparency**: only if scenes hit the sorting
   limits (intersecting glass, overlapping layers of one mesh).
 - [ ] **Fur fins don't sway** with the wind; only slightly visible.
@@ -60,6 +68,11 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Toon shading, crease lines, and the toon demo** (`2d82e04`…): `Material.Toon`
+  / `ToonStyle` and `Scene.SetToon`, banded diffuse and cast shadows with a
+  shade tint, flat specular, and rim; `OutlineStyle.Crease` for sharp-edge
+  ink on opaque rigid meshes; both in the GPU and software renderers. The
+  `toon` demo shows them on Spot, the robot, and a baked Flatiron block.
 - **GPUSession, GoGPU desktop viewer, world-unit & split-normal outlines, budgeted plain point clouds, and single-pass AABB raycast** (`ba2f565`…`adac237`):
   - **Host-supplied GPU rendering (`GPUSession` / `GPUTarget`)**: `NewGPUSession`,
     `NewGPUSessionFromProvider`, `Encode`, and `Render` resolve frames directly into a

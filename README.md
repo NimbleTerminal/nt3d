@@ -33,7 +33,7 @@ The **[guide](https://nimbleterminal.github.io/nt3d/docs/)** covers it all, from
 To run the demos yourself:
 
 ```sh
-task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, particles, cloud, aabb, dynamic, procedural, water
+task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, particles, cloud, aabb, dynamic, procedural, water, toon
 task build-web && task serve   # all of them in a browser, at http://localhost:8768
 ```
 

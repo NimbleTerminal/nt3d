@@ -192,6 +192,26 @@ The original assembly is **CC0** and can be regenerated with `go -C examples/dem
 
 Only `cmd/animate` imports the glTF sample embed package and assigns its `Files` to `demo.SampleFiles`. Relative `.bin` files are read through the mesh loader's `Options.Open`. Other demo binaries do not embed these samples, and the separate `examples/demos` module keeps them out of the main library's distribution. The generated `animation` demo and general-purpose `meshes` viewer and Gobkit character demo also opt into glTF decoding; other demos do not import that decoder.
 
+## Toon city
+
+<img class="poster" src="../../posters/toon.png" alt="A cartoon cow and robot standing among inked city buildings">
+
+`task toon` stands Spot the cow and the robot, scaled to 14 m giants, on a
+street in a block of Manhattan near Flatiron, [toon shaded](../materials/#toon-shading)
+with outlines and [crease lines](../materials/#crease-lines) under one
+shadow-casting sun. `t` flips between toon and smooth shading, `n` cycles
+two, three, and four bands, and `b` toggles the ink. `1` / `2` / `3` select
+GPU, software, and wireframe.
+
+The block is `flatiron.obj`, 181 KB: 142 extruded buildings, a ground quad,
+and road centerlines, baked from OpenStreetMap data with
+[ntmaps](https://github.com/NimbleTerminal/ntmaps)' `cityview3d -export`;
+`flatiron.SOURCES.md` beside it has the bounds, date, and command. The demo
+repaints the buildings in five flat colors and widens the roads into
+ribbons. Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
+under the Open Database License; building heights are estimates from tags.
+Only `cmd/toon` embeds the block, robot, and cow.
+
 ## Gobkit characters
 
 <img class="poster" src="../../posters/characters.png" alt="An animated Gobkit minion">

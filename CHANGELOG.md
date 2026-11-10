@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Add toon (cel) shading: `Material.Toon` with `ToonStyle{Bands, Softness,
+  Shade, Rim}` snaps each light's cosine and cast shadow to flat bands, with
+  flat ambient tinted by `Shade`, a flat specular spot, and a rim highlight,
+  in the GPU and software renderers. `Scene.SetToon` sets it on the indexed
+  meshes of a subtree already in a scene.
+- Add crease lines to outlines: `OutlineStyle.Crease`, an angle in degrees,
+  draws a line of the outline's color and width along edges whose faces turn
+  by more than it, open borders, and edges three or more faces share, on
+  opaque rigid meshes, in both renderers.
+- Add the `toon` demo (`task toon`, and in the browser gallery and GoGPU
+  viewer): Spot and the robot as giants in a block of Manhattan baked from
+  OpenStreetMap data (`flatiron.obj`, © OpenStreetMap contributors, ODbL).
+- The GPU instance record grows from 176 to 208 bytes, and the fragment
+  stage now reads it (binding 2).
+
 - Add native Go fuzz targets for the NimbleTerminal fuzzing fleet
   (fuzz.nimbleterminal.com): every mesh decoder (STL, OBJ, PLY with its
   Gaussian and compressed variants, 3MF, Stanford .conf, glTF, SOG, SPZ)
