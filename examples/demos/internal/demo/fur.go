@@ -28,6 +28,7 @@ type furScene struct {
 	noFins         bool
 	fullSize       bool // Shells and fins sample full size, as before cutout mipmaps.
 	effect         int  // Index into effects.
+	toon           bool // Cel shaded, the skin inked at the fur's tips.
 	base           nt3d.Geometry
 	coat           *nt3d.FurCoat
 	nodes          []nt3d.NodeID
@@ -127,7 +128,31 @@ func (d *demo) growFur() error {
 			return err
 		}
 	}
+	if err := d.applyFurToon(); err != nil {
+		return err
+	}
 	return d.stepFur()
+}
+
+// applyFurToon gives the coat its look: toon bands on the skin, shells, and
+// fins alike, which share the skin's normals and so its bands, and ink on the
+// skin alone, a hull pushed out as far as the fur is long, so the line sits at
+// the tips. A hull on the shells and fins would fringe every strand.
+func (d *demo) applyFurToon() error {
+	style, ink := nt3d.ToonStyle{}, nt3d.OutlineStyle{}
+	if d.fur.toon {
+		style = nt3d.ToonStyle{Bands: 3, Shade: toonShade}
+		ink = nt3d.OutlineStyle{Width: furLengths[d.fur.length], Units: nt3d.WorldUnits, Color: toonInk}
+	}
+	if err := d.scene.SetToon(d.group, style); err != nil {
+		return err
+	}
+	return d.scene.SetOutline(d.fur.nodes[0], ink)
+}
+
+func (d *demo) toggleFurToon() error {
+	d.fur.toon = !d.fur.toon
+	return d.applyFurToon()
 }
 
 // stepFur sways the fur with a slowly turning breeze.
@@ -154,13 +179,16 @@ func (d *demo) cycleEffect() tea.Cmd {
 }
 
 func (d *demo) furView(content string) string {
-	fins, mips := "fins", "mipmaps"
+	fins, mips, look := "fins", "mipmaps", "smooth"
+	if d.fur.toon {
+		look = "toon"
+	}
 	if d.fur.noFins {
 		fins = "no fins"
 	}
 	if d.fur.fullSize {
 		mips = "full size"
 	}
-	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · f fins · m mipmaps · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s · %s · supersample %d× · %s · %s",
-		content, d.rendering(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, mips, d.view.Supersample(), effects[d.fur.effect].name, d.status)
+	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · f fins · m mipmaps · t toon · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s · %s · %s · supersample %d× · %s · %s",
+		content, d.rendering(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, mips, look, d.view.Supersample(), effects[d.fur.effect].name, d.status)
 }

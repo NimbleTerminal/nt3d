@@ -411,6 +411,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.toggleToon()
 				break
 			}
+			if d.fur != nil {
+				err = d.toggleFurToon()
+				break
+			}
 			if d.particles != nil {
 				err = d.toggleParticleSprites()
 				break

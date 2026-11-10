@@ -52,6 +52,11 @@ func (k keys) FullHelp() [][]key.Binding {
 			break
 		}
 	}
+	if len(k.scene) >= 8 && len(view) == len(viewKeys) {
+		// A scene with this many controls of its own (fur) fills the message
+		// too: the projection key stays on the keyboard.
+		view = viewKeys[:len(viewKeys)-1]
+	}
 	return [][]key.Binding{append(append([]key.Binding{}, k.scene...), fitKey, fogKey), backendKeys, view}
 }
 
@@ -83,7 +88,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.toon != nil:
 		return "toon", keys{[]key.Binding{bind("t", "t", "toon"), bind("n", "n", "bands"), bind("b", "b", "outlines")}}
 	case d.fur != nil:
-		return "fur", keys{[]key.Binding{bind("a", "a", "wind"), bind("s", "s", "shells"), bind("l", "l", "length"), bind("f", "f", "fins"), bind("m", "m", "mipmaps"), bind("x", "x", "supersample"), bind("e", "e", "effect")}}
+		return "fur", keys{[]key.Binding{bind("a", "a", "wind"), bind("s", "s", "shells"), bind("l", "l", "length"), bind("f", "f", "fins"), bind("m", "m", "mipmaps"), bind("t", "t", "toon"), bind("x", "x", "supersample"), bind("e", "e", "effect")}}
 	case d.large != nil:
 		return "dense-mesh", keys{[]key.Binding{bind("i", "i", "pick index"), bind("n", "n", "turn")}}
 	case d.models != nil:

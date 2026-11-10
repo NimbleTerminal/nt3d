@@ -186,6 +186,27 @@ settings, poses, and buffers; the zero style turns it off.
 The [toon demo](https://nimbleterminal.github.io/nt3d/toon/) puts it together
 with outlines and crease lines: `t` flips the look, `n` changes the bands.
 
+### Toon fur
+
+[Shell fur](../fur/) takes toon shading as it is: the shells and fins share
+the skin's normals, so the whole coat lands in the same band at each point,
+with the strands still showing inside each tone. Set the style on the node
+that holds the skin, shells, and fins with `scene.SetToon`.
+
+Ink the skin only. An outline on the shells or fins fringes every strand,
+so `scene.SetOutline(root, …)` on a furred model is not what you want.
+Give the skin a hull as wide as the fur is long, in world units, and the
+line sits at the tips:
+
+```go
+scene.SetToon(coat, nt3d.ToonStyle{Bands: 3, Shade: shade})
+scene.SetOutline(skin, nt3d.OutlineStyle{Width: fur.Length, Units: nt3d.WorldUnits, Color: ink})
+```
+
+World-unit outlines are clamped to 32 output pixels, which a very close
+camera can reach. Press `t` in the [fur demo](https://nimbleterminal.github.io/nt3d/fur/)
+to see it.
+
 ### Procedural normal maps
 
 `NewShaderNormalMap(source, fallback)` and

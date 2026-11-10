@@ -14,6 +14,8 @@
 - Add the `toon` demo (`task toon`, and in the browser gallery and GoGPU
   viewer): Spot and the robot as giants in a block of Manhattan baked from
   OpenStreetMap data (`flatiron.obj`, © OpenStreetMap contributors, ODbL).
+- The fur demo gains `t`: toon bands on the coat, with the skin inked at
+  the fur's tips. Its touch bar drops the projection key to make room.
 - The GPU instance record grows from 176 to 208 bytes, and the fragment
   stage now reads it (binding 2).
 
