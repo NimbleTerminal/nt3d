@@ -231,7 +231,8 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		// A triangle with normals is lit; unlit ones have none.
 		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
 		// Whether pixels need the world point, and so perspective weights.
-		located := fogged || lit && (specular || reflective || material != nil && material.Transmission > 0 || rig.points || rig.shadow != nil)
+		toon := material != nil && material.Toon.on() && !material.Unlit
+		located := fogged || lit && (specular || reflective || material != nil && material.Transmission > 0 || rig.points || rig.shadow != nil || toon && material.Toon.Rim > 0)
 		hasNormal := material != nil && material.NormalMap != nil
 		perspective := blended || textured || lit || fogged || hasNormal
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
@@ -360,7 +361,12 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 							}
 							n = perturbNormal(n, t, bt, sample, material.NormalStrength)
 						}
-						rig.lightNormal(&rgb, n, p, geometric)
+						var rim [3]float32
+						if toon {
+							rim = rig.toonLight(&rgb, material.Toon, n, p, geometric, f.viewAt(p))
+						} else {
+							rig.lightNormal(&rgb, n, p, geometric)
+						}
 						if material != nil && material.Transmission > 0 && opaqueColor != nil {
 							transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
 						}
@@ -368,9 +374,19 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 							reflectEnvironment(&rgb, f.Environment, material.Reflectivity, f.EnvironmentStrength, n, f.viewAt(p), linear)
 						}
 						if specular {
-							s := rig.highlightNormal(material, n, p, f.viewAt(p), geometric)
+							var s [3]float32
+							if toon {
+								s = rig.toonHighlight(material, n, p, f.viewAt(p), geometric)
+							} else {
+								s = rig.highlightNormal(material, n, p, f.viewAt(p), geometric)
+							}
 							for k := range rgb {
 								rgb[k] += s[k] * 255
+							}
+						}
+						if toon && material.Toon.Rim > 0 {
+							for k := range rgb {
+								rgb[k] += rim[k] * 255
 							}
 						}
 					}

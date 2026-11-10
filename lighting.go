@@ -257,8 +257,9 @@ func (r *lightRig) highlightNormal(m *Material, n, p, view, geometric nt3dmath.V
 
 // toonLight is lightNormal for a toon material: flat ambient tinted by the
 // style's shade, each light's cosine and cast shadow snapped to bands, and a
-// rim highlight on lit surface seen edge-on from unit direction view.
-func (r *lightRig) toonLight(rgb *[3]float32, t ToonStyle, n, p, geometric, view nt3dmath.Vec3) {
+// rim highlight on lit surface seen edge-on from unit direction view. The rim
+// is returned, as highlight's light is, in light units for the caller to add.
+func (r *lightRig) toonLight(rgb *[3]float32, t ToonStyle, n, p, geometric, view nt3dmath.Vec3) (rimLight [3]float32) {
 	w := toonEdge(t.Softness, t.Bands)
 	var direct [3]float32
 	for i := range r.lights {
@@ -286,8 +287,10 @@ func (r *lightRig) toonLight(rgb *[3]float32, t ToonStyle, n, p, geometric, view
 		if r.environmentActive {
 			ambient += max(0, r.environment[0][k]*.2820948)
 		}
-		rgb[k] = rgb[k]*(ambient*shade[k]+direct[k]) + rim*direct[k]
+		rgb[k] *= ambient*shade[k] + direct[k]
+		rimLight[k] = rim * direct[k]
 	}
+	return rimLight
 }
 
 // toonHighlight is highlightNormal for a toon material: each light's
