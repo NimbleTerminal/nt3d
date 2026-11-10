@@ -244,3 +244,88 @@ func TestToonComposes(t *testing.T) {
 		t.Fatal("toon changed an unlit material")
 	}
 }
+
+// toonBands maps each node in s's frame to its material's band count, or -1
+// without a material.
+func toonBands(t *testing.T, s *Scene) map[NodeID]int {
+	t.Helper()
+	f := frame(t, s)
+	bands := map[NodeID]int{}
+	for i, g := range f.Geometry {
+		bands[f.Instances[i].Node] = -1
+		if g.Material != nil {
+			bands[f.Instances[i].Node] = g.Material.Toon.Bands
+		}
+	}
+	return bands
+}
+
+func TestSetToonSubtree(t *testing.T) {
+	s := NewScene()
+	mesh := func(m *Material) Geometry { return quad(.5, 0, white, m, false) }
+	a, err := s.Add(Root, "a")
+	check(t, err)
+	check(t, s.SetNodeGeometry(a, mesh(nil)))
+	b, err := s.Add(a, "b")
+	check(t, err)
+	check(t, s.SetNodeGeometry(b, mesh(&Material{Specular: .5})))
+	c, err := s.SetGeometry("c", pointGeometry())
+	check(t, err)
+	d, err := s.SetGeometry("d", mesh(nil))
+	check(t, err)
+
+	check(t, s.SetToon(a, ToonStyle{Bands: 3}))
+	if got := toonBands(t, s); got[a] != 3 || got[b] != 3 || got[c] != -1 || got[d] > 0 {
+		t.Fatalf("bands after SetToon: %v", got)
+	}
+	if m := s.nodes[b].geometry.Material; m.Specular != .5 {
+		t.Fatalf("SetToon lost the material's other fields: %+v", m)
+	}
+	before := s.Revision()
+	check(t, s.SetToon(a, ToonStyle{Bands: 3}))
+	if s.Revision() != before {
+		t.Fatal("identical toon style dirtied the scene")
+	}
+	check(t, s.SetToon(a, ToonStyle{}))
+	if got := toonBands(t, s); got[a] != 0 || got[b] != 0 {
+		t.Fatalf("bands after disabling: %v", got)
+	}
+	if s.SetToon(NodeID(999999), ToonStyle{Bands: 2}) == nil || s.SetToon(a, ToonStyle{Bands: 1}) == nil {
+		t.Fatal("accepted a missing node or an invalid style")
+	}
+}
+
+func TestSetToonDoesNotShareMaterials(t *testing.T) {
+	s := NewScene()
+	shared := &Material{Specular: .25}
+	x, err := s.SetGeometry("x", quad(.5, 0, white, shared, false))
+	check(t, err)
+	y, err := s.SetGeometry("y", quad(.5, 1, white, shared, false))
+	check(t, err)
+	check(t, s.SetToon(x, ToonStyle{Bands: 2}))
+	if got := toonBands(t, s); shared.Toon.Bands != 0 || got[x] != 2 || got[y] != 0 {
+		t.Fatalf("caller's material %d, bands %v", shared.Toon.Bands, got)
+	}
+}
+
+func TestSetToonPreservesBuffersAndPose(t *testing.T) {
+	s, id, joint := animationSkinScene(t)
+	old := frame(t, s)
+	rev := s.nodes[id].geometryRevision
+	style := ToonStyle{Bands: 2}
+	check(t, s.SetToon(Root, style))
+	if s.nodes[id].deformation == nil || s.nodes[id].geometryRevision != rev {
+		t.Fatal("toon replaced mesh/deformation")
+	}
+	if m := old.Geometry[0].Material; m != nil && m.Toon.on() {
+		t.Fatal("toon changed an old snapshot")
+	}
+	next := frame(t, s)
+	if &next.Geometry[0].Indices[0] != &old.Geometry[0].Indices[0] {
+		t.Fatal("toon copied the index buffer")
+	}
+	check(t, s.SetTransform(joint, nt3dmath.Translation(nt3dmath.Vec3{Z: .2})))
+	if posed := frame(t, s); posed.Geometry[0].Material == nil || posed.Geometry[0].Material.Toon != style {
+		t.Fatal("deformation lost toon")
+	}
+}

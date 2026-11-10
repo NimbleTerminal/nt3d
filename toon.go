@@ -79,3 +79,43 @@ const (
 	toonRim  = .7
 	toonSpot = .5
 )
+
+// SetToon changes the toon style of the indexed meshes in root's subtree,
+// giving a material to those without one. The zero style turns it off. It
+// preserves animation, deformation, shared mesh buffers, and old frames, and
+// each node's other material settings; a material several nodes hold is
+// copied, never altered. Use Root to change the whole scene. Newly added
+// nodes keep their own style.
+func (s *Scene) SetToon(root NodeID, style ToonStyle) error {
+	if err := style.validate(); err != nil {
+		return err
+	}
+	if s.nodes[root] == nil {
+		return fmt.Errorf("nt3d: unknown toon root %d", root)
+	}
+	changed := false
+	pending := []NodeID{root}
+	for len(pending) > 0 {
+		id := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		n := s.nodes[id]
+		pending = append(pending, n.Children...)
+		if n.geometry == nil || len(n.geometry.Indices) == 0 {
+			continue
+		}
+		if m := n.geometry.Material; m != nil && m.Toon == style || m == nil && style == (ToonStyle{}) {
+			continue
+		}
+		g := *n.geometry
+		if g.Material = cloneMaterial(g.Material); g.Material == nil {
+			g.Material = &Material{}
+		}
+		g.Material.Toon = style
+		n.geometry = &g
+		changed = true
+	}
+	if changed {
+		s.changed(false, false)
+	}
+	return nil
+}
