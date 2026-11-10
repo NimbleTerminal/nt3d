@@ -8,7 +8,7 @@ struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye:
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
-struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, absorption:vec4<f32>, optics:vec4<f32> };
+struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, absorption:vec4<f32>, optics:vec4<f32>, toon:vec4<f32>, toonStyle:vec4<f32> };
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
 // Points have records of their own, five words each: position, radius
 // (negative in world units), and color as RGBA8. Alpha points are drawn in
@@ -112,18 +112,51 @@ fn fogAmount(world:vec3<f32>)->f32 {
  if u.fog.y<=u.fog.x {return 0.0;}
  return clamp((eyeDistance(world)-u.fog.x)/(u.fog.y-u.fog.x),0.0,1.0);
 }
+// toonStep is the smooth step from 0 below edge-w/2 to 1 above edge+w/2, and
+// toonBand snaps x in 0..1 to bands even levels, stepping up at each k/bands
+// across a blend w wide: as the software renderer's.
+fn toonStep(edge:f32,w:f32,x:f32)->f32 {let t=clamp((x-edge+w*0.5)/w,0.0,1.0);return t*t*(3.0-2.0*t);}
+fn toonBand(x:f32,bands:f32,w:f32)->f32 {
+ var sum=0.0;
+ for(var k=1.0;k<bands-0.5;k=k+1.0) {sum+=toonStep(k/bands,w,x);}
+ return sum/(bands-1.0);
+}
 // finish lights a surface, adds each light's specular highlight, and fades
-// into the fog. Fragments without a normal are unlit.
+// into the fog. Fragments without a normal are unlit. A mesh's fragments
+// carry their instance (optics.w, one more than its index; zero otherwise)
+// to read its toon style: flat ambient tinted by the shade, each light's
+// cosine and cast shadow snapped to bands, a flat specular spot, and a rim.
+// Band edges blend across about a pixel, by the normal's screen derivatives,
+// which are taken here, before any branch on a varying.
 fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {return finishNormal(o,rgb,o.normal);}
 fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
  var c=rgb;
+ let nx=dpdx(shadeNormal);let ny=dpdy(shadeNormal);
  if dot(o.normal,o.normal)>0.0 {
   let n=normalize(shadeNormal);
-  c*=illuminate(n,o.world,normalize(o.normal));
+  var view=-u.forward.xyz;
+  if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
+  var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);
+  if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;}
+  let bands=style.x;let soft=style.y/max(bands,1.0);
+  var direct=vec3<f32>(0.0);
+  if bands>0.5 {
+   var ambient=mix(u.ground.rgb,u.sky.rgb,0.5);
+   if u.viewport.w>0.5 {ambient+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
+   let geometric=normalize(o.normal);
+   for(var i=0u;i<u32(u.sky.w);i=i+1u) {
+    let l=u.lights[i];let t=toward(l,o.world);let s=dot(n,t.xyz);
+    if t.w>0.0 && s>0.0 {
+     let w=max(0.0001,abs(dot(nx,t.xyz))+abs(dot(ny,t.xyz))+soft);
+     direct+=l.b.rgb*(t.w*toonBand(s*lightVisibility(i,o.world,geometric,t.xyz),bands,w));
+    }
+   }
+   c*=ambient*toon.rgb+direct;
+  } else {
+   c*=illuminate(n,o.world,normalize(o.normal));
+  }
   if o.optics.x>0.0 {c=transmit(o,c,n);}
   if o.absorption.w>0.0 && u.viewport.w>0.5 {
-   var view=-u.forward.xyz;
-   if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
    let rn=select(n,-n,dot(n,view)<0.0);
    let reflected=reflect(-view,rn);
    let half=0.5/f32(textureDimensions(reflectionMap).y);
@@ -134,12 +167,22 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
    c=mix(c,sky*u.ground.w,fresnel);
   }
   if o.spec.x>0.0 {
-   var view=-u.forward.xyz;
-   if u.eye.w>0.5 {view=normalize(u.eye.xyz-o.world);}
    for(var i=0u;i<u32(u.sky.w);i=i+1u) {
     let l=u.lights[i];let t=toward(l,o.world);let h=t.xyz+view;
-    if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {c+=l.b.rgb*(lightVisibility(i,o.world,normalize(o.normal),t.xyz)*t.w*o.spec.x*pow(max(0.0,dot(n,normalize(h))),o.spec.y));}
+    if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {
+     let hn=normalize(h);let nh=max(0.0,dot(n,hn));
+     var lobe=pow(nh,o.spec.y);
+     if bands>0.5 {
+      let w=max(0.0001,o.spec.y*pow(nh,o.spec.y-1.0)*(abs(dot(nx,hn))+abs(dot(ny,hn)))+soft);
+      lobe=toonStep(0.5,w,lobe);
+     }
+     c+=l.b.rgb*(lightVisibility(i,o.world,normalize(o.normal),t.xyz)*t.w*o.spec.x*lobe);
+    }
    }
+  }
+  if bands>0.5 && toon.w>0.0 {
+   let w=max(0.0001,abs(dot(nx,view))+abs(dot(ny,view))+soft);
+   c+=direct*(toon.w*toonStep(0.7,w,1.0-max(0.0,dot(n,view))));
   }
  }
  c=mix(c,u.fogColor.rgb,fogAmount(o.world));
@@ -172,7 +215,7 @@ fn pointOutput(vi:u32,packed:u32)->Out {
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
 // Meshes are drawn instanced: each instance's transform is its own.
-fn meshOutput(vi:u32,ii:u32,side:f32)->Out {let p=items[vi];var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(p.color.rgb,f32(ii)));o.color.a=p.a.w;if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}return o;}
+fn meshOutput(vi:u32,ii:u32,side:f32)->Out {let p=items[vi];var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(p.color.rgb,f32(ii)));o.color.a=p.a.w;o.optics.w=f32(ii)+1.0;if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}return o;}
 @vertex fn vs_mesh(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,1.0);}
 @vertex fn vs_mesh_back(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,-1.0);}
 // Depth-clip the centerline before expanding it in pixel space.
@@ -268,7 +311,7 @@ fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
 fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
- var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;o.normalStrength=p.color.w;o.normalUV=o.uv;o.rect.x=select(0.0,1.0,(flags&32u)!=0u);
+ var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.optics.w=f32(ii)+1.0;o.cut=p.color.x;o.normalStrength=p.color.w;o.normalUV=o.uv;o.rect.x=select(0.0,1.0,(flags&32u)!=0u);
  // The extension record carries the normal map's coordinates and the
  // vertex's tangent frame: turned by the world matrix (not the normal
  // matrix: tangents turn as positions do), its handedness in w, negated

@@ -119,3 +119,12 @@ func (s *Scene) SetToon(root NodeID, style ToonStyle) error {
 	}
 	return nil
 }
+
+// toonParams is the style a material's lit triangles are shaded with: zero
+// unless it is toon and lit.
+func toonParams(m *Material) ToonStyle {
+	if m == nil || m.Unlit || !m.Toon.on() {
+		return ToonStyle{}
+	}
+	return m.Toon
+}
