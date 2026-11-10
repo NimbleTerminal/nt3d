@@ -80,6 +80,8 @@ func (d *demo) sceneKeys() (string, keys) {
 		return "forest", keys{[]key.Binding{bind("i", "i", "instancing"), bind("n", "n", "trees"), bind("s", "s", "shadows"), bind("a", "a", "wind")}}
 	case d.mipmaps != nil:
 		return "mipmaps", keys{[]key.Binding{bind("m", "m", "filtering"), bind("t", "t", "texture"), bind("x", "x", "supersample")}}
+	case d.toon != nil:
+		return "toon", keys{[]key.Binding{bind("t", "t", "toon"), bind("n", "n", "bands"), bind("b", "b", "outlines")}}
 	case d.fur != nil:
 		return "fur", keys{[]key.Binding{bind("a", "a", "wind"), bind("s", "s", "shells"), bind("l", "l", "length"), bind("f", "f", "fins"), bind("m", "m", "mipmaps"), bind("x", "x", "supersample"), bind("e", "e", "effect")}}
 	case d.large != nil:

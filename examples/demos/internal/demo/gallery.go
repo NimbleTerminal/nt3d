@@ -36,9 +36,10 @@ var demoNames = []string{
 	"cloud",
 	"aabb",
 	"water",
+	"toon",
 }
 
-// Names returns the ordered list of all 18 interactive demo scene names.
+// Names returns the ordered list of all 19 interactive demo scene names.
 func Names() []string {
 	out := make([]string, len(demoNames))
 	copy(out, demoNames)
@@ -74,6 +75,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		kind = sceneLarge
 	case "fur":
 		kind = sceneFur
+	case "toon":
+		kind = sceneToon
 	case "mipmaps":
 		kind = sceneMipmaps
 	case "forest":
@@ -139,6 +142,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		err = d.setupLarge()
 	case sceneFur:
 		err = d.setupFur()
+	case sceneToon:
+		err = d.setupToon()
 	case sceneMipmaps:
 		err = d.setupMipmaps()
 	case sceneForest:
@@ -200,6 +205,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		camera.Alpha, camera.Beta, camera.Distance, camera.Projection = 27, 35, 11, nt3d.Perspective
 	case sceneAABB:
 		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
+	case sceneToon:
+		toonCamera(&camera)
 	}
 	camera.AutoRotate = proceduralDefault
 
@@ -513,6 +520,8 @@ func (r *Runner) HeaderAndStatus() (header, status string) {
 	switch {
 	case d.fur != nil:
 		raw = d.furView(sentinel)
+	case d.toon != nil:
+		raw = d.toonView(sentinel)
 	case d.mipmaps != nil:
 		raw = d.mipmapsView(sentinel)
 	case d.forest != nil:

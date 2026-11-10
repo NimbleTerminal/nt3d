@@ -23,6 +23,12 @@ var Files embed.FS
 //go:embed spot_triangulated.obj spot_texture.png spot_README.txt
 var Spot embed.FS
 
+// Toon holds the toon demo's city block (see flatiron.SOURCES.md), robot,
+// and cow: exactly what it shows.
+//
+//go:embed flatiron.obj flatiron.SOURCES.md robot.3mf spot_triangulated.obj spot_texture.png spot_README.txt
+var Toon embed.FS
+
 // Ribbon is the generated animation demo's original CC0 sample.
 //
 //go:embed animated.gltf animated.LICENSE.txt

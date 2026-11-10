@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Neomantra Corp.
 
-// Package gallery exposes the 18 interactive NT3D demo scenes and their
+// Package gallery exposes the 19 interactive NT3D demo scenes and their
 // embedded sample assets to external host windows such as examples/gogpu.
 package gallery
 
@@ -15,10 +15,10 @@ import (
 	_ "nimbleterminal.dev/nt3d/mesh/formats"
 )
 
-// Runner drives one of the 18 interactive demo scenes inside an external host window.
+// Runner drives one of the 19 interactive demo scenes inside an external host window.
 type Runner = demo.Runner
 
-// Names returns the ordered list of all 18 interactive demo scene names.
+// Names returns the ordered list of all 19 interactive demo scene names.
 func Names() []string {
 	return demo.Names()
 }
@@ -38,6 +38,8 @@ func NewRunner(name string, files []string, up nt3dmesh.Up, yDown bool) (*Runner
 		samples = models.Spot
 	case "models":
 		samples = models.Files
+	case "toon":
+		samples = models.Toon
 	}
 	return demo.NewRunner(name, samples, files, up, yDown)
 }

@@ -48,6 +48,7 @@ type demo struct {
 	models            *modelScene
 	large             *largeScene
 	fur               *furScene
+	toon              *toonScene
 	mipmaps           *mipScene
 	forest            *forestScene
 	lights            *lightScene
@@ -113,11 +114,12 @@ const (
 	sceneCloud
 	sceneAABB
 	sceneWater
+	sceneToon
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil
+	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil && d.toon == nil
 }
 
 type quitMsg struct{}
@@ -350,6 +352,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.fog = !d.fog
 			return d, d.view.Refresh()
 		case "b", "x":
+			if d.toon != nil {
+				if v.String() == "b" {
+					err = d.toggleToonOutlines()
+				}
+				break
+			}
 			if d.aabb != nil {
 				if v.String() == "b" {
 					_, err = d.addAABBBox()
@@ -399,6 +407,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
 		case "t":
+			if d.toon != nil {
+				err = d.toggleToon()
+				break
+			}
 			if d.particles != nil {
 				err = d.toggleParticleSprites()
 				break
@@ -503,6 +515,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			d.toggleIndexing()
 		case "n":
+			if d.toon != nil {
+				err = d.cycleToonBands()
+				break
+			}
 			if d.aabb != nil {
 				err = d.cycleAABBCount()
 				break
@@ -601,6 +617,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	if d.particles != nil {
 		f.Background = color.RGBA{16, 14, 20, 255} // Night, so the fire glows.
 	}
+	if d.toon != nil {
+		d.decorateToon(f)
+	}
 	if d.cloud != nil {
 		d.captureCloudView(f)
 	}
@@ -633,6 +652,11 @@ func (d *demo) View() tea.View {
 	}
 	if d.fur != nil {
 		v.Content = d.zones.Scan(d.furView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.toon != nil {
+		v.Content = d.zones.Scan(d.toonView(v.Content))
 		v.AltScreen = true
 		return v
 	}
@@ -838,6 +862,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupFur(); err != nil {
 			return err
 		}
+	case sceneToon:
+		if err = d.setupToon(); err != nil {
+			return err
+		}
 	case sceneMipmaps:
 		if err = d.setupMipmaps(); err != nil {
 			return err
@@ -921,6 +949,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Alpha, camera.Beta, camera.Distance, camera.Projection = 27, 35, 11, nt3d.Perspective
 	case sceneAABB:
 		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
+	case sceneToon:
+		toonCamera(&camera)
 	}
 	camera.AutoRotate = proceduralDefault
 	d.kittySession = ntpicture.NewTerminalSession(ntpicture.TerminalOptions{FrameEdits: frameCapability})
