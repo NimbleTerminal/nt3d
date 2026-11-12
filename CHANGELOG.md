@@ -1,53 +1,79 @@
 # Changelog
 
-## Unreleased
+## v0.9.0 (2026-11-12)
 
-- Fix Vulkan binding order: select scene pipelines before binding lighting,
-  rebind lighting across pipeline layout changes, and defer resumed-pass
-  bindings until a pipeline is selected. Select compute pipelines before
-  binding particle sort and clustered LOD resources. This removes the Vulkan
-  `SetBindGroup` nil-pointer crash and avoids silently dropped compute bindings.
+This release adds toon shading and crease outlines to the GPU and software
+renderers, with a new demo showing both. It also improves camera depth
+precision, adds controls for embedding nt3d in applications with their own
+camera and keyboard handling, and fixes a Vulkan binding-order crash.
 
-- Update Go dependencies across the library and both example modules:
+### Toon shading and outlines
+
+- Add `Material.Toon` and `ToonStyle{Bands, Softness, Shade, Rim}` for banded
+  lighting, tinted ambient shading, flat specular highlights, and rim lighting.
+  `Scene.SetToon` applies the style to indexed meshes throughout a subtree.
+  Toon band edges use antialiasing to reduce jagged transitions on flat faces.
+- Add `OutlineStyle.Crease`, an angle in degrees, to draw sharp edges, open
+  borders, and edges shared by more than two faces on opaque rigid meshes.
+  Crease lines use the outline's color and width, and their geometry caches
+  stay bounded as styles change.
+- Add the `toon` demo to `task toon`, the browser gallery, and the GoGPU
+  viewer. Spot and the robot stand in a Manhattan block baked from
+  OpenStreetMap data (`flatiron.obj`, © OpenStreetMap contributors, ODbL).
+  The fur demo also gains a `t` toggle for toon bands and inked fur tips.
+
+### Cameras and embedding
+
+- Fix perspective cameras with only `Far` set: `Near == 0` now retains an
+  automatic positive near plane instead of collapsing depth values. If Far
+  falls inside the automatic near plane, scale Near to Far at the default
+  4,000:1 ratio. Preserve infinite perspective far planes (`Near > 0,
+  Far == 0`) and explicit zero near planes for orthographic cameras.
+- **Clipping behavior change:** increase the automatic near plane from
+  `Distance * 0.01 / 3.4` to `Distance * 0.05 / 3.4`. This improves perspective
+  depth precision and reduces z-fighting, but clips geometry very close to
+  the eye sooner. Set an explicit positive `Near` when closer viewing is
+  needed; set `Far` too when a finite perspective far plane is desired.
+- Add `Camera.LookDirection(eye, forward)` to position first-person and chase
+  cameras while preserving Distance and the automatic clipping scale.
+  `LookAt` continues to set Distance from the eye-to-target distance.
+- Add `nt3dwidget.WithDefaultKeyBindings(false)` so host applications can own
+  keyboard controls while retaining the widget's mouse orbit, zoom, and
+  picking. Existing keyboard bindings remain enabled by default.
+
+### Reliability and dependencies
+
+- Fix Vulkan render and compute binding order: select pipelines before
+  binding resources, restore scene lighting across pipeline layout changes,
+  and defer resumed-pass bindings until a pipeline is selected. This removes
+  the `SetBindGroup` nil-pointer crash and prevents dropped particle-sort and
+  clustered-LOD compute bindings.
+- Add native Go fuzz targets for mesh decoders, polygon triangulation,
+  AABB tree operations, spherical-harmonic rotation, and line clipping.
+  Decoder tests use bounded inputs and include format round trips where
+  supported. Run all targets briefly with `task fuzz-smoke`.
+- Update dependencies across the library and both example modules:
   ntpicture v0.2.0, booba v0.13.0, gpucontext v0.32.0, Lip Gloss v2.1.0,
   Bubblezone v2.0.1, compress v1.20.4, pflag v1.1.0, terminfo v1.3.1,
   and golang.org/x/image v0.48.0, x/sync v0.25.0, and x/sys v0.50.0.
-  Retain wgpu v0.34.5 and naga v0.20.4: wgpu v0.34.14 with naga v0.21.10
-  fails five Metal environment/reflection tests with a buffer-sizes argument
-  error. Retain gogpu v0.54.0 because v0.54.1 requires the newer GPU stack.
+- Retain wgpu v0.34.5, naga v0.20.4, and gogpu v0.54.0 for Metal
+  compatibility. Tested wgpu v0.34.14 with naga v0.21.10 fails five Metal
+  environment/reflection tests; gogpu v0.54.1 requires a newer GPU stack.
 
-- Fix far-only camera clipping overrides without changing infinite perspective
-  far planes (`Near > 0, Far == 0`). Raise the automatic near plane from
-  `Distance * 0.01 / 3.4` to `Distance * 0.05 / 3.4` for better depth precision.
-- Add `Camera.LookDirection(eye, forward)` to preserve Distance and automatic
-  clipping scale when positioning first-person and chase cameras.
-- Add `nt3dwidget.WithDefaultKeyBindings(false)` to disable built-in keyboard
-  controls while retaining mouse interaction.
+### Validation and known limitations
 
-- Add toon (cel) shading: `Material.Toon` with `ToonStyle{Bands, Softness,
-  Shade, Rim}` snaps each light's cosine and cast shadow to flat bands, with
-  flat ambient tinted by `Shade`, a flat specular spot, and a rim highlight,
-  in the GPU and software renderers. `Scene.SetToon` sets it on the indexed
-  meshes of a subtree already in a scene.
-- Add crease lines to outlines: `OutlineStyle.Crease`, an angle in degrees,
-  draws a line of the outline's color and width along edges whose faces turn
-  by more than it, open borders, and edges three or more faces share, on
-  opaque rigid meshes, in both renderers.
-- Add the `toon` demo (`task toon`, and in the browser gallery and GoGPU
-  viewer): Spot and the robot as giants in a block of Manhattan baked from
-  OpenStreetMap data (`flatiron.obj`, © OpenStreetMap contributors, ODbL).
-- The fur demo gains `t`: toon bands on the coat, with the skin inked at
-  the fur's tips. Its touch bar drops the projection key to make room.
-- The GPU instance record grows from 176 to 208 bytes, and the fragment
-  stage now reads it (binding 2).
+- Full CI passes on macOS and Linux ARM64, including race tests, vet, native
+  builds, and browser builds. All Metal hardware GPU suites pass.
+- **Linux Vulkan GPU validation is not yet passing.** Testing on an NVIDIA
+  GB10 with driver 580.178.04 confirms the binding-order crash is fixed, but
+  rendering, particle-sort, and clustered-LOD comparisons still fail, and
+  the water GPU demo reports device loss. See [ROADMAP.md](ROADMAP.md) for
+  reproduction details and follow-up work.
+- Toon cast-shadow boundaries can remain stair-stepped in large scenes.
+  Crease lines currently support opaque rigid meshes; skinned, morphed,
+  transparent, cutout, and transmissive meshes retain hull outlines only.
 
-- Add native Go fuzz targets for the NimbleTerminal fuzzing fleet
-  (fuzz.nimbleterminal.com): every mesh decoder (STL, OBJ, PLY with its
-  Gaussian and compressed variants, 3MF, Stanford .conf, glTF, SOG, SPZ)
-  under small triangle and byte budgets, with encode/decode round trips for
-  STL, OBJ, and PLY; polygon triangulation; AABB tree operations against a
-  brute-force oracle; spherical-harmonic rotation; and line clipping.
-  `task fuzz-smoke` runs each target briefly the way the fleet does.
+----
 
 ## v0.8.1 (2026-11-04)
 
@@ -94,6 +120,8 @@
   synchronized image uploads to prevent replacement flicker, and cleanup of
   unanswered shared-memory probes.
 
+----
+
 ## v0.7.0
 
 - Update dependencies: `ntpicture` v0.1.2, `ntcanvas` v0.1.2, `ntgpuimage` v0.5.0, `go-booba` v0.10.5, Bubble Tea v2.1.1, and Ultraviolet at `a45b7c86333f`; synchronize the library and demo modules.
@@ -104,15 +132,21 @@
 
 - `nt3d-palette` (`cmd/nt3d-palette`, built to `bin/`) reads PLY, compressed PLY, SPZ, or SOG, builds an SH palette with `BuildSHPalette`, and writes a SOG v2 bundle through the new `nt3dsog.Encode`, so later loads keep the palette and skip the k-means; a SOG that already holds one passes through unchanged. The bundle's images are PNG, not WebP.
 
+----
+
 ## v0.6.0
 
 - Gaussian splats can share their spherical harmonics through a palette (`Geometry.GaussianSHPalette` and `GaussianSHLabels`), drawn by both renderers: `nt3dmesh.BuildSHPalette` (or `Options.SHPalette = SHPaletteBuild` for PLY, compressed PLY, and SPZ) builds one by two-level k-means, taking a degree-3 splat's SH from 48 bytes on the GPU to 5, plus a palette of at most 2.9 MB per geometry; `w` in the meshes demo builds one in the background. A decoded SOG now keeps its palette, so its `GaussianSH` holds DC only: code that reads a SOG's `GaussianSH` must call `nt3d.ExpandSHPalette` or decode with `Options.SHPalette = SHPaletteExpand`.
+
+----
 
 ## v0.5.0
 
 - Gaussian clouds cluster at load and both renderers draw a budgeted subset each frame (`Frame.SplatBudget`, default one million), culled and thinned by projected size with coverage scaling, so the sort and draw cost follow the budget rather than the capture's size.
 
 - Frames no longer re-validate scene-stored geometry every frame: a store-time certificate covers points and clusters, so a 2.5M-splat frame dropped from 67 to 17 ms and a 1M frame from 28 to 7 ms on an M5 Max.
+
+----
 
 ## v0.4.0
 
@@ -144,6 +178,8 @@
 - `NewShaderNormalMap` / `NewShaderNormalMapWithParameters`: procedural linear-data normal targets with mipmaps and matching software fallbacks.
 - Shared Gerstner wave surfaces: analytic normals and velocities, world-coordinate surface queries, and a `water` demo with a four-probe float on the same animated surface in every renderer.
 
+----
+
 ## v0.3.1
 
 - Update dependencies: `ntpicture` v0.1.1 (no per-pixel allocations in Kitty NRGBA packing, legacy glyph cache kept across views), `ntcanvas` v0.1.1 (no grid reallocation on unchanged resizes), and `go-booba` v0.10.2 for the browser demos (OSC 52 clipboard from wasm, wheel events as SGR mouse buttons, Ctrl+V / Cmd+V paste).
@@ -160,6 +196,8 @@
 - Speed up software texture sampling while preserving interpolation results.
 - Avoid expensive color conversion for eligible unlit textured pixels, with byte-identical output.
 
+----
+
 ## v0.2.0
 
 - Add reusable animation clips, playback and blending, morph targets, and CPU/GPU skinning, with glTF support. [Animation demo](https://nimbleterminal.github.io/nt3d/animation/).
@@ -169,6 +207,8 @@
 - Add directional shadow maps and soft drop shadows. [Lights](https://nimbleterminal.github.io/nt3d/lights/) and [forest](https://nimbleterminal.github.io/nt3d/forest/) demos.
 - Add world-anchored labels and billboards. [Terrain demo](https://nimbleterminal.github.io/nt3d/terrain/).
 - Avoid per-pixel allocations when copying textures.
+
+----
 
 ## v0.1.0
 
