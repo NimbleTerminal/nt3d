@@ -13,6 +13,7 @@ import (
 // NodeID is stable for a node's lifetime. IDs are never reused. Root is zero.
 type NodeID uint64
 
+// Root is the root node of every scene.
 const Root NodeID = 0
 
 var nextNode atomic.Uint64
@@ -55,6 +56,7 @@ type Scene struct {
 	splatBudget                              int
 }
 
+// NewScene returns an empty scene containing a visible Root node.
 func NewScene() *Scene {
 	s := &Scene{nodes: make(map[NodeID]*sceneNode), names: make(map[string]NodeID)}
 	s.nodes[Root] = &sceneNode{Node: Node{ID: Root, Local: nt3dmath.Identity(), World: nt3dmath.Identity(), Visible: true}}
@@ -72,8 +74,12 @@ func (s *Scene) changed(mesh, texture bool) {
 }
 
 // Revision changes for every scene mutation, including transforms and visibility.
-func (s *Scene) Revision() uint64                { return s.stateRevision }
+func (s *Scene) Revision() uint64 { return s.stateRevision }
+
+// Find returns the ID of the node with the given unique name, if present.
 func (s *Scene) Find(name string) (NodeID, bool) { id, ok := s.names[name]; return id, ok }
+
+// Node returns a detached snapshot of id, including its world transform and a copy of its children.
 func (s *Scene) Node(id NodeID) (Node, bool) {
 	n, ok := s.nodes[id]
 	if !ok {
@@ -205,6 +211,9 @@ func (s *Scene) validSubtree(id NodeID) bool {
 	}
 	return true
 }
+
+// SetVisible sets id's local visibility, which is inherited by its descendants,
+// without reallocating geometry or invalidating GPU caches.
 func (s *Scene) SetVisible(id NodeID, visible bool) error {
 	n, ok := s.nodes[id]
 	if !ok {
@@ -242,6 +251,8 @@ func (s *Scene) SetGeometry(name string, g Geometry) (NodeID, error) {
 	}
 	return id, s.SetNodeGeometry(id, g)
 }
+
+// SetNodeGeometry replaces a non-root node's geometry. Slices and the material are copied.
 func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	n, ok := s.nodes[id]
 	if !ok || id == Root {
@@ -368,6 +379,8 @@ func (s *Scene) Remove(id NodeID) error {
 	s.changed(true, true)
 	return nil
 }
+
+// Clear removes every child subtree under Root.
 func (s *Scene) Clear() {
 	for _, id := range slices.Clone(s.nodes[Root].Children) {
 		_ = s.Remove(id)

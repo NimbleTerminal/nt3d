@@ -8,8 +8,10 @@ import (
 	"sync/atomic"
 )
 
+// Primitive identifies the kind of geometry primitive hit by Pick.
 type Primitive uint8
 
+// Pickable primitive kinds.
 const (
 	PointPrimitive Primitive = iota
 	TrianglePrimitive

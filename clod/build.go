@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	// MaxItems is the most items a set holds; MaxClusters the most clusters.
-	MaxItems    = 1 << 24
+	// MaxItems is the most items a set holds.
+	MaxItems = 1 << 24
+	// MaxClusters is the most clusters a set holds.
 	MaxClusters = 1 << 22
 	// DefaultClusterSize is the most items a cluster holds when Options
 	// leaves ClusterSize zero.

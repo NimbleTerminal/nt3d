@@ -21,12 +21,16 @@ type SceneAsset struct {
 	Nodes []AssetNode
 	Clips []AnimationClip
 }
+
+// AnimatedInstance holds the root group, remapped node IDs, and remapped
+// animation clips created by SceneAsset.Instantiate.
 type AnimatedInstance struct {
 	Root  NodeID
 	Nodes []NodeID
 	Clips []AnimationClip
 }
 
+// Instantiate adds a copy of the asset's hierarchy under parent with a root group named name.
 func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *AnimatedInstance, err error) {
 	root, err := s.Add(parent, name)
 	if err != nil {

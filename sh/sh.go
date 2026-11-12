@@ -20,6 +20,7 @@ import (
 // RGB is one RGB coefficient or evaluated color.
 type RGB = [3]float32
 
+// MaxDegree is the highest spherical-harmonic degree supported by this package.
 const MaxDegree = 3
 
 // Count is the number of coefficients for degree 0..3, or zero if unsupported.

@@ -10,14 +10,17 @@ import (
 	"sync"
 )
 
+// RenderMode selects the rendering backend.
 type RenderMode uint8
 
+// Supported render modes.
 const (
 	WebGPU RenderMode = iota
 	Software
 	Wireframe
 )
 
+// String returns "WebGPU", "software", or "wireframe".
 func (m RenderMode) String() string {
 	switch m {
 	case WebGPU:
@@ -146,6 +149,7 @@ func (f Frame) viewAt(p nt3dmath.Vec3) nt3dmath.Vec3 {
 	return f.Forward.Scale(-1)
 }
 
+// MaxFramePixels is the maximum width*height pixel area of a rendered Frame.
 const MaxFramePixels = 4096 * 2160
 
 // Frame creates a scene snapshot. The caller owns its header and decoration
@@ -197,6 +201,8 @@ type Renderer interface {
 	Close() error
 }
 
+// NewGPURenderer returns a WebGPU renderer that lazily initializes an offscreen
+// device on first Render. Retain it across frames and call Close after use.
 func NewGPURenderer() Renderer { return &gpuRenderer{} }
 
 // BindingLimiter is a renderer or session that knows how many bytes one
@@ -290,6 +296,8 @@ func Snapshot(f Frame, mode RenderMode, gpu Renderer) (image.Image, RenderMode, 
 	}
 	return softwareRender(f), Software, nil
 }
+
+// RenderWireframe renders f as an ANSI terminal wireframe of cols by rows character cells.
 func RenderWireframe(f Frame, cols, rows int) (string, error) {
 	if err := validateFrame(f); err != nil {
 		return "", err

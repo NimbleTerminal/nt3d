@@ -18,6 +18,7 @@ type PickMsg struct {
 	Ray     nt3dmath.Ray
 }
 
+// Pick tests the visible scene at widget cell (x, y) and returns the nearest hit, or nil.
 func (m *Model) Pick(x, y int) *nt3d.Hit {
 	if x < 0 || y < 0 || x >= m.width || y >= m.height {
 		return nil

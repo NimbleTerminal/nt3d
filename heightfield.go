@@ -21,6 +21,7 @@ type Heightfield struct {
 	Color                  color.RGBA
 }
 
+// BuildHeightfield tessellates d into an indexed triangle mesh with smooth normals and wireframe grid metadata.
 func BuildHeightfield(d Heightfield) (Geometry, error) {
 	if d.NX < 2 || d.NY < 2 || d.NX > 512 || d.NY > 512 {
 		return Geometry{}, fmt.Errorf("nt3d: heightfield dimensions must be 2..512")

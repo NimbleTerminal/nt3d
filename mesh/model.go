@@ -44,6 +44,7 @@ import (
 // Format names a mesh file format.
 type Format string
 
+// Built-in mesh format identifiers.
 const (
 	STL     Format = "stl"
 	OBJ     Format = "obj"

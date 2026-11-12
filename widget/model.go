@@ -18,10 +18,13 @@ import (
 	"time"
 )
 
-// Rendering types are shared with the engine.
+// Frame aliases nt3d.Frame for frame decorators.
 type Frame = nt3d.Frame
+
+// RenderMode aliases nt3d.RenderMode.
 type RenderMode = nt3d.RenderMode
 
+// Render modes re-exported from nt3d.
 const (
 	WebGPU    = nt3d.WebGPU
 	Software  = nt3d.Software
@@ -30,6 +33,7 @@ const (
 
 var nextID atomic.Uint64
 
+// Model is a Bubble Tea component that renders and interacts with an nt3d Scene.
 type Model struct {
 	scene                           *nt3d.Scene
 	sceneRevision                   uint64
@@ -70,6 +74,8 @@ type Model struct {
 	shown                           []time.Time   // When frames were shown, over the last second.
 	renderTime                      time.Duration // The last frame's render.
 }
+
+// Option configures a Model during New.
 type Option func(*Model)
 
 // GPUFailure says what the widget does when the GPU fails to render a frame.
@@ -113,6 +119,7 @@ func WithPostProcess(fn func(*image.RGBA)) Option { return func(m *Model) { m.po
 // WithGPUFailure chooses what a GPU render failure does.
 func WithGPUFailure(p GPUFailure) Option { return func(m *Model) { m.gpuFailure = p } }
 
+// WithRenderMode sets the widget's initial render mode.
 func WithRenderMode(mode nt3d.RenderMode) Option {
 	return func(m *Model) {
 		if mode <= nt3d.Wireframe {
@@ -130,7 +137,11 @@ func WithDefaultKeyBindings(enabled bool) Option {
 
 // WithRenderer transfers lifecycle ownership to the widget.
 func WithRenderer(r nt3d.Renderer) Option { return func(m *Model) { m.renderer = r } }
-func WithCamera(c nt3d.Camera) Option     { return func(m *Model) { m.camera = c.Valid() } }
+
+// WithCamera sets the widget's initial sanitized camera.
+func WithCamera(c nt3d.Camera) Option { return func(m *Model) { m.camera = c.Valid() } }
+
+// WithBackground sets the widget's initial opaque background color.
 func WithBackground(c color.Color) Option {
 	return func(m *Model) { m.background = color.RGBAModel.Convert(c).(color.RGBA); m.background.A = 255 }
 }
@@ -143,7 +154,11 @@ func WithTerminalSession(s *picture.TerminalSession) Option { return func(m *Mod
 func WithImageIDAllocator(next func() (int, error)) Option {
 	return func(m *Model) { m.nextImageID = next }
 }
+
+// WithKittyMedium sets the Kitty graphics transport medium.
 func WithKittyMedium(v picture.KittyMedium) Option { return func(m *Model) { m.medium = v } }
+
+// WithKittyFormat sets the Kitty graphics payload format (zlib by default).
 func WithKittyFormat(v picture.KittyFormat) Option { return func(m *Model) { m.kittyFormat = v } }
 
 // WithZoneManager requires the parent to Scan its complete View.
@@ -152,6 +167,8 @@ func WithZoneManager(z *zone.Manager) Option { return func(m *Model) { m.zones =
 // WithFrameDecorator supplies generic lines/overlays before each render, on the
 // update goroutine. Do not mutate shared geometry or instances inside it.
 func WithFrameDecorator(fn func(*nt3d.Frame)) Option { return func(m *Model) { m.decorate = fn } }
+
+// New creates a widget viewing scene (or a new empty Scene if nil) at width by height terminal cells.
 func New(scene *nt3d.Scene, width, height int, opts ...Option) *Model {
 	if scene == nil {
 		scene = nt3d.NewScene()
@@ -174,9 +191,15 @@ func New(scene *nt3d.Scene, width, height int, opts ...Option) *Model {
 	m.SetSize(width, height)
 	return m
 }
-func (m *Model) Scene() *nt3d.Scene  { return m.scene }
+
+// Scene returns the widget's underlying Scene.
+func (m *Model) Scene() *nt3d.Scene { return m.scene }
+
+// Camera returns the widget's current Camera.
 func (m *Model) Camera() nt3d.Camera { return m.camera }
-func (m *Model) ID() uint64          { return m.id }
+
+// ID returns the widget's unique identifier, matching PickMsg.ModelID and RenderFailedMsg.ID.
+func (m *Model) ID() uint64 { return m.id }
 
 // Err is the last frame's render error, until a frame draws without one, or
 // else the picture error that changed how frames are shown. A GPU failure
@@ -225,7 +248,9 @@ func postProcessed(img image.Image, fn func(*image.RGBA)) image.Image {
 }
 
 // Failed returns the GPU failure that has stopped rendering, or nil.
-func (m *Model) Failed() error          { return m.failed }
+func (m *Model) Failed() error { return m.failed }
+
+// RenderMode returns the currently active render mode (including automatic fallbacks).
 func (m *Model) RenderMode() RenderMode { return m.renderMode }
 
 // FrameRate is how many frames a second the widget has shown, over the last
@@ -258,10 +283,18 @@ func (m *Model) frameShown() {
 	m.prune(now)
 	m.shown = append(m.shown, now)
 }
-func (m *Model) RequestedRenderMode() RenderMode  { return m.requestedRenderMode }
-func (m *Model) PictureStatus() picture.Status    { return m.pic.Status() }
+
+// RequestedRenderMode returns the render mode last requested via WithRenderMode or SetRenderMode.
+func (m *Model) RequestedRenderMode() RenderMode { return m.requestedRenderMode }
+
+// PictureStatus returns the underlying ntpicture presentation status.
+func (m *Model) PictureStatus() picture.Status { return m.pic.Status() }
+
+// PictureMode returns the active ntpicture terminal presentation mode.
 func (m *Model) PictureMode() picture.PictureMode { return m.pic.Mode() }
-func (m *Model) Init() tea.Cmd                    { m.started = true; return tea.Batch(m.pic.Init(), m.schedule()) }
+
+// Init starts terminal capability discovery and schedules the initial frame render.
+func (m *Model) Init() tea.Cmd { m.started = true; return tea.Batch(m.pic.Init(), m.schedule()) }
 
 // Busy reports whether rendering or picture presentation is in flight.
 // Animation drivers can skip intermediate updates until it becomes false.
@@ -279,11 +312,15 @@ func (m *Model) Fit() tea.Cmd {
 	}
 	return m.SetCamera(m.camera.Fit(m.scene.Bounds(), aspect))
 }
+
+// SetCamera updates the widget's sanitized camera and schedules a render.
 func (m *Model) SetCamera(c nt3d.Camera) tea.Cmd {
 	m.camera = c.Valid()
 	m.wake++
 	return m.changed(false)
 }
+
+// SetSize sets the widget's viewport dimensions in terminal cells and schedules a render.
 func (m *Model) SetSize(w, h int) tea.Cmd {
 	w = max(1, min(4096, w))
 	// Glyphs require two pixel rows per cell; keep their fixed raster in budget.
@@ -294,6 +331,8 @@ func (m *Model) SetSize(w, h int) tea.Cmd {
 	m.width, m.height = w, h
 	return tea.Batch(m.pic.SetSize(w, h), m.changed(false))
 }
+
+// SetRenderMode switches the requested and active render mode and schedules a render.
 func (m *Model) SetRenderMode(mode RenderMode) tea.Cmd {
 	if mode > Wireframe {
 		return nil
@@ -308,6 +347,9 @@ func (m *Model) SetRenderMode(mode RenderMode) tea.Cmd {
 	}
 	return tea.Batch(m.pic.SetVisible(mode != Wireframe), m.changed(false))
 }
+
+// Snapshot renders a full-quality image of w by h pixels using the widget's camera,
+// lighting, fog, background, decorator, supersampling, and post-processing.
 func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	if m.closed {
 		return nil, m.requestedRenderMode, fmt.Errorf("nt3dwidget: closed")
@@ -380,6 +422,8 @@ func (m *Model) Dispose() tea.Cmd {
 	}
 	return cmd
 }
+
+// Close disposes terminal resources if owned and closes the underlying renderer.
 func (m *Model) Close() error {
 	m.Dispose()
 	if m.ownSession {
@@ -393,6 +437,8 @@ func (m *Model) Close() error {
 	}
 	return nil
 }
+
+// View returns the Bubble Tea View containing the presented picture, wireframe, or error state.
 func (m *Model) View() tea.View {
 	body := m.pic.View()
 	if m.renderMode == Wireframe {
@@ -413,6 +459,7 @@ func (m *Model) View() tea.View {
 	return v
 }
 
+// SetBackground sets the widget's opaque background color and schedules a render.
 func (m *Model) SetBackground(c color.Color) tea.Cmd {
 	if c == nil {
 		return nil

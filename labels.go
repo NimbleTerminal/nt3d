@@ -69,6 +69,7 @@ type Label struct {
 	Icon                                     image.Image // Optional icon, drawn at native size to the left of text.
 }
 
+// Geometry rasterizes l into a textured billboard quad Geometry.
 func (l Label) Geometry() (Geometry, error) {
 	if !validFloat(l.Height, l.Opacity) || l.Height < 0 || l.Opacity < 0 || l.Opacity > 1 || l.Padding < 0 || l.Border < 0 || l.Padding > 4096 || l.Border > 4096 || len(l.Text) > 65536 {
 		return Geometry{}, fmt.Errorf("nt3d: invalid label size, padding, or opacity")

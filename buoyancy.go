@@ -63,6 +63,7 @@ type BuoyantHull struct {
 	volume float32
 }
 
+// NewBuoyantHull validates c, copies its sample points, and returns an immutable BuoyantHull.
 func NewBuoyantHull(c BuoyantHullConfig) (*BuoyantHull, error) {
 	if len(c.Points) == 0 || len(c.Points) > 64 || !validFloat(c.Density, c.Gravity, c.PlaningCoefficient, c.PlaningSpeed) || c.Density <= 0 || c.Gravity <= 0 || c.PlaningCoefficient < 0 || c.PlaningSpeed < 0 {
 		return nil, fmt.Errorf("nt3d: invalid buoyant hull configuration")

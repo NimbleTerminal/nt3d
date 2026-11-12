@@ -8,13 +8,16 @@ import (
 	"nimbleterminal.dev/nt3d/math"
 )
 
+// Projection selects orthographic or perspective camera projection.
 type Projection uint8
 
+// Supported camera projections.
 const (
 	Orthographic Projection = iota
 	Perspective
 )
 
+// String returns "perspective" or "ortho".
 func (p Projection) String() string {
 	if p == Perspective {
 		return "perspective"
@@ -136,6 +139,8 @@ func (c Camera) basis() (eye, right, up, forward nt3dmath.Vec3) {
 	return
 }
 
+// Matrix returns the world-to-clip view-projection matrix for the given
+// viewport aspect ratio (width over height), using [0, 1] clip depth.
 func (c Camera) Matrix(aspect float32) nt3dmath.Mat4 {
 	c = c.valid()
 	if aspect <= 0 {

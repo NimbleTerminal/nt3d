@@ -4,11 +4,14 @@ package nt3dmath
 
 import "math"
 
+// Translation returns a 4x4 translation matrix for v.
 func Translation(v Vec3) Mat4 {
 	m := Identity()
 	m[12], m[13], m[14] = v.X, v.Y, v.Z
 	return m
 }
+
+// Scaling returns a 4x4 diagonal scale matrix for v.
 func Scaling(v Vec3) Mat4 {
 	m := Identity()
 	m[0], m[5], m[10] = v.X, v.Y, v.Z
@@ -22,10 +25,16 @@ func RotationZ(radians float64) Mat4 {
 	m[0], m[1], m[4], m[5] = c, s, -s, c
 	return m
 }
+
+// Point transforms a 3D position p by m (w = 1), discarding the output w.
 func (m Mat4) Point(p Vec3) Vec3 { x, y, z, _ := m.Transform(p); return Vec3{x, y, z} }
+
+// Direction transforms a 3D direction vector v by m's upper-left 3x3 block (w = 0).
 func (m Mat4) Direction(v Vec3) Vec3 {
 	return Vec3{m[0]*v.X + m[4]*v.Y + m[8]*v.Z, m[1]*v.X + m[5]*v.Y + m[9]*v.Z, m[2]*v.X + m[6]*v.Y + m[10]*v.Z}
 }
+
+// Transpose returns the transpose of m.
 func (m Mat4) Transpose() (out Mat4) {
 	for i := range 4 {
 		for j := range 4 {
@@ -63,9 +72,13 @@ func (m Mat4) InverseAffine() (Mat4, bool) {
 	}
 	return out, true
 }
+
+// Determinant3 returns the determinant of m's upper-left 3x3 block in float64 precision.
 func (m Mat4) Determinant3() float64 {
 	return float64(m[0])*(float64(m[5])*float64(m[10])-float64(m[9])*float64(m[6])) - float64(m[4])*(float64(m[1])*float64(m[10])-float64(m[9])*float64(m[2])) + float64(m[8])*(float64(m[1])*float64(m[6])-float64(m[5])*float64(m[2]))
 }
+
+// Transformed returns the axis-aligned bounding box enclosing b's eight corners transformed by m.
 func (b AABB) Transformed(m Mat4) (out AABB) {
 	if !b.IsValid() {
 		return

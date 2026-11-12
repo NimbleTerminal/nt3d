@@ -11,6 +11,8 @@ import (
 	"nimbleterminal.dev/nt3d/sh"
 )
 
+// Point is a rendered point, sprite, or 3D Gaussian splat in local coordinates.
+// Datum is an application-defined picking identifier.
 type Point struct {
 	// GaussianAxes are the three rotated one-sigma axes in local coordinates.
 	// Used only by GaussianPoint; affine transforms scale and rotate these axes.
@@ -22,6 +24,7 @@ type Point struct {
 	Datum        int
 }
 
+// Vertex is a mesh or line vertex in local coordinates. Zero normals are unlit.
 type Vertex struct {
 	Position, Normal nt3dmath.Vec3
 	Color            color.RGBA
@@ -36,6 +39,8 @@ type Tangent struct {
 	W         float32
 }
 
+// Box is an axis-aligned box primitive in local coordinates with nonnegative Size.
+// Datum is an application-defined picking identifier.
 type Box struct {
 	Min, Size nt3dmath.Vec3
 	Color     color.RGBA

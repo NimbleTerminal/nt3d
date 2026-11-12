@@ -13,6 +13,7 @@ import (
 // Channel identifies a track's destination. UserChannel is delivered to Apply.
 type Channel uint8
 
+// Animation track target channels.
 const (
 	Translation Channel = iota
 	Rotation
@@ -21,16 +22,20 @@ const (
 	UserChannel
 )
 
+// Interpolation selects how keyframes in a Track are sampled between key times.
 type Interpolation uint8
 
+// Keyframe interpolation modes.
 const (
 	Linear Interpolation = iota
 	Step
 	CubicSpline
 )
 
+// LoopMode controls how an Animation wraps or clamps time outside a clip's duration.
 type LoopMode uint8
 
+// Animation playback loop modes.
 const (
 	Once LoopMode = iota
 	Loop
@@ -56,6 +61,7 @@ type AnimationClip struct {
 	Tracks []Track
 }
 
+// Duration returns the clip's end time in seconds, or zero if it has no keys.
 func (c AnimationClip) Duration() float64 {
 	var d float32
 	for _, t := range c.Tracks {
@@ -65,6 +71,8 @@ func (c AnimationClip) Duration() float64 {
 	}
 	return float64(d)
 }
+
+// Validate checks that every track in c has valid dimensions, strictly increasing finite key times, and finite values.
 func (c AnimationClip) Validate() error {
 	for _, t := range c.Tracks {
 		w := t.Width
@@ -202,6 +210,7 @@ type Animation struct {
 	sampled      bool
 }
 
+// NewAnimation validates c against s, copies its tracks, and returns a player with Speed 1.
 func NewAnimation(s *Scene, c AnimationClip) (*Animation, error) {
 	if s == nil {
 		return nil, fmt.Errorf("nt3d: nil animation scene")
@@ -223,12 +232,16 @@ func NewAnimation(s *Scene, c AnimationClip) (*Animation, error) {
 	}
 	return a, nil
 }
+
+// Step advances playback by seconds*Speed and samples the clip unless Paused.
 func (a *Animation) Step(seconds float64) error {
 	if a.Paused {
 		return nil
 	}
 	return a.Sample(a.Time + seconds*a.Speed)
 }
+
+// Sample evaluates the clip at seconds with full weight and updates the scene.
 func (a *Animation) Sample(seconds float64) error { return a.SampleBlend(seconds, 1) }
 
 // SampleBlend blends a sample into the current pose. For layered blending,

@@ -24,6 +24,8 @@ type Skeleton struct {
 	Joints      []NodeID
 	InverseBind []nt3dmath.Mat4
 }
+
+// Deformation combines morph targets and skeletal skinning for a mesh node; see Scene.SetDeformation.
 type Deformation struct {
 	Morphs     []MorphTarget
 	Weights    []float32
@@ -140,6 +142,8 @@ func (s *Scene) SetDeformation(id NodeID, d Deformation) error {
 	}
 	return nil
 }
+
+// MorphWeights returns a copy of id's current morph target weights.
 func (s *Scene) MorphWeights(id NodeID) ([]float32, error) {
 	n := s.nodes[id]
 	if n == nil || n.deformation == nil {
@@ -147,6 +151,8 @@ func (s *Scene) MorphWeights(id NodeID) ([]float32, error) {
 	}
 	return slices.Clone(n.deformation.definition.Weights), nil
 }
+
+// SetMorphWeights updates id's morph target weights without replacing its deformation or base mesh.
 func (s *Scene) SetMorphWeights(id NodeID, w []float32) error {
 	n := s.nodes[id]
 	if n == nil || n.deformation == nil || len(w) != len(n.deformation.definition.Morphs) {

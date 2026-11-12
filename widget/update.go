@@ -10,6 +10,7 @@ import (
 	picture "nimbleterminal.dev/ntpicture"
 )
 
+// Update handles Bubble Tea terminal, mouse, keyboard, and render messages for the widget.
 func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	// Always route late preparation/retirement messages, including after Dispose.
 	before := m.pic.RasterGeometry()
