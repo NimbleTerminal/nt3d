@@ -344,6 +344,18 @@ func (c Camera) LookDirection(eye, forward nt3dmath.Vec3) Camera {
 
 // Eye returns the camera's position in world space.
 func (c Camera) Eye() nt3dmath.Vec3 {
-	eye, _, _, _ := c.valid().basis()
+	eye, _, _, _ := c.basis()
 	return eye
+}
+
+// Forward returns the camera's unit viewing direction in world space.
+func (c Camera) Forward() nt3dmath.Vec3 {
+	_, _, _, forward := c.basis()
+	return forward
+}
+
+// Basis returns the camera's orthonormal right, up, and forward unit vectors in world space.
+func (c Camera) Basis() (right, up, forward nt3dmath.Vec3) {
+	_, right, up, forward = c.basis()
+	return
 }

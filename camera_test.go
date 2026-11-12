@@ -161,3 +161,36 @@ func TestCameraLookDirection(t *testing.T) {
 		}
 	}
 }
+
+func TestCameraForwardAndBasis(t *testing.T) {
+	orbit := DefaultCamera().LookAt(nt3dmath.Vec3{X: 6, Y: -3, Z: 4}, nt3dmath.Vec3{X: 1, Y: 2, Z: 1})
+	posed := DefaultCamera()
+	posed.Pose = nt3dmath.Translation(nt3dmath.Vec3{X: -2, Y: 5, Z: 3}).Mul(nt3dmath.RotationZ(.7)).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 2, Y: 3, Z: 4}))
+	invalid := Camera{Alpha: math.NaN(), Beta: math.Inf(1), Distance: -1}
+
+	for name, c := range map[string]Camera{"orbit": orbit, "posed": posed, "invalid": invalid} {
+		r, u, f := c.Basis()
+		if f != c.Forward() {
+			t.Fatalf("%s: Forward %v != Basis forward %v", name, c.Forward(), f)
+		}
+		for axisName, v := range map[string]nt3dmath.Vec3{"right": r, "up": u, "forward": f} {
+			if abs(v.Dot(v)-1) > 1e-5 {
+				t.Fatalf("%s %s not unit length: %v (len^2=%g)", name, axisName, v, v.Dot(v))
+			}
+		}
+		if abs(r.Dot(u)) > 1e-5 || abs(r.Dot(f)) > 1e-5 || abs(u.Dot(f)) > 1e-5 {
+			t.Fatalf("%s basis not orthogonal: r=%v u=%v f=%v", name, r, u, f)
+		}
+		// Screen-right × screen-up points out of the screen (-forward).
+		if r.Cross(u).Add(f).Dot(r.Cross(u).Add(f)) > 1e-5 {
+			t.Fatalf("%s unexpected handedness: r×u=%v, -f=%v", name, r.Cross(u), f.Scale(-1))
+		}
+		if central := c.RayFromPixel(50, 50, 100, 100).Direction; central.Dot(f) < .99999 {
+			t.Fatalf("%s central ray %v disagrees with Forward %v", name, central, f)
+		}
+	}
+	wantOrbitForward := orbit.Target.Sub(orbit.Eye()).Normalize()
+	if orbit.Forward().Sub(wantOrbitForward).Dot(orbit.Forward().Sub(wantOrbitForward)) > 1e-10 {
+		t.Fatalf("orbit Forward %v, want %v", orbit.Forward(), wantOrbitForward)
+	}
+}

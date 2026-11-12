@@ -30,6 +30,7 @@ Frames skip what the camera can't see. Every renderer, and picking, passes over 
 - `Camera.Fit(bounds, aspect)` frames the bounds, keeping the view direction.
 - `LookAt(eye, target)` places the camera and sets Distance to the eye-to-target distance.
 - `LookDirection(eye, forward)` places the camera while preserving Distance and automatic clipping scale, useful for first-person and chase cameras.
+- `Eye()`, `Forward()`, and `Basis()` return the camera's world-space position and right, up, and forward unit vectors.
 - Orbit, pan, and zoom move it as the widget's mouse controls do, and `Step(elapsed, idle)` turns it automatically.
 - `AABB.Normalization` instead moves the scene to suit the camera.
 
