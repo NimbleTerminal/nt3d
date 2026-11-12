@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix Vulkan binding order: select scene pipelines before binding lighting,
+  rebind lighting across pipeline layout changes, and defer resumed-pass
+  bindings until a pipeline is selected. Select compute pipelines before
+  binding particle sort and clustered LOD resources. This removes the Vulkan
+  `SetBindGroup` nil-pointer crash and avoids silently dropped compute bindings.
+
 - Update Go dependencies across the library and both example modules:
   ntpicture v0.2.0, booba v0.13.0, gpucontext v0.32.0, Lip Gloss v2.1.0,
   Bubblezone v2.0.1, compress v1.20.4, pflag v1.1.0, terminfo v1.3.1,

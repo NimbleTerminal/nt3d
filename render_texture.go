@@ -277,7 +277,7 @@ func (g *gpuRenderer) setupSprites(dev *wgpu.Device, sampled *wgpu.BindGroupLayo
 // points bind with the empty run at offset 0 of the run table.
 func (g *gpuRenderer) drawSprite(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
 	style := f.Geometry[d.index].PointStyle
-	pass.SetPipeline(g.spritePipelines[style.Blend])
+	g.setScenePipeline(pass, g.spritePipelines[style.Blend])
 	pass.SetBindGroup(0, d.set.binds[0], noRunOffset)
 	pass.SetBindGroup(2, g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].BindGroup(), nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})

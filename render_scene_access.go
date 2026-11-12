@@ -126,12 +126,8 @@ func (g *gpuRenderer) captureScene(e *wgpu.CommandEncoder) error {
 	p.Draw(gputypes.DrawArgs{VertexCount: 3, InstanceCount: 1})
 	return p.End()
 }
-func (g *gpuRenderer) resumeScene(e *wgpu.CommandEncoder, color, depth *wgpu.TextureView, lighting *wgpu.BindGroup) (*wgpu.RenderPassEncoder, error) {
-	p, err := e.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpLoad, StoreOp: gputypes.StoreOpStore}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpLoad, DepthStoreOp: gputypes.StoreOpStore, StencilReadOnly: true}})
-	if err == nil {
-		p.SetBindGroup(1, lighting, nil)
-	}
-	return p, err
+func (g *gpuRenderer) resumeScene(e *wgpu.CommandEncoder, color, depth *wgpu.TextureView) (*wgpu.RenderPassEncoder, error) {
+	return e.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpLoad, StoreOp: gputypes.StoreOpStore}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpLoad, DepthStoreOp: gputypes.StoreOpStore, StencilReadOnly: true}})
 }
 
 const captureShader = `

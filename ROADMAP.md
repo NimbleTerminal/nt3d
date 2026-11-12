@@ -9,6 +9,16 @@ Nothing queued; the sections below are the open work.
 
 ## Rendering
 
+- [ ] **Linux Vulkan GPU validation**: on dwarfspark (Linux ARM64, NVIDIA GB10,
+  driver 580.178.04), wgpu v0.34.5/naga v0.20.4 still fail image comparisons
+  for environments, textured/normal-mapped geometry, sprites, and Gaussian
+  splats after fixing pipeline-before-bind-group ordering. Particle sorting
+  and clustered LOD comparisons also fail; the water GPU demo reports
+  `vkQueueSubmit` error -4 (device lost). Reproduce with NVIDIA selected via
+  `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/nvidia_icd.json` and run the root,
+  `clod`, and demo GPU suites separately (`task test-gpu` stops at the first
+  failing package). Ordinary Linux CI and the Metal GPU suites pass.
+
 - [ ] **Clustered LOD follow-ups**: draw points straight from `nt3dclod.GPU`'s
   item and indirect buffers; hierarchical levels that draw an interior node
   as one aggregate (a preprocessing tool's job); per-frame rebuilds cheap

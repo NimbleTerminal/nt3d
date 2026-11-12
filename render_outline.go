@@ -159,7 +159,7 @@ func (g *gpuRenderer) drawCrease(pass *wgpu.RenderPassEncoder, f Frame, d gpuDra
 	if c == nil || d.set.creaseBinds[c] == nil {
 		return
 	}
-	pass.SetPipeline(g.outlinePipelines[creasePipeline])
+	g.setScenePipeline(pass, g.outlinePipelines[creasePipeline])
 	pass.SetBindGroup(0, d.set.creaseBinds[c], nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: c.batch.count / 2 * 6, InstanceCount: d.count})
 }
@@ -185,7 +185,7 @@ func (g *gpuRenderer) drawOutline(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 	if geom.Outline.Width == 0 || len(geom.Indices) == 0 {
 		return
 	}
-	pass.SetPipeline(g.outlinePipelines[outlinePipelineKind(geom)])
+	g.setScenePipeline(pass, g.outlinePipelines[outlinePipelineKind(geom)])
 	if mapped(*geom) {
 		g.drawTextured(pass, f, d)
 		return

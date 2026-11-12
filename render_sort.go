@@ -466,8 +466,8 @@ func (s *gpuSort) encodeSortPasses(dev *wgpu.Device, encoder *wgpu.CommandEncode
 		return err
 	}
 	for p := range sortPasses {
-		pass.SetBindGroup(0, s.passBinds[p%2], []uint32{uint32(p * sortRecord)})
 		pass.SetPipeline(s.histPipeline)
+		pass.SetBindGroup(0, s.passBinds[p%2], []uint32{uint32(p * sortRecord)})
 		dispatchFolded(pass, blocks)
 		pass.SetPipeline(s.scanPipeline)
 		pass.Dispatch(1, 1, 1)
@@ -500,8 +500,8 @@ func (s *gpuSort) encodeRuns(dev *wgpu.Device, encoder *wgpu.CommandEncoder, n i
 	if err != nil {
 		return err
 	}
-	pass.SetBindGroup(0, s.runBind, []uint32{runParamRecord * sortRecord})
 	pass.SetPipeline(s.countPipeline)
+	pass.SetBindGroup(0, s.runBind, []uint32{runParamRecord * sortRecord})
 	dispatchFolded(pass, (n+255)/256)
 	pass.SetPipeline(s.runPipeline)
 	pass.Dispatch(1, 1, 1)

@@ -252,8 +252,8 @@ func (g *GPU) Encode(dev *wgpu.Device, enc *wgpu.CommandEncoder, v View, levels 
 	if err != nil {
 		return err
 	}
-	pass.SetBindGroup(0, g.bind, nil)
 	pass.SetPipeline(g.pick)
+	pass.SetBindGroup(0, g.bind, nil)
 	pass.Dispatch(uint32((g.clusterCount+63)/64), 1, 1)
 	pass.SetPipeline(g.scan)
 	pass.Dispatch(1, 1, 1)

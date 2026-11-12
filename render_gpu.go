@@ -833,6 +833,18 @@ func background(f Frame, load bool) gputypes.Color {
 	return gputypes.Color{R: c[0], G: c[1], B: c[2], A: 1}
 }
 
+// setScenePipeline binds lighting after selecting the pipeline. Vulkan needs
+// the current pipeline layout to bind descriptor sets; changing group 0's
+// layout can also invalidate group 1, so restore lighting on every switch.
+func (g *gpuRenderer) setScenePipeline(pass *wgpu.RenderPassEncoder, pipeline *wgpu.RenderPipeline) {
+	pass.SetPipeline(pipeline)
+	lighting := g.noShadow.bind
+	if g.shadowActive {
+		lighting = g.shadowTarget.bind
+	}
+	pass.SetBindGroup(1, lighting, nil)
+}
+
 // drawScene records the scene's pass into a color and depth target.
 func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
@@ -846,13 +858,8 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 		if err != nil {
 			return err
 		}
-		shadowBind := g.noShadow.bind
-		if g.shadowActive {
-			shadowBind = g.shadowTarget.bind
-		}
-		pass.SetBindGroup(1, shadowBind, nil)
 		if f.Environment != nil {
-			pass.SetPipeline(g.environmentPipeline)
+			g.setScenePipeline(pass, g.environmentPipeline)
 			pass.SetBindGroup(0, g.environmentBind, nil)
 			pass.Draw(gputypes.DrawArgs{VertexCount: 3, InstanceCount: 1})
 		}
@@ -872,7 +879,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 				}
 				for _, d := range g.draws {
 					if d.geom.batches[8].count > 0 {
-						pass.SetPipeline(g.dropPipeline)
+						g.setScenePipeline(pass, g.dropPipeline)
 						pass.SetBindGroup(0, d.set.binds[8], nil)
 						pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.count})
 					}
@@ -885,7 +892,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 					if err = g.captureScene(encoder); err != nil {
 						return err
 					}
-					pass, err = g.resumeScene(encoder, color, depth, shadowBind)
+					pass, err = g.resumeScene(encoder, color, depth)
 					if err != nil {
 						return err
 					}
@@ -896,12 +903,12 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 						}
 						transmitted = true
 						if b := d.geom.batches[1]; b.count > 0 {
-							pass.SetPipeline(g.pipelines[1])
+							g.setScenePipeline(pass, g.pipelines[1])
 							pass.SetBindGroup(0, d.set.binds[1], nil)
 							pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 						}
 						if d.geom.batches[7].count > 0 {
-							pass.SetPipeline(g.texturePipeline)
+							g.setScenePipeline(pass, g.texturePipeline)
 							g.drawTextured(pass, f, d)
 						}
 					}
@@ -913,7 +920,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 						if err = g.captureScene(encoder); err != nil {
 							return err
 						}
-						pass, err = g.resumeScene(encoder, color, depth, shadowBind)
+						pass, err = g.resumeScene(encoder, color, depth)
 						if err != nil {
 							return err
 						}
@@ -944,9 +951,9 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 						continue
 					}
 					if f.Geometry[d.index].Material.Cutout {
-						pass.SetPipeline(g.cutoutPipeline)
+						g.setScenePipeline(pass, g.cutoutPipeline)
 					} else {
-						pass.SetPipeline(g.texturePipeline)
+						g.setScenePipeline(pass, g.texturePipeline)
 					}
 					g.drawTextured(pass, f, d)
 				}
@@ -962,7 +969,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 				case i == 0 && f.Geometry[d.index].PointStyle.Texture != nil:
 					g.drawSprite(pass, f, d)
 				case i == 1:
-					pass.SetPipeline(g.pipelines[1])
+					g.setScenePipeline(pass, g.pipelines[1])
 					pass.SetBindGroup(0, d.set.binds[1], nil)
 					pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 				default:
@@ -982,12 +989,12 @@ func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 		g.drawOutline(pass, f, d)
 		for side := range 2 {
 			if b := d.geom.batches[1]; b.count > 0 {
-				pass.SetPipeline(g.blendPipelines[side])
+				g.setScenePipeline(pass, g.blendPipelines[side])
 				pass.SetBindGroup(0, d.set.binds[1], nil)
 				pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 			}
 			if d.geom.batches[7].count > 0 {
-				pass.SetPipeline(g.textureBlends[side])
+				g.setScenePipeline(pass, g.textureBlends[side])
 				g.drawTextured(pass, f, d)
 			}
 		}
@@ -997,7 +1004,7 @@ func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 			g.drawSprite(pass, f, d)
 			return
 		}
-		pass.SetPipeline(g.pointBlends[1][geom.PointStyle.Shape])
+		g.setScenePipeline(pass, g.pointBlends[1][geom.PointStyle.Shape])
 		pass.SetBindGroup(0, d.set.binds[0], noRunOffset)
 		pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
 	}
@@ -1048,7 +1055,7 @@ func (g *gpuRenderer) drawSortedRun(pass *wgpu.RenderPassEncoder, run sortedRun,
 		return last
 	}
 	if run.pipeline != last {
-		pass.SetPipeline(run.pipeline)
+		g.setScenePipeline(pass, run.pipeline)
 	}
 	i := slice*len(g.sortedRuns) + slot
 	pass.SetBindGroup(0, run.d.set.binds[0], g.runOffsets[i:i+1:i+1])
@@ -1493,7 +1500,7 @@ func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBat
 	if b.count == 0 {
 		return
 	}
-	pass.SetPipeline(g.pipelines[kind])
+	g.setScenePipeline(pass, g.pipelines[kind])
 	if kind == 0 {
 		pass.SetBindGroup(0, bind, noRunOffset) // Opaque points: the empty run.
 	} else {
