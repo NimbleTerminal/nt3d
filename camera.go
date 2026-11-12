@@ -35,8 +35,9 @@ type Camera struct {
 	YFOV float64
 	// AspectRatio overrides viewport aspect when positive.
 	AspectRatio float64
-	// Near and Far override automatic clipping when either is positive. Far == 0
-	// then means infinite perspective far plane.
+	// Near and Far independently override automatic clipping when positive.
+	// Near > 0 with Far == 0 means an infinite perspective far plane.
+	// Orthographic cameras with explicit Far allow Near == 0.
 	Near, Far float64
 	// Xmag and Ymag are orthographic half extents; both zero use Distance.
 	Xmag, Ymag            float64
@@ -48,10 +49,10 @@ type Camera struct {
 }
 
 // Distance is kept within this range. Near and far planes are this fraction
-// and multiple of it: at the default distance, 0.01 and 200 units.
+// and multiple of it: at the default distance, 0.05 and 200 units.
 const (
 	minDistance, maxDistance = 1e-4, 1e7
-	nearPlane, farPlane      = .01 / 3.4, 200 / 3.4
+	nearPlane, farPlane      = .05 / 3.4, 200 / 3.4
 	// halfFOV is half the perspective camera's vertical field of view.
 	halfFOV = math.Pi / 8
 )
@@ -146,8 +147,18 @@ func (c Camera) Matrix(aspect float32) nt3dmath.Mat4 {
 	e, r, u, f := c.basis()
 	view := nt3dmath.Mat4{r.X, u.X, -f.X, 0, r.Y, u.Y, -f.Y, 0, r.Z, u.Z, -f.Z, 0, -r.Dot(e), -u.Dot(e), f.Dot(e), 1}
 	near, far := float32(c.Distance*nearPlane), float32(c.Distance*farPlane)
-	if c.Near > 0 || c.Far > 0 {
-		near, far = float32(c.Near), float32(c.Far)
+	if c.Near > 0 {
+		near = float32(c.Near)
+	}
+	if c.Far > 0 {
+		far = float32(c.Far)
+		if c.Projection == Orthographic {
+			near = float32(c.Near)
+		}
+		// A far-only override can be closer than the automatic near plane.
+		if c.Near == 0 && near >= far {
+			near = far * float32(nearPlane/farPlane)
+		}
 	}
 	var p nt3dmath.Mat4
 	if c.Projection == Perspective {
@@ -309,6 +320,26 @@ func (c Camera) LookAt(eye, target nt3dmath.Vec3) Camera {
 	c.Alpha = math.Asin(float64(d.Z)/distance) * 180 / math.Pi
 	c.Beta = math.Atan2(float64(d.Y), float64(d.X)) * 180 / math.Pi
 	return c.valid()
+}
+
+// LookDirection places the camera at eye facing forward while preserving
+// Distance, and thus automatic clipping and orbit scale. Forward need not be
+// normalized. Like LookAt, elevation is limited to 89 degrees. A zero or
+// non-finite direction or eye leaves the sanitized camera unchanged.
+func (c Camera) LookDirection(eye, forward nt3dmath.Vec3) Camera {
+	c = c.valid()
+	length := math.Sqrt(float64(forward.X)*float64(forward.X) + float64(forward.Y)*float64(forward.Y) + float64(forward.Z)*float64(forward.Z))
+	if !(length > 0) || !nt3dmath.IsFinite(length) || !validFloat(eye.X, eye.Y, eye.Z) {
+		return c
+	}
+	c.Pose = nt3dmath.Mat4{}
+	c.Alpha = -math.Asin(float64(forward.Z)/length) * 180 / math.Pi
+	c.Beta = math.Atan2(-float64(forward.Y), -float64(forward.X)) * 180 / math.Pi
+	c = c.valid()
+	// Compute the target from the clamped orientation to keep the eye fixed.
+	c.Target = nt3dmath.Vec3{}
+	c.Target = eye.Sub(c.Eye())
+	return c
 }
 
 // Eye returns the camera's position in world space.

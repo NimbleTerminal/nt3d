@@ -129,6 +129,9 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		return m, m.timer()
 	case tea.KeyPressMsg:
+		if m.disableDefaultKeyBindings {
+			return m, m.schedule()
+		}
 		switch v.String() {
 		case "left", "h":
 			m.camera.Beta -= 5

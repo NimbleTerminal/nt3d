@@ -50,6 +50,7 @@ type Model struct {
 	id, seq, wake                   uint64
 	started, busy, dirty, closed    bool
 	forceGlyph                      bool
+	disableDefaultKeyBindings       bool
 	wire                            string
 	zones                           *zone.Manager
 	ownZones                        bool
@@ -119,6 +120,12 @@ func WithRenderMode(mode nt3d.RenderMode) Option {
 			m.requestedRenderMode = mode
 		}
 	}
+}
+
+// WithDefaultKeyBindings enables or disables the widget's built-in keyboard
+// controls (enabled by default). Mouse orbit, zoom, and picking remain active.
+func WithDefaultKeyBindings(enabled bool) Option {
+	return func(m *Model) { m.disableDefaultKeyBindings = !enabled }
 }
 
 // WithRenderer transfers lifecycle ownership to the widget.

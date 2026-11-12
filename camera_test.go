@@ -119,3 +119,45 @@ func TestCameraLookAt(t *testing.T) {
 		t.Fatal("degenerate LookAt changed the camera")
 	}
 }
+
+func TestPerspectiveFarOnlyClipping(t *testing.T) {
+	for _, far := range []float64{950, .01} {
+		c := DefaultCamera()
+		c.Projection, c.Far, c.Pose = Perspective, far, nt3dmath.Identity()
+		near := .05
+		if near >= far {
+			near = far / 4000
+		}
+		m := c.Matrix(1)
+		for _, d := range []float64{near, 2 * near, far} {
+			_, _, z, w := m.Transform(nt3dmath.Vec3{Z: -float32(d)})
+			want := far / (far - near) * (1 - near/d)
+			if math.Abs(float64(z/w)-want) > 1e-5 {
+				t.Fatalf("far %g depth at %g: got %g want %g", far, d, z/w, want)
+			}
+		}
+	}
+}
+
+func TestCameraLookDirection(t *testing.T) {
+	c := DefaultCamera()
+	c.Distance, c.Projection = 600, Perspective
+	eye := nt3dmath.Vec3{X: 10, Y: -4, Z: 6}
+	for _, f := range []nt3dmath.Vec3{{X: 1, Y: 2, Z: .1}, {Z: 1}} {
+		got := c.LookDirection(eye, f)
+		if got.Distance != c.Distance || got.Projection != c.Projection || got.Eye().Sub(eye).Dot(got.Eye().Sub(eye)) > 1e-8 {
+			t.Fatalf("pose or distance changed: %+v, eye %v", got, got.Eye())
+		}
+		if got.RayFromPixel(50, 50, 100, 100).Direction.Dot(f.Normalize()) < .999 {
+			t.Fatal("wrong direction")
+		}
+		if other := c.LookDirection(eye, f.Scale(10)); other.Target.Sub(got.Target).Dot(other.Target.Sub(got.Target)) > 1e-8 {
+			t.Fatal("direction magnitude affects target")
+		}
+	}
+	for _, f := range []nt3dmath.Vec3{{}, {X: float32(math.NaN())}} {
+		if c.LookDirection(eye, f) != c {
+			t.Fatal("invalid direction changed camera")
+		}
+	}
+}

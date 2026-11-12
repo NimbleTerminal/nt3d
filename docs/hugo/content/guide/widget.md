@@ -68,3 +68,7 @@ Each widget opens its own terminal session. To show several on one terminal, cre
 Kitty graphics are sent directly, or through shared memory where the terminal and program share a machine; ntpicture chooses, and paces the stream so the terminal keeps up. Kitty graphics work over SSH. Glyphs use one pixel column and two pixel rows per character cell, and work in any terminal with color.
 
 The same programs run in a browser through [booba](https://github.com/NimbleTerminal/booba), as the [demo gallery](../demos/#in-a-browser) does.
+
+For host-owned keyboard controls, pass `nt3dwidget.WithDefaultKeyBindings(false)`
+to `New`. This disables all built-in keyboard shortcuts while keeping mouse
+orbit, zoom, and picking available.

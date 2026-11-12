@@ -28,9 +28,17 @@ Frames skip what the camera can't see. Every renderer, and picking, passes over 
 `DefaultCamera()` suits a scene centered on the origin and about two units across. For anything else:
 
 - `Camera.Fit(bounds, aspect)` frames the bounds, keeping the view direction.
-- `LookAt(eye, target)` places the camera.
+- `LookAt(eye, target)` places the camera and sets Distance to the eye-to-target distance.
+- `LookDirection(eye, forward)` places the camera while preserving Distance and automatic clipping scale, useful for first-person and chase cameras.
 - Orbit, pan, and zoom move it as the widget's mouse controls do, and `Step(elapsed, idle)` turns it automatically.
 - `AABB.Normalization` instead moves the scene to suit the camera.
+
+Automatic clipping runs from `Distance * 0.05 / 3.4` to `Distance * 200 / 3.4`.
+Positive `Near` and `Far` override their respective planes. A positive `Near`
+with zero `Far` selects an infinite perspective far plane. A far-only override
+on a perspective camera retains the automatic near plane unless it would reach
+or exceed Far; in that case the near plane scales to Far at the default
+4,000:1 ratio. Orthographic cameras with explicit Far continue to allow `Near == 0`.
 
 Units are world units and nothing is rescaled for you. The near and far planes scale with the camera's distance (1e-4 to 1e7), so millimeter and kilometer scenes draw alike.
 

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fix far-only camera clipping overrides without changing infinite perspective
+  far planes (`Near > 0, Far == 0`). Raise the automatic near plane from
+  `Distance * 0.01 / 3.4` to `Distance * 0.05 / 3.4` for better depth precision.
+- Add `Camera.LookDirection(eye, forward)` to preserve Distance and automatic
+  clipping scale when positioning first-person and chase cameras.
+- Add `nt3dwidget.WithDefaultKeyBindings(false)` to disable built-in keyboard
+  controls while retaining mouse interaction.
+
 - Add toon (cel) shading: `Material.Toon` with `ToonStyle{Bands, Softness,
   Shade, Rim}` snaps each light's cosine and cast shadow to flat bands, with
   flat ambient tinted by `Shade`, a flat specular spot, and a rim highlight,
