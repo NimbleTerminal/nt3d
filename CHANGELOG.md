@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Update Go dependencies across the library and both example modules:
+  ntpicture v0.2.0, booba v0.13.0, gpucontext v0.32.0, Lip Gloss v2.1.0,
+  Bubblezone v2.0.1, compress v1.20.4, pflag v1.1.0, terminfo v1.3.1,
+  and golang.org/x/image v0.48.0, x/sync v0.25.0, and x/sys v0.50.0.
+  Retain wgpu v0.34.5 and naga v0.20.4: wgpu v0.34.14 with naga v0.21.10
+  fails five Metal environment/reflection tests with a buffer-sizes argument
+  error. Retain gogpu v0.54.0 because v0.54.1 requires the newer GPU stack.
+
 - Fix far-only camera clipping overrides without changing infinite perspective
   far planes (`Near > 0, Far == 0`). Raise the automatic near plane from
   `Distance * 0.01 / 3.4` to `Distance * 0.05 / 3.4` for better depth precision.
