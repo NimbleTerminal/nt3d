@@ -1,16 +1,18 @@
 // Copyright (c) 2026 Neomantra Corp.
-package nt3d
+
+package nt3dwater
 
 import (
 	"fmt"
-	nt3dmath "nimbleterminal.dev/nt3d/math"
 	"slices"
+
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
-// WaterSurface is the query interface used by water forces. WaveSurface,
+// Surface is the query interface used by water forces. WaveSurface,
 // including WithWake snapshots, implements it. Velocity is fluid velocity in
 // world space; an adapter may add a gameplay current before returning it.
-type WaterSurface interface {
+type Surface interface {
 	AtWorld(x, y, time float64) (WaveSample, error)
 }
 
@@ -38,18 +40,18 @@ type BuoyantHullConfig struct {
 	PlaningCoefficient, PlaningSpeed float32
 }
 
-// WaterBodyState is a rigid pose about the center of mass, with world-space
+// BodyState is a rigid pose about the center of mass, with world-space
 // linear velocity (m/s) and angular velocity (rad/s). Transform must contain
 // only a proper rotation and translation; scale belongs in the hull probes.
-type WaterBodyState struct {
+type BodyState struct {
 	Transform                       nt3dmath.Mat4
 	LinearVelocity, AngularVelocity nt3dmath.Vec3
 }
 
-// WaterForces are world-space water loads, in newtons and newton-meters about
+// Forces are world-space water loads, in newtons and newton-meters about
 // the body's center of mass. They exclude gravity, thrust, collisions, and dt.
 // Apply Force and Torque once per physics step; the engine owns integration.
-type WaterForces struct {
+type Forces struct {
 	Force, Torque                               nt3dmath.Vec3
 	Buoyancy, Drag, Planing                     nt3dmath.Vec3
 	SubmergedVolume, WetFraction, MaxEntrySpeed float32
@@ -57,7 +59,7 @@ type WaterForces struct {
 }
 
 // BuoyantHull is an immutable force provider, safe to evaluate concurrently
-// when its WaterSurface is. It owns no rigid body, clock, or scene resources.
+// when its Surface is. It owns no rigid body, clock, or scene resources.
 type BuoyantHull struct {
 	config BuoyantHullConfig
 	volume float32
@@ -66,22 +68,22 @@ type BuoyantHull struct {
 // NewBuoyantHull validates c, copies its sample points, and returns an immutable BuoyantHull.
 func NewBuoyantHull(c BuoyantHullConfig) (*BuoyantHull, error) {
 	if len(c.Points) == 0 || len(c.Points) > 64 || !validFloat(c.Density, c.Gravity, c.PlaningCoefficient, c.PlaningSpeed) || c.Density <= 0 || c.Gravity <= 0 || c.PlaningCoefficient < 0 || c.PlaningSpeed < 0 {
-		return nil, fmt.Errorf("nt3d: invalid buoyant hull configuration")
+		return nil, fmt.Errorf("nt3dwater: invalid buoyant hull configuration")
 	}
 	for _, v := range []nt3dmath.Vec3{c.DragArea, c.DragCoefficient, c.LinearDrag} {
 		if !validFloat(v.X, v.Y, v.Z) || v.X < 0 || v.Y < 0 || v.Z < 0 {
-			return nil, fmt.Errorf("nt3d: water drag must be finite and nonnegative")
+			return nil, fmt.Errorf("nt3dwater: water drag must be finite and nonnegative")
 		}
 	}
 	total := float32(0)
 	for _, p := range c.Points {
 		if !validFloat(p.Position.X, p.Position.Y, p.Position.Z, p.Volume, p.Height, p.PlaningArea) || p.Volume <= 0 || p.Height <= 0 || p.PlaningArea < 0 {
-			return nil, fmt.Errorf("nt3d: invalid buoyancy point")
+			return nil, fmt.Errorf("nt3dwater: invalid buoyancy point")
 		}
 		total += p.Volume
 	}
 	if !validFloat(total) || total <= 0 {
-		return nil, fmt.Errorf("nt3d: invalid hull volume")
+		return nil, fmt.Errorf("nt3dwater: invalid hull volume")
 	}
 	c.Points = slices.Clone(c.Points)
 	return &BuoyantHull{config: c, volume: total}, nil
@@ -100,10 +102,10 @@ func rigidWaterPose(m nt3dmath.Mat4) bool {
 // Lift is perpendicular to relative motion (no propulsive work), faces upward,
 // and vanishes when dry, moving backward, or with an overturned hull. Errors
 // return no partial loads. This function does not modify hull, body, or surface.
-func (h *BuoyantHull) Forces(surface WaterSurface, body WaterBodyState, time float64) (WaterForces, error) {
-	var out WaterForces
+func (h *BuoyantHull) Forces(surface Surface, body BodyState, time float64) (Forces, error) {
+	var out Forces
 	if h == nil || surface == nil || !waveFinite(time) || !rigidWaterPose(body.Transform) || !validFloat(body.LinearVelocity.X, body.LinearVelocity.Y, body.LinearVelocity.Z, body.AngularVelocity.X, body.AngularVelocity.Y, body.AngularVelocity.Z) {
-		return out, fmt.Errorf("nt3d: invalid water-force state")
+		return out, fmt.Errorf("nt3dwater: invalid water-force state")
 	}
 	c, m := h.config, body.Transform
 	axes := [3]nt3dmath.Vec3{{X: m[0], Y: m[1], Z: m[2]}, {X: m[4], Y: m[5], Z: m[6]}, {X: m[8], Y: m[9], Z: m[10]}}
@@ -113,10 +115,10 @@ func (h *BuoyantHull) Forces(surface WaterSurface, body WaterBodyState, time flo
 		world := m.Point(p.Position)
 		sample, err := surface.AtWorld(float64(world.X), float64(world.Y), time)
 		if err != nil {
-			return WaterForces{}, err
+			return Forces{}, err
 		}
 		if !validFloat(sample.Position.Z, sample.Velocity.X, sample.Velocity.Y, sample.Velocity.Z, sample.Normal.X, sample.Normal.Y, sample.Normal.Z) || sample.Normal.Z <= 0 {
-			return WaterForces{}, fmt.Errorf("nt3d: invalid water-force surface sample")
+			return Forces{}, fmt.Errorf("nt3dwater: invalid water-force surface sample")
 		}
 		wet := max(float32(0), min(float32(1), .5+(sample.Position.Z-world.Z)/p.Height))
 		if wet == 0 {
@@ -159,11 +161,11 @@ func (h *BuoyantHull) Forces(surface WaterSurface, body WaterBodyState, time flo
 	out.WetFraction = out.SubmergedVolume / h.volume
 	for _, v := range []nt3dmath.Vec3{out.Force, out.Torque, out.Buoyancy, out.Drag, out.Planing} {
 		if !validFloat(v.X, v.Y, v.Z) {
-			return WaterForces{}, fmt.Errorf("nt3d: water-force overflow")
+			return Forces{}, fmt.Errorf("nt3dwater: water-force overflow")
 		}
 	}
 	if !validFloat(out.SubmergedVolume, out.WetFraction, out.MaxEntrySpeed) {
-		return WaterForces{}, fmt.Errorf("nt3d: water-force overflow")
+		return Forces{}, fmt.Errorf("nt3dwater: water-force overflow")
 	}
 	return out, nil
 }

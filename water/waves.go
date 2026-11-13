@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Neomantra Corp.
-package nt3d
+
+package nt3dwater
 
 import (
 	"fmt"
@@ -41,7 +42,7 @@ type WaveSample struct {
 // world XY a unique surface point. Empty waves produce a flat surface.
 func NewWaveSurface(waves []GerstnerWave, gravity float64) (*WaveSurface, error) {
 	if !waveFinite(gravity) || gravity <= 0 {
-		return nil, fmt.Errorf("nt3d: wave gravity must be finite and positive")
+		return nil, fmt.Errorf("nt3dwater: wave gravity must be finite and positive")
 	}
 	s := &WaveSurface{waves: make([]surfaceWave, len(waves))}
 	steepness := 0.0
@@ -49,13 +50,13 @@ func NewWaveSurface(waves []GerstnerWave, gravity float64) (*WaveSurface, error)
 		x, y := float64(w.Direction.X), float64(w.Direction.Y)
 		length := math.Hypot(x, y)
 		if !waveFinite(length, w.Wavelength, w.Amplitude, w.Phase) || length == 0 || w.Direction.Z != 0 || w.Wavelength <= 0 || w.Amplitude < 0 {
-			return nil, fmt.Errorf("nt3d: invalid wave %d", i)
+			return nil, fmt.Errorf("nt3dwater: invalid wave %d", i)
 		}
 		k := 2 * math.Pi / w.Wavelength
 		omega := math.Sqrt(gravity * k)
 		steepness += k * w.Amplitude
 		if !waveFinite(k, omega, steepness) || steepness >= 1 {
-			return nil, fmt.Errorf("nt3d: total wave steepness must be below 1")
+			return nil, fmt.Errorf("nt3dwater: total wave steepness must be below 1")
 		}
 		s.waves[i] = surfaceWave{x / length, y / length, k, w.Amplitude, omega, w.Phase}
 	}
@@ -66,7 +67,7 @@ func NewWaveSurface(waves []GerstnerWave, gravity float64) (*WaveSurface, error)
 // move mesh vertices. Inputs and the resulting float32 geometry must be finite.
 func (s *WaveSurface) Sample(x, y, time float64) (WaveSample, error) {
 	if !waveFinite(x, y, time) {
-		return WaveSample{}, fmt.Errorf("nt3d: non-finite wave query")
+		return WaveSample{}, fmt.Errorf("nt3dwater: non-finite wave query")
 	}
 	p, dx, dy, v := s.evaluate(x, y, time)
 	return makeWaveSample(p, dx, dy, v)
@@ -78,7 +79,7 @@ func (s *WaveSurface) Sample(x, y, time float64) (WaveSample, error) {
 // an error after 64 iterations. Extreme scales/near-folding waves may fail.
 func (s *WaveSurface) AtWorld(x, y, time float64) (WaveSample, error) {
 	if !waveFinite(x, y, time) {
-		return WaveSample{}, fmt.Errorf("nt3d: non-finite wave query")
+		return WaveSample{}, fmt.Errorf("nt3dwater: non-finite wave query")
 	}
 	u, v := x, y
 	p, dx, dy, velocity := s.evaluate(u, v, time)
@@ -108,7 +109,7 @@ func (s *WaveSurface) AtWorld(x, y, time float64) (WaveSample, error) {
 			break
 		}
 	}
-	return WaveSample{}, fmt.Errorf("nt3d: world wave query did not converge")
+	return WaveSample{}, fmt.Errorf("nt3dwater: world wave query did not converge")
 }
 
 func (s *WaveSurface) evaluate(x, y, time float64) (p, dx, dy, v [3]float64) {
@@ -146,7 +147,7 @@ func makeWaveSample(p, dx, dy, v [3]float64) (WaveSample, error) {
 	for _, a := range [][3]float64{p, dx, dy, v} {
 		for _, f := range a {
 			if !waveFinite(f) || math.Abs(f) > math.MaxFloat32 {
-				return WaveSample{}, fmt.Errorf("nt3d: wave sample exceeds finite geometry range")
+				return WaveSample{}, fmt.Errorf("nt3dwater: wave sample exceeds finite geometry range")
 			}
 		}
 	}
@@ -154,7 +155,7 @@ func makeWaveSample(p, dx, dy, v [3]float64) (WaveSample, error) {
 	n := [3]float64{dx[1]*dy[2] - dx[2]*dy[1], dx[2]*dy[0] - dx[0]*dy[2], dx[0]*dy[1] - dx[1]*dy[0]}
 	l := math.Hypot(math.Hypot(n[0], n[1]), n[2])
 	if !waveFinite(l) || l == 0 {
-		return WaveSample{}, fmt.Errorf("nt3d: degenerate wave normal")
+		return WaveSample{}, fmt.Errorf("nt3dwater: degenerate wave normal")
 	}
 	for i := range n {
 		n[i] /= l
@@ -169,4 +170,20 @@ func waveFinite(values ...float64) bool {
 		}
 	}
 	return true
+}
+
+func validFloat(values ...float32) bool {
+	for _, v := range values {
+		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+			return false
+		}
+	}
+	return true
+}
+
+func abs(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

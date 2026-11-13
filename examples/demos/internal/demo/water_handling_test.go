@@ -2,13 +2,15 @@ package demo
 
 import (
 	"math"
-	"nimbleterminal.dev/nt3d"
 	"strings"
 	"testing"
+
+	"nimbleterminal.dev/nt3d"
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 func TestWaterHandlingResponse(t *testing.T) {
-	flat := &nt3d.WaveSurface{}
+	flat := &nt3dwater.WaveSurface{}
 	for preset := range waterHandlingPresets {
 		c := waterCraft{bound: 1000, throttle: .65, preset: preset}
 		if err := c.advance(flat, 1.0/120); err != nil {
@@ -112,7 +114,7 @@ func TestWaterDebugAndTuningPreserveState(t *testing.T) {
 
 func TestWaterProbeTelemetry(t *testing.T) {
 	c := waterCraft{}
-	if err := c.advance(&nt3d.WaveSurface{}, 1); err != nil {
+	if err := c.advance(&nt3dwater.WaveSurface{}, 1); err != nil {
 		t.Fatal(err)
 	}
 	total := 0.0
@@ -189,11 +191,11 @@ func TestWaterDebugStepAndReset(t *testing.T) {
 func TestWaterHandlingFiniteTopSpeed(t *testing.T) {
 	for preset := range waterHandlingPresets {
 		c := waterCraft{bound: 10000, preset: preset, throttle: 1}
-		if err := c.advance(&nt3d.WaveSurface{}, 50); err != nil {
+		if err := c.advance(&nt3dwater.WaveSurface{}, 50); err != nil {
 			t.Fatal(err)
 		}
 		before := c.speed
-		if err := c.advance(&nt3d.WaveSurface{}, 60); err != nil {
+		if err := c.advance(&nt3dwater.WaveSurface{}, 60); err != nil {
 			t.Fatal(err)
 		}
 		t.Logf("%s cruise %.2f m/s", c.handling().name, c.speed)

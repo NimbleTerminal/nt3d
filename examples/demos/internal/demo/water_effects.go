@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
@@ -9,6 +10,7 @@ import (
 
 	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 const (
@@ -71,7 +73,7 @@ func dropPosition(d sprayDrop, time float64) nt3dmath.Vec3 {
 
 // Called once per physics step, including while the effects are hidden. No
 // renderer cadence, wall clock, or global random generator influences emission.
-func (e *waterEffects) step(surface *nt3d.WaveSurface, c *waterCraft, dt, impact, turn float64) error {
+func (e *waterEffects) step(surface *nt3dwater.WaveSurface, c *waterCraft, dt, impact, turn float64) error {
 	e.ticks++
 	for e.count > 0 && c.time-e.stations[e.first].born >= waterWakeLife {
 		e.first = (e.first + 1) % len(e.stations)
@@ -177,7 +179,7 @@ var wakeFoam = sync.OnceValue(func() *nt3d.Texture {
 	return t
 })
 
-func (e *waterEffects) ribbon(surface *nt3d.WaveSurface, time, side float64) (nt3d.Geometry, error) {
+func (e *waterEffects) ribbon(surface *nt3dwater.WaveSurface, time, side float64) (nt3d.Geometry, error) {
 	g := nt3d.Geometry{Material: &nt3d.Material{Texture: wakeFoam(), Repeat: true, Tint: true, Transparent: true, Unlit: true}}
 	previous := -1
 	var last wakeStation

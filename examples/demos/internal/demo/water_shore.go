@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
@@ -6,12 +7,14 @@ import (
 	"image"
 	"image/color"
 	"math"
+
 	"nimbleterminal.dev/nt3d"
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 type waterTile struct {
 	mesh, foam nt3d.NodeID
-	wave       *nt3d.WaveTile
+	wave       *nt3dwater.WaveTile
 }
 
 func waterCoast(y float64) float64 { return -3.9 + .25*math.Sin(y*.9) }
@@ -80,7 +83,7 @@ func (d *demo) rebuildWaterTiles() error {
 	material := w.material
 	material.NormalMap = normal
 	material.FlowMap = flow
-	tiles, err := nt3d.BuildWaveTiles(nt3d.WaveGrid{NX: n, NY: n, TileCells: 40, MinX: -extent, MaxX: extent, MinY: -extent, MaxY: extent, NormalTileSize: 2.5, Color: color.RGBA{28, 127, 155, 255}, Material: &material})
+	tiles, err := nt3dwater.BuildWaveTiles(nt3dwater.WaveGrid{NX: n, NY: n, TileCells: 40, MinX: -extent, MaxX: extent, MinY: -extent, MaxY: extent, NormalTileSize: 2.5, Color: color.RGBA{28, 127, 155, 255}, Material: &material})
 	if err != nil {
 		return err
 	}

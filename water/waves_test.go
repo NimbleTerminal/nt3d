@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Neomantra Corp.
-package nt3d
+
+package nt3dwater
 
 import (
 	"math"
@@ -7,6 +8,13 @@ import (
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
+
+func check(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 
 func testWaveSurface(t *testing.T) *WaveSurface {
 	t.Helper()

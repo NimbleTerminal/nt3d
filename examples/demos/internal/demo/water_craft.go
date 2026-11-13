@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
 	"math"
-	"nimbleterminal.dev/nt3d"
+
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 // The demo integrates water forces at 120 Hz; rendering only reads the pose.
@@ -27,7 +29,7 @@ type waterCraft struct {
 	turn                                     float64
 }
 
-func craftSupport(s *nt3d.WaveSurface, x, y, heading, time float64) (height, pitch, roll float64, err error) {
+func craftSupport(s *nt3dwater.WaveSurface, x, y, heading, time float64) (height, pitch, roll float64, err error) {
 	c, sn := math.Cos(heading), math.Sin(heading)
 	for _, p := range [][2]float64{{-.6, -.25}, {.6, -.25}, {-.6, .25}, {.6, .25}} {
 		q, e := s.AtWorld(x+c*p[0]-sn*p[1], y+sn*p[0]+c*p[1], time)
@@ -43,11 +45,11 @@ func craftSupport(s *nt3d.WaveSurface, x, y, heading, time float64) (height, pit
 	return
 }
 
-func (c *waterCraft) advance(surface *nt3d.WaveSurface, until float64) error {
+func (c *waterCraft) advance(surface *nt3dwater.WaveSurface, until float64) error {
 	return c.advanceEffects(surface, until, nil)
 }
 
-func (c *waterCraft) advanceEffects(surface *nt3d.WaveSurface, until float64, effects *waterEffects) error {
+func (c *waterCraft) advanceEffects(surface *nt3dwater.WaveSurface, until float64, effects *waterEffects) error {
 	const dt = 1.0 / 120
 	query := surface
 	if effects != nil {

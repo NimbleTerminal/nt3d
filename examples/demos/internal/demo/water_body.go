@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
 	"math"
-	"nimbleterminal.dev/nt3d"
+
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 // A small demo integrator, not an engine API. Dimensions match the stylized
@@ -11,18 +13,18 @@ import (
 const waterMass = 80.0
 const waterRestHeight = .23 * (.5 - waterMass/(1000*1.5*.7*.23))
 
-var waterHulls = func() [len(waterHandlingPresets)][2]*nt3d.BuoyantHull {
-	var hulls [len(waterHandlingPresets)][2]*nt3d.BuoyantHull
+var waterHulls = func() [len(waterHandlingPresets)][2]*nt3dwater.BuoyantHull {
+	var hulls [len(waterHandlingPresets)][2]*nt3dwater.BuoyantHull
 	for preset, handling := range waterHandlingPresets {
 		for i := range hulls[preset] {
-			cfg := nt3d.BuoyantHullConfig{Density: 1000, Gravity: 9.81,
+			cfg := nt3dwater.BuoyantHullConfig{Density: 1000, Gravity: 9.81,
 				DragArea: vec(.1, handling.lateralDrag, 1.05), DragCoefficient: vec(.55, 1.2, 1.2), LinearDrag: vec(20, handling.lateralDamping, 3500),
 				PlaningCoefficient: float32(i) * .35, PlaningSpeed: 2}
 			for _, p := range waterProbePositions {
-				cfg.Points = append(cfg.Points, nt3d.BuoyancyPoint{Position: p, Volume: 1.5 * .7 * .23 / 4, Height: .23, PlaningArea: .2})
+				cfg.Points = append(cfg.Points, nt3dwater.BuoyancyPoint{Position: p, Volume: 1.5 * .7 * .23 / 4, Height: .23, PlaningArea: .2})
 			}
 			var err error
-			hulls[preset][i], err = nt3d.NewBuoyantHull(cfg)
+			hulls[preset][i], err = nt3dwater.NewBuoyantHull(cfg)
 			if err != nil {
 				panic(err)
 			}
@@ -36,7 +38,7 @@ func waterQuaternion(yaw, pitch, roll float64) [4]float64 {
 	return [4]float64{cr*cp*cy + sr*sp*sy, sr*cp*cy - cr*sp*sy, cr*sp*cy + sr*cp*sy, cr*cp*sy - sr*sp*cy}
 }
 
-func (c *waterCraft) integrateWater(surface *nt3d.WaveSurface, dt float64) (impact, turn float64, err error) {
+func (c *waterCraft) integrateWater(surface *nt3dwater.WaveSurface, dt float64) (impact, turn float64, err error) {
 	pose := c.pose()
 	omega := pose.Direction(vec(c.angular[0], c.angular[1], c.angular[2]))
 	handling := c.handling()
@@ -45,7 +47,7 @@ func (c *waterCraft) integrateWater(surface *nt3d.WaveSurface, dt float64) (impa
 		hull = waterHulls[c.preset][0]
 	}
 	probes := probeSurface{surface: surface}
-	loads, err := hull.Forces(&probes, nt3d.WaterBodyState{Transform: pose, LinearVelocity: vec(c.vx, c.vy, c.vz), AngularVelocity: omega}, c.time)
+	loads, err := hull.Forces(&probes, nt3dwater.BodyState{Transform: pose, LinearVelocity: vec(c.vx, c.vy, c.vz), AngularVelocity: omega}, c.time)
 	if err != nil {
 		return 0, 0, err
 	}

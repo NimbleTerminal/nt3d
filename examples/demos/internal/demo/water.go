@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
@@ -7,6 +8,7 @@ import (
 
 	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 // WaterMain runs a shared wave surface and a force-driven craft.
@@ -19,8 +21,8 @@ type waterScene struct {
 	shoreMode            int
 	ripples, reflections bool
 	optics, softSpray    bool
-	surface              *nt3d.WaveSurface
-	baseSurface          *nt3d.WaveSurface
+	surface              *nt3dwater.WaveSurface
+	baseSurface          *nt3dwater.WaveSurface
 	material             nt3d.Material // Each frame's copy is shared by every tile.
 	flow                 *nt3d.FlowMap
 	grid                 nt3d.Geometry // The first tile, for analytic-surface checks.
@@ -33,7 +35,7 @@ type waterScene struct {
 }
 
 func (d *demo) setupWater() error {
-	surface, err := nt3d.NewWaveSurface([]nt3d.GerstnerWave{
+	surface, err := nt3dwater.NewWaveSurface([]nt3dwater.GerstnerWave{
 		{Direction: nt3dmath.Vec3{X: 1, Y: .3}, Wavelength: 4.5, Amplitude: .20},
 		{Direction: nt3dmath.Vec3{X: -.3, Y: 1}, Wavelength: 2.7, Amplitude: .09, Phase: 1.1},
 		{Direction: nt3dmath.Vec3{X: .7, Y: -1}, Wavelength: 1.4, Amplitude: .035, Phase: 2.4},
@@ -136,7 +138,7 @@ func (d *demo) stepWater() error {
 
 // Fit a plane to four fixed world-XY probes beneath the float. This is a
 // kinematic demonstration, not forces, inertia, or a boat physics model.
-func waterFloatPose(surface *nt3d.WaveSurface, time float64) (nt3dmath.Mat4, error) {
+func waterFloatPose(surface *nt3dwater.WaveSurface, time float64) (nt3dmath.Mat4, error) {
 	z, gx, gy, err := craftSupport(surface, 0, 0, 0, time)
 	if err != nil {
 		return nt3dmath.Mat4{}, err

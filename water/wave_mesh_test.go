@@ -1,9 +1,13 @@
-package nt3d
+// Copyright (c) 2026 Neomantra Corp.
+
+package nt3dwater
 
 import (
 	"math"
-	nt3dmath "nimbleterminal.dev/nt3d/math"
 	"testing"
+
+	"nimbleterminal.dev/nt3d"
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
 func TestWaveTilesMatchBordersAndQueries(t *testing.T) {
@@ -16,9 +20,9 @@ func TestWaveTilesMatchBordersAndQueries(t *testing.T) {
 	}
 	for _, time := range []float64{0, .7, 123} {
 		type vertex struct {
-			v            Vertex
-			t            Tangent
-			uv, normalUV UV
+			v            nt3d.Vertex
+			t            nt3d.Tangent
+			uv, normalUV nt3d.UV
 		}
 		seen := map[[2]int]vertex{}
 		for _, tile := range tiles {
@@ -52,6 +56,7 @@ func TestWaveTilesMatchBordersAndQueries(t *testing.T) {
 		}
 	}
 }
+
 func TestWaveGridBudgets(t *testing.T) {
 	for _, d := range []WaveGrid{{NX: 1, NY: 2, MaxX: 1, MaxY: 1}, {NX: 4097, NY: 4097, MaxX: 1, MaxY: 1}, {NX: 100, NY: 100, TileCells: 1, MaxX: 1, MaxY: 1}, {NX: 2, NY: 2, MaxX: 1, MaxY: 1, NormalTileSize: -1}} {
 		if _, err := BuildWaveTiles(d); err == nil {

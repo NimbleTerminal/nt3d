@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
 	"math"
-	"nimbleterminal.dev/nt3d"
+
 	ntmath "nimbleterminal.dev/nt3d/math"
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 // Demo handling presets share the visible hull and mass. These empirical
@@ -27,7 +29,7 @@ type waterProbeReading struct {
 	wet             float64
 }
 type waterTelemetry struct {
-	water                                           nt3d.WaterForces
+	water                                           nt3dwater.Forces
 	origin, thrust, net, torque, velocity           ntmath.Vec3
 	probes                                          [4]waterProbeReading
 	steer, yawRate, slip, pitch, bank, acceleration float64
@@ -57,15 +59,15 @@ func (c *waterCraft) steering(omega ntmath.Vec3, pose ntmath.Mat4) float64 {
 // probeSurface remembers the samples a hull solve takes, so telemetry can
 // read the probes back instead of solving the same points again.
 type probeSurface struct {
-	surface *nt3d.WaveSurface
+	surface *nt3dwater.WaveSurface
 	samples [len(waterProbePositions)]struct {
 		x, y   float64
-		sample nt3d.WaveSample
+		sample nt3dwater.WaveSample
 	}
 	count int
 }
 
-func (p *probeSurface) AtWorld(x, y, time float64) (nt3d.WaveSample, error) {
+func (p *probeSurface) AtWorld(x, y, time float64) (nt3dwater.WaveSample, error) {
 	s, err := p.surface.AtWorld(x, y, time)
 	if err == nil && p.count < len(p.samples) {
 		p.samples[p.count].x, p.samples[p.count].y, p.samples[p.count].sample = x, y, s
@@ -75,7 +77,7 @@ func (p *probeSurface) AtWorld(x, y, time float64) (nt3d.WaveSample, error) {
 }
 
 // sample returns a remembered sample at exactly x, y, or solves for it.
-func (p *probeSurface) sample(x, y, time float64) (nt3d.WaveSample, error) {
+func (p *probeSurface) sample(x, y, time float64) (nt3dwater.WaveSample, error) {
 	for _, s := range p.samples[:p.count] {
 		if s.x == x && s.y == y {
 			return s.sample, nil
@@ -84,7 +86,7 @@ func (p *probeSurface) sample(x, y, time float64) (nt3d.WaveSample, error) {
 	return p.surface.AtWorld(x, y, time)
 }
 
-func (c *waterCraft) recordWater(surface *probeSurface, pose ntmath.Mat4, loads nt3d.WaterForces, thrust, force, torque, omega ntmath.Vec3, impact float64) error {
+func (c *waterCraft) recordWater(surface *probeSurface, pose ntmath.Mat4, loads nt3dwater.Forces, thrust, force, torque, omega ntmath.Vec3, impact float64) error {
 	previous := c.telemetry
 	t := waterTelemetry{water: loads, origin: pose.Point(vec(0, 0, 0)), thrust: thrust, net: force, torque: torque, velocity: vec(c.vx, c.vy, c.vz), steer: c.rudder, yawRate: float64(omega.Z), lastImpact: previous.lastImpact, peakAcceleration: previous.peakAcceleration}
 	t.pitch = math.Atan2(float64(pose[2]), math.Hypot(float64(pose[0]), float64(pose[1]))) * 180 / math.Pi

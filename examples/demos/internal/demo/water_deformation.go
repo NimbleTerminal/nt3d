@@ -1,22 +1,24 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
 	"math"
-	"nimbleterminal.dev/nt3d"
+
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 const waterWakeHeight = .18
 
 type waterDeformation struct {
-	pulses                   [nt3d.MaxWakeImpulses]nt3d.WakeImpulse
+	pulses                   [nt3dwater.MaxWakeImpulses]nt3dwater.WakeImpulse
 	first, count             int
 	revision, cachedRevision uint64
-	base, cached             *nt3d.WaveSurface
+	base, cached             *nt3dwater.WaveSurface
 	disabled                 bool
 }
 
-func (w *waterDeformation) add(p nt3d.WakeImpulse) {
+func (w *waterDeformation) add(p nt3dwater.WakeImpulse) {
 	if w.count == len(w.pulses) {
 		w.first = (w.first + 1) % len(w.pulses)
 		w.count--
@@ -42,14 +44,14 @@ func (w *waterDeformation) prune(time float64) {
 		w.revision++
 	}
 }
-func (w *waterDeformation) surface(base *nt3d.WaveSurface) (*nt3d.WaveSurface, error) {
+func (w *waterDeformation) surface(base *nt3dwater.WaveSurface) (*nt3dwater.WaveSurface, error) {
 	if w.disabled || w.count == 0 {
 		return base, nil
 	}
 	if w.cached != nil && w.base == base && w.cachedRevision == w.revision {
 		return w.cached, nil
 	}
-	var pulses [nt3d.MaxWakeImpulses]nt3d.WakeImpulse
+	var pulses [nt3dwater.MaxWakeImpulses]nt3dwater.WakeImpulse
 	for i := 0; i < w.count; i++ {
 		pulses[i] = w.pulses[(w.first+i)%len(w.pulses)]
 	}
@@ -71,14 +73,14 @@ func (e *waterEffects) deform(c *waterCraft, touching bool, impact, turn float64
 				amplitude *= 1 + math.Min(.3, math.Abs(turn)*.15)
 			}
 			spread := .23 + .025*c.speed
-			w.add(nt3d.WakeImpulse{Origin: vec(c.x-.68*dx-side*.28*dy, c.y-.68*dy+side*.28*dx, 0), Velocity: vec(-side*dy*spread, side*dx*spread, 0), Start: c.time, Duration: waterWakeLife, Amplitude: amplitude, Radius: .8, Spread: .12})
+			w.add(nt3dwater.WakeImpulse{Origin: vec(c.x-.68*dx-side*.28*dy, c.y-.68*dy+side*.28*dx, 0), Velocity: vec(-side*dy*spread, side*dx*spread, 0), Start: c.time, Duration: waterWakeLife, Amplitude: amplitude, Radius: .8, Spread: .12})
 		}
 	}
 	if impact > .8 {
 		for i := range 4 {
 			a := float64(i) * math.Pi / 2
 			dx, dy := math.Cos(a), math.Sin(a)
-			w.add(nt3d.WakeImpulse{Origin: vec(c.x+.15*dx, c.y+.15*dy, 0), Velocity: vec(.5*dx, .5*dy, 0), Start: c.time, Duration: 2.3, Amplitude: .012 * math.Min(6, impact), Radius: .7, Spread: .25})
+			w.add(nt3dwater.WakeImpulse{Origin: vec(c.x+.15*dx, c.y+.15*dy, 0), Velocity: vec(.5*dx, .5*dy, 0), Start: c.time, Duration: 2.3, Amplitude: .012 * math.Min(6, impact), Radius: .7, Spread: .25})
 		}
 	}
 }

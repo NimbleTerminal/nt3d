@@ -5,14 +5,14 @@ weight: 66
 
 # Wave surfaces
 
-`WaveSurface` combines directional Gerstner waves on the XY plane, with Z up
+`nt3d/water` (package `nt3dwater`) provides `WaveSurface`, which combines directional Gerstner waves on the XY plane, with Z up
 and mean height zero. It supplies positions, analytic normals, tangents, and
 material-point velocities. One evaluator can move a water mesh and answer
 surface queries for floating objects. The surface is immutable and safe to
 sample concurrently; its zero value is flat water.
 
 ```go
-surface, err := nt3d.NewWaveSurface([]nt3d.GerstnerWave{
+surface, err := nt3dwater.NewWaveSurface([]nt3dwater.GerstnerWave{
     {Direction: nt3dmath.Vec3{X: 1, Y: .3}, Wavelength: 4.5, Amplitude: .2},
     {Direction: nt3dmath.Vec3{X: -.3, Y: 1}, Wavelength: 2.7, Amplitude: .09, Phase: 1.1},
 }, 9.81)
@@ -132,12 +132,12 @@ not measured Sea-Doo parameters.
 
 ### Integration with a physics engine
 
-`NewBuoyantHull` creates an immutable force provider. It accepts any
-`WaterSurface`, including `WaveSurface.WithWake` snapshots. At each engine
+`nt3dwater.NewBuoyantHull` creates an immutable force provider. It accepts any
+`nt3dwater.Surface`, including `WaveSurface.WithWake` snapshots. At each engine
 physics step:
 
 1. Supply the body's rigid center-of-mass transform and world linear/angular
-   velocities in `WaterBodyState`.
+   velocities in `nt3dwater.BodyState`.
 2. Call `hull.Forces(surface, body, simulationTime)`.
 3. Apply the returned world-space `Force` and `Torque` about the center of mass.
 4. Let the engine add gravity, propulsion, contacts, and constraints, integrate
@@ -286,10 +286,10 @@ keyboard controls remain available even when absent from the compact touch bar.
 
 ## Larger water meshes
 
-`BuildWaveTiles` creates bounded tiles from one global rest grid:
+`nt3dwater.BuildWaveTiles` creates bounded tiles from one global rest grid:
 
 ```go
-tiles, err := nt3d.BuildWaveTiles(nt3d.WaveGrid{
+tiles, err := nt3dwater.BuildWaveTiles(nt3dwater.WaveGrid{
     NX: 161, NY: 161, TileCells: 40,
     MinX: -15, MaxX: 15, MinY: -15, MaxY: 15,
     NormalTileSize: 2.5,
@@ -332,7 +332,7 @@ through changing reflections and refraction.
 `WaveSurface.WithWake` creates an immutable snapshot from bounded history:
 
 ```go
-surfaceWithWake, err := surface.WithWake([]nt3d.WakeImpulse{
+surfaceWithWake, err := surface.WithWake([]nt3dwater.WakeImpulse{
     {
         Origin: nt3dmath.Vec3{X: sternX, Y: sternY},
         Velocity: nt3dmath.Vec3{Y: .4},
@@ -345,7 +345,7 @@ if err != nil { return err }
 
 `Origin` and `Velocity` are world-XY vectors with Z zero. Radius grows by
 `Spread` units per second. Positive amplitude produces a crest surrounded by
-a trough; negative amplitude inverts it. Up to `MaxWakeImpulses` (128) are
+a trough; negative amplitude inverts it. Up to `nt3dwater.MaxWakeImpulses` (128) are
 accepted. The method copies the history, replaces any previous wake layer, and
 preserves the base Gerstner waves. An empty history removes wake displacement.
 

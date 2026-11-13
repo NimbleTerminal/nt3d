@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Neomantra Corp.
-package nt3d
+
+package nt3dwater
 
 import (
 	"math"
-	nt3dmath "nimbleterminal.dev/nt3d/math"
 	"testing"
+
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
 func testWake(t *testing.T) (*WaveSurface, *WaveSurface) {
@@ -15,6 +17,7 @@ func testWake(t *testing.T) (*WaveSurface, *WaveSurface) {
 	check(t, err)
 	return base, wake
 }
+
 func TestWakeDerivativesAndWorldQueries(t *testing.T) {
 	base, wake := testWake(t)
 	const delta = 1e-4
@@ -52,6 +55,7 @@ func TestWakeDerivativesAndWorldQueries(t *testing.T) {
 		t.Fatal("wake never displaced surface")
 	}
 }
+
 func TestWakeSnapshotBoundsAndExpiry(t *testing.T) {
 	base := &WaveSurface{}
 	pulses := make([]WakeImpulse, MaxWakeImpulses)
@@ -90,6 +94,7 @@ func TestWakeSnapshotBoundsAndExpiry(t *testing.T) {
 		t.Fatal("wake history aliases caller")
 	}
 }
+
 func TestWakeValidation(t *testing.T) {
 	base := &WaveSurface{}
 	for _, p := range []WakeImpulse{{Radius: 1}, {Duration: 1, Radius: -1}, {Duration: 1, Radius: 1, Origin: nt3dmath.Vec3{Z: 1}}, {Duration: 1, Radius: 1, Spread: -1}, {Duration: 1, Radius: 1, Amplitude: math.NaN()}} {

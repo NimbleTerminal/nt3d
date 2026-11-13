@@ -1,11 +1,13 @@
 // Copyright (c) 2026 Neomantra Corp.
-package nt3d
+
+package nt3dwater
 
 import (
 	"fmt"
 	"math"
-	nt3dmath "nimbleterminal.dev/nt3d/math"
 	"slices"
+
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
 // MaxWakeImpulses bounds the work performed by each surface query.
@@ -29,11 +31,11 @@ type WakeImpulse struct {
 // matching analytic tangents, normals, and material-point velocities.
 func (s *WaveSurface) WithWake(impulses []WakeImpulse, maxHeight float64) (*WaveSurface, error) {
 	if s == nil || len(impulses) > MaxWakeImpulses || !waveFinite(maxHeight) || maxHeight <= 0 || maxHeight > math.MaxFloat32 {
-		return nil, fmt.Errorf("nt3d: invalid wake height limit or impulse count")
+		return nil, fmt.Errorf("nt3dwater: invalid wake height limit or impulse count")
 	}
 	for i, p := range impulses {
 		if !validFloat(p.Origin.X, p.Origin.Y, p.Origin.Z, p.Velocity.X, p.Velocity.Y, p.Velocity.Z) || p.Origin.Z != 0 || p.Velocity.Z != 0 || !waveFinite(p.Start, p.Duration, p.Amplitude, p.Radius, p.Spread, p.Start+p.Duration, p.Radius+p.Spread*p.Duration, 1/(p.Radius*p.Radius)) || p.Duration <= 0 || p.Radius <= 0 || p.Spread < 0 {
-			return nil, fmt.Errorf("nt3d: invalid wake impulse %d", i)
+			return nil, fmt.Errorf("nt3dwater: invalid wake impulse %d", i)
 		}
 	}
 	return &WaveSurface{waves: s.waves, wake: slices.Clone(impulses), wakeLimit: maxHeight}, nil

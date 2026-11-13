@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
@@ -7,6 +8,7 @@ import (
 
 	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 func TestWaterSurfaceAndFloat(t *testing.T) {
@@ -68,7 +70,7 @@ func TestWaterSurfaceAndFloat(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	pose, err := waterFloatPose(&nt3d.WaveSurface{}, 0)
+	pose, err := waterFloatPose(&nt3dwater.WaveSurface{}, 0)
 	if err != nil || pose[14] != .065 || pose[0] != 1 || pose[5] != 1 || pose[10] != 1 {
 		t.Fatal("flat-water pose", pose, err)
 	}

@@ -1,10 +1,13 @@
-package nt3d
+// Copyright (c) 2026 Neomantra Corp.
+
+package nt3dwater
 
 import (
 	"errors"
 	"math"
-	ntmath "nimbleterminal.dev/nt3d/math"
 	"testing"
+
+	ntmath "nimbleterminal.dev/nt3d/math"
 )
 
 type testWater struct {
@@ -18,6 +21,7 @@ func (s testWater) AtWorld(x, y, time float64) (WaveSample, error) {
 	}
 	return WaveSample{Position: ntmath.Vec3{X: float32(x), Y: float32(y)}, Normal: ntmath.Vec3{Z: 1}, Velocity: s.velocity}, nil
 }
+
 func testHull(t *testing.T) *BuoyantHull {
 	t.Helper()
 	h, e := NewBuoyantHull(BuoyantHullConfig{Density: 1000, Gravity: 10, Points: []BuoyancyPoint{{Position: ntmath.Vec3{X: 1}, Volume: .2, Height: 1, PlaningArea: .5}}, DragArea: ntmath.Vec3{X: 1, Y: 1, Z: 1}, DragCoefficient: ntmath.Vec3{X: 1, Y: 1, Z: 1}, PlaningCoefficient: .2, PlaningSpeed: 2})
@@ -26,10 +30,12 @@ func testHull(t *testing.T) *BuoyantHull {
 	}
 	return h
 }
+
 func waterIdentity() ntmath.Mat4 { return ntmath.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1} }
+
 func TestBuoyancyLoads(t *testing.T) {
 	h := testHull(t)
-	state := WaterBodyState{Transform: waterIdentity()}
+	state := BodyState{Transform: waterIdentity()}
 	f, e := h.Forces(testWater{}, state, 0)
 	if e != nil {
 		t.Fatal(e)
@@ -54,13 +60,14 @@ func TestBuoyancyLoads(t *testing.T) {
 	}
 	state.Transform[14] = 2
 	f, e = h.Forces(testWater{}, state, 0)
-	if e != nil || f != (WaterForces{}) {
+	if e != nil || f != (Forces{}) {
 		t.Fatal("dry hull has loads", f, e)
 	}
 }
+
 func TestBuoyancyAngularDrag(t *testing.T) {
 	h := testHull(t)
-	state := WaterBodyState{Transform: waterIdentity(), AngularVelocity: ntmath.Vec3{Z: 2}}
+	state := BodyState{Transform: waterIdentity(), AngularVelocity: ntmath.Vec3{Z: 2}}
 	f, e := h.Forces(testWater{}, state, 0)
 	if e != nil {
 		t.Fatal(e)
@@ -74,6 +81,7 @@ func TestBuoyancyAngularDrag(t *testing.T) {
 		t.Fatal("reverse planing", f, e)
 	}
 }
+
 func TestBuoyancyValidationAndOwnership(t *testing.T) {
 	points := []BuoyancyPoint{{Volume: 1, Height: 1}}
 	cfg := BuoyantHullConfig{Density: 1000, Gravity: 10, Points: points}
@@ -82,7 +90,7 @@ func TestBuoyancyValidationAndOwnership(t *testing.T) {
 		t.Fatal(e)
 	}
 	points[0].Volume = 0
-	state := WaterBodyState{Transform: waterIdentity()}
+	state := BodyState{Transform: waterIdentity()}
 	f, e := h.Forces(testWater{}, state, 0)
 	if e != nil || f.Force.Z != 5000 {
 		t.Fatal("caller mutated hull", f, e)
@@ -95,7 +103,7 @@ func TestBuoyancyValidationAndOwnership(t *testing.T) {
 	}
 	state.Transform = waterIdentity()
 	f, e = h.Forces(testWater{fail: true}, state, 0)
-	if e == nil || f != (WaterForces{}) {
+	if e == nil || f != (Forces{}) {
 		t.Fatal(f, e)
 	}
 	if _, e = NewBuoyantHull(cfg); e == nil {

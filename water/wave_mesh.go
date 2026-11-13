@@ -1,9 +1,12 @@
 // Copyright (c) 2026 Neomantra Corp.
-package nt3d
+
+package nt3dwater
 
 import (
 	"fmt"
 	"image/color"
+
+	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
@@ -17,7 +20,7 @@ type WaveGrid struct {
 	MinX, MaxX, MinY, MaxY float32
 	NormalTileSize         float32
 	Color                  color.RGBA
-	Material               *Material
+	Material               *nt3d.Material
 }
 
 // WaveTile owns mutable geometry with fixed topology and immutable rest-grid
@@ -25,7 +28,7 @@ type WaveGrid struct {
 // Update then publish it with SetNodeGeometry. Updating a tile is not concurrent
 // safe; distinct tiles can be updated independently against one WaveSurface.
 type WaveTile struct {
-	Geometry     Geometry
+	Geometry     nt3d.Geometry
 	grid         WaveGrid
 	x, y, nx, ny int
 }
@@ -41,11 +44,11 @@ func BuildWaveTiles(d WaveGrid) ([]*WaveTile, error) {
 		d.NormalTileSize = 1
 	}
 	if d.NX < 2 || d.NY < 2 || d.NX > 4097 || d.NY > 4097 || d.TileCells < 1 || d.TileCells > 128 || !validFloat(d.MinX, d.MaxX, d.MinY, d.MaxY, d.NormalTileSize) || d.MinX >= d.MaxX || d.MinY >= d.MaxY || d.NormalTileSize <= 0 {
-		return nil, fmt.Errorf("nt3d: invalid wave grid")
+		return nil, fmt.Errorf("nt3dwater: invalid wave grid")
 	}
 	tx, ty := (d.NX-2)/d.TileCells+1, (d.NY-2)/d.TileCells+1
 	if tx*ty > 1024 || (d.NX-1+tx)*(d.NY-1+ty) > 1<<20 {
-		return nil, fmt.Errorf("nt3d: wave grid exceeds tile or vertex budget")
+		return nil, fmt.Errorf("nt3dwater: wave grid exceeds tile or vertex budget")
 	}
 	var tiles []*WaveTile
 	for y := 0; y < d.NY-1; y += d.TileCells {
@@ -55,18 +58,18 @@ func BuildWaveTiles(d WaveGrid) ([]*WaveTile, error) {
 			tile.grid.Material = nil // Rest coordinates do not retain material snapshots.
 			loX, loY := tile.rest(0, 0)
 			hiX, hiY := tile.rest(nx-1, ny-1)
-			g, err := BuildHeightfield(Heightfield{NX: nx, NY: ny, MinX: float32(loX), MaxX: float32(hiX), MinY: float32(loY), MaxY: float32(hiY), Sampler: func(float32, float32) float32 { return 0 }, Color: d.Color, Material: d.Material})
+			g, err := nt3d.BuildHeightfield(nt3d.Heightfield{NX: nx, NY: ny, MinX: float32(loX), MaxX: float32(hiX), MinY: float32(loY), MaxY: float32(hiY), Sampler: func(float32, float32) float32 { return 0 }, Color: d.Color, Material: d.Material})
 			if err != nil {
 				return nil, err
 			}
-			g.NormalUV = make([]UV, nx*ny)
-			g.Tangents = make([]Tangent, nx*ny)
+			g.NormalUV = make([]nt3d.UV, nx*ny)
+			g.Tangents = make([]nt3d.Tangent, nx*ny)
 			for j := range ny {
 				for i := range nx {
 					at := j*nx + i
 					px, py := tile.rest(i, j)
-					g.UV[at] = UV{float32(x+i) / float32(d.NX-1), 1 - float32(y+j)/float32(d.NY-1)}
-					g.NormalUV[at] = UV{float32(px / float64(d.NormalTileSize)), float32(-py / float64(d.NormalTileSize))}
+					g.UV[at] = nt3d.UV{U: float32(x+i) / float32(d.NX-1), V: 1 - float32(y+j)/float32(d.NY-1)}
+					g.NormalUV[at] = nt3d.UV{U: float32(px / float64(d.NormalTileSize)), V: float32(-py / float64(d.NormalTileSize))}
 				}
 			}
 			tile.Geometry = g
@@ -81,6 +84,7 @@ func BuildWaveTiles(d WaveGrid) ([]*WaveTile, error) {
 	}
 	return tiles, nil
 }
+
 func (t *WaveTile) rest(x, y int) (float64, float64) {
 	d := t.grid
 	return float64(d.MinX) + (float64(d.MaxX)-float64(d.MinX))*float64(t.x+x)/float64(d.NX-1), float64(d.MinY) + (float64(d.MaxY)-float64(d.MinY))*float64(t.y+y)/float64(d.NY-1)
@@ -90,7 +94,7 @@ func (t *WaveTile) rest(x, y int) (float64, float64) {
 // and tangent storage and updates exact bounds; indices and UVs stay unchanged.
 func (t *WaveTile) Update(surface *WaveSurface, time float64) error {
 	if t == nil || surface == nil || !waveFinite(time) || t.nx < 2 || t.ny < 2 || len(t.Geometry.Vertices) != t.nx*t.ny || len(t.Geometry.Tangents) != t.nx*t.ny {
-		return fmt.Errorf("nt3d: invalid wave tile update")
+		return fmt.Errorf("nt3dwater: invalid wave tile update")
 	}
 	for y := range t.ny {
 		for x := range t.nx {
@@ -101,10 +105,10 @@ func (t *WaveTile) Update(surface *WaveSurface, time float64) error {
 			}
 			at := y*t.nx + x
 			t.Geometry.Vertices[at].Position, t.Geometry.Vertices[at].Normal = s.Position, s.Normal
-			t.Geometry.Tangents[at] = Tangent{Direction: s.TangentX.Normalize(), W: -1}
+			t.Geometry.Tangents[at] = nt3d.Tangent{Direction: s.TangentX.Normalize(), W: -1}
 		}
 	}
-	t.Geometry.Bounds = GeometryBounds(t.Geometry)
+	t.Geometry.Bounds = nt3d.GeometryBounds(t.Geometry)
 	return nil
 }
 

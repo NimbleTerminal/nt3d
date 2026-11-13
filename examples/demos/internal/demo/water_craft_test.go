@@ -1,10 +1,13 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
 	"math"
-	"nimbleterminal.dev/nt3d"
 	"testing"
+
+	"nimbleterminal.dev/nt3d"
+	nt3dwater "nimbleterminal.dev/nt3d/water"
 )
 
 func TestWaterCraftLaunchAndLand(t *testing.T) {
@@ -46,7 +49,7 @@ func TestWaterCraftLaunchAndLand(t *testing.T) {
 
 func TestWaterCraftFlatAndControls(t *testing.T) {
 	c := waterCraft{}
-	if err := c.advance(&nt3d.WaveSurface{}, 5); err != nil {
+	if err := c.advance(&nt3dwater.WaveSurface{}, 5); err != nil {
 		t.Fatal(err)
 	}
 	if c.airborne || c.launches != 0 || math.Abs(c.z-waterRestHeight) > 1e-6 {
@@ -71,7 +74,7 @@ func TestWaterCraftTerminalSpace(t *testing.T) {
 }
 
 func TestWaterCraftForcesAndPlaning(t *testing.T) {
-	flat := &nt3d.WaveSurface{}
+	flat := &nt3dwater.WaveSurface{}
 	a := waterCraft{bound: 1000, throttle: .65}
 	b := a
 	b.noPlaning = true
