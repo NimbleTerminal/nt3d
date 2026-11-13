@@ -619,11 +619,27 @@ func (t *Texture) ColorModel() color.Model { return color.RGBAModel }
 
 // At implements image.Image. Pixels outside Bounds are transparent black.
 func (t *Texture) At(x, y int) color.Color {
-	if t == nil || x < 0 || y < 0 || x >= t.width || y >= t.height {
-		return color.RGBA{}
+	return color.RGBAModel.Convert(t.NRGBAAt(x, y))
+}
+
+// NRGBAAt returns the unpremultiplied straight-alpha texel at (x, y), or
+// transparent black when t is nil or (x, y) lies outside Bounds.
+func (t *Texture) NRGBAAt(x, y int) color.NRGBA {
+	if !t.valid() || x < 0 || y < 0 || x >= t.width || y >= t.height {
+		return color.NRGBA{}
 	}
 	i := (y*t.width + x) * 4
-	return color.RGBAModel.Convert(color.NRGBA{t.pixels[i], t.pixels[i+1], t.pixels[i+2], t.pixels[i+3]})
+	return color.NRGBA{t.pixels[i], t.pixels[i+1], t.pixels[i+2], t.pixels[i+3]}
+}
+
+// Sample performs bilinear straight-alpha sampling at uv, clamping to [0, 1]
+// or wrapping across tile edges when repeat is true, matching GPU sampling.
+// Nil textures and non-finite coordinates return transparent black.
+func (t *Texture) Sample(uv UV, repeat bool) color.NRGBA {
+	if !t.valid() || !validFloat(uv.U, uv.V) {
+		return color.NRGBA{}
+	}
+	return t.sampleWrap(uv, repeat)
 }
 
 // NewShaderTexture creates an immutable procedural texture. source must define

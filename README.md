@@ -42,7 +42,7 @@ See [Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-s
 
 - **Scene graph & level of detail** — Named nodes with parent transforms, visibility, instanced shared geometry, distance-tiered `Scene.SetLOD`, and per-frame `Frame.Stats` counters.
 - **One scene, three renderers** — WebGPU, software, and wireframe renderers that draw the same picture, plus `GPUSession` / `GPUTarget` to render directly into a host window's WebGPU swapchain or sub-viewport without CPU readback.
-- **Materials, lighting & effects** — Mipmapped and anisotropic textures, normal maps, transparency, cutouts, directional and point shadows, fog, IBL and spherical-harmonics sky (`nt3d/sh`), shader textures, shell fur, cel/toon shading with inked silhouettes and creases, and shared Gerstner waves (`WaveSurface`) with wakes, foam, and buoyancy queries.
+- **Materials, lighting & effects** — Mipmapped and anisotropic textures, normal maps, transparency, cutouts, directional and point shadows, fog, IBL and spherical-harmonics sky (`nt3d/sh`), shader textures, shell fur (`nt3d/fur`), cel/toon shading with inked silhouettes and creases, and shared Gerstner waves (`nt3d/water`) with wakes, foam, and buoyancy queries.
 - **Meshes, glTF animation & 3D Gaussian splatting** — Bounded decoders for STL, OBJ, 3MF, PLY, glTF/GLB (joints, morph targets, cameras, transform tracks), and 3DGS splats (`.ply`, `.spz`, `.sog`) with degree-3 spherical harmonics.
 - **Clustering & spatial indexing** — `nt3d/clod` clusters large point clouds, instances, and labels once and selects visible clusters per frame on CPU or WebGPU compute; `nt3d/aabbtree` provides a standalone generic dynamic AABB tree (`Tree[T]`) with overlap and ray-cast queries.
 - **Bubble Tea widget** — `nt3d/widget` handles orbit/pan/zoom input, background-indexed picking, world-anchored labels, Kitty graphics via [`ntpicture`](https://github.com/NimbleTerminal/ntpicture), and graceful fallback when the GPU or terminal can't keep up.
@@ -51,9 +51,11 @@ See [Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-s
 
 | Import path | Package | Purpose |
 | :--- | :--- | :--- |
-| [`nimbleterminal.dev/nt3d`](https://pkg.go.dev/nimbleterminal.dev/nt3d) | `nt3d` | Core scene graph, camera, shapes, materials, lighting, water, animation, and GPU/software/wireframe renderers |
+| [`nimbleterminal.dev/nt3d`](https://pkg.go.dev/nimbleterminal.dev/nt3d) | `nt3d` | Core scene graph, camera, shapes, materials, lighting, animation, and GPU/software/wireframe renderers |
 | [`nimbleterminal.dev/nt3d/widget`](https://pkg.go.dev/nimbleterminal.dev/nt3d/widget) | `nt3dwidget` | Interactive Bubble Tea v2 viewport with camera controls, picking, labels, and automatic renderer fallback |
 | [`nimbleterminal.dev/nt3d/mesh`](https://pkg.go.dev/nimbleterminal.dev/nt3d/mesh) | `nt3dmesh` | Bounded STL, OBJ, 3MF, and PLY decoders (`mesh/gltf`, `mesh/spz`, `mesh/sog`, and `mesh/formats` add glTF/GLB and compressed Gaussian splats) |
+| [`nimbleterminal.dev/nt3d/water`](https://pkg.go.dev/nimbleterminal.dev/nt3d/water) | `nt3dwater` | Analytic Gerstner wave surfaces, wake impulses, tiled water meshes, and Archimedes hull buoyancy/drag/planing forces |
+| [`nimbleterminal.dev/nt3d/fur`](https://pkg.go.dev/nimbleterminal.dev/nt3d/fur) | `nt3dfur` | Shell-fur layers, wind/gravity sway transforms, and edge-on silhouette fins for triangle meshes |
 | [`nimbleterminal.dev/nt3d/clod`](https://pkg.go.dev/nimbleterminal.dev/nt3d/clod) | `nt3dclod` | Clustered level of detail for large point clouds, instances, and label sets (CPU & WebGPU compute) |
 | [`nimbleterminal.dev/nt3d/aabbtree`](https://pkg.go.dev/nimbleterminal.dev/nt3d/aabbtree) | `nt3daabbtree` | Generic dynamic AABB spatial index (`Tree[T]`) for moving boxes, overlap queries, and ray casts |
 | [`nimbleterminal.dev/nt3d/sh`](https://pkg.go.dev/nimbleterminal.dev/nt3d/sh) | `nt3dsh` | Shared Go/WGSL spherical harmonics math for degree-2 diffuse skies and degree-3 Gaussian splats |

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Neomantra Corp.
-package nt3d
+
+package nt3dfur
 
 import (
 	"fmt"
@@ -9,13 +10,14 @@ import (
 	"math/rand/v2"
 	"slices"
 
-	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d"
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
-// Fur describes shell fur: copies of a mesh pushed out along its normals,
+// Config describes shell fur: copies of a mesh pushed out along its normals,
 // each cut to the cross-section of the strands at its height, so that the
 // layers stack into strands. Zero values take the defaults noted.
-type Fur struct {
+type Config struct {
 	// Length is how far the tips stand off the surface, in the mesh's units.
 	Length float32
 	// Shells is the number of layers, 2..64 (default 16). More layers make
@@ -51,27 +53,27 @@ const (
 // height is shell k's fraction of the fur's length. Layers sit at k/n, so the
 // top one is just below the longest strands' tips, where it still catches
 // them; a layer at the full length would only ever be empty.
-func (f Fur) height(k int) float32 { return float32(k) / float32(f.Shells) }
+func (f Config) height(k int) float32 { return float32(k) / float32(f.Shells) }
 
-// FurCoat grows a Fur on meshes. It makes each strand density's texture
+// Coat grows shell fur on meshes. It makes each strand density's texture
 // once, for every mesh that needs it.
-type FurCoat struct {
-	fur    Fur
-	layers map[furLayers]*Texture
-	fins   *Texture
+type Coat struct {
+	fur    Config
+	layers map[furLayers]*nt3d.Texture
+	fins   *nt3d.Texture
 }
 
 // furLayers names a strand texture: its strands, and the texture that colors
 // them, if any, and whether that one repeats.
 type furLayers struct {
 	density int
-	source  *Texture
+	source  *nt3d.Texture
 	repeat  bool
 }
 
-// NewFur checks a Fur and returns its coat. Strand textures are made by
-// Shells, when a mesh shows what they need.
-func NewFur(f Fur) (*FurCoat, error) {
+// New checks f and returns its Coat. Strand textures are made by Shells, when
+// a mesh shows what they need.
+func New(f Config) (*Coat, error) {
 	if f.Shells == 0 {
 		f.Shells = 16
 	}
@@ -86,20 +88,20 @@ func NewFur(f Fur) (*FurCoat, error) {
 	}
 	switch {
 	case !positive(f.Length):
-		return nil, fmt.Errorf("nt3d: fur length must be positive")
+		return nil, fmt.Errorf("nt3dfur: fur length must be positive")
 	case f.Shells < 2 || f.Shells > 64:
-		return nil, fmt.Errorf("nt3d: fur shells must be 2..64")
+		return nil, fmt.Errorf("nt3dfur: fur shells must be 2..64")
 	case f.Spacing != 0 && !positive(f.Spacing):
-		return nil, fmt.Errorf("nt3d: fur spacing must be positive")
+		return nil, fmt.Errorf("nt3dfur: fur spacing must be positive")
 	case f.Spacing == 0 && (f.Density < 4 || f.Density > furMaxDensity):
-		return nil, fmt.Errorf("nt3d: fur density must be 4..%d", furMaxDensity)
+		return nil, fmt.Errorf("nt3dfur: fur density must be 4..%d", furMaxDensity)
 	}
-	return &FurCoat{fur: f, layers: map[furLayers]*Texture{}}, nil
+	return &Coat{fur: f, layers: map[furLayers]*nt3d.Texture{}}, nil
 }
 
 // density is strands across the texture for a mesh: Density, or as many as
 // put strands Spacing apart, given how much surface a unit of UV covers.
-func (c *FurCoat) density(base Geometry) int {
+func (c *Coat) density(base nt3d.Geometry) int {
 	if c.fur.Spacing == 0 {
 		return c.fur.Density
 	}
@@ -112,7 +114,7 @@ func (c *FurCoat) density(base Geometry) int {
 
 // uvSpan is the side of the surface a mesh's UV square covers: the square
 // root of its area over the area its UVs cover, or zero if they cover none.
-func uvSpan(base Geometry) float64 {
+func uvSpan(base nt3d.Geometry) float64 {
 	var surface, uv float64
 	for i := 0; i+2 < len(base.Indices); i += 3 {
 		a, b, d := base.Indices[i], base.Indices[i+1], base.Indices[i+2]
@@ -129,7 +131,7 @@ func uvSpan(base Geometry) float64 {
 
 // cracks reports whether vertices at one position have different normals,
 // so that shells pushed along them would part there.
-func cracks(g Geometry) bool {
+func cracks(g nt3d.Geometry) bool {
 	normals := make(map[nt3dmath.Vec3]nt3dmath.Vec3, len(g.Vertices))
 	for _, v := range g.Vertices {
 		n := v.Normal.Normalize()
@@ -149,42 +151,42 @@ func cracks(g Geometry) bool {
 // in world units, so strands are the same size on every side. Corners are
 // split per face, as faces on different axes map differently; positions and
 // normals are kept, so the shells stay closed.
-func (c *FurCoat) project(base Geometry) Geometry {
+func (c *Coat) project(base nt3d.Geometry) nt3d.Geometry {
 	spacing := float64(c.fur.Spacing)
 	if spacing == 0 {
-		b := GeometryBounds(base)
+		b := nt3d.GeometryBounds(base)
 		size := b.Max.Sub(b.Min)
 		spacing = float64(max(size.X, size.Y, size.Z)) / float64(c.fur.Density)
 	}
 	tile := float32(spacing * furTile)
-	out := Geometry{Vertices: make([]Vertex, 0, len(base.Indices)), Indices: make([]uint32, 0, len(base.Indices)), UV: make([]UV, 0, len(base.Indices))}
+	out := nt3d.Geometry{Vertices: make([]nt3d.Vertex, 0, len(base.Indices)), Indices: make([]uint32, 0, len(base.Indices)), UV: make([]nt3d.UV, 0, len(base.Indices))}
 	for i := 0; i+2 < len(base.Indices); i += 3 {
 		n := faceNormal(base, i)
 		ax, ay, az := abs(n.X), abs(n.Y), abs(n.Z)
 		for _, k := range base.Indices[i : i+3] {
 			v := base.Vertices[k]
 			p := v.Position
-			var uv UV
+			var uv nt3d.UV
 			switch {
 			case ax >= ay && ax >= az:
-				uv = UV{p.Y / tile, p.Z / tile}
+				uv = nt3d.UV{U: p.Y / tile, V: p.Z / tile}
 			case ay >= az:
-				uv = UV{p.X / tile, p.Z / tile}
+				uv = nt3d.UV{U: p.X / tile, V: p.Z / tile}
 			default:
-				uv = UV{p.X / tile, p.Y / tile}
+				uv = nt3d.UV{U: p.X / tile, V: p.Y / tile}
 			}
 			out.Indices = append(out.Indices, uint32(len(out.Vertices)))
 			out.Vertices = append(out.Vertices, v)
 			out.UV = append(out.UV, uv)
 		}
 	}
-	out.Bounds = GeometryBounds(out)
+	out.Bounds = nt3d.GeometryBounds(out)
 	return out
 }
 
 // stretch is how much surface one unit of each UV axis spans, averaged over
 // the mesh by area: from each triangle's derivatives of position along u and v.
-func stretch(base Geometry) (su, sv float64) {
+func stretch(base nt3d.Geometry) (su, sv float64) {
 	var area float64
 	for i := 0; i+2 < len(base.Indices); i += 3 {
 		a, b, d := base.Indices[i], base.Indices[i+1], base.Indices[i+2]
@@ -215,7 +217,7 @@ func stretch(base Geometry) (su, sv float64) {
 // strands' cross-section there, as a texture per layer would, at a fraction
 // of the memory. A texel's color is that of its strand at its top, so short
 // strand edges, which lower layers show most of, are darker.
-func (c *FurCoat) strands(key furLayers) (*Texture, error) {
+func (c *Coat) strands(key furLayers) (*nt3d.Texture, error) {
 	if texture, ok := c.layers[key]; ok {
 		return texture, nil
 	}
@@ -253,7 +255,7 @@ func (c *FurCoat) strands(key furLayers) (*Texture, error) {
 			img.SetNRGBA(x, y, color.NRGBA{mix(0), mix(1), mix(2), uint8(math.Round(height * 255))})
 		}
 	}
-	texture, err := NewTexture(img)
+	texture, err := nt3d.NewTexture(img)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +274,7 @@ type furStrand struct {
 // furStrands places a strand texture's strands, one in each cell of a
 // density × density grid on a size × size texture, row by row. Each grows
 // somewhere in the middle half of its cell, and may reach past it.
-func (c *FurCoat) furStrands(key furLayers) (strands []furStrand, size int, cell float64) {
+func (c *Coat) furStrands(key furLayers) (strands []furStrand, size int, cell float64) {
 	f, density := c.fur, key.density
 	size = min(furMaxTexture, density*furTexelsPerStrand)
 	cell = float64(size) / float64(density)
@@ -291,7 +293,7 @@ func (c *FurCoat) furStrands(key furLayers) (strands []furStrand, size int, cell
 		}
 		if key.source != nil {
 			// The texture's color where the strand grows, darker at its root.
-			t := key.source.sampleWrap(UV{U: float32(s.x / float64(size)), V: float32(s.y / float64(size))}, key.repeat)
+			t := key.source.Sample(nt3d.UV{U: float32(s.x / float64(size)), V: float32(s.y / float64(size))}, key.repeat)
 			s.tip = [3]float64{float64(t.R), float64(t.G), float64(t.B)}
 			s.root = [3]float64{s.tip[0] * .55, s.tip[1] * .55, s.tip[2] * .55}
 		}
@@ -304,23 +306,22 @@ func (c *FurCoat) furStrands(key furLayers) (strands []furStrand, size int, cell
 // cutout layer per shell, each pushed out along the base's normals, averaged
 // where faces meet. A mesh without UVs, as most STL, 3MF, and PLY files are,
 // is given them by projecting each face along its main axis; points, lines,
-// boxes, and arrows are not furred. A
-// textured base colors its fur, and its skin wears the texture; otherwise the
-// skin is the root color, darkened. Add each shell as a node placed as the
-// base is; Sway then bends the fur by moving those nodes, without rebuilding
-// them.
-func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
+// boxes, and arrows are not furred. A textured base colors its fur, and its
+// skin wears the texture; otherwise the skin is the root color, darkened. Add
+// each shell as a node placed as the base is; Sway then bends the fur by
+// moving those nodes, without rebuilding them.
+func (c *Coat) Shells(base nt3d.Geometry) ([]nt3d.Geometry, error) {
 	if err := base.Validate(); err != nil {
 		return nil, err
 	}
 	if len(base.Indices) == 0 {
-		return nil, fmt.Errorf("nt3d: fur needs a mesh")
+		return nil, fmt.Errorf("nt3dfur: fur needs a mesh")
 	}
 	// Shells go out along the normals; where faces meet with different ones,
 	// as at hard edges and on flat-shaded meshes like STL files, they would
 	// part, so there the normals are averaged and the coat stays closed.
 	if cracks(base) {
-		smooth, err := SmoothNormals(base, 180)
+		smooth, err := nt3d.SmoothNormals(base, 180)
 		if err != nil {
 			return nil, err
 		}
@@ -363,7 +364,7 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 	}
 	f := c.fur
 	// Each shell has slices of its own: the caller may edit one.
-	skin := Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(base.UV)}
+	skin := nt3d.Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(base.UV)}
 	if key.source != nil {
 		// The skin wears the base's material, as the coat it is, but opaque.
 		skin.Material = cloneMaterial(base.Material)
@@ -374,25 +375,25 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 			skin.Vertices[i].Color = color.RGBA{shade(f.Root.R), shade(f.Root.G), shade(f.Root.B), 255}
 		}
 	}
-	skin.Bounds = GeometryBounds(skin)
-	shells := []Geometry{skin}
+	skin.Bounds = nt3d.GeometryBounds(skin)
+	shells := []nt3d.Geometry{skin}
 	uv := base.UV
 	if tiled {
-		uv = make([]UV, len(base.UV))
+		uv = make([]nt3d.UV, len(base.UV))
 		for i, t := range base.UV {
-			uv[i] = UV{U: t.U * float32(tilesU), V: t.V * float32(tilesV)}
+			uv[i] = nt3d.UV{U: t.U * float32(tilesU), V: t.V * float32(tilesV)}
 		}
 	}
 	for k := 1; k < f.Shells; k++ {
 		h := f.height(k)
 		// Strands colored from a texture repeat, and are tinted by the
 		// vertices' colors, as that texture is on the base.
-		g := Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(uv), Material: &Material{Texture: strands, Cutout: true, Threshold: h, Repeat: tiled || key.repeat, Tint: key.source != nil && base.Material.Tint}}
+		g := nt3d.Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(uv), Material: &nt3d.Material{Texture: strands, Cutout: true, Threshold: h, Repeat: tiled || key.repeat, Tint: key.source != nil && base.Material.Tint}}
 		for i := range g.Vertices {
 			v := &g.Vertices[i]
 			v.Position = v.Position.Add(v.Normal.Normalize().Scale(f.Length * h))
 		}
-		g.Bounds = GeometryBounds(g)
+		g.Bounds = nt3d.GeometryBounds(g)
 		if err := g.Validate(); err != nil {
 			return nil, err
 		}
@@ -406,7 +407,7 @@ func (c *FurCoat) Shells(base Geometry) ([]Geometry, error) {
 // roots stay put and tips move most. A uniform sway moves every point of a
 // shell alike, so it is a translation of the shell's node, and animating it
 // uploads no geometry. Compose it after the base's own placement.
-func (c *FurCoat) Sway(shell int, sway nt3dmath.Vec3) nt3dmath.Mat4 {
+func (c *Coat) Sway(shell int, sway nt3dmath.Vec3) nt3dmath.Mat4 {
 	if shell <= 0 || shell >= c.fur.Shells || !finiteVec(sway) {
 		return nt3dmath.Identity()
 	}
@@ -419,7 +420,7 @@ const finRows = 32
 
 // finTexture is a side view of strands: gray, darker toward their roots,
 // tinted by the fins' vertex colors. Rows run from tips (top) to roots.
-func (c *FurCoat) finTexture() (*Texture, error) {
+func (c *Coat) finTexture() (*nt3d.Texture, error) {
 	if c.fins != nil {
 		return c.fins, nil
 	}
@@ -448,7 +449,7 @@ func (c *FurCoat) finTexture() (*Texture, error) {
 			img.SetNRGBA(x, y, color.NRGBA{v, v, v, 255})
 		}
 	}
-	t, err := NewTexture(img)
+	t, err := nt3d.NewTexture(img)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +463,7 @@ type finStrand struct{ x, length, radius float64 }
 
 // finStrands places the fin texture's strands, one in each of furTile cells
 // across it, somewhere in the middle half of the cell.
-func (c *FurCoat) finStrands() (strands []finStrand, width int, cell float64) {
+func (c *Coat) finStrands() (strands []finStrand, width int, cell float64) {
 	width, cell = furTile*furTexelsPerStrand, float64(furTexelsPerStrand)
 	rng := rand.New(rand.NewPCG(c.fur.Seed^0x5f1e, 0x2545f4914f6cdd1d))
 	strands = make([]finStrand, furTile)
@@ -476,7 +477,7 @@ func (c *FurCoat) finStrands() (strands []finStrand, width int, cell float64) {
 // mesh's units, so that fins space theirs alike: Spacing, unless a texture
 // caps how many strands it colors; for a mesh without UVs, as projected;
 // otherwise the strands across the UV square, over the surface it spans.
-func (c *FurCoat) spacing(base Geometry) float32 {
+func (c *Coat) spacing(base nt3d.Geometry) float32 {
 	if c.fur.Spacing != 0 && !textured(base) {
 		return c.fur.Spacing
 	}
@@ -488,7 +489,7 @@ func (c *FurCoat) spacing(base Geometry) float32 {
 		if c.fur.Spacing != 0 {
 			return c.fur.Spacing
 		}
-		b := GeometryBounds(base)
+		b := nt3d.GeometryBounds(base)
 		size := b.Max.Sub(b.Min)
 		return max(size.X, size.Y, size.Z) / float32(c.fur.Density)
 	}
@@ -507,34 +508,34 @@ func (c *FurCoat) spacing(base Geometry) float32 {
 // from its texture, darker at the root; otherwise they shade from Root to
 // Tip. Place the fins' node as the base is placed. Sway moves shells only;
 // fins stand straight, which shows little, since they are seen only edge-on.
-func (c *FurCoat) Fins(base Geometry) (Geometry, error) {
+func (c *Coat) Fins(base nt3d.Geometry) (nt3d.Geometry, error) {
 	if err := base.Validate(); err != nil {
-		return Geometry{}, err
+		return nt3d.Geometry{}, err
 	}
 	if len(base.Indices) == 0 {
-		return Geometry{}, fmt.Errorf("nt3d: fur needs a mesh")
+		return nt3d.Geometry{}, fmt.Errorf("nt3dfur: fur needs a mesh")
 	}
 	if cracks(base) {
-		smooth, err := SmoothNormals(base, 180)
+		smooth, err := nt3d.SmoothNormals(base, 180)
 		if err != nil {
-			return Geometry{}, err
+			return nt3d.Geometry{}, err
 		}
 		base = smooth
 	}
 	texture, err := c.finTexture()
 	if err != nil {
-		return Geometry{}, err
+		return nt3d.Geometry{}, err
 	}
 	f := c.fur
 	tile := float64(c.spacing(base)) * furTile
-	source := (*Texture)(nil)
+	source := (*nt3d.Texture)(nil)
 	if textured(base) {
 		source = base.Material.Texture
 	}
 	// Each edge once, by its corners' positions, whichever face names it.
 	type edge struct{ a, b nt3dmath.Vec3 }
 	seen := map[edge]bool{}
-	fins := Geometry{Material: &Material{Texture: texture, Cutout: true, EdgeOn: true, Repeat: true, Tint: true}}
+	fins := nt3d.Geometry{Material: &nt3d.Material{Texture: texture, Cutout: true, EdgeOn: true, Repeat: true, Tint: true}}
 	for i := 0; i+2 < len(base.Indices); i += 3 {
 		for k := range 3 {
 			ia, ib := base.Indices[i+k], base.Indices[i+(k+1)%3]
@@ -553,7 +554,7 @@ func (c *FurCoat) Fins(base Geometry) (Geometry, error) {
 					return f.Root, f.Tip
 				}
 				// As the base shows its texture: repeating, and tinted.
-				t := source.sampleWrap(base.UV[i], base.Material.Repeat)
+				t := source.Sample(base.UV[i], base.Material.Repeat)
 				tip = color.RGBA{t.R, t.G, t.B, 255}
 				if base.Material.Tint {
 					v := base.Vertices[i].Color
@@ -568,15 +569,55 @@ func (c *FurCoat) Fins(base Geometry) (Geometry, error) {
 			u := float32(float64(math.Sqrt(float64(b.Position.Sub(a.Position).Dot(b.Position.Sub(a.Position))))) / tile)
 			first := uint32(len(fins.Vertices))
 			fins.Vertices = append(fins.Vertices,
-				Vertex{Position: a.Position, Normal: na, Color: ra},
-				Vertex{Position: b.Position, Normal: nb, Color: rb},
-				Vertex{Position: b.Position.Add(nb.Scale(f.Length)), Normal: nb, Color: tb},
-				Vertex{Position: a.Position.Add(na.Scale(f.Length)), Normal: na, Color: ta})
-			fins.UV = append(fins.UV, UV{0, 1}, UV{u, 1}, UV{u, 0}, UV{0, 0})
+				nt3d.Vertex{Position: a.Position, Normal: na, Color: ra},
+				nt3d.Vertex{Position: b.Position, Normal: nb, Color: rb},
+				nt3d.Vertex{Position: b.Position.Add(nb.Scale(f.Length)), Normal: nb, Color: tb},
+				nt3d.Vertex{Position: a.Position.Add(na.Scale(f.Length)), Normal: na, Color: ta})
+			fins.UV = append(fins.UV, nt3d.UV{U: 0, V: 1}, nt3d.UV{U: u, V: 1}, nt3d.UV{U: u, V: 0}, nt3d.UV{U: 0, V: 0})
 			// Both windings, as back faces are culled.
 			fins.Indices = append(fins.Indices, first, first+1, first+2, first, first+2, first+3, first, first+2, first+1, first, first+3, first+2)
 		}
 	}
-	fins.Bounds = GeometryBounds(fins)
+	fins.Bounds = nt3d.GeometryBounds(fins)
 	return fins, fins.Validate()
+}
+
+func cloneMaterial(m *nt3d.Material) *nt3d.Material {
+	if m == nil {
+		return nil
+	}
+	c := *m
+	return &c
+}
+
+func textured(g nt3d.Geometry) bool { return g.Material != nil && g.Material.Texture != nil }
+
+func faceNormal(g nt3d.Geometry, i int) nt3dmath.Vec3 {
+	a, b, c := g.Vertices[g.Indices[i]].Position, g.Vertices[g.Indices[i+1]].Position, g.Vertices[g.Indices[i+2]].Position
+	return b.Sub(a).Cross(c.Sub(a)).Normalize()
+}
+
+func positive(v ...float32) bool {
+	for _, x := range v {
+		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) || x <= 0 || x > 1e15 {
+			return false
+		}
+	}
+	return true
+}
+
+func finiteVec(v nt3dmath.Vec3) bool {
+	for _, x := range []float32{v.X, v.Y, v.Z} {
+		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
+			return false
+		}
+	}
+	return true
+}
+
+func abs(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

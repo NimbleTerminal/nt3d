@@ -5,12 +5,12 @@ weight: 50
 
 # Fur
 
-nt3d grows fur on any mesh with shells: copies of the surface pushed out a little further each time, each a cutout showing the cross-section of every strand at that height. Stacked, they read as strands.
+`nt3d/fur` (package `nt3dfur`) grows fur on any mesh with shells: copies of the surface pushed out a little further each time, each a cutout showing the cross-section of every strand at that height. Stacked, they read as strands.
 
 <img class="poster" src="../../posters/fur.png" alt="Spot the cow covered in black-and-white fur">
 
 ```go
-coat, err := nt3d.NewFur(nt3d.Fur{Length: .05, Shells: 16, Spacing: .011})
+coat, err := nt3dfur.New(nt3dfur.Config{Length: .05, Shells: 16, Spacing: .011})
 shells, err := coat.Shells(spot) // textured, so the fur takes Spot's colors
 for k, g := range shells {
 	id, _ := scene.SetGeometry(fmt.Sprintf("fur %d", k), g)
@@ -20,7 +20,7 @@ for k, g := range shells {
 
 ## The coat
 
-`FurCoat.Shells(base)` returns an opaque skin plus one cutout layer per shell. Each strand has its own place, length, and taper.
+`Coat.Shells(base)` returns an opaque skin plus one cutout layer per shell. Each strand has its own place, length, and taper.
 
 - **Spacing** sets about how far apart strands grow, in world units. **Density** instead sets how many strands cross the texture.
 - **Color.** A textured mesh colors its fur from its texture and wears the texture as skin. Otherwise strands run from `Root` color to `Tip` color.
@@ -34,11 +34,11 @@ Every layer samples the texture's [coverage-preserving mipmaps](../materials/#cu
 
 ## Wind
 
-`FurCoat.Sway(shell, v)` is a node transform that bends the fur, as wind or gravity would. A uniform sway moves a whole layer, so animating it uploads no geometry.
+`Coat.Sway(shell, v)` is a node transform that bends the fur, as wind or gravity would. A uniform sway moves a whole layer, so animating it uploads no geometry.
 
 ## Fins
 
-Seen edge-on, shells show as dashes: the technique's known weakness. `FurCoat.Fins(base)` fixes it with a strip of strands standing on every edge, shown only where the surface turns edge-on to the viewer (`Material.EdgeOn`), so the silhouette fills in. Fins are tinted from the base's texture or from root to tip, and stand straight when the shells sway.
+Seen edge-on, shells show as dashes: the technique's known weakness. `Coat.Fins(base)` fixes it with a strip of strands standing on every edge, shown only where the surface turns edge-on to the viewer (`Material.EdgeOn`), so the silhouette fills in. Fins are tinted from the base's texture or from root to tip, and stand straight when the shells sway.
 
 In wireframe, the coat draws as its outer outline.
 

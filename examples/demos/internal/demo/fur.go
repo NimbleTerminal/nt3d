@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (
@@ -11,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"nimbleterminal.dev/nt3d"
+	"nimbleterminal.dev/nt3d/fur"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
 )
@@ -30,7 +32,7 @@ type furScene struct {
 	effect         int  // Index into effects.
 	toon           bool // Cel shaded, the skin inked at the fur's tips.
 	base           nt3d.Geometry
-	coat           *nt3d.FurCoat
+	coat           *nt3dfur.Coat
 	nodes          []nt3d.NodeID
 	shells, length int // Indexes into furShells and furLengths.
 }
@@ -92,7 +94,7 @@ func (d *demo) growFur() error {
 		d.fur.fins = 0
 	}
 	// Spot's texture colors the fur: black and white, darker at the roots.
-	coat, err := nt3d.NewFur(nt3d.Fur{Length: furLengths[d.fur.length], Shells: furShells[d.fur.shells], Spacing: .011, Seed: 7})
+	coat, err := nt3dfur.New(nt3dfur.Config{Length: furLengths[d.fur.length], Shells: furShells[d.fur.shells], Spacing: .011, Seed: 7})
 	if err != nil {
 		return err
 	}

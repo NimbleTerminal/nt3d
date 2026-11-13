@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Neomantra Corp.
-package nt3d
+
+package nt3dfur
 
 import (
 	"image"
@@ -7,13 +8,21 @@ import (
 	"math"
 	"testing"
 
-	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d"
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
+func check(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFurShells(t *testing.T) {
-	coat, err := NewFur(Fur{Length: .2, Shells: 8, Density: 16})
+	coat, err := New(Config{Length: .2, Shells: 8, Density: 16})
 	check(t, err)
-	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 16, Rings: 8})
+	sphere, err := nt3d.BuildSphere(nt3d.Sphere{Radius: 1, Segments: 16, Rings: 8})
 	check(t, err)
 	shells, err := coat.Shells(sphere)
 	check(t, err)
@@ -29,13 +38,17 @@ func TestFurShells(t *testing.T) {
 		if g.Material == nil || !g.Material.Cutout || g.Material.Texture == nil {
 			t.Fatalf("shell %d is not a cutout", k+1)
 		}
+		tex := g.Material.Texture
+		bounds := tex.Bounds()
 		kept := 0
-		for i := 3; i < len(g.Material.Texture.pixels); i += 4 {
-			if float32(g.Material.Texture.pixels[i]) >= g.Material.Threshold*255 {
-				kept++
+		for y := range bounds.Dy() {
+			for x := range bounds.Dx() {
+				if float32(tex.NRGBAAt(x, y).A) >= g.Material.Threshold*255 {
+					kept++
+				}
 			}
 		}
-		if g.Material.Texture != shells[1].Material.Texture {
+		if tex != shells[1].Material.Texture {
 			t.Fatal("layers do not share one texture")
 		}
 		if kept == 0 || kept > previous {
@@ -57,8 +70,8 @@ func TestFurShells(t *testing.T) {
 		t.Fatal("sway grows with the square of height", p)
 	}
 	// Validation.
-	for _, bad := range []Fur{{}, {Length: 1, Shells: 1}, {Length: 1, Density: 2}, {Length: 1, Shells: 65}} {
-		if _, err := NewFur(bad); err == nil {
+	for _, bad := range []Config{{}, {Length: 1, Shells: 1}, {Length: 1, Density: 2}, {Length: 1, Shells: 65}} {
+		if _, err := New(bad); err == nil {
 			t.Fatalf("accepted %+v", bad)
 		}
 	}
@@ -77,12 +90,12 @@ func TestFurSpacingAndTexture(t *testing.T) {
 			half.SetNRGBA(x, y, c)
 		}
 	}
-	texture, err := NewTexture(half)
+	texture, err := nt3d.NewTexture(half)
 	check(t, err)
 	// A unit sphere: 4π of surface over one square of UV.
-	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 32, Rings: 16, Material: &Material{Texture: texture}})
+	sphere, err := nt3d.BuildSphere(nt3d.Sphere{Radius: 1, Segments: 32, Rings: 16, Material: &nt3d.Material{Texture: texture}})
 	check(t, err)
-	coat, err := NewFur(Fur{Length: .1, Shells: 4, Spacing: .05})
+	coat, err := New(Config{Length: .1, Shells: 4, Spacing: .05})
 	check(t, err)
 	shells, err := coat.Shells(sphere)
 	check(t, err)
@@ -94,19 +107,20 @@ func TestFurSpacingAndTexture(t *testing.T) {
 	}
 	// Strands on the left of the texture are red, on the right blue.
 	layer := shells[1].Material.Texture
+	bounds := layer.Bounds()
 	var left, right [3]int
-	for y := range layer.height {
-		for x := range layer.width {
-			i := (y*layer.width + x) * 4
-			if float32(layer.pixels[i+3]) < shells[1].Material.Threshold*255 {
+	for y := range bounds.Dy() {
+		for x := range bounds.Dx() {
+			px := layer.NRGBAAt(x, y)
+			if float32(px.A) < shells[1].Material.Threshold*255 {
 				continue
 			}
 			side := &left
-			if x >= layer.width/2 {
+			if x >= bounds.Dx()/2 {
 				side = &right
 			}
-			side[0] += int(layer.pixels[i])
-			side[2] += int(layer.pixels[i+2])
+			side[0] += int(px.R)
+			side[2] += int(px.B)
 		}
 	}
 	if left[0] <= left[2] || right[2] <= right[0] {
@@ -118,16 +132,16 @@ func TestFurSpacingAndTexture(t *testing.T) {
 	if again[1].Material.Texture != layer || len(coat.layers) != 1 {
 		t.Fatal("layers made again")
 	}
-	if _, err := NewFur(Fur{Length: .1, Spacing: -1}); err == nil {
+	if _, err := New(Config{Length: .1, Spacing: -1}); err == nil {
 		t.Fatal("accepted negative spacing")
 	}
 }
 
 // An untextured mesh's fur repeats a small tile, however dense.
 func TestFurTiles(t *testing.T) {
-	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 32, Rings: 16})
+	sphere, err := nt3d.BuildSphere(nt3d.Sphere{Radius: 1, Segments: 32, Rings: 16})
 	check(t, err)
-	coat, err := NewFur(Fur{Length: .05, Shells: 4, Spacing: .005})
+	coat, err := New(Config{Length: .05, Shells: 4, Spacing: .005})
 	check(t, err)
 	shells, err := coat.Shells(sphere)
 	check(t, err)
@@ -135,8 +149,8 @@ func TestFurTiles(t *testing.T) {
 		t.Fatalf("density %d", d)
 	}
 	layer := shells[1]
-	if !layer.Material.Repeat || layer.Material.Texture.width != furTile*furTexelsPerStrand {
-		t.Fatalf("not a repeating %d-strand tile: %d wide", furTile, layer.Material.Texture.width)
+	if !layer.Material.Repeat || layer.Material.Texture.Bounds().Dx() != furTile*furTexelsPerStrand {
+		t.Fatalf("not a repeating %d-strand tile: %d wide", furTile, layer.Material.Texture.Bounds().Dx())
 	}
 	// A unit sphere's v spans a meridian, π; u spans a parallel, whose
 	// length, averaged by area, is π²/2. At 0.005 apart, with 64 strands a
@@ -153,17 +167,17 @@ func TestFurTiles(t *testing.T) {
 // Each UV axis tiles for its own stretch, so strands stay round on a torus
 // whose u spans, averaged by area, 2π(R + r²/2R) and v 2πr: 2.55 times as much.
 func TestFurTilesEachAxis(t *testing.T) {
-	torus, err := BuildTorus(Torus{MajorRadius: .7, MinorRadius: .3, Segments: 96, Sides: 32})
+	torus, err := nt3d.BuildTorus(nt3d.Torus{MajorRadius: .7, MinorRadius: .3, Segments: 96, Sides: 32})
 	check(t, err)
 	su, sv := stretch(torus)
 	if r := su / sv; r < 2.45 || r > 2.65 {
 		t.Fatalf("stretch %v by %v", su, sv)
 	}
-	coat, err := NewFur(Fur{Length: .05, Shells: 4, Spacing: .005})
+	coat, err := New(Config{Length: .05, Shells: 4, Spacing: .005})
 	check(t, err)
 	shells, err := coat.Shells(torus)
 	check(t, err)
-	var top UV
+	var top nt3d.UV
 	for _, uv := range shells[1].UV {
 		top.U, top.V = max(top.U, uv.U), max(top.V, uv.V)
 	}
@@ -175,10 +189,10 @@ func TestFurTilesEachAxis(t *testing.T) {
 // A flat-shaded mesh without UVs, as an STL file is, grows a closed coat
 // with strands the same size on every side.
 func TestFurWithoutUVs(t *testing.T) {
-	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
+	cube, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
 	check(t, err)
 	cube.UV = nil // Six flat faces, corners split, no UVs.
-	coat, err := NewFur(Fur{Length: .1, Shells: 4, Spacing: .01})
+	coat, err := New(Config{Length: .1, Shells: 4, Spacing: .01})
 	check(t, err)
 	shells, err := coat.Shells(cube)
 	check(t, err)
@@ -197,10 +211,10 @@ func TestFurWithoutUVs(t *testing.T) {
 		t.Fatal("projected fur does not repeat")
 	}
 	for i := 0; i+2 < len(layer.Indices); i += 3 {
-		lo, hi := UV{9, 9}, UV{-9, -9}
+		lo, hi := nt3d.UV{U: 9, V: 9}, nt3d.UV{U: -9, V: -9}
 		for _, k := range layer.Indices[i : i+3] {
 			uv := layer.UV[k]
-			lo, hi = UV{min(lo.U, uv.U), min(lo.V, uv.V)}, UV{max(hi.U, uv.U), max(hi.V, uv.V)}
+			lo, hi = nt3d.UV{U: min(lo.U, uv.U), V: min(lo.V, uv.V)}, nt3d.UV{U: max(hi.U, uv.U), V: max(hi.V, uv.V)}
 		}
 		if du, dv := hi.U-lo.U, hi.V-lo.V; abs(du-1.5625) > 1e-4 || abs(dv-1.5625) > 1e-4 {
 			t.Fatalf("triangle %d spans %v by %v tiles", i/3, du, dv)
@@ -211,9 +225,9 @@ func TestFurWithoutUVs(t *testing.T) {
 // Fins stand on every edge once, both ways round, as long as the fur, and
 // are drawn only edge-on.
 func TestFurFins(t *testing.T) {
-	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
+	cube, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
 	check(t, err)
-	coat, err := NewFur(Fur{Length: .2, Shells: 4, Spacing: .01, Root: color.RGBA{10, 20, 30, 255}, Tip: color.RGBA{200, 150, 100, 255}})
+	coat, err := New(Config{Length: .2, Shells: 4, Spacing: .01, Root: color.RGBA{10, 20, 30, 255}, Tip: color.RGBA{200, 150, 100, 255}})
 	check(t, err)
 	fins, err := coat.Fins(cube)
 	check(t, err)
@@ -244,9 +258,9 @@ func TestFurFins(t *testing.T) {
 // Shells share no slices with each other or the base: editing one returned
 // shell leaves the rest as they were.
 func TestFurShellsShareNothing(t *testing.T) {
-	coat, err := NewFur(Fur{Length: .2, Shells: 4, Density: 16})
+	coat, err := New(Config{Length: .2, Shells: 4, Density: 16})
 	check(t, err)
-	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 16, Rings: 8})
+	sphere, err := nt3d.BuildSphere(nt3d.Sphere{Radius: 1, Segments: 16, Rings: 8})
 	check(t, err)
 	if len(sphere.UV) == 0 {
 		t.Fatal("fixture has no UVs")
@@ -257,13 +271,13 @@ func TestFurShellsShareNothing(t *testing.T) {
 	for k, g := range shells {
 		g.Indices[0] = 999
 		if len(g.UV) > 0 {
-			g.UV[0] = UV{U: 9, V: 9}
+			g.UV[0] = nt3d.UV{U: 9, V: 9}
 		}
-		if sphere.Indices[0] != before || sphere.UV[0] == (UV{U: 9, V: 9}) {
+		if sphere.Indices[0] != before || sphere.UV[0] == (nt3d.UV{U: 9, V: 9}) {
 			t.Fatalf("editing shell %d changed the base", k)
 		}
 		for j, other := range shells[k+1:] {
-			if other.Indices[0] == 999 || len(other.UV) > 0 && other.UV[0] == (UV{U: 9, V: 9}) {
+			if other.Indices[0] == 999 || len(other.UV) > 0 && other.UV[0] == (nt3d.UV{U: 9, V: 9}) {
 				t.Fatalf("editing shell %d changed shell %d", k, k+1+j)
 			}
 		}
@@ -274,7 +288,7 @@ func TestFurShellsShareNothing(t *testing.T) {
 // tallest strand there, its neighbors' included, and the texture's edges
 // meet as it repeats.
 func TestFurStrandsCrossCells(t *testing.T) {
-	coat, err := NewFur(Fur{Length: .1, Seed: 3})
+	coat, err := New(Config{Length: .1, Seed: 3})
 	check(t, err)
 	key := furLayers{density: 8}
 	tex, err := coat.strands(key)
@@ -291,7 +305,7 @@ func TestFurStrandsCrossCells(t *testing.T) {
 					}
 				}
 			}
-			if got, want := tex.pixels[(y*size+x)*4+3], uint8(math.Round(height*255)); got != want {
+			if got, want := tex.NRGBAAt(x, y).A, uint8(math.Round(height*255)); got != want {
 				t.Fatalf("texel (%d, %d): alpha %d, want %d", x, y, got, want)
 			}
 		}
@@ -308,7 +322,7 @@ func TestFurStrandsCrossCells(t *testing.T) {
 					in = in || h <= s.length && math.Abs(float64(x)+.5-s.x-ox*float64(width)) <= s.radius*(1-.6*h/s.length)
 				}
 			}
-			if got := fins.pixels[(y*width+x)*4+3] == 255; got != in {
+			if got := fins.NRGBAAt(x, y).A == 255; got != in {
 				t.Fatalf("fin texel (%d, %d): in a strand %v, want %v", x, y, got, in)
 			}
 		}
@@ -318,12 +332,12 @@ func TestFurStrandsCrossCells(t *testing.T) {
 // Fins space their strands as the shells do: by the surface the UV square
 // covers, not the mesh's size.
 func TestFurFinsSpaceLikeShells(t *testing.T) {
-	plane := Geometry{Indices: []uint32{0, 1, 2, 0, 2, 3}, UV: []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}}
+	plane := nt3d.Geometry{Indices: []uint32{0, 1, 2, 0, 2, 3}, UV: []nt3d.UV{{U: 0, V: 0}, {U: 1, V: 0}, {U: 1, V: 1}, {U: 0, V: 1}}}
 	for _, p := range []nt3dmath.Vec3{{}, {X: 10}, {X: 10, Y: 2}, {Y: 2}} {
-		plane.Vertices = append(plane.Vertices, Vertex{Position: p, Normal: nt3dmath.Vec3{Z: 1}, Color: color.RGBA{255, 255, 255, 255}})
+		plane.Vertices = append(plane.Vertices, nt3d.Vertex{Position: p, Normal: nt3dmath.Vec3{Z: 1}, Color: color.RGBA{255, 255, 255, 255}})
 	}
-	plane.Bounds = GeometryBounds(plane)
-	coat, err := NewFur(Fur{Length: .1, Density: 64})
+	plane.Bounds = nt3d.GeometryBounds(plane)
+	coat, err := New(Config{Length: .1, Density: 64})
 	check(t, err)
 	fins, err := coat.Fins(plane)
 	check(t, err)
@@ -345,11 +359,11 @@ func TestFurKeepsTheCoat(t *testing.T) {
 	for i := range img.Pix {
 		img.Pix[i] = 200
 	}
-	tex, err := NewTexture(img)
+	tex, err := nt3d.NewTexture(img)
 	check(t, err)
-	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 16, Rings: 8, Color: color.RGBA{255, 128, 0, 255}, Material: &Material{Texture: tex, Repeat: true, Tint: true, Specular: .5, Transparent: true}})
+	sphere, err := nt3d.BuildSphere(nt3d.Sphere{Radius: 1, Segments: 16, Rings: 8, Color: color.RGBA{255, 128, 0, 255}, Material: &nt3d.Material{Texture: tex, Repeat: true, Tint: true, Specular: .5, Transparent: true}})
 	check(t, err)
-	coat, err := NewFur(Fur{Length: .1, Shells: 4})
+	coat, err := New(Config{Length: .1, Shells: 4})
 	check(t, err)
 	shells, err := coat.Shells(sphere)
 	check(t, err)

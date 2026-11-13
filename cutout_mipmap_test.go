@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package nt3d
 
 import (
@@ -13,7 +14,7 @@ import (
 // strandImage is a fur-like texture: one strand per cell×cell cell, grown
 // somewhere in its middle half with a radius within a quarter of radius,
 // whose alpha is the height it reaches at each texel, 1 at its center
-// falling to 0 at its edge, as FurCoat.strands makes them.
+// falling to 0 at its edge, as nt3dfur.Coat makes them.
 func strandImage(size, cell int, radius float64) *image.NRGBA {
 	rng := rand.New(rand.NewPCG(1, 2))
 	cells := size / cell
