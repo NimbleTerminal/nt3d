@@ -452,6 +452,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.flat = !d.flat
 			err = d.terrain()
 		case "l":
+			if d.forest != nil {
+				err = d.cycleForestLOD()
+				break
+			}
 			if d.lights != nil {
 				err = d.cycleLightPreset()
 				break
@@ -611,9 +615,12 @@ func (d *demo) rendering() string {
 // from just behind the camera's target to well past it, so the far side of
 // the scene fades whatever the zoom.
 func (d *demo) decorate(f *nt3d.Frame) {
-	if d.forest != nil && d.forest.shadows == shadowMap && len(f.Lighting.Lights) > 0 {
-		f.Lighting.Lights = slices.Clone(f.Lighting.Lights)
-		f.Lighting.Lights[0].Shadows = true
+	if d.forest != nil {
+		if d.forest.shadows == shadowMap && len(f.Lighting.Lights) > 0 {
+			f.Lighting.Lights = slices.Clone(f.Lighting.Lights)
+			f.Lighting.Lights[0].Shadows = true
+		}
+		d.captureForest(f)
 	}
 	if d.lights != nil {
 		d.decorateLights(f)
