@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 // Generates the original CC0 assembly sample. Run go generate in the parent package.
 package main
 

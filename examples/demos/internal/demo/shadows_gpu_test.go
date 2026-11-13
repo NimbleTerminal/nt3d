@@ -1,6 +1,7 @@
 //go:build webgpu
 
 // Copyright (c) 2026 Neomantra Corp.
+
 package demo
 
 import (

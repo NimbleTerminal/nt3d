@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package nt3d
 
 import "nimbleterminal.dev/nt3d/math"

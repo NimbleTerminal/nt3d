@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 package nt3d
 
 // FrameStats summarizes what renderers draw for a Frame after visibility,

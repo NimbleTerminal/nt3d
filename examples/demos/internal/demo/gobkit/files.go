@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 // Package gobkit embeds CC0 characters only for cmd/characters.
 package gobkit
 

@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Neomantra Corp.
+
 // Package nt3dwidget presents an nt3d scene through Bubble Tea and Kitty graphics.
 package nt3dwidget
 
