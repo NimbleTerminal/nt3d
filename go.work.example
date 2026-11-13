@@ -3,6 +3,7 @@ go 1.26.8
 use (
  .
  ./examples/demos
+ ./examples/gogpu
 )
 
 replace nimbleterminal.dev/ntpicture => ../ntpicture
