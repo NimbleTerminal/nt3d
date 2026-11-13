@@ -1,14 +1,32 @@
-# nt3d
+# nt3d — 3D scenes for Bubble Tea and the browser
 
-A small 3D scene engine for Go programs that draw in the terminal or the browser.
+<p>
+    <a href="https://nimbleterminal.github.io/nt3d/"><img src="https://img.shields.io/badge/Live%20Demos-E24F36" alt="Live Demos"></a>
+    <a href="https://nimbleterminal.github.io/nt3d/docs/"><img src="https://img.shields.io/badge/User%20Guide-6B2DAD" alt="User Guide"></a>
+    <a href="https://github.com/NimbleTerminal/nt3d/tags"><img src="https://img.shields.io/github/tag/NimbleTerminal/nt3d.svg" alt="Latest Release"></a>
+    <a href="https://pkg.go.dev/nimbleterminal.dev/nt3d"><img src="https://pkg.go.dev/badge/nimbleterminal.dev/nt3d.svg" alt="Go Reference"></a>
+    <a href="https://github.com/NimbleTerminal/nt3d/actions/workflows/go.yml"><img src="https://github.com/NimbleTerminal/nt3d/actions/workflows/go.yml/badge.svg" alt="CI"></a>
+    <a href="./LICENSE.txt"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+    <a href="./CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg" alt="Code Of Conduct"></a>
+</p>
 
-Build a scene of meshes, points, lines, and textures, point a camera at it, and nt3d renders it: on the GPU with WebGPU, in software when there's no GPU, or as wireframe text when there are no graphics at all. A [Bubble Tea](https://github.com/charmbracelet/bubbletea) widget puts it in your terminal app, with mouse orbiting, picking, and Kitty graphics.
+A small 3D scene engine for Go programs that draw in the terminal, the browser, or a native GPU window.
 
-<img src="web/assets/fur.png" alt="Spot the cow covered in black-and-white fur" width="480">
+Build a scene of meshes, points, lines, Gaussians, and textures, point a camera at it, and `nt3d` renders it: on the GPU with WebGPU, in software when there is no GPU, or as wireframe text when there are no graphics at all. A [Bubble Tea](https://github.com/charmbracelet/bubbletea) widget puts it in your terminal app with mouse orbiting, picking, Kitty graphics, and half-block fallback—or `GPUSession` draws straight into a host WebGPU window.
+
+**[Try the 19 live browser demos →](https://nimbleterminal.github.io/nt3d/)** · **[Read the user guide →](https://nimbleterminal.github.io/nt3d/docs/)** · **[Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-started/)** · **[Go reference](https://pkg.go.dev/nimbleterminal.dev/nt3d)**
+
+<p>
+  <a href="https://nimbleterminal.github.io/nt3d/"><img src="web/assets/fur.png" alt="Spot the cow covered in black-and-white fur — click to open the live demo gallery" width="480"></a>
+</p>
+
+## Quickstart
 
 ```sh
 go get nimbleterminal.dev/nt3d@latest
 ```
+
+Requires Go 1.26 or later.
 
 ```go
 scene := nt3d.NewScene()
@@ -18,60 +36,100 @@ scene.SetGeometry("ball", ball)
 view := nt3dwidget.New(scene, 80, 24) // a Bubble Tea model you can drag to orbit
 ```
 
+See [Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-started/) for a complete runnable Bubble Tea program, or [Rendering](https://nimbleterminal.github.io/nt3d/docs/guide/rendering/) and [`examples/gogpu`](./examples/gogpu) to render offscreen frames or drive a native WebGPU swapchain.
+
 ## What's inside
 
-- A scene graph with transforms, visibility, and shared, instanced geometry
-- WebGPU, software, and wireframe renderers that draw the same picture, plus `GPUSession` / `GPUTarget` to render straight into a host window's WebGPU swapchain or sub-viewport without CPU readback
-- Textures with mipmaps, transparency, cutouts, highlights, shadows, fog, shader textures, and fur
-- STL, OBJ, 3MF, PLY, and glTF files, read within memory and size limits
-- A Bubble Tea widget that falls back gracefully when the GPU or terminal can't keep up
+- **Scene graph & level of detail** — Named nodes with parent transforms, visibility, instanced shared geometry, distance-tiered `Scene.SetLOD`, and per-frame `Frame.Stats` counters.
+- **One scene, three renderers** — WebGPU, software, and wireframe renderers that draw the same picture, plus `GPUSession` / `GPUTarget` to render directly into a host window's WebGPU swapchain or sub-viewport without CPU readback.
+- **Materials, lighting & effects** — Mipmapped and anisotropic textures, normal maps, transparency, cutouts, directional and point shadows, fog, IBL and spherical-harmonics sky (`nt3d/sh`), shader textures, shell fur, cel/toon shading with inked silhouettes and creases, and shared Gerstner waves (`WaveSurface`) with wakes, foam, and buoyancy queries.
+- **Meshes, glTF animation & 3D Gaussian splatting** — Bounded decoders for STL, OBJ, 3MF, PLY, glTF/GLB (joints, morph targets, cameras, transform tracks), and 3DGS splats (`.ply`, `.spz`, `.sog`) with degree-3 spherical harmonics.
+- **Clustering & spatial indexing** — `nt3d/clod` clusters large point clouds, instances, and labels once and selects visible clusters per frame on CPU or WebGPU compute; `nt3d/aabbtree` provides a standalone generic dynamic AABB tree (`Tree[T]`) with overlap and ray-cast queries.
+- **Bubble Tea widget** — `nt3d/widget` handles orbit/pan/zoom input, background-indexed picking, world-anchored labels, Kitty graphics via [`ntpicture`](https://github.com/NimbleTerminal/ntpicture), and graceful fallback when the GPU or terminal can't keep up.
 
-## Learn more
+### Packages
 
-The **[guide](https://nimbleterminal.github.io/nt3d/docs/)** covers it all, from a first program to scenes, materials, mesh files, rendering, and the widget, and the **[gallery](https://nimbleterminal.github.io/nt3d/)** runs every demo in your browser. The guide's source is in [`docs/hugo`](docs/hugo/content/guide/); `task docs:hugo:serve` serves it locally (needs [Hugo](https://gohugo.io/) extended and `git submodule update --init`).
+| Import path | Package | Purpose |
+| :--- | :--- | :--- |
+| [`nimbleterminal.dev/nt3d`](https://pkg.go.dev/nimbleterminal.dev/nt3d) | `nt3d` | Core scene graph, camera, shapes, materials, lighting, water, animation, and GPU/software/wireframe renderers |
+| [`nimbleterminal.dev/nt3d/widget`](https://pkg.go.dev/nimbleterminal.dev/nt3d/widget) | `nt3dwidget` | Interactive Bubble Tea v2 viewport with camera controls, picking, labels, and automatic renderer fallback |
+| [`nimbleterminal.dev/nt3d/mesh`](https://pkg.go.dev/nimbleterminal.dev/nt3d/mesh) | `nt3dmesh` | Bounded STL, OBJ, 3MF, and PLY decoders (`mesh/gltf`, `mesh/spz`, `mesh/sog`, and `mesh/formats` add glTF/GLB and compressed Gaussian splats) |
+| [`nimbleterminal.dev/nt3d/clod`](https://pkg.go.dev/nimbleterminal.dev/nt3d/clod) | `nt3dclod` | Clustered level of detail for large point clouds, instances, and label sets (CPU & WebGPU compute) |
+| [`nimbleterminal.dev/nt3d/aabbtree`](https://pkg.go.dev/nimbleterminal.dev/nt3d/aabbtree) | `nt3daabbtree` | Generic dynamic AABB spatial index (`Tree[T]`) for moving boxes, overlap queries, and ray casts |
+| [`nimbleterminal.dev/nt3d/sh`](https://pkg.go.dev/nimbleterminal.dev/nt3d/sh) | `nt3dsh` | Shared Go/WGSL spherical harmonics math for degree-2 diffuse skies and degree-3 Gaussian splats |
+| [`nimbleterminal.dev/nt3d/math`](https://pkg.go.dev/nimbleterminal.dev/nt3d/math) | `nt3dmath` | Vectors, matrices, quaternions, rays, frustums, and bounding boxes |
 
-To run the demos yourself:
+## Demos
+
+Every demo in the **[live browser gallery](https://nimbleterminal.github.io/nt3d/)** is the exact same Go Bubble Tea program you can run natively in your terminal, compiled to WebAssembly with [Booba](https://github.com/NimbleTerminal/booba). Press `1` for WebGPU, `2` for software, or `3` for wireframe in any demo.
+
+| Browser demo | Terminal | What it shows |
+| :--- | :--- | :--- |
+| **[Terrain explorer ↗](https://nimbleterminal.github.io/nt3d/terrain/)** | `task terrain` | Annotated heightfield, world-anchored labels, picking, and parent transforms |
+| **[Procedural plasma ↗](https://nimbleterminal.github.io/nt3d/procedural/)** | `task procedural` | GPU shader-generated surface texture with matching software fallback |
+| **[Dynamic scene ↗](https://nimbleterminal.github.io/nt3d/dynamic/)** | `task dynamic` | Independently moving nodes surrounding a live-deforming wave mesh |
+| **[Shape builders ↗](https://nimbleterminal.github.io/nt3d/shapes/)** | `task shapes` | Built-in spheres, cylinders, cones, tori, and cuboids with flat/smooth normals |
+| **[Mesh files ↗](https://nimbleterminal.github.io/nt3d/models/)** | `task models` | Embedded STL, OBJ, and 3MF assets with components, vertex colors, and textures |
+| **[Dense mesh ↗](https://nimbleterminal.github.io/nt3d/large/)** | `task large` | 735,000-triangle asteroid with background-indexed ray picking |
+| **[Fur ↗](https://nimbleterminal.github.io/nt3d/fur/)** | `task fur` | Spot the cow in swaying shell fur built from cutout texture layers |
+| **[Mipmaps ↗](https://nimbleterminal.github.io/nt3d/mipmaps/)** | `task mipmaps` | Horizon checkerboard comparing mipmaps and anisotropic filtering on GPU and CPU |
+| **[Forest ↗](https://nimbleterminal.github.io/nt3d/forest/)** | `task forest` | Thousands of instanced swaying trees with `Scene.SetLOD` tiers and `Frame.Stats` |
+| **[Lights ↗](https://nimbleterminal.github.io/nt3d/lights/)** | `task lights` | Sky/panorama IBL, rotating spherical-harmonics sky, sunlight, and point-light shadows |
+| **[Particles ↗](https://nimbleterminal.github.io/nt3d/particles/)** | `task particles` | Up to 100,000 fire, smoke, and dust points blended additively or in depth order |
+| **[glTF animation ↗](https://nimbleterminal.github.io/nt3d/animation/)** | `task animation` | Generated glTF ribbon with joints, morph targets, and transform tracks |
+| **[glTF animation lab ↗](https://nimbleterminal.github.io/nt3d/animate/)** | `task animate` | Authored cameras, transformed textures, and Khronos morph/skin/rotation samples |
+| **[Gobkit characters ↗](https://nimbleterminal.github.io/nt3d/characters/)** | `task characters` | Embedded CC0 minion, corgi, and duck switching between idle, walk, and attack clips |
+| **[Gaussian splatting ↗](https://nimbleterminal.github.io/nt3d/gaussians/)** | `task gaussians` | Embedded 3DGS PLY rendered as sorted, alpha-blended anisotropic ellipses |
+| **[Point cloud ↗](https://nimbleterminal.github.io/nt3d/cloud/)** | `task cloud` | Million-point spiral galaxy culled and thinned per frame with `nt3d/clod` |
+| **[AABB tree ↗](https://nimbleterminal.github.io/nt3d/aabb/)** | `task aabb` | Interactive `nt3d/aabbtree` spatial index showing clicked ancestor bounds |
+| **[Water ↗](https://nimbleterminal.github.io/nt3d/water/)** | `task water` | Craft riding Gerstner waves with boat wakes, crest jumps, foam, spray, and reflections |
+| **[Toon city ↗](https://nimbleterminal.github.io/nt3d/toon/)** | `task toon` | Cel-shaded Spot and robot in a Manhattan block with silhouette and crease ink |
+
+To run demos, inspect your own 3D files, or launch the native desktop window viewer from a local checkout (using [Go Task](https://taskfile.dev)):
 
 ```sh
-task fur         # or terrain, shapes, models, large, mipmaps, forest, lights, particles, cloud, aabb, dynamic, procedural, water, toon
-task build-web && task serve   # all of them in a browser, at http://localhost:8768
+task fur                         # run any gallery demo in your terminal
+task meshes -- path/to/model.glb # inspect STL, OBJ, 3MF, PLY, glTF/GLB, SPZ, or SOG files
+task gogpu                       # native desktop WebGPU window viewer (examples/gogpu)
+task build-web && task serve     # serve the full browser gallery at http://localhost:8768
 ```
 
-To work on nt3d itself, see [Development](docs/hugo/content/guide/development.md) and the [roadmap](ROADMAP.md).
+## User Guide
 
-## License and attribution
+The **[nt3d User Guide](https://nimbleterminal.github.io/nt3d/docs/)** walks through every part of the engine with runnable patterns and renderer notes:
 
-nt3d is released under the [MIT License](LICENSE.txt), copyright © 2026 Neomantra Corp.
+- **Start here**: [Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-started/) · [Scenes & LOD](https://nimbleterminal.github.io/nt3d/docs/guide/scenes/) · [Shapes](https://nimbleterminal.github.io/nt3d/docs/guide/shapes/) · [Bubble Tea widget](https://nimbleterminal.github.io/nt3d/docs/guide/widget/) · [Rendering & `GPUSession`](https://nimbleterminal.github.io/nt3d/docs/guide/rendering/)
+- **Shading & effects**: [Materials & toon shading](https://nimbleterminal.github.io/nt3d/docs/guide/materials/) · [Normal maps](https://nimbleterminal.github.io/nt3d/docs/guide/normal-maps/) · [Environment & SH lighting](https://nimbleterminal.github.io/nt3d/docs/guide/environment/) · [Shell fur](https://nimbleterminal.github.io/nt3d/docs/guide/fur/) · [Water & waves](https://nimbleterminal.github.io/nt3d/docs/guide/water/)
+- **Assets & motion**: [Meshes, glTF & Gaussian splats](https://nimbleterminal.github.io/nt3d/docs/guide/meshes/) · [Animation](https://nimbleterminal.github.io/nt3d/docs/guide/animation/) · [Particles](https://nimbleterminal.github.io/nt3d/docs/guide/particles/)
+- **Scale & interaction**: [Clustered LOD (`clod`)](https://nimbleterminal.github.io/nt3d/docs/guide/clustering/) · [Spatial index (`aabbtree`)](https://nimbleterminal.github.io/nt3d/docs/guide/spatial-index/) · [Labels](https://nimbleterminal.github.io/nt3d/docs/guide/labels/) · [Picking](https://nimbleterminal.github.io/nt3d/docs/guide/picking/)
+- **Demos & project docs**: [Demos guide](https://nimbleterminal.github.io/nt3d/docs/guide/demos/) · [Development](https://nimbleterminal.github.io/nt3d/docs/guide/development/) · [CHANGELOG.md](./CHANGELOG.md) · [MIGRATION.md](./MIGRATION.md) · [ROADMAP.md](./ROADMAP.md)
 
-It was extracted from [ntcharts3d](https://github.com/NimbleMarkets/ntcharts3d), and builds on [ntpicture](https://github.com/NimbleTerminal/ntpicture), [ntgpuimage](https://github.com/NimbleTerminal/ntgpuimage), [ntcanvas](https://github.com/NimbleTerminal/ntcanvas), [Bubble Tea](https://github.com/charmbracelet/bubbletea), [gogpu/wgpu](https://github.com/gogpu/wgpu), and [qmuntal/gltf](https://github.com/qmuntal/gltf). The browser demos run on [booba](https://github.com/NimbleTerminal/booba).
+The guide's Markdown source lives in [`docs/hugo/content/guide/`](./docs/hugo/content/guide/). To preview it locally, initialize the theme submodule (`git submodule update --init`) and run `task docs:hugo:serve` (requires [Hugo](https://gohugo.io/) extended).
 
-The fur demo uses **Spot** the cow, by [Keenan Crane](https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/), released into the public domain; see [spot_README.txt](examples/demos/internal/demo/models/spot_README.txt). The other sample models are generated by nt3d itself.
+## Open Collaboration
 
-The guide uses the [hugo-book](https://github.com/alex-shpak/hugo-book) theme (MIT) and the [Open Sans](https://fonts.google.com/specimen/Open+Sans) fonts ([SIL Open Font License](docs/hugo/static/fonts/OFL.txt)).
+Run `task ci` before submitting changes. See the [Development guide](./docs/hugo/content/guide/development.md) and [ROADMAP.md](./ROADMAP.md) for architecture notes, GPU and fuzz testing, and planned work.
 
-3D Gaussian splatting: run `task gaussians` for an embedded 3DGS PLY sample.
-See the [rendering guide](docs/hugo/content/guide/rendering.md#3d-gaussian-splatting)
-for the supported PLY attributes, renderer behavior, and practical limits.
+Contributions and feedback are welcome. Please adhere to our [Code of Conduct](./CODE_OF_CONDUCT.md).
 
-Spherical harmonics live in `nimbleterminal.dev/nt3d/sh` (`nt3dsh`):
-shared Go/WGSL basis math, full degree-3 Gaussian appearance, and degree-2
-diffuse environment lighting. In `task lights`, press `h` to rotate an SH sky;
-in the Gaussian/model viewer, press `h` to compare DC and full SH.
+- [Report an issue](https://github.com/NimbleTerminal/nt3d/issues)
+- [Submit a pull request](https://github.com/NimbleTerminal/nt3d/pulls)
 
-Clustered level of detail lives in `nimbleterminal.dev/nt3d/clod` (`nt3dclod`):
-cluster a large set of points, instances, or labels once, then each frame
-select the clusters in view and how much of each to draw, on the CPU or in
-WebGPU compute. `task cloud` zooms through a million points; see the
-[clustering guide](docs/hugo/content/guide/clustering.md).
+## Acknowledgements
 
-A dynamic AABB tree lives in `nimbleterminal.dev/nt3d/aabbtree` (`nt3daabbtree`):
-a generic spatial index (`Tree[T]`) over moving boxed objects with insert,
-remove, update, overlap, and ray-cast queries, independent of the scene
-and renderers. `task aabb` shows a clicked box's ancestors as nested
-wireframes; see the [spatial index guide](docs/hugo/content/guide/spatial-index.md).
+`nt3d` was extracted from [ntcharts3d](https://github.com/NimbleMarkets/ntcharts3d) and builds on [ntpicture](https://github.com/NimbleTerminal/ntpicture), [ntgpuimage](https://github.com/NimbleTerminal/ntgpuimage), [ntcanvas](https://github.com/NimbleTerminal/ntcanvas), and [Booba](https://github.com/NimbleTerminal/booba) for the browser demos.
 
-Shared Gerstner waves (`WaveSurface`) provide displaced positions, analytic normals,
-and velocities, plus world-coordinate queries for floating objects. Run `task water`
-to drive a craft over waves and launch off crests, with procedural ripple normals
-and Fresnel sky reflections; see the
-[water guide](docs/hugo/content/guide/water.md).
+Thanks to [Charm](https://charm.land) for [Bubble Tea](https://github.com/charmbracelet/bubbletea) and Lip Gloss, the [GoGPU organization](https://gogpu.io) for [`gogpu/wgpu`](https://github.com/gogpu/wgpu), [qmuntal/gltf](https://github.com/qmuntal/gltf), and the [Kitty](https://sw.kovidgoyal.net/kitty/) and [Ghostty](https://ghostty.org) terminal projects.
+
+Sample assets include **Spot** the cow by [Keenan Crane](https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/) (public domain; see [spot_README.txt](./examples/demos/internal/demo/models/spot_README.txt)), CC0 characters from [Gobkit](https://gobkit.com/) ([SOURCES.md](./examples/demos/internal/demo/gobkit/SOURCES.md)), Khronos glTF samples in `animate`, and OpenStreetMap building data (© OpenStreetMap contributors) in `toon`. Other sample models are generated by `nt3d` itself.
+
+The user guide uses the [hugo-book](https://github.com/alex-shpak/hugo-book) theme (MIT) and [Open Sans](https://fonts.google.com/specimen/Open+Sans) fonts ([SIL Open Font License](./docs/hugo/static/fonts/OFL.txt)).
+
+## License
+
+Released under the [MIT License](./LICENSE.txt).
+
+Copyright (c) 2026 [Neomantra Corp](https://www.neomantra.com).
+
+----
+Made with :heart: and :fire: by the team behind [Nimble Terminal](https://nimbleterminal.dev).
