@@ -226,9 +226,15 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 	}
 	keys := make([]geometryKey, len(f.Geometry))
 	used := make(map[geometryKey]bool, len(f.Geometry))
+	retainLOD := len(f.GeometryRevisions) != 0 || len(f.Shared) != 0
 	for i := range f.Geometry {
 		keys[i] = frameGeometryKey(f, i)
 		used[keys[i]] = true
+		if retainLOD {
+			for _, k := range f.Geometry[i].retainKeys {
+				used[k] = true
+			}
+		}
 	}
 	for key, node := range g.geometries {
 		if !used[key] {

@@ -271,16 +271,15 @@ func (s *Scene) pickIndex(f Frame, i int) *meshBVH {
 		return nil
 	}
 	n := s.nodes[instance(f, i).Node]
-	if n == nil || n.noPickIndex || n.geometry == nil || n.geometryRevision != f.GeometryRevisions[i] {
+	if n == nil || n.noPickIndex {
 		return nil
 	}
-	// Shared geometry is indexed once, for every node that shows it.
-	slot := &n.pickIndex
-	if n.shared != nil {
-		slot = &n.shared.pick
+	geometry, slot := n.pickTarget(f.GeometryRevisions[i])
+	if geometry == nil {
+		return nil
 	}
 	if *slot == nil {
-		built, geometry := &bvhSlot{done: make(chan struct{})}, n.geometry
+		built := &bvhSlot{done: make(chan struct{})}
 		*slot = built
 		go func() {
 			built.index.Store(buildBVH(geometry))
@@ -303,18 +302,9 @@ func (s *Scene) WarmPickIndices() <-chan struct{} {
 	}
 	var waits []<-chan struct{}
 	seen := make(map[*bvhSlot]bool)
-	for _, id := range s.order {
-		n := s.nodes[id]
-		if n == nil || n.noPickIndex || n.deformation != nil || n.geometry == nil {
-			continue
-		}
-		g := n.geometry
+	warm := func(g *Geometry, slot **bvhSlot) {
 		if len(g.Indices)/3 < bvhLinear || edgeOn(*g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
-			continue
-		}
-		slot := &n.pickIndex
-		if n.shared != nil {
-			slot = &n.shared.pick
+			return
 		}
 		if *slot == nil {
 			built, geometry := &bvhSlot{done: make(chan struct{})}, g
@@ -330,6 +320,28 @@ func (s *Scene) WarmPickIndices() <-chan struct{} {
 				waits = append(waits, (*slot).done)
 			}
 		}
+	}
+	for _, id := range s.order {
+		n := s.nodes[id]
+		if n == nil || n.noPickIndex || n.deformation != nil || n.geometry == nil {
+			continue
+		}
+		if len(n.lod) > 0 {
+			for i := range n.lod {
+				l := &n.lod[i]
+				slot := &l.pickIndex
+				if l.shared != nil {
+					slot = &l.shared.pick
+				}
+				warm(l.geometry, slot)
+			}
+			continue
+		}
+		slot := &n.pickIndex
+		if n.shared != nil {
+			slot = &n.shared.pick
+		}
+		warm(n.geometry, slot)
 	}
 	if len(waits) == 0 {
 		return closed
@@ -390,14 +402,11 @@ func (s *Scene) hasUnindexedLargeMesh(f Frame) bool {
 			return true
 		}
 		n := s.nodes[instance(f, i).Node]
-		if n == nil || n.noPickIndex || s.noPickIndex || n.geometry == nil || len(f.GeometryRevisions) != len(f.Geometry) || n.geometryRevision != f.GeometryRevisions[i] {
+		if n == nil || n.noPickIndex || s.noPickIndex || len(f.GeometryRevisions) != len(f.Geometry) {
 			return true
 		}
-		slot := n.pickIndex
-		if n.shared != nil {
-			slot = n.shared.pick
-		}
-		if slot == nil || slot.index.Load() == nil {
+		_, slot := n.pickTarget(f.GeometryRevisions[i])
+		if slot == nil || *slot == nil || (*slot).index.Load() == nil {
 			return true
 		}
 	}

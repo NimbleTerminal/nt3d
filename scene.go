@@ -39,7 +39,9 @@ type sceneNode struct {
 	shared           *SharedGeometry // When geometry is shared's.
 	geometryRevision uint64
 	pickIndex        *bvhSlot // Built for picking on demand, for this geometry.
-	noPickIndex      bool     // SetNodePickIndexing turned indexing off here.
+	lod              []lodLevel
+	lodBounds        nt3dmath.AABB
+	noPickIndex      bool // SetNodePickIndexing turned indexing off here.
 }
 
 // Scene owns a tree of groups and geometry. Use NewScene; do not copy it.
@@ -258,19 +260,27 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	if !ok || id == Root {
 		return fmt.Errorf("nt3d: invalid geometry node %d", id)
 	}
-	if err := g.Validate(); err != nil {
+	g, err := prepareStoredGeometry(g)
+	if err != nil {
 		return err
+	}
+	n.deformation, n.lod, n.lodBounds = nil, nil, nt3dmath.AABB{}
+	n.geometry, n.shared, n.pickIndex = &g, nil, nil
+	s.changed(true, true)
+	n.geometryRevision = s.revision
+	return nil
+}
+
+func prepareStoredGeometry(g Geometry) (Geometry, error) {
+	if err := g.Validate(); err != nil {
+		return Geometry{}, err
 	}
 	g = cloneGeometry(g)
 	g.posed = nil
 	g.Bounds = GeometryBounds(g)
 	g.stored = &storedGeometry{g.Points, g.PointStyle, g.Clusters, newSHCertificate(&g)} // Validated above.
 	generateTangentsOnUpload(&g)
-	n.deformation = nil
-	n.geometry, n.shared, n.pickIndex = &g, nil, nil
-	s.changed(true, true)
-	n.geometryRevision = s.revision
-	return nil
+	return g, nil
 }
 
 // SharedGeometry is a triangle mesh that many nodes show: a forest of one
@@ -329,7 +339,7 @@ func (s *Scene) SetNodeShared(id NodeID, sg *SharedGeometry) error {
 	if sg == nil {
 		return errors.New("nt3d: nil shared geometry")
 	}
-	n.deformation = nil
+	n.deformation, n.lod, n.lodBounds = nil, nil, nt3dmath.AABB{}
 	n.geometry, n.shared, n.pickIndex = &sg.geometry, sg, nil
 	s.changed(true, true)
 	n.geometryRevision = sg.id // The same for every node that shows it.
@@ -343,7 +353,35 @@ func (s *Scene) SetTexture(name string, t *Texture) error {
 		return fmt.Errorf("nt3d: unknown node %q", name)
 	}
 	n := s.nodes[id]
-	if !t.valid() || t.data || n.geometry == nil || !textured(*n.geometry) {
+	if !t.valid() || t.data || n.geometry == nil {
+		return errors.New("nt3d: texture replacement requires a valid texture and textured geometry")
+	}
+	if len(n.lod) > 0 {
+		anyTextured, changed := false, false
+		for i := range n.lod {
+			if !textured(*n.lod[i].geometry) {
+				continue
+			}
+			anyTextured = true
+			if n.lod[i].geometry.Material.Texture == t {
+				continue
+			}
+			g := *n.lod[i].geometry
+			g.Material = cloneMaterial(g.Material)
+			g.Material.Texture = t
+			n.lod[i].geometry = &g
+			changed = true
+		}
+		if !anyTextured {
+			return errors.New("nt3d: texture replacement requires a valid texture and textured geometry")
+		}
+		if changed {
+			n.geometry = n.lod[0].geometry
+			s.changed(false, true)
+		}
+		return nil
+	}
+	if !textured(*n.geometry) {
 		return errors.New("nt3d: texture replacement requires a valid texture and textured geometry")
 	}
 	if n.geometry.Material.Texture == t {
@@ -396,31 +434,44 @@ func (s *Scene) Bounds() (b nt3dmath.AABB) {
 			continue
 		}
 		world := s.world(id)
-		box := n.geometry.Bounds.Transformed(world)
-		if style := n.geometry.Billboard; style != nil {
-			anchor := world.Point(nt3dmath.Vec3{})
-			if style.Pixels {
-				// Pixel extents have no camera-independent world size.
-				box = nt3dmath.AABB{}
-				box.Include(anchor)
-			} else if !style.Fixed {
-				// A camera-facing quad can turn in every direction about its anchor.
-				radius := float32(0)
-				for _, v := range n.geometry.Vertices {
-					radius = max(radius, float32(math.Sqrt(float64(v.Position.Dot(v.Position)))))
+		if len(n.lod) > 0 {
+			for i := range n.lod {
+				if box := geometryWorldBounds(n.lod[i].geometry, world); box.IsValid() {
+					b.Include(box.Min)
+					b.Include(box.Max)
 				}
-				extent := nt3dmath.Vec3{X: radius, Y: radius, Z: radius}
-				box = nt3dmath.AABB{}
-				box.Include(anchor.Sub(extent))
-				box.Include(anchor.Add(extent))
 			}
+			continue
 		}
-		if box.IsValid() {
+		if box := geometryWorldBounds(n.geometry, world); box.IsValid() {
 			b.Include(box.Min)
 			b.Include(box.Max)
 		}
 	}
 	return
+}
+
+func geometryWorldBounds(g *Geometry, world nt3dmath.Mat4) nt3dmath.AABB {
+	box := g.Bounds.Transformed(world)
+	if style := g.Billboard; style != nil {
+		anchor := world.Point(nt3dmath.Vec3{})
+		if style.Pixels {
+			// Pixel extents have no camera-independent world size.
+			box = nt3dmath.AABB{}
+			box.Include(anchor)
+		} else if !style.Fixed {
+			// A camera-facing quad can turn in every direction about its anchor.
+			radius := float32(0)
+			for _, v := range g.Vertices {
+				radius = max(radius, float32(math.Sqrt(float64(v.Position.Dot(v.Position)))))
+			}
+			extent := nt3dmath.Vec3{X: radius, Y: radius, Z: radius}
+			box = nt3dmath.AABB{}
+			box.Include(anchor.Sub(extent))
+			box.Include(anchor.Add(extent))
+		}
+	}
+	return box
 }
 func (s *Scene) visible(id NodeID) bool {
 	for {

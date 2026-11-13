@@ -62,6 +62,21 @@ Shared geometry can't change, and holds only triangles; points, boxes, lines, an
 
 The [forest demo](../demos/#forest) grows thousands of trees from three shared meshes, and switches them to copies so you can compare.
 
+## Level of detail
+
+`SetLOD(id, levels)` gives a node distance-switched geometry tiers, chosen in `Scene.Frame` by the world-space distance from `Camera.Eye()` to the node's world-space AABB:
+
+```go
+id, _ := scene.Add(nt3d.Root, "block-04")
+err := scene.SetLOD(id, []nt3d.LODLevel{
+    {MaxDistance: 150, Geometry: highMesh, Outline: creaseOutline},
+    {MaxDistance: 400, Geometry: midMesh, Outline: hullOutline},
+    {Geometry: lowMesh}, // MaxDistance 0 (or +Inf) stays visible at any distance
+})
+```
+
+Each `LODLevel` sets either `Geometry` or `Shared` (`*SharedGeometry`) and an optional `Outline` override. Measuring distance to the world-space AABB means a large terrain or city tile right beneath the camera evaluates near zero rather than to the tile's center. Setting a finite positive `MaxDistance` on the final level hides the node beyond that distance. Uploaded GPU buffers for visited tiers stay cached as the camera moves across thresholds, and picking builds BVH indexes per tier. The [forest demo](../demos/#forest) uses three shared tiers per tree species (`l` cycles `LOD on`, color-coded `LOD tint`, and `LOD off`).
+
 ## Labels
 
 [`SetLabel` and `NewBillboard`](../labels/) add world-anchored text and images.

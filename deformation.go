@@ -57,8 +57,8 @@ type posedGeometry struct {
 // Each instance may bind the same rest geometry to a different skeleton.
 func (s *Scene) SetDeformation(id NodeID, d Deformation) error {
 	n := s.nodes[id]
-	if n == nil || n.geometry == nil {
-		return fmt.Errorf("nt3d: deformation requires geometry")
+	if n == nil || n.geometry == nil || len(n.lod) > 0 {
+		return fmt.Errorf("nt3d: deformation requires single-mesh geometry")
 	}
 	count := len(n.geometry.Vertices)
 	if len(d.Weights) != 0 && len(d.Weights) != len(d.Morphs) {

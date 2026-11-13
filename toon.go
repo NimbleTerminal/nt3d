@@ -100,6 +100,26 @@ func (s *Scene) SetToon(root NodeID, style ToonStyle) error {
 		pending = pending[:len(pending)-1]
 		n := s.nodes[id]
 		pending = append(pending, n.Children...)
+		if len(n.lod) > 0 {
+			for i := range n.lod {
+				lg := n.lod[i].geometry
+				if len(lg.Indices) == 0 {
+					continue
+				}
+				if m := lg.Material; m != nil && m.Toon == style || m == nil && style == (ToonStyle{}) {
+					continue
+				}
+				g := *lg
+				if g.Material = cloneMaterial(g.Material); g.Material == nil {
+					g.Material = &Material{}
+				}
+				g.Material.Toon = style
+				n.lod[i].geometry = &g
+				changed = true
+			}
+			n.geometry = n.lod[0].geometry
+			continue
+		}
 		if n.geometry == nil || len(n.geometry.Indices) == 0 {
 			continue
 		}

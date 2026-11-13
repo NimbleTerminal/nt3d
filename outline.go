@@ -154,6 +154,18 @@ func (s *Scene) SetOutline(root NodeID, style OutlineStyle) error {
 		pending = pending[:len(pending)-1]
 		n := s.nodes[id]
 		pending = append(pending, n.Children...)
+		if len(n.lod) > 0 {
+			for i := range n.lod {
+				if n.lod[i].geometry.Outline != style {
+					g := *n.lod[i].geometry
+					g.Outline = style
+					n.lod[i].geometry = &g
+					changed = true
+				}
+			}
+			n.geometry = n.lod[0].geometry
+			continue
+		}
 		if n.geometry != nil && n.geometry.Outline != style {
 			g := *n.geometry
 			g.Outline = style

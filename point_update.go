@@ -61,7 +61,7 @@ func (s *Scene) SetNodePoints(id NodeID, points []Point, bounds nt3dmath.AABB) e
 // full until SetNodeGeometry stores it again with a refit or rebuilt set.
 func (s *Scene) UpdateNodePoints(id NodeID, first int, points []Point, bounds nt3dmath.AABB) error {
 	n := s.nodes[id]
-	if id == Root || n == nil || n.geometry == nil || n.shared != nil || n.deformation != nil {
+	if id == Root || n == nil || n.geometry == nil || n.shared != nil || n.deformation != nil || len(n.lod) > 0 {
 		return fmt.Errorf("nt3d: invalid point update node %d", id)
 	}
 	old := n.geometry

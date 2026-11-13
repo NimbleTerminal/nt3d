@@ -60,7 +60,36 @@ func (s *Scene) SetNormalMap(name string, t *Texture) error {
 		return fmt.Errorf("nt3d: unknown node %q", name)
 	}
 	n := s.nodes[id]
-	if !t.valid() || !t.data || n.geometry == nil || n.geometry.Material == nil || n.geometry.Material.NormalMap == nil {
+	if !t.valid() || !t.data || n.geometry == nil {
+		return fmt.Errorf("nt3d: normal replacement requires a normal map and normal-mapped geometry")
+	}
+	if len(n.lod) > 0 {
+		anyMapped, changed := false, false
+		for i := range n.lod {
+			lg := n.lod[i].geometry
+			if lg.Material == nil || lg.Material.NormalMap == nil {
+				continue
+			}
+			anyMapped = true
+			if lg.Material.NormalMap == t {
+				continue
+			}
+			g := *lg
+			g.Material = cloneMaterial(g.Material)
+			g.Material.NormalMap = t
+			n.lod[i].geometry = &g
+			changed = true
+		}
+		if !anyMapped {
+			return fmt.Errorf("nt3d: normal replacement requires a normal map and normal-mapped geometry")
+		}
+		if changed {
+			n.geometry = n.lod[0].geometry
+			s.changed(false, true)
+		}
+		return nil
+	}
+	if n.geometry.Material == nil || n.geometry.Material.NormalMap == nil {
 		return fmt.Errorf("nt3d: normal replacement requires a normal map and normal-mapped geometry")
 	}
 	if n.geometry.Material.NormalMap == t {

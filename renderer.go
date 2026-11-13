@@ -170,15 +170,21 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 		if n.geometry == nil {
 			continue
 		}
-		f.Geometry = append(f.Geometry, *n.geometry)
-		f.GeometryRevisions = append(f.GeometryRevisions, n.geometryRevision)
+		geom, rev, sg := n.geometry, n.geometryRevision, n.shared
+		world, visible := s.world(id), s.visible(id)
+		if len(n.lod) > 0 {
+			lvl, inRange := n.selectLOD(world, f.Eye)
+			geom, rev, sg = lvl.geometry, lvl.geometryRevision, lvl.shared
+			visible = visible && inRange
+		}
+		f.Geometry = append(f.Geometry, *geom)
+		f.GeometryRevisions = append(f.GeometryRevisions, rev)
 		var shared uint64
-		if n.shared != nil {
-			shared = n.shared.id
+		if sg != nil {
+			shared = sg.id
 		}
 		f.Shared = append(f.Shared, shared)
-		world, visible := s.world(id), s.visible(id)
-		if b := n.geometry.Billboard; b != nil {
+		if b := geom.Billboard; b != nil {
 			var inDepth bool
 			world, inDepth = billboardWorld(f, camera, world, b)
 			visible = visible && inDepth

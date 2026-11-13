@@ -69,6 +69,7 @@ type Geometry struct {
 	pointUpdate *pointUpdate
 	stored      *storedGeometry
 	posed       *posedGeometry
+	retainKeys  []geometryKey
 	Billboard   *Billboard // Optional camera-facing transform, resolved by Scene.Frame.
 
 	// WireGrid optionally describes a row-major rectangular vertex lattice (NX, NY).
