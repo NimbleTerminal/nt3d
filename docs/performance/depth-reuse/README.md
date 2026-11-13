@@ -176,7 +176,7 @@ only the identical [snapshot benchmark](depth_bench_test.go.txt) and
 temporary workspaces without modifying module pins:
 
 ```sh
-python3 performance/depth-reuse/reproduce.py \
+python3 docs/performance/depth-reuse/reproduce.py \
   --nt3d-before /tmp/nt3d-before --nt3d-after /tmp/nt3d-after \
   --charts-before /tmp/charts-before --charts-after /tmp/charts-after \
   --output /tmp/depth-results
