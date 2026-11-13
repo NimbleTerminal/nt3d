@@ -124,6 +124,8 @@ Point maps use six 1024² depth faces on the GPU and for complete software frame
 
 **Clipping.** Geometry reaching behind the camera is cut at the near plane, on every renderer, so it stays drawn up close.
 
+**Culling and frame statistics.** `Scene.Frame` sets `Frame.Cull = true`, which skips any geometry whose `Bounds` (widened for pixel-sized outlines, lines, points, and arrows) fall wholly outside the six clip planes. `frame.Stats()` returns a `FrameStats` summary (`Instances`, `VisibleInstances`, `DrawnInstances`, `Batches`, `Triangles`, `Lines`, `Points`) computed with the exact visibility, frustum-culling, shared-batching, and splat-budget rules the renderers use.
+
 ## Limits
 
 - One geometry holds at most `MaxMeshTriangles` (932,067) triangles, so its records fit the 128 MiB storage binding WebGPU guarantees on every device (`DefaultBindingLimit`). Larger meshes are split across nodes, as the [mesh readers](../meshes/) do. A frame has no total limit beyond the GPU's memory. A capable device holds more: `nt3d.SetBindingLimit(bytes)`, or `nt3d.AdoptBindingLimit(renderer)` with the GPU renderer or a `GPUSession`, raises the limit every geometry is measured against, up to `MaxBindingLimit` (1 GiB), and `MeshTriangleLimit()`, `MeshIndexLimit()`, and `PointLimit()` give the counts in force; a geometry never holds more than `MaxPointIndex` (16,777,216) points, whatever the limit. Raise it once at startup, before anything is stored or decoded. The GPU renderer refuses a geometry its own device cannot hold with a frame error naming both sizes, so a limit raised past the device fails cleanly. In the browser the device holds the baseline until ntgpuimage can request the adapter's limits.
