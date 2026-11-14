@@ -13,6 +13,7 @@ package nt3dgltf
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -80,8 +81,12 @@ const GLTF nt3dmesh.Format = "gltf"
 // tinted by those colors when they are not white, and repeating unless its
 // sampler clamps. MASK becomes a cutout at the alpha cutoff, BLEND a
 // transparent material, and KHR_materials_unlit an unlit one. Double-sided
-// materials add each triangle facing the other way. Roughness and
-// metalness are approximated by a specular highlight, none when fully rough.
+// materials add each triangle facing the other way. Metallic and roughness
+// factors and metallic-roughness/occlusion textures map to Cook-Torrance GGX
+// PBR and a packed linear ORMMap. Emissive factors, emissive maps, and
+// KHR_materials_emissive_strength map to Material.Emissive, EmissiveMap, and
+// EmissiveIntensity; KHR_materials_ior, KHR_materials_transmission, and
+// KHR_materials_volume map to IOR, Transmission, Refraction, and Absorption.
 // Normals the file omits are computed flat; triangle strips and fans become
 // triangles, points points, and lines lines.
 //
@@ -93,7 +98,6 @@ const GLTF nt3dmesh.Format = "gltf"
 // generated per corner (nt3d.GenerateCornerTangents), splitting vertices
 // whose corners differ.
 // KHR_texture_transform is baked into independent color and normal UVs.
-// Emissive maps are passed over with a warning.
 func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if int64(len(data)) > o.ByteLimit() {
 		return nil, nt3dmesh.ErrTooLarge
@@ -137,10 +141,17 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 }
 
 // supportedExtensions are those whose meaning Decode honors.
-var supportedExtensions = []string{"KHR_materials_unlit", "KHR_texture_transform"}
+var supportedExtensions = []string{
+	"KHR_materials_unlit",
+	"KHR_texture_transform",
+	"KHR_materials_emissive_strength",
+	"KHR_materials_ior",
+	"KHR_materials_transmission",
+	"KHR_materials_volume",
+}
 
 // ignoredExtensions are passed over silently: they refine looks nt3d does not draw.
-var ignoredExtensions = []string{"KHR_lights_punctual", "KHR_materials_emissive_strength", "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat", "KHR_materials_sheen", "KHR_materials_volume", "KHR_materials_transmission", "KHR_materials_variants"}
+var ignoredExtensions = []string{"KHR_lights_punctual", "KHR_materials_specular", "KHR_materials_clearcoat", "KHR_materials_sheen", "KHR_materials_variants"}
 
 type gltfDecoder struct {
 	decodedLeft    *int64
@@ -152,7 +163,9 @@ type gltfDecoder struct {
 	m              *nt3dmesh.Model
 	budget         budget
 	files          sideFiles
+	images         map[int]image.Image
 	normalTextures map[int]*nt3d.Texture
+	ormTextures    map[[2]int]*nt3d.Texture
 	textures       map[int]*nt3d.Texture // By texture index; nil when it failed.
 	warned         map[string]bool
 	visits         int
@@ -401,22 +414,54 @@ func (d *gltfDecoder) accessor(index int, what string) (*gltf.Accessor, error) {
 
 // gltfLook is what a primitive's material says, as nt3d draws it.
 type gltfLook struct {
-	mapping, normalMapping textureMapping
-	err                    error
-	normal                 *nt3d.Texture
-	normalStrength         float32
-	normalRepeat           bool
-	name                   string
-	factor                 [4]float64 // Linear base color and alpha.
-	texture                *nt3d.Texture
-	repeat                 bool
-	alpha                  gltf.AlphaMode
-	cutoff                 float64
-	double                 bool
-	unlit                  bool
-	specular               float32
-	shiny                  float32
-	plain                  bool // No material: Options.Color paints it.
+	mapping, normalMapping, ormMapping, emissiveMapping textureMapping
+	err                                                 error
+	normal                                              *nt3d.Texture
+	normalStrength                                      float32
+	normalRepeat                                        bool
+	orm                                                 *nt3d.Texture
+	ormRepeat                                           bool
+	occlusionStrength                                   float32
+	emissive                                            color.RGBA
+	emissiveIntensity                                   float32
+	emissiveMap                                         *nt3d.Texture
+	emissiveRepeat                                      bool
+	name                                                string
+	factor                                              [4]float64 // Linear base color and alpha.
+	texture                                             *nt3d.Texture
+	repeat                                              bool
+	alpha                                               gltf.AlphaMode
+	cutoff                                              float64
+	double                                              bool
+	unlit                                               bool
+	pbr                                                 bool
+	metallic, roughness, ior                            float32
+	transmission, refraction                            float32
+	absorption                                          nt3dmath.Vec3
+	plain                                               bool // No material: Options.Color paints it.
+}
+
+func decodeExtension(extensions gltf.Extensions, name string, dst any) (bool, error) {
+	raw, ok := extensions[name]
+	if !ok || raw == nil {
+		return false, nil
+	}
+	var data []byte
+	switch v := raw.(type) {
+	case json.RawMessage:
+		data = v
+	case []byte:
+		data = v
+	default:
+		var err error
+		if data, err = json.Marshal(raw); err != nil {
+			return false, fmt.Errorf("nt3dmesh: %s: %w", name, err)
+		}
+	}
+	if err := json.Unmarshal(data, dst); err != nil {
+		return false, fmt.Errorf("nt3dmesh: %s: %w", name, err)
+	}
+	return true, nil
 }
 
 func (d *gltfDecoder) look(index *int) gltfLook {
@@ -428,36 +473,205 @@ func (d *gltfDecoder) look(index *int) gltfLook {
 		}
 		return l
 	}
+	setErr := func(err error) {
+		if err != nil && l.err == nil {
+			l.err = err
+		}
+	}
 	m := d.doc.Materials[*index]
 	l.name, l.alpha, l.cutoff, l.double = m.Name, m.AlphaMode, m.AlphaCutoffOrDefault(), m.DoubleSided
 	_, l.unlit = m.Extensions["KHR_materials_unlit"]
-	if m.EmissiveTexture != nil || m.EmissiveFactor != ([3]float64{}) {
-		d.warn("emission is not drawn")
+	if !l.unlit {
+		l.pbr = true
+		l.metallic, l.roughness = 1, 1
 	}
+	mrIdx, occIdx := -1, -1
+	haveORMMap := false
 	if p := m.PBRMetallicRoughness; p != nil {
 		l.factor = p.BaseColorFactorOrDefault()
-		// Smooth surfaces get a highlight, tighter as they are smoother:
-		// the Blinn-Phong exponent for roughness r is about 2/r⁴ - 2.
-		if r := p.RoughnessFactorOrDefault(); r < 1 && !l.unlit {
-			r = max(r, .05)
-			l.specular = float32(min(1, (1-r)*(.5+.5*p.MetallicFactorOrDefault())))
-			l.shiny = float32(min(1024, max(1, 2/(r*r*r*r)-2)))
+		if !l.unlit {
+			mf, rf := p.MetallicFactorOrDefault(), p.RoughnessFactorOrDefault()
+			if !validCoordinate(float32(mf), float32(rf)) {
+				setErr(errors.New("nt3dmesh: non-finite glTF PBR factor"))
+			}
+			l.metallic = float32(max(0, min(1, mf)))
+			l.roughness = float32(max(0, min(1, rf)))
+			if mr := p.MetallicRoughnessTexture; mr != nil {
+				mrIdx = mr.Index
+				mMap, err := readMapping(mr.TexCoord, mr.Extensions)
+				setErr(err)
+				l.ormMapping, haveORMMap = mMap, true
+			}
 		}
 		if t := p.BaseColorTexture; t != nil {
 			l.texture, l.repeat = d.texture(t.Index)
-			l.mapping, l.err = readMapping(t.TexCoord, t.Extensions)
+			mMap, err := readMapping(t.TexCoord, t.Extensions)
+			setErr(err)
+			l.mapping = mMap
+		}
+	}
+	if !l.unlit {
+		if occ := m.OcclusionTexture; occ != nil && occ.Index != nil {
+			s := occ.StrengthOrDefault()
+			if !validCoordinate(float32(s)) {
+				setErr(errors.New("nt3dmesh: non-finite glTF occlusion strength"))
+			} else if s > 0 {
+				occIdx = *occ.Index
+				l.occlusionStrength = float32(min(1, s))
+				oMap, err := readMapping(occ.TexCoord, occ.Extensions)
+				setErr(err)
+				if !haveORMMap {
+					l.ormMapping, haveORMMap = oMap, true
+				} else if oMap != l.ormMapping {
+					d.warn("occlusion and metallic-roughness textures use distinct UV transforms")
+				}
+			}
+		}
+		if mrIdx >= 0 || occIdx >= 0 {
+			l.orm, l.ormRepeat = d.ormTexture(mrIdx, occIdx)
 		}
 	}
 	if n := m.NormalTexture; n != nil && n.Index != nil && !l.unlit {
 		l.normal, l.normalRepeat = d.textureKind(*n.Index, true)
 		l.normalStrength = float32(n.ScaleOrDefault())
-		var err error
-		l.normalMapping, err = readMapping(n.TexCoord, n.Extensions)
-		if l.err == nil {
-			l.err = err
+		nMap, err := readMapping(n.TexCoord, n.Extensions)
+		setErr(err)
+		l.normalMapping = nMap
+	}
+
+	if !validCoordinate(float32(m.EmissiveFactor[0]), float32(m.EmissiveFactor[1]), float32(m.EmissiveFactor[2])) {
+		setErr(errors.New("nt3dmesh: non-finite glTF emissive factor"))
+	}
+	emStrength := 1.0
+	var emExt struct {
+		EmissiveStrength *float64 `json:"emissiveStrength"`
+	}
+	if ok, err := decodeExtension(m.Extensions, "KHR_materials_emissive_strength", &emExt); err != nil {
+		setErr(err)
+	} else if ok && emExt.EmissiveStrength != nil {
+		s := *emExt.EmissiveStrength
+		if !validCoordinate(float32(s)) || s < 0 {
+			setErr(errors.New("nt3dmesh: invalid KHR_materials_emissive_strength"))
+		} else {
+			emStrength = s
+		}
+	}
+	ef := [3]float64{max(0, m.EmissiveFactor[0]), max(0, m.EmissiveFactor[1]), max(0, m.EmissiveFactor[2])}
+	if maxCh := max(ef[0], max(ef[1], ef[2])); maxCh > 0 && emStrength > 0 {
+		l.emissive = color.RGBA{srgb8(ef[0] / maxCh), srgb8(ef[1] / maxCh), srgb8(ef[2] / maxCh), 255}
+		l.emissiveIntensity = float32(maxCh * emStrength)
+		if m.EmissiveTexture != nil {
+			l.emissiveMap, l.emissiveRepeat = d.texture(m.EmissiveTexture.Index)
+			eMap, err := readMapping(m.EmissiveTexture.TexCoord, m.EmissiveTexture.Extensions)
+			setErr(err)
+			l.emissiveMapping = eMap
+		}
+	}
+
+	ior := 1.5
+	var iorExt struct {
+		IOR *float64 `json:"ior"`
+	}
+	if ok, err := decodeExtension(m.Extensions, "KHR_materials_ior", &iorExt); err != nil {
+		setErr(err)
+	} else if ok && iorExt.IOR != nil {
+		v := *iorExt.IOR
+		if !validCoordinate(float32(v)) || v < 0 {
+			setErr(errors.New("nt3dmesh: invalid KHR_materials_ior"))
+		} else if !l.unlit {
+			if v == 0 {
+				ior = 1
+			} else {
+				ior = max(1, min(3, v))
+			}
+			l.ior = float32(ior)
+		}
+	}
+
+	var transExt struct {
+		TransmissionFactor *float64 `json:"transmissionFactor"`
+	}
+	if ok, err := decodeExtension(m.Extensions, "KHR_materials_transmission", &transExt); err != nil {
+		setErr(err)
+	} else if ok && transExt.TransmissionFactor != nil {
+		tf := *transExt.TransmissionFactor
+		if !validCoordinate(float32(tf)) || tf < 0 || tf > 1 {
+			setErr(errors.New("nt3dmesh: invalid KHR_materials_transmission"))
+		} else if !l.unlit && l.alpha == gltf.AlphaOpaque && tf > 0 {
+			l.transmission = float32(tf)
+			l.refraction = float32(min(.25, max(0, (ior-1)*.06)))
+		}
+	}
+
+	var volExt struct {
+		ThicknessFactor     *float64  `json:"thicknessFactor"`
+		AttenuationDistance *float64  `json:"attenuationDistance"`
+		AttenuationColor    []float64 `json:"attenuationColor"`
+	}
+	if ok, err := decodeExtension(m.Extensions, "KHR_materials_volume", &volExt); err != nil {
+		setErr(err)
+	} else if ok {
+		thick := 0.0
+		if volExt.ThicknessFactor != nil {
+			thick = *volExt.ThicknessFactor
+			if !validCoordinate(float32(thick)) || thick < 0 {
+				setErr(errors.New("nt3dmesh: invalid KHR_materials_volume thickness"))
+			}
+		} else if volExt.AttenuationDistance != nil || volExt.AttenuationColor != nil {
+			thick = 1
+		}
+		if volExt.AttenuationColor != nil && len(volExt.AttenuationColor) != 3 {
+			setErr(errors.New("nt3dmesh: KHR_materials_volume attenuationColor needs 3 values"))
+		}
+		if volExt.AttenuationDistance != nil {
+			ad := *volExt.AttenuationDistance
+			if !validCoordinate(float32(ad)) || ad <= 0 {
+				setErr(errors.New("nt3dmesh: invalid KHR_materials_volume attenuationDistance"))
+			}
+		}
+		if l.err == nil && !l.unlit && l.transmission > 0 {
+			if volExt.ThicknessFactor != nil && thick == 0 {
+				l.refraction = 0
+			} else if thick > 0 {
+				ac := [3]float64{1, 1, 1}
+				if len(volExt.AttenuationColor) == 3 {
+					for k := range 3 {
+						if !validCoordinate(float32(volExt.AttenuationColor[k])) || volExt.AttenuationColor[k] < 0 || volExt.AttenuationColor[k] > 1 {
+							setErr(errors.New("nt3dmesh: invalid KHR_materials_volume attenuationColor"))
+						}
+						ac[k] = volExt.AttenuationColor[k]
+					}
+				}
+				dist := math.Inf(1)
+				if volExt.AttenuationDistance != nil {
+					dist = *volExt.AttenuationDistance
+				}
+				if l.err == nil && !math.IsInf(dist, 1) {
+					d := max(1e-4, dist)
+					l.absorption = nt3dmath.Vec3{
+						X: float32(min(nt3dmesh.MaxCoordinate, -math.Log(max(1e-4, min(1, ac[0])))/d)),
+						Y: float32(min(nt3dmesh.MaxCoordinate, -math.Log(max(1e-4, min(1, ac[1])))/d)),
+						Z: float32(min(nt3dmesh.MaxCoordinate, -math.Log(max(1e-4, min(1, ac[2])))/d)),
+					}
+				}
+			}
 		}
 	}
 	return l
+}
+
+func (d *gltfDecoder) samplerRepeat(index int) bool {
+	repeat := true
+	if index >= 0 && index < len(d.doc.Textures) {
+		if s := d.doc.Textures[index].Sampler; s != nil && *s >= 0 && *s < len(d.doc.Samplers) {
+			sampler := d.doc.Samplers[*s]
+			repeat = sampler.WrapS != gltf.WrapClampToEdge || sampler.WrapT != gltf.WrapClampToEdge
+			if sampler.WrapS == gltf.WrapMirroredRepeat || sampler.WrapT == gltf.WrapMirroredRepeat {
+				d.warn("mirrored textures repeat unmirrored")
+			}
+		}
+	}
+	return repeat
 }
 
 // texture loads a texture by index, once, and whether it repeats.
@@ -470,16 +684,7 @@ func (d *gltfDecoder) textureKind(index int, normal bool) (*nt3d.Texture, bool) 
 		}
 		cache = d.normalTextures
 	}
-	repeat := true
-	if index >= 0 && index < len(d.doc.Textures) {
-		if s := d.doc.Textures[index].Sampler; s != nil && *s >= 0 && *s < len(d.doc.Samplers) {
-			sampler := d.doc.Samplers[*s]
-			repeat = sampler.WrapS != gltf.WrapClampToEdge || sampler.WrapT != gltf.WrapClampToEdge
-			if sampler.WrapS == gltf.WrapMirroredRepeat || sampler.WrapT == gltf.WrapMirroredRepeat {
-				d.warn("mirrored textures repeat unmirrored")
-			}
-		}
-	}
+	repeat := d.samplerRepeat(index)
 	if t, ok := cache[index]; ok {
 		return t, repeat
 	}
@@ -491,7 +696,104 @@ func (d *gltfDecoder) textureKind(index int, normal bool) (*nt3d.Texture, bool) 
 	return t, repeat
 }
 
-func (d *gltfDecoder) loadTextureKind(index int, normal bool) (*nt3d.Texture, error) {
+func nrgbaPixel(img image.Image, b image.Rectangle, x, y int) color.NRGBA {
+	px, py := b.Min.X+x, b.Min.Y+y
+	if n, ok := img.(*image.NRGBA); ok {
+		return n.NRGBAAt(px, py)
+	}
+	if r, ok := img.(*image.RGBA); ok {
+		c := r.RGBAAt(px, py)
+		if c.A == 255 {
+			return color.NRGBA(c)
+		}
+		return color.NRGBAModel.Convert(c).(color.NRGBA)
+	}
+	return color.NRGBAModel.Convert(img.At(px, py)).(color.NRGBA)
+}
+
+func (d *gltfDecoder) ormTexture(mrIdx, occIdx int) (*nt3d.Texture, bool) {
+	primary := mrIdx
+	if primary < 0 {
+		primary = occIdx
+	}
+	repeat := d.samplerRepeat(primary)
+	if d.ormTextures == nil {
+		d.ormTextures = map[[2]int]*nt3d.Texture{}
+	}
+	key := [2]int{mrIdx, occIdx}
+	if t, ok := d.ormTextures[key]; ok {
+		return t, repeat
+	}
+	var mrImg, occImg image.Image
+	if mrIdx >= 0 {
+		var err error
+		if mrImg, err = d.loadImage(mrIdx); err != nil {
+			d.warn("texture %d: %v", mrIdx, err)
+		}
+	}
+	if occIdx >= 0 {
+		if occIdx == mrIdx {
+			occImg = mrImg
+		} else {
+			var err error
+			if occImg, err = d.loadImage(occIdx); err != nil {
+				d.warn("texture %d: %v", occIdx, err)
+			}
+		}
+	}
+	if mrImg == nil && occImg == nil {
+		d.ormTextures[key] = nil
+		return nil, repeat
+	}
+	var t *nt3d.Texture
+	var err error
+	if mrImg != nil && occImg != nil && mrIdx == occIdx {
+		t, err = nt3d.NewORMMap(mrImg)
+	} else {
+		w, h := 1, 1
+		var mrB, occB image.Rectangle
+		if mrImg != nil {
+			mrB = mrImg.Bounds()
+			w, h = mrB.Dx(), mrB.Dy()
+		}
+		if occImg != nil {
+			occB = occImg.Bounds()
+			w, h = max(w, occB.Dx()), max(h, occB.Dy())
+		}
+		packed := image.NewNRGBA(image.Rect(0, 0, w, h))
+		for y := range h {
+			for x := range w {
+				r, g, b := uint8(255), uint8(255), uint8(255)
+				if occImg != nil {
+					ox := min(occB.Dx()-1, x*occB.Dx()/w)
+					oy := min(occB.Dy()-1, y*occB.Dy()/h)
+					r = nrgbaPixel(occImg, occB, ox, oy).R
+				}
+				if mrImg != nil {
+					mx := min(mrB.Dx()-1, x*mrB.Dx()/w)
+					my := min(mrB.Dy()-1, y*mrB.Dy()/h)
+					c := nrgbaPixel(mrImg, mrB, mx, my)
+					g, b = c.G, c.B
+				}
+				off := y*packed.Stride + x*4
+				packed.Pix[off], packed.Pix[off+1], packed.Pix[off+2], packed.Pix[off+3] = r, g, b, 255
+			}
+		}
+		t, err = nt3d.NewORMMap(packed)
+	}
+	if err != nil {
+		d.warn("ORM texture: %v", err)
+	}
+	d.ormTextures[key] = t
+	return t, repeat
+}
+
+func (d *gltfDecoder) loadImage(index int) (image.Image, error) {
+	if d.images != nil {
+		if img, ok := d.images[index]; ok {
+			return img, nil
+		}
+	}
 	if index < 0 || index >= len(d.doc.Textures) {
 		return nil, errors.New("does not exist")
 	}
@@ -528,6 +830,18 @@ func (d *gltfDecoder) loadTextureKind(index int, normal bool) (*nt3d.Texture, er
 		return nil, fmt.Errorf("larger than %d pixels a side", maxTextureSide)
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if d.images == nil {
+		d.images = map[int]image.Image{}
+	}
+	d.images[index] = img
+	return img, nil
+}
+
+func (d *gltfDecoder) loadTextureKind(index int, normal bool) (*nt3d.Texture, error) {
+	img, err := d.loadImage(index)
 	if err != nil {
 		return nil, err
 	}
@@ -667,6 +981,32 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 			b.look.texture = nil
 		}
 	}
+	if l.orm != nil {
+		ormUV, err := readUV(l.ormMapping)
+		if err != nil {
+			return err
+		}
+		if ormUV == nil {
+			b.look.orm = nil
+		} else if b.uv == nil {
+			b.uv = ormUV
+		} else if !slices.Equal(b.uv, ormUV) {
+			d.warn("%s: ORM texture uses distinct UVs; sharing base UVs", name)
+		}
+	}
+	if l.emissiveMap != nil {
+		emUV, err := readUV(l.emissiveMapping)
+		if err != nil {
+			return err
+		}
+		if emUV == nil {
+			b.look.emissiveMap = nil
+		} else if b.uv == nil {
+			b.uv = emUV
+		} else if !slices.Equal(b.uv, emUV) {
+			d.warn("%s: emissive texture uses distinct UVs; sharing base UVs", name)
+		}
+	}
 	if l.normal != nil {
 		normalUV, err := readUV(l.normalMapping)
 		if err != nil {
@@ -776,7 +1116,31 @@ func (b *gltfBuilder) color(i uint32) (color.RGBA, bool) {
 // nt3dMaterial is the primitive's nt3d material, or nil when plain will do.
 func (b *gltfBuilder) nt3dMaterial() *nt3d.Material {
 	l := b.look
-	m := nt3d.Material{NormalMap: l.normal, NormalStrength: l.normalStrength, NormalRepeat: l.normalRepeat, Texture: l.texture, Repeat: l.repeat && l.texture != nil, Unlit: l.unlit, Specular: l.specular, Shininess: l.shiny}
+	m := nt3d.Material{
+		NormalMap:         l.normal,
+		NormalStrength:    l.normalStrength,
+		NormalRepeat:      l.normalRepeat && l.normal != nil,
+		Texture:           l.texture,
+		Repeat:            l.repeat && l.texture != nil,
+		Unlit:             l.unlit,
+		PBR:               l.pbr,
+		Metallic:          l.metallic,
+		Roughness:         l.roughness,
+		IOR:               l.ior,
+		ORMMap:            l.orm,
+		ORMRepeat:         l.ormRepeat && l.orm != nil,
+		OcclusionStrength: l.occlusionStrength,
+		Emissive:          l.emissive,
+		EmissiveIntensity: l.emissiveIntensity,
+		EmissiveMap:       l.emissiveMap,
+		EmissiveRepeat:    l.emissiveRepeat && l.emissiveMap != nil,
+		Transmission:      l.transmission,
+		Refraction:        l.refraction,
+		Absorption:        l.absorption,
+	}
+	if l.orm == nil {
+		m.OcclusionStrength = 0
+	}
 	switch l.alpha {
 	case gltf.AlphaMask:
 		if l.texture != nil {

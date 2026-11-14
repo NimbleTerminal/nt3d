@@ -231,12 +231,12 @@ func TestGLTFMaterials(t *testing.T) {
 	for _, o := range m.Objects {
 		byName[o.Material] = o
 	}
-	// Linear 0.5 is sRGB 188.
-	if g := byName["gray"].Geometry; g.Vertices[0].Color != (color.RGBA{188, 188, 188, 255}) || g.Material != nil || byName["gray"].Plain[0] {
+	// Linear 0.5 is sRGB 188; glTF materials without KHR_materials_unlit decode as PBR.
+	if g := byName["gray"].Geometry; g.Vertices[0].Color != (color.RGBA{188, 188, 188, 255}) || g.Material == nil || !g.Material.PBR || g.Material.Roughness != 1 || g.Material.Metallic != 0 || byName["gray"].Plain[0] {
 		t.Errorf("gray: %v, material %+v", g.Vertices[0].Color, g.Material)
 	}
 	leaf := byName["leaf"].Geometry
-	if m := leaf.Material; m == nil || !m.Cutout || m.Threshold != .4 || m.Texture == nil || !m.Repeat || m.Tint || m.Specular != 0 {
+	if m := leaf.Material; m == nil || !m.PBR || m.Roughness != 1 || !m.Cutout || m.Threshold != .4 || m.Texture == nil || !m.Repeat || m.Tint || m.Specular != 0 {
 		t.Errorf("leaf material %+v", m)
 	} else if a := m.Texture.At(0, 0).(color.RGBA).A; a != 128 {
 		t.Errorf("leaf texture lost its alpha: %d", a)
@@ -244,21 +244,151 @@ func TestGLTFMaterials(t *testing.T) {
 	if len(leaf.Indices) != 12 || leaf.Vertices[leaf.Indices[6]].Normal.Dot(leaf.Vertices[leaf.Indices[0]].Normal) >= 0 {
 		t.Errorf("double-sided leaf: %d indices", len(leaf.Indices))
 	}
-	if g := byName["glass"].Geometry; g.Material == nil || !g.Material.Transparent || g.Vertices[0].Color.A != 64 || g.Material.Specular == 0 {
+	if g := byName["glass"].Geometry; g.Material == nil || !g.Material.Transparent || g.Vertices[0].Color.A != 64 || !g.Material.PBR || g.Material.Roughness != .2 || g.Material.Metallic != 0 {
 		t.Errorf("glass: %+v, color %v", g.Material, g.Vertices[0].Color)
 	}
-	if g := byName["flat"].Geometry; g.Material == nil || !g.Material.Unlit || g.Material.Specular != 0 || g.Vertices[0].Color != (color.RGBA{255, 0, 0, 255}) {
+	if g := byName["flat"].Geometry; g.Material == nil || !g.Material.Unlit || g.Material.PBR || g.Material.Specular != 0 || g.Vertices[0].Color != (color.RGBA{255, 0, 0, 255}) {
 		t.Errorf("unlit: %+v", g.Material)
 	}
 	if g := byName["tinted"].Geometry; g.Material == nil || !g.Material.Tint || g.Material.Repeat || g.Vertices[0].Color != (color.RGBA{255, 0, 0, 255}) {
 		t.Errorf("tinted, clamped: %+v", g.Material)
 	}
-	if g := byName["missing texture"].Geometry; g.Material != nil || len(m.Warnings) == 0 {
+	if g := byName["missing texture"].Geometry; g.Material == nil || g.Material.Texture != nil || !g.Material.PBR || len(m.Warnings) == 0 {
 		t.Errorf("missing texture: %+v, warnings %v", g.Material, m.Warnings)
 	}
 	// Every object must be valid nt3d geometry.
 	for _, o := range m.Objects {
 		check(t, o.Geometry.Validate())
+	}
+}
+
+func TestGLTFPBRAndExtensions(t *testing.T) {
+	quad := func(material int) prim {
+		return prim{
+			positions: [][3]float32{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}},
+			indices:   []uint16{0, 1, 2, 0, 2, 3},
+			uv:        [][2]float32{{0, 0}, {1, 0}, {1, 1}, {0, 1}},
+			material:  gltf.Index(material),
+		}
+	}
+	doc := gltfDoc(quad(0), quad(1), quad(2), quad(3), quad(4))
+	mrImg, err := modeler.WriteImage(doc, "mr", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{10, 64, 192, 255})))
+	check(t, err)
+	occImg, err := modeler.WriteImage(doc, "occ", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{80, 200, 30, 255})))
+	check(t, err)
+	emImg, err := modeler.WriteImage(doc, "em", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{255, 128, 0, 255})))
+	check(t, err)
+	doc.Textures = []*gltf.Texture{
+		{Source: gltf.Index(mrImg)},
+		{Source: gltf.Index(occImg)},
+		{Source: gltf.Index(emImg)},
+	}
+	doc.ExtensionsRequired = []string{
+		"KHR_materials_emissive_strength",
+		"KHR_materials_ior",
+		"KHR_materials_transmission",
+		"KHR_materials_volume",
+	}
+	doc.ExtensionsUsed = doc.ExtensionsRequired
+	doc.Materials = []*gltf.Material{
+		{
+			Name: "packed-orm",
+			PBRMetallicRoughness: &gltf.PBRMetallicRoughness{
+				MetallicFactor:           gltf.Float(.8),
+				RoughnessFactor:          gltf.Float(.35),
+				MetallicRoughnessTexture: &gltf.TextureInfo{Index: 0},
+			},
+			OcclusionTexture: &gltf.OcclusionTexture{Index: gltf.Index(0), Strength: gltf.Float(.6)},
+		},
+		{
+			Name: "separate-orm",
+			PBRMetallicRoughness: &gltf.PBRMetallicRoughness{
+				MetallicRoughnessTexture: &gltf.TextureInfo{Index: 0},
+			},
+			OcclusionTexture: &gltf.OcclusionTexture{Index: gltf.Index(1), Strength: gltf.Float(.75)},
+		},
+		{
+			Name:            "hdr-emissive",
+			EmissiveFactor:  [3]float64{1, .25, 0},
+			EmissiveTexture: &gltf.TextureInfo{Index: 2},
+			Extensions: gltf.Extensions{
+				"KHR_materials_emissive_strength": map[string]any{"emissiveStrength": 4.5},
+			},
+		},
+		{
+			Name: "crystal",
+			PBRMetallicRoughness: &gltf.PBRMetallicRoughness{
+				MetallicFactor:  gltf.Float(0),
+				RoughnessFactor: gltf.Float(.05),
+			},
+			Extensions: gltf.Extensions{
+				"KHR_materials_ior":          map[string]any{"ior": 2.0},
+				"KHR_materials_transmission": map[string]any{"transmissionFactor": .9},
+				"KHR_materials_volume": map[string]any{
+					"thicknessFactor":     1.0,
+					"attenuationDistance": 2.0,
+					"attenuationColor":    []float64{math.Exp(-1), math.Exp(-2), 1},
+				},
+			},
+		},
+		{
+			Name: "thin-glass",
+			Extensions: gltf.Extensions{
+				"KHR_materials_transmission": map[string]any{"transmissionFactor": .8},
+				"KHR_materials_volume":       map[string]any{"thicknessFactor": 0.0},
+				"KHR_materials_ior":          map[string]any{"ior": 0.0},
+			},
+			OcclusionTexture: &gltf.OcclusionTexture{Index: gltf.Index(1), Strength: gltf.Float(0)},
+		},
+	}
+	m, err := Decode(glb(t, doc), nil)
+	check(t, err)
+	if len(m.Warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", m.Warnings)
+	}
+	byName := map[string]*nt3d.Material{}
+	for _, o := range m.Objects {
+		check(t, o.Geometry.Validate())
+		byName[o.Material] = o.Geometry.Material
+	}
+
+	if mat := byName["packed-orm"]; mat == nil || !mat.PBR || mat.Metallic != .8 || mat.Roughness != .35 || mat.ORMMap == nil || mat.OcclusionStrength != .6 {
+		t.Fatalf("packed-orm: %+v", mat)
+	} else if c := mat.ORMMap.At(0, 0).(color.RGBA); c != (color.RGBA{10, 64, 192, 255}) {
+		t.Fatalf("packed-orm texel %v, want {10 64 192 255}", c)
+	}
+	if mat := byName["separate-orm"]; mat == nil || mat.ORMMap == nil || mat.OcclusionStrength != .75 {
+		t.Fatalf("separate-orm: %+v", mat)
+	} else if c := mat.ORMMap.At(0, 0).(color.RGBA); c != (color.RGBA{80, 64, 192, 255}) {
+		t.Fatalf("separate-orm merged texel %v, want {80 64 192 255}", c)
+	}
+	if mat := byName["hdr-emissive"]; mat == nil || mat.EmissiveMap == nil || mat.EmissiveIntensity != 4.5 || mat.Emissive != (color.RGBA{255, srgb8(.25), 0, 255}) {
+		t.Fatalf("hdr-emissive: %+v", mat)
+	}
+	crystal := byName["crystal"]
+	if crystal == nil || crystal.IOR != 2 || crystal.Transmission != .9 || math.Abs(float64(crystal.Refraction)-.06) > 1e-5 {
+		t.Fatalf("crystal optics: %+v", crystal)
+	}
+	if math.Abs(float64(crystal.Absorption.X)-.5) > 1e-4 || math.Abs(float64(crystal.Absorption.Y)-1) > 1e-4 || crystal.Absorption.Z != 0 {
+		t.Fatalf("crystal absorption %v, want {0.5 1 0}", crystal.Absorption)
+	}
+	if thin := byName["thin-glass"]; thin == nil || thin.IOR != 1 || thin.Transmission != .8 || thin.Refraction != 0 || thin.ORMMap != nil {
+		t.Fatalf("thin-glass: %+v", thin)
+	}
+
+	// Malformed or out-of-range extension values must be rejected.
+	for _, bad := range []gltf.Extensions{
+		{"KHR_materials_emissive_strength": map[string]any{"emissiveStrength": -1.0}},
+		{"KHR_materials_ior": map[string]any{"ior": -0.5}},
+		{"KHR_materials_transmission": map[string]any{"transmissionFactor": 1.5}},
+		{"KHR_materials_volume": map[string]any{"attenuationDistance": 0.0}},
+		{"KHR_materials_volume": map[string]any{"attenuationColor": []float64{1, 2}}},
+	} {
+		badDoc := gltfDoc(quad(0))
+		badDoc.Materials = []*gltf.Material{{Extensions: bad}}
+		if _, err := Decode(glb(t, badDoc), nil); err == nil {
+			t.Fatalf("accepted invalid extension %v", bad)
+		}
 	}
 }
 
