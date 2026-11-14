@@ -169,15 +169,41 @@ func (d *demo) stepFur() error {
 	return nil
 }
 
-// cycleSupersample steps GPU supersampling through 1×, 2×, and 3×.
+// cycleSupersample steps GPU anti-aliasing through 1×, 4× MSAA, 2× SS, and 3× SS.
 func (d *demo) cycleSupersample() tea.Cmd {
-	return d.view.SetSupersample(d.view.Supersample()%3 + 1)
+	msaa, ss := d.view.MSAA(), d.view.Supersample()
+	switch {
+	case !msaa && ss == 1:
+		_ = d.view.SetSupersample(1)
+		return d.view.SetMSAA(true)
+	case msaa && ss == 1:
+		_ = d.view.SetMSAA(false)
+		return d.view.SetSupersample(2)
+	case !msaa && ss == 2:
+		_ = d.view.SetMSAA(false)
+		return d.view.SetSupersample(3)
+	default:
+		_ = d.view.SetMSAA(false)
+		return d.view.SetSupersample(1)
+	}
+}
+
+func (d *demo) aaLabel() string {
+	if d.view.MSAA() {
+		if d.view.Supersample() > 1 {
+			return fmt.Sprintf("4× MSAA + %d× SS", d.view.Supersample())
+		}
+		return "4× MSAA"
+	}
+	return fmt.Sprintf("supersample %d×", d.view.Supersample())
 }
 
 // cycleEffect steps through the post-processing effects.
 func (d *demo) cycleEffect() tea.Cmd {
 	d.fur.effect = (d.fur.effect + 1) % len(effects)
-	return d.view.SetPostProcess(effects[d.fur.effect].apply)
+	e := effects[d.fur.effect]
+	_ = d.view.SetEffects(e.post)
+	return d.view.SetPostProcess(e.apply)
 }
 
 func (d *demo) furView(content string) string {
@@ -191,6 +217,6 @@ func (d *demo) furView(content string) string {
 	if d.fur.fullSize {
 		mips = "full size"
 	}
-	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · f fins · m mipmaps · t toon · x supersample · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s · %s · %s · supersample %d× · %s · %s",
-		content, d.rendering(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, mips, look, d.view.Supersample(), effects[d.fur.effect].name, d.status)
+	return fmt.Sprintf("nt3d fur · Spot by Keenan Crane · a wind · s shells · l length · f fins · m mipmaps · t toon · x AA · e effect · c fit · 1/2/3 backend · q quit\n%s\n%s · %d shells × %d triangles · %s · %s · %s · %s · %s · %s",
+		content, d.rendering(), furShells[d.fur.shells], len(d.fur.base.Indices)/3, fins, mips, look, d.aaLabel(), effects[d.fur.effect].name, d.status)
 }

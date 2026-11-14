@@ -357,6 +357,38 @@ func (r *Runner) SetSupersample(n int) {
 	r.d.view.SetSupersample(n)
 }
 
+// MSAA reports whether the active demo has requested 4x GPU multisampling.
+func (r *Runner) MSAA() bool {
+	if r == nil || r.d == nil || r.d.view == nil {
+		return false
+	}
+	return r.d.view.MSAA()
+}
+
+// SetMSAA enables or disables 4x GPU multisampling on the active demo.
+func (r *Runner) SetMSAA(enabled bool) {
+	if r == nil || r.d == nil || r.d.view == nil {
+		return
+	}
+	r.d.view.SetMSAA(enabled)
+}
+
+// Effects returns the active demo's built-in PostProcess settings.
+func (r *Runner) Effects() nt3d.PostProcess {
+	if r == nil || r.d == nil || r.d.view == nil {
+		return nt3d.PostProcess{}
+	}
+	return r.d.view.Effects()
+}
+
+// SetEffects sets the active demo's built-in PostProcess settings.
+func (r *Runner) SetEffects(p nt3d.PostProcess) {
+	if r == nil || r.d == nil || r.d.view == nil {
+		return
+	}
+	r.d.view.SetEffects(p)
+}
+
 // Animating reports whether the demo's simulation/animation loop is running.
 func (r *Runner) Animating() bool {
 	if r == nil || r.d == nil {
@@ -504,7 +536,9 @@ func (r *Runner) Frame(camera nt3d.Camera, w, h int) (nt3d.Frame, error) {
 	if err != nil {
 		return f, err
 	}
+	f.MSAA = r.d.view.MSAA()
 	f.Supersample = r.d.view.Supersample()
+	f.PostProcess = r.d.view.Effects()
 	r.d.decorate(&f)
 	return f, nil
 }

@@ -15,7 +15,7 @@ They all share the widget's [controls](../widget/#controls) (drag to orbit, whee
 
 `task terrain`. A textured [heightfield](../shapes/#terrain) with lighting, picking, and parent transforms. `f` flattens the hills, `t` swaps the texture, `l` toggles lighting, `n` rotates the parent node, `v` hides it, and `p` switches to shader textures.
 
-Its flags work for every demo: `--render-mode gpu|software|wireframe`, `--snapshot file.png` for a still image, `--duration`, `--animate=false` to start paused, and `--medium direct|shm` to choose how Kitty images are sent.
+Its flags work for every demo: `--render-mode gpu|software|wireframe`, `--msaa`, `--supersample 1..4`, `--effect none|studio|bloom|ssao|vignette|"soft focus"`, `--snapshot file.png` for a still image, `--duration`, `--animate=false` to start paused, and `--medium direct|shm` to choose how Kitty images are sent.
 
 ```sh
 task terrain -- --render-mode software
@@ -117,13 +117,13 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 <img class="poster" src="../../posters/fur.png" alt="Spot the cow covered in black-and-white fur">
 
-`task fur`. Spot the cow in [shell fur](../fur/) colored by its own texture, swaying in the wind by moving nodes alone. `s` cycles the shell count, so you can watch layers become strands; `l` changes the length, `f` toggles the [fins](../fur/#fins), `m` the [coverage-preserving mipmaps](../materials/#cutout-mipmaps), `a` the wind, `t` [toon shading](../materials/#toon-fur) with the skin inked at the fur's tips, `x` supersamples, and `e` cycles post effects.
+`task fur`. Spot the cow in [shell fur](../fur/) colored by its own texture, swaying in the wind by moving nodes alone. `s` cycles the shell count, so you can watch layers become strands; `l` changes the length, `f` toggles the [fins](../fur/#fins), `m` the [coverage-preserving mipmaps](../materials/#cutout-mipmaps), `a` the wind, `t` [toon shading](../materials/#toon-fur) with the skin inked at the fur's tips, `x` cycles anti-aliasing (`1×`, `4× MSAA`, `2×` and `3×` supersampling), and `e` cycles GPU/CPU post-processing presets (`studio`, `bloom`, `ssao`, `vignette`, `soft focus`).
 
 ## Mipmaps
 
 <img class="poster" src="../../posters/mipmaps.png" alt="A checkered floor running to the horizon, fading to an even gray, with an orange sphere">
 
-`task mipmaps`. A tiled floor to the horizon. `m` cycles the [filtering](../materials/#mipmaps): without mipmaps the far texels shimmer into moiré; with them the floor settles into an even tone, and anisotropic filtering keeps its detail. `t` changes the texture, `x` supersamples, and `d` adds fog.
+`task mipmaps`. A tiled floor to the horizon. `m` cycles the [filtering](../materials/#mipmaps): without mipmaps the far texels shimmer into moiré; with them the floor settles into an even tone, and anisotropic filtering keeps its detail. `t` changes the texture, `x` cycles anti-aliasing (`1×`, `4× MSAA`, `2×` and `3×` supersampling), and `d` adds fog.
 
 ## Forest
 
@@ -135,7 +135,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 <img class="poster" src="../../posters/lights.png" alt="A sphere, torus, column, and cube on a floor lit by eight colored point lights in a ring">
 
-`task lights`. A sphere, a torus, a column, and a cube on a floor of two triangles, under presets of [lighting](../rendering/#how-it-looks): the default key light, a turning sun under a sky-to-ground ambient, three colored lamps orbiting, one lamp at night, and eight at once. It opens on the three lamps. Light is found per pixel, so a lamp's bright spot crosses the floor where no vertex is. `l` changes the preset, `f` the point lights' falloff, `e` turns highlights off, `a` pauses the lamps, and `s` cycles through no shadows, drop shadows, and shadow maps. Shadow maps use the first light, including the point-light presets. Press `b` to lift the shapes: drop shadows stay on the floor at world Z=0, while mapped shadows follow the light.
+`task lights`. A sphere, a torus, a column, and a cube on a floor of two triangles, under presets of [lighting](../rendering/#how-it-looks): the default key light, a turning sun under a sky-to-ground ambient, three colored lamps orbiting, one lamp at night, and eight at once. It opens on the three lamps. Light is found per pixel, so a lamp's bright spot crosses the floor where no vertex is. `l` changes the preset, `f` the point lights' falloff, `e` turns highlights off, `p` cycles HDR post-processing (`studio`, `bloom + ACES`, `SSAO`, `Reinhard + vignette`), `x` cycles anti-aliasing (`1×`, `4× MSAA`, `2×`/`3×` supersampling), `a` pauses the lamps, and `s` cycles through no shadows, drop shadows, and shadow maps. Shadow maps use the first light, including the point-light presets. Press `b` to lift the shapes: drop shadows stay on the floor at world Z=0, while mapped shadows follow the light.
 
 The first three presets demonstrate [environment skies and diffuse image-based lighting](../environment/): a gradient sky with a key light, the sky alone, and an original generated warm/cool panorama. `l` cycles through them and the direct-light presets. Sky orientation follows the camera in all three renderers. Press `n` to compare the generated relief normal map with smooth surfaces; both GPU and software perturb the lighting, while wireframe keeps the geometric silhouette.
 

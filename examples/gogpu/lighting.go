@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 	"sync"
 
 	"nimbleterminal.dev/nt3d"
@@ -66,15 +67,51 @@ var (
 )
 
 type studioLighting struct {
-	envIndex       int
-	rigIndex       int
-	sunAzimuth     float64 // Degrees around Z.
-	sunElevation   float64 // Degrees above XY plane.
-	shadows        bool
-	lampPhase      float64
-	customEnv      *nt3d.Environment
-	customEnvName  string
-	overrideInDemo bool
+	envIndex           int
+	rigIndex           int
+	postIndex          int
+	sunAzimuth         float64 // Degrees around Z.
+	sunElevation       float64 // Degrees above XY plane.
+	shadows            bool
+	lampPhase          float64
+	customEnv          *nt3d.Environment
+	customEnvName      string
+	overrideInDemo     bool
+	overridePostInDemo bool
+}
+
+type postPreset struct {
+	key  string
+	name string
+	post nt3d.PostProcess
+}
+
+var postPresets = []postPreset{
+	{key: "off", name: "Off"},
+	{key: "studio", name: "Studio", post: nt3d.PostProcess{
+		SSAO:     nt3d.SSAO{Strength: 0.65, Radius: 0.35},
+		Bloom:    nt3d.Bloom{Strength: 0.35, Threshold: 0.82, Radius: 1},
+		ToneMap:  nt3d.ACESToneMap,
+		Vignette: 0.32,
+	}},
+	{key: "bloom", name: "Bloom + ACES", post: nt3d.PostProcess{
+		Bloom:   nt3d.Bloom{Strength: 0.65, Threshold: 0.70, Radius: 1},
+		ToneMap: nt3d.ACESToneMap,
+	}},
+	{key: "ssao", name: "SSAO", post: nt3d.PostProcess{
+		SSAO: nt3d.SSAO{Strength: 0.85, Radius: 0.40},
+	}},
+	{key: "cinema", name: "Cinema Warm", post: nt3d.PostProcess{
+		Exposure: 0.25,
+		Bloom:    nt3d.Bloom{Strength: 0.25, Threshold: 0.85, Radius: 1},
+		ToneMap:  nt3d.ACESToneMap,
+		Vignette: 0.55,
+	}},
+	{key: "reinhard", name: "Reinhard + Vignette", post: nt3d.PostProcess{
+		Exposure: 0.30,
+		ToneMap:  nt3d.ReinhardToneMap,
+		Vignette: 0.48,
+	}},
 }
 
 var envPresetNames = []string{
@@ -192,6 +229,45 @@ func (l *studioLighting) toggleShadows() {
 	l.shadows = !l.shadows
 	l.overrideInDemo = true
 	fmt.Printf("GPU Shadow Mapping: %v\n", l.shadows)
+}
+
+func (l *studioLighting) postName() string {
+	if l.postIndex >= 0 && l.postIndex < len(postPresets) {
+		return postPresets[l.postIndex].name
+	}
+	return postPresets[0].name
+}
+
+func (l *studioLighting) setPostByName(name string) error {
+	clean := strings.ToLower(strings.TrimSpace(name))
+	if clean == "" || clean == "none" {
+		clean = "off"
+	}
+	for i, p := range postPresets {
+		if p.key == clean || strings.EqualFold(p.name, clean) {
+			l.postIndex = i
+			if i > 0 {
+				l.overridePostInDemo = true
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid post preset %q (want off, studio, bloom, ssao, cinema, or reinhard)", name)
+}
+
+func (l *studioLighting) cyclePost() {
+	l.postIndex = (l.postIndex + 1) % len(postPresets)
+	l.overridePostInDemo = true
+	fmt.Printf("GPU Post-Processing: %s\n", l.postName())
+}
+
+func (l *studioLighting) applyFramePost(f *nt3d.Frame, isDemo bool) {
+	if isDemo && !l.overridePostInDemo {
+		return
+	}
+	if l.postIndex >= 0 && l.postIndex < len(postPresets) {
+		f.PostProcess = postPresets[l.postIndex].post
+	}
 }
 
 func (l *studioLighting) rotateSun(dAzimuth, dElevation float64, v *viewerState) {

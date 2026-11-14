@@ -80,6 +80,20 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **4× WebGPU MSAA and GPU post-processing pipeline**: `Frame.MSAA` enables 4×
+  hardware multisampling across every WebGPU scene pass, transmission snapshot,
+  and GPU depth pick (`GPUSession.NewView` shares both 1× and 4× pipeline sets,
+  while software and wireframe gracefully ignore `MSAA`). `Frame.PostProcess`
+  adds screen-space ambient occlusion (`SSAO` with bilateral depth blur), a
+  five-level `RGBA16Float` HDR `Bloom` pyramid, `Exposure`, `ReinhardToneMap` /
+  `ACESToneMap`, and `Vignette` on GPU (`Renderer` and `GPUSession`, including
+  `Viewport`, `Load`, and crisp post-resolve `Overlays`), with tiered CPU
+  software fallbacks (exact HDR exposure/tone mapping/vignette, quarter-res
+  two-level bloom, and `Complete`-only SSAO) and wireframe no-op. Exposed in
+  `nt3dwidget` (`WithMSAA` / `SetMSAA`, `WithEffects` / `SetEffects`), the
+  demos (`--msaa`, `--effect`, `x` AA and `e`/`p` post presets in `fur`,
+  `mipmaps`, and `lights`), and `examples/gogpu` (`-msaa`, `-post`, `4`/`M`,
+  `F12`/`X`).
 - **Toon shading, crease lines, and the toon demo** (`2d82e04`…): `Material.Toon`
   / `ToonStyle` and `Scene.SetToon`, banded diffuse and cast shadows with a
   shade tint, flat specular, and rim; `OutlineStyle.Crease` for sharp-edge

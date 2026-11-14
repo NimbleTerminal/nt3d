@@ -106,16 +106,17 @@ func saveTurntableGIF(path string, frames []*image.NRGBA, fps int) error {
 	return f.Close()
 }
 
-func buildCaptureFrame(v *viewerState, cam nt3d.Camera, lighting *studioLighting, w, h, supersample int) (nt3d.Frame, error) {
+func buildCaptureFrame(v *viewerState, cam nt3d.Camera, lighting *studioLighting, w, h int, msaa bool, supersample int) (nt3d.Frame, error) {
 	if v.runner != nil {
 		v.runner.SetViewportSize(w, h)
 	}
-	f, err := v.buildFrame(cam, w, h, max(1, supersample))
+	f, err := v.buildFrame(cam, w, h, msaa, max(1, supersample))
 	if err != nil {
 		return nt3d.Frame{}, err
 	}
 	if lighting != nil {
 		lighting.applyFrameLighting(&f, v.runner != nil)
+		lighting.applyFramePost(&f, v.runner != nil)
 	}
 	if len(v.splatNodes) > 0 && (lighting == nil || lighting.envIndex == 0) {
 		f.Background = color.RGBA{18, 20, 26, 255}
@@ -124,31 +125,31 @@ func buildCaptureFrame(v *viewerState, cam nt3d.Camera, lighting *studioLighting
 	return f, nil
 }
 
-func captureSingleFrame(session *nt3d.GPUSession, v *viewerState, cam nt3d.Camera, lighting *studioLighting, w, h, supersample int) (*image.NRGBA, error) {
-	f, err := buildCaptureFrame(v, cam, lighting, w, h, supersample)
+func captureSingleFrame(session *nt3d.GPUSession, v *viewerState, cam nt3d.Camera, lighting *studioLighting, w, h int, msaa bool, supersample int) (*image.NRGBA, error) {
+	f, err := buildCaptureFrame(v, cam, lighting, w, h, msaa, supersample)
 	if err != nil {
 		return nil, err
 	}
 	return session.RenderToImage(f)
 }
 
-func captureSingleFrameInto(session *nt3d.GPUSession, v *viewerState, cam nt3d.Camera, lighting *studioLighting, w, h, supersample int, dst *image.NRGBA) error {
-	f, err := buildCaptureFrame(v, cam, lighting, w, h, supersample)
+func captureSingleFrameInto(session *nt3d.GPUSession, v *viewerState, cam nt3d.Camera, lighting *studioLighting, w, h int, msaa bool, supersample int, dst *image.NRGBA) error {
+	f, err := buildCaptureFrame(v, cam, lighting, w, h, msaa, supersample)
 	if err != nil {
 		return err
 	}
 	return session.RenderToImageInto(f, dst)
 }
 
-func captureScreenshot(session *nt3d.GPUSession, v *viewerState, cam nt3d.Camera, lighting *studioLighting, w, h, supersample int, path string) error {
-	img, err := captureSingleFrame(session, v, cam, lighting, w, h, max(2, supersample))
+func captureScreenshot(session *nt3d.GPUSession, v *viewerState, cam nt3d.Camera, lighting *studioLighting, w, h int, msaa bool, supersample int, path string) error {
+	img, err := captureSingleFrame(session, v, cam, lighting, w, h, msaa, max(2, supersample))
 	if err != nil {
 		return err
 	}
 	return savePNG(path, img)
 }
 
-func captureTurntable(session *nt3d.GPUSession, v *viewerState, baseCam nt3d.Camera, lighting *studioLighting, w, h, supersample, numFrames, fps int, path string) error {
+func captureTurntable(session *nt3d.GPUSession, v *viewerState, baseCam nt3d.Camera, lighting *studioLighting, w, h int, msaa bool, supersample, numFrames, fps int, path string) error {
 	numFrames = max(1, numFrames)
 	fps = max(1, fps)
 	dt := 1.0 / float64(fps)
@@ -176,7 +177,7 @@ func captureTurntable(session *nt3d.GPUSession, v *viewerState, baseCam nt3d.Cam
 			if v.runner != nil {
 				v.runner.SetCamera(cam)
 			}
-			if err := captureSingleFrameInto(session, v, cam, lighting, w, h, max(1, supersample), buf); err != nil {
+			if err := captureSingleFrameInto(session, v, cam, lighting, w, h, msaa, max(1, supersample), buf); err != nil {
 				return err
 			}
 			framePath := path
@@ -206,7 +207,7 @@ func captureTurntable(session *nt3d.GPUSession, v *viewerState, baseCam nt3d.Cam
 		if v.runner != nil {
 			v.runner.SetCamera(cam)
 		}
-		img, err := captureSingleFrame(session, v, cam, lighting, w, h, max(1, supersample))
+		img, err := captureSingleFrame(session, v, cam, lighting, w, h, msaa, max(1, supersample))
 		if err != nil {
 			return err
 		}

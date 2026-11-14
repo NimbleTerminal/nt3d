@@ -22,6 +22,8 @@
 //   - E or F6: cycle Environment / IBL skybox preset (or dropped panorama)
 //   - L or F7: cycle Lighting Rig preset (Key+Sky, 3-Point, RGB Lamps, Lantern, 8-Lamp, Pure IBL)
 //   - K or F8: toggle real-time GPU Shadow Mapping
+//   - M or 4: toggle 4x GPU MSAA (multisample anti-aliasing); S toggles 2x supersampling in viewer mode
+//   - X or F12: cycle GPU Post-Processing preset (Off, Studio, Bloom+ACES, SSAO, Cinema Warm, Reinhard)
 //   - P or F9: capture offscreen PNG screenshot via GPUSession.RenderToImage
 //   - T or F10: capture 360-degree turntable animated GIF via GPUSession.RenderToImage
 //   - Ctrl+S / Cmd+S (or Shift+P): save screenshot (.png) or turntable (.gif) via native Save dialog
@@ -68,6 +70,9 @@ func main() {
 	yUp := flag.Bool("y-up", false, "convert Y-up files to Z-up when loading")
 	width := flag.Int("width", 960, "initial window width")
 	height := flag.Int("height", 640, "initial window height")
+	msaaFlag := flag.Bool("msaa", false, "enable 4x GPU multisample anti-aliasing (M or 4 toggles)")
+	supersampleFlag := flag.Int("supersample", 1, "GPU supersampling factor, 1..4 (S toggles in viewer)")
+	postFlag := flag.String("post", "off", "GPU post-processing preset: off, studio, bloom, ssao, cinema, reinhard (X or F12 cycles)")
 	maxFrames := flag.Int("frames", 0, "exit automatically after N rendered frames (0 = interactive)")
 	screenshotFlag := flag.String("screenshot", "", "render an offscreen PNG screenshot to the given file path via GPUSession.RenderToImage")
 	turntableFlag := flag.String("turntable", "", "render a 360-degree turntable (.gif or .png prefix) via GPUSession.RenderToImage")
@@ -138,12 +143,16 @@ func main() {
 		showHUD         = true
 		pipView         = len(files) == 0 && *demoFlag == ""
 		loadCompose     = false
-		supersample     = 1
+		msaa            = *msaaFlag
+		supersample     = max(1, min(nt3d.MaxSupersample, *supersampleFlag))
 		angle           float64
 		frameCount      int
 		wantSecond      bool
 		hasSecond       bool
 	)
+	if err := lighting.setPostByName(*postFlag); err != nil {
+		log.Fatal(err)
+	}
 
 	defer func() {
 		viewer.close()
@@ -278,7 +287,7 @@ func main() {
 			path += ".png"
 		}
 		w, h := currentCaptureDims()
-		if err := captureScreenshot(session, viewer, camera, lighting, w, h, supersample, path); err != nil {
+		if err := captureScreenshot(session, viewer, camera, lighting, w, h, msaa, supersample, path); err != nil {
 			log.Printf("captureScreenshot(%q): %v", path, err)
 			return
 		}
@@ -298,7 +307,7 @@ func main() {
 		w, h := currentCaptureDims()
 		nFrames := max(1, *turntableFrames)
 		fps := max(1, *turntableFPS)
-		if err := captureTurntable(session, viewer, camera, lighting, w, h, supersample, nFrames, fps, path); err != nil {
+		if err := captureTurntable(session, viewer, camera, lighting, w, h, msaa, supersample, nFrames, fps, path); err != nil {
 			log.Printf("captureTurntable(%q): %v", path, err)
 			return
 		}
@@ -383,6 +392,7 @@ func main() {
 		viewer.close()
 		viewer = nextViewer
 		lighting.overrideInDemo = false
+		lighting.overridePostInDemo = false
 		viewer.runner.SetViewportSize(w, h)
 		camera = viewer.runner.Camera()
 		menuHover = menuIdx
@@ -667,6 +677,10 @@ func main() {
 				wantSecond = true
 			}
 			return
+		case gpucontext.Key4:
+			msaa = !msaa
+			fmt.Printf("4x MSAA: %v\n", msaa)
+			return
 		case gpucontext.KeyF6:
 			lighting.cycleEnvironment(viewer)
 			return
@@ -686,6 +700,9 @@ func main() {
 			if viewer != nil {
 				viewer.cycleGizmoMode()
 			}
+			return
+		case gpucontext.KeyF12:
+			lighting.cyclePost()
 			return
 		case gpucontext.KeyBackspace, gpucontext.KeyDelete:
 			if viewer != nil {
@@ -785,6 +802,11 @@ func main() {
 		case gpucontext.KeyB:
 			loadCompose = !loadCompose
 			fmt.Printf("Load composition mode: %v\n", loadCompose)
+		case gpucontext.KeyM:
+			msaa = !msaa
+			fmt.Printf("4x MSAA: %v\n", msaa)
+		case gpucontext.KeyX:
+			lighting.cyclePost()
 		case gpucontext.KeyS:
 			if supersample == 1 {
 				supersample = 2
@@ -852,11 +874,12 @@ func main() {
 				topCam := camera
 				topCam.Alpha = 78
 				topCam.Beta = camera.Beta + 90
-				f, err := viewer.buildFrame(topCam, int(w), int(h), supersample)
+				f, err := viewer.buildFrame(topCam, int(w), int(h), msaa, supersample)
 				if err != nil {
 					return
 				}
 				lighting.applyFrameLighting(&f, viewer.runner != nil)
+				lighting.applyFramePost(&f, viewer.runner != nil)
 				viewer.decorateFrame(&f, topCam, showHUD, true)
 				if err := secondSess.Encode(f, dc.CommandEncoder(), nt3d.GPUTarget{
 					Color:  dc.SurfaceView(),
@@ -922,7 +945,7 @@ func main() {
 			if *screenshotFlag != "" || *turntableFlag != "" {
 				cw, ch := max(1, *width), max(1, *height)
 				if *screenshotFlag != "" {
-					if err := captureScreenshot(session, viewer, camera, lighting, cw, ch, supersample, *screenshotFlag); err != nil {
+					if err := captureScreenshot(session, viewer, camera, lighting, cw, ch, msaa, supersample, *screenshotFlag); err != nil {
 						log.Fatalf("captureScreenshot(%q): %v", *screenshotFlag, err)
 					}
 					hud.lastCapture = fmt.Sprintf("%s (%dx%d)", filepath.Base(*screenshotFlag), cw, ch)
@@ -931,7 +954,7 @@ func main() {
 				if *turntableFlag != "" {
 					nFrames := max(1, *turntableFrames)
 					fps := max(1, *turntableFPS)
-					if err := captureTurntable(session, viewer, camera, lighting, cw, ch, supersample, nFrames, fps, *turntableFlag); err != nil {
+					if err := captureTurntable(session, viewer, camera, lighting, cw, ch, msaa, supersample, nFrames, fps, *turntableFlag); err != nil {
 						log.Fatalf("captureTurntable(%q): %v", *turntableFlag, err)
 					}
 					hud.lastCapture = fmt.Sprintf("%s (%d frames, %dx%d)", filepath.Base(*turntableFlag), nFrames, cw, ch)
@@ -954,12 +977,13 @@ func main() {
 		}
 		viewer.updatePickAnnotation(camera, showHUD)
 
-		f, err := viewer.buildFrame(camera, int(w), int(h), supersample)
+		f, err := viewer.buildFrame(camera, int(w), int(h), msaa, supersample)
 		if err != nil {
 			log.Printf("buildFrame: %v", err)
 			return
 		}
 		lighting.applyFrameLighting(&f, viewer.runner != nil)
+		lighting.applyFramePost(&f, viewer.runner != nil)
 		if len(viewer.splatNodes) > 0 && !loadCompose && lighting.envIndex == 0 {
 			f.Background = color.RGBA{18, 20, 26, 255}
 		}
@@ -1000,8 +1024,9 @@ func main() {
 				topCam := camera
 				topCam.Alpha = 78
 				topCam.Beta = camera.Beta + 90
-				if pipFrame, err := viewer.buildFrame(topCam, pipW, pipH, 1); err == nil {
+				if pipFrame, err := viewer.buildFrame(topCam, pipW, pipH, msaa, 1); err == nil {
 					lighting.applyFrameLighting(&pipFrame, viewer.runner != nil)
+					lighting.applyFramePost(&pipFrame, viewer.runner != nil)
 					if len(viewer.splatNodes) > 0 && lighting.envIndex == 0 {
 						pipFrame.Background = color.RGBA{26, 30, 38, 255}
 					}
@@ -1028,7 +1053,7 @@ func main() {
 			}
 		}
 		if hudSession != nil {
-			hudText := hud.formatText(viewer, camera, lighting, animate, pipView, loadCompose, showHUD, menuOpen, supersample)
+			hudText := hud.formatText(viewer, camera, lighting, animate, pipView, loadCompose, showHUD, menuOpen, msaa, supersample)
 			if err := hud.encode(hudSession, dc, hudText, menuOpen); err != nil {
 				log.Printf("hud.encode: %v", err)
 			}

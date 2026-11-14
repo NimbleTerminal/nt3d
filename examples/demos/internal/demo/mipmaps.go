@@ -137,6 +137,6 @@ func (d *demo) cyclePattern() error {
 
 func (d *demo) mipmapsView(content string) string {
 	mode := mipModes[d.mipmaps.mode]
-	return fmt.Sprintf("nt3d mipmaps · m filtering · t texture · x supersample · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %s · supersample %d× · drag orbit · wheel zoom · r rotate · %s",
-		content, d.rendering(), mode, mipPatterns[d.mipmaps.pattern].name, d.view.Supersample(), d.status)
+	return fmt.Sprintf("nt3d mipmaps · m filtering · t texture · x AA · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %s · %s · drag orbit · wheel zoom · r rotate · %s",
+		content, d.rendering(), mode, mipPatterns[d.mipmaps.pattern].name, d.aaLabel(), d.status)
 }

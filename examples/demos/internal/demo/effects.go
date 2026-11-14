@@ -4,20 +4,37 @@ package demo
 
 import (
 	"image"
-	"math"
+
+	"nimbleterminal.dev/nt3d"
 )
 
-// effect is a post-process: it changes a rendered frame's pixels in place, on
-// the render goroutine, before the frame is shown.
+// effect is a post-processing preset, using either NT3D's built-in GPU/tiered
+// PostProcess pipeline or a custom CPU pixel callback.
 type effect struct {
 	name  string
+	post  nt3d.PostProcess
 	apply func(*image.RGBA)
 }
 
 var effects = []effect{
-	{"none", nil},
-	{"soft focus", softFocus},
-	{"vignette", vignette},
+	{name: "none"},
+	{name: "studio", post: nt3d.PostProcess{
+		SSAO:     nt3d.SSAO{Strength: .65, Radius: .35},
+		Bloom:    nt3d.Bloom{Strength: .35, Threshold: .85, Radius: 1},
+		ToneMap:  nt3d.ACESToneMap,
+		Vignette: .35,
+	}},
+	{name: "bloom", post: nt3d.PostProcess{
+		Bloom:   nt3d.Bloom{Strength: .6, Threshold: .72, Radius: 1},
+		ToneMap: nt3d.ACESToneMap,
+	}},
+	{name: "ssao", post: nt3d.PostProcess{
+		SSAO: nt3d.SSAO{Strength: .8, Radius: .4},
+	}},
+	{name: "vignette", post: nt3d.PostProcess{
+		Vignette: .55,
+	}},
+	{name: "soft focus", apply: softFocus},
 }
 
 // softFocus blurs with two passes of a three-pixel box, about a Gaussian of
@@ -48,21 +65,6 @@ func softFocus(img *image.RGBA) {
 	for i := 0; i+3 < len(img.Pix); i += 4 {
 		for c := range 3 {
 			img.Pix[i+c] = uint8((int(img.Pix[i+c]) + int(sharp[i+c])) / 2)
-		}
-	}
-}
-
-// vignette darkens toward the corners.
-func vignette(img *image.RGBA) {
-	w, h := float64(img.Rect.Dx()), float64(img.Rect.Dy())
-	for y := range img.Rect.Dy() {
-		for x := range img.Rect.Dx() {
-			dx, dy := (float64(x)+.5)/w-.5, (float64(y)+.5)/h-.5
-			k := 1 - 1.1*math.Min(.6, dx*dx+dy*dy)
-			i := y*img.Stride + x*4
-			for c := range 3 {
-				img.Pix[i+c] = uint8(float64(img.Pix[i+c]) * k)
-			}
 		}
 	}
 }

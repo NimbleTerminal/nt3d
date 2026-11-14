@@ -81,15 +81,15 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.cloud != nil:
 		return "cloud", keys{[]key.Binding{bind("l", "l", "LOD"), bind("n", "n", "count"), bind("-", "-", "zoom out"), bind("=", "=", "zoom in")}}
 	case d.lights != nil:
-		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("h", "h", "SH rotation"), bind("e", "e", "highlights"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("b", "b", "lift"), bind("a", "a", "pause")}}
+		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("h", "h", "SH rotation"), bind("e", "e", "highlights"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("b", "b", "lift"), bind("p", "p", "post"), bind("a", "a", "pause")}}
 	case d.forest != nil:
 		return "forest", keys{[]key.Binding{bind("l", "l", "LOD"), bind("i", "i", "instancing"), bind("n", "n", "trees"), bind("s", "s", "shadows"), bind("a", "a", "wind")}}
 	case d.mipmaps != nil:
-		return "mipmaps", keys{[]key.Binding{bind("m", "m", "filtering"), bind("t", "t", "texture"), bind("x", "x", "supersample")}}
+		return "mipmaps", keys{[]key.Binding{bind("m", "m", "filtering"), bind("t", "t", "texture"), bind("x", "x", "AA")}}
 	case d.toon != nil:
 		return "toon", keys{[]key.Binding{bind("t", "t", "toon"), bind("n", "n", "bands"), bind("b", "b", "outlines")}}
 	case d.fur != nil:
-		return "fur", keys{[]key.Binding{bind("a", "a", "wind"), bind("s", "s", "shells"), bind("l", "l", "length"), bind("f", "f", "fins"), bind("m", "m", "mipmaps"), bind("t", "t", "toon"), bind("x", "x", "supersample"), bind("e", "e", "effect")}}
+		return "fur", keys{[]key.Binding{bind("a", "a", "wind"), bind("s", "s", "shells"), bind("l", "l", "length"), bind("f", "f", "fins"), bind("m", "m", "mipmaps"), bind("t", "t", "toon"), bind("x", "x", "AA"), bind("e", "e", "effect")}}
 	case d.large != nil:
 		return "dense-mesh", keys{[]key.Binding{bind("i", "i", "pick index"), bind("n", "n", "turn")}}
 	case d.models != nil:

@@ -40,8 +40,10 @@ A click sends your program a `PickMsg` saying what was hit; see [Picking](../pic
 
 - `WithRenderMode` chooses WebGPU, software, or wireframe; `SetRenderMode` changes it.
 - `WithCamera`, `WithBackground`, `SetLighting`, and `SetFog` set up the look.
-- `WithSupersample(n)` smooths GPU frames. Software frames aren't supersampled, since they're already trading resolution for speed.
-- `WithPostProcess(fn)` runs `fn(*image.RGBA)` on every frame before it's shown: blur, vignettes, color grading, or dithering are ordinary Go. It runs on the render goroutine, one frame at a time, and may change pixels in place. The [fur demo](../demos/#fur) shows supersampling and post effects (`x`, `e`).
+- `WithMSAA(true)` and `SetMSAA` enable 4× hardware multisampling on WebGPU (ignored in software and wireframe).
+- `WithSupersample(n)` and `SetSupersample` render GPU frames at `1..4×` resolution and box-filter down. Software frames aren't supersampled during interactive updates, since they're already trading resolution for speed (`Snapshot` honors both `Supersample` and complete-frame effects).
+- `WithEffects(nt3d.PostProcess{...})` and `SetEffects` run the built-in HDR [post-processing chain](../rendering/#how-it-looks) (`SSAO`, `Bloom`, `Exposure`, `ToneMap`, `Vignette`) on the GPU with tiered CPU software fallbacks.
+- `WithPostProcess(fn)` and `SetPostProcess` run a custom Go callback `fn(*image.RGBA)` on every raster frame after rendering (and after `WithEffects`): custom blurs, dithering, or readouts are ordinary Go on the render goroutine, one frame at a time. The [fur](../demos/#fur) and [lights](../demos/#lights) demos show AA and post-processing presets (`x`, `e`, `p`).
 - `WithFrameDecorator(fn)` adds [decorations](../rendering/#decorations) to each frame.
 
 ## When rendering is slow or fails

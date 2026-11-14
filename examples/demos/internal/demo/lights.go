@@ -21,11 +21,37 @@ type lightScene struct {
 	normal     bool
 	shadows    shadowMode
 	preset     int  // Index into lightPresets.
+	post       int  // Index into lightPostPresets.
 	ranged     bool // Point lights fade to nothing at their range, rather than with distance alone.
 	dull       bool // The shapes without highlights.
 	t, phase   float64
 	lamps      [nt3d.MaxLights]nt3d.NodeID // A small glowing sphere at each point light.
 	lampColor  [nt3d.MaxLights]color.RGBA  // What each lamp's geometry is colored, to rebuild it only on change.
+}
+
+var lightPostPresets = []struct {
+	name string
+	post nt3d.PostProcess
+}{
+	{name: "post off"},
+	{name: "studio", post: nt3d.PostProcess{
+		SSAO:     nt3d.SSAO{Strength: .65, Radius: .35},
+		Bloom:    nt3d.Bloom{Strength: .45, Threshold: .78, Radius: 1},
+		ToneMap:  nt3d.ACESToneMap,
+		Vignette: .35,
+	}},
+	{name: "bloom + ACES", post: nt3d.PostProcess{
+		Bloom:   nt3d.Bloom{Strength: .7, Threshold: .68, Radius: 1},
+		ToneMap: nt3d.ACESToneMap,
+	}},
+	{name: "SSAO", post: nt3d.PostProcess{
+		SSAO: nt3d.SSAO{Strength: .85, Radius: .4},
+	}},
+	{name: "Reinhard + vignette", post: nt3d.PostProcess{
+		Exposure: .35,
+		ToneMap:  nt3d.ReinhardToneMap,
+		Vignette: .55,
+	}},
 }
 
 // lamp is a point light circling the scene's middle.
@@ -248,6 +274,9 @@ func (d *demo) decorateLights(f *nt3d.Frame) {
 	if p.background.A != 0 {
 		f.Background = p.background
 	}
+	if d.lights.post > 0 && d.lights.post < len(lightPostPresets) {
+		f.PostProcess = lightPostPresets[d.lights.post].post
+	}
 }
 
 // stepLights moves the lights on by the time since the last step.
@@ -278,6 +307,10 @@ func (d *demo) toggleLightShine() error {
 	return d.buildLightShapes()
 }
 
+func (d *demo) cycleLightPost() {
+	d.lights.post = (d.lights.post + 1) % len(lightPostPresets)
+}
+
 func (d *demo) lightsView(content string) string {
 	p := lightPresets[d.lights.preset]
 	n := len(p.lamps)
@@ -292,8 +325,12 @@ func (d *demo) lightsView(content string) string {
 	if d.lights.dull {
 		shine = "dull"
 	}
-	return fmt.Sprintf("nt3d lights · l preset · h SH rotation · f falloff · e highlights · n normal map · b lift · s shadows · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · drag orbit · wheel zoom · r rotate · %s",
-		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, fmt.Sprintf("%s · normal map %t · lifted %t · %s", shine, d.lights.normal, d.lights.lift, d.lights.shadows.String()), d.status)
+	aa := ""
+	if d.view != nil && (d.view.MSAA() || d.view.Supersample() > 1) {
+		aa = " · " + d.aaLabel()
+	}
+	return fmt.Sprintf("nt3d lights · l preset · h SH rotation · f falloff · e highlights · n normal map · b lift · s shadows · p post · x AA · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · %s%s · drag orbit · wheel zoom · r rotate · %s",
+		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, fmt.Sprintf("%s · normal map %t · lifted %t · %s", shine, d.lights.normal, d.lights.lift, d.lights.shadows.String()), lightPostPresets[d.lights.post].name, aa, d.status)
 }
 
 func (d *demo) toggleNormalMap() error {

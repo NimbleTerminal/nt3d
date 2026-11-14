@@ -139,7 +139,21 @@ func currentMenuIndex(v *viewerState) int {
 	return v.demoIndex + 1
 }
 
-func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studioLighting, animate, pipView, loadCompose, showHUD, menuOpen bool, supersample int) string {
+func formatAAStatus(msaa bool, ss int) string {
+	ss = max(1, ss)
+	switch {
+	case msaa && ss > 1:
+		return fmt.Sprintf("4x MSAA+%dx SS", ss)
+	case msaa:
+		return "4x MSAA"
+	case ss > 1:
+		return fmt.Sprintf("%dx SS", ss)
+	default:
+		return "1x"
+	}
+}
+
+func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studioLighting, animate, pipView, loadCompose, showHUD, menuOpen, msaa bool, supersample int) string {
 	arrow := "[v]"
 	hint := "click or ` for menu"
 	if menuOpen {
@@ -172,7 +186,12 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 	if v.runner != nil {
 		names := gallery.Names()
 		header, status := v.runner.HeaderAndStatus()
+		effMSAA := msaa || v.runner.MSAA()
 		ss := max(supersample, v.runner.Supersample())
+		postStr := "Demo"
+		if lighting != nil && lighting.overridePostInDemo {
+			postStr = lighting.postName()
+		}
 		fmt.Fprintf(&b, "%s Scene: %d/%d %s (%s)   %5.1f FPS (%4.1f ms)\n",
 			arrow, v.demoIndex+1, len(names), v.runner.Name(), hint, h.fps, h.frameMs)
 		if header != "" {
@@ -185,8 +204,8 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 			fmt.Fprintf(&b, "Env: %s   Light: %s (sun az %.0f el %.0f, shadows: %s)\n",
 				lighting.envName(), lighting.rigName(), lighting.sunAzimuth, lighting.sunElevation, shadowStr)
 		}
-		fmt.Fprintf(&b, "Cam: el %.0f deg az %.0f deg dist %.2f   SS: %dx   PiP: %s   Load: %s\n",
-			cam.Alpha, cam.Beta, cam.Distance, ss, pipStr, loadStr)
+		fmt.Fprintf(&b, "Cam: el %.0f deg az %.0f deg dist %.2f   AA: %s   Post: %s   PiP: %s   Load: %s\n",
+			cam.Alpha, cam.Beta, cam.Distance, formatAAStatus(effMSAA, ss), postStr, pipStr, loadStr)
 		if v.selectedHit != nil {
 			pos, _ := v.pickWorldPos()
 			name := v.selectedHit.Name
@@ -200,7 +219,7 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 		if h.lastCapture != "" {
 			fmt.Fprintf(&b, "Saved: %s\n", h.lastCapture)
 		}
-		b.WriteString("[`/Click] Menu [Tab] Next [Ctrl+O] Open [F6] Env [F7] Light [F8] Shadow [F9] Shot [F10] Turntable")
+		b.WriteString("[`/Click] Menu [Tab] Next [4] MSAA [F12] Post [F6] Env [F7] Light [F8] Shadow [F9] Shot [F10] GIF")
 		return b.String()
 	}
 
@@ -233,12 +252,14 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 		fmt.Fprintf(&b, "Scene: %s (%d tris, anim: %s)\n", v.summary, v.totalTriangles, animState)
 	}
 
+	postStr := "Off"
 	if lighting != nil {
+		postStr = lighting.postName()
 		fmt.Fprintf(&b, "Env: %s   Light: %s (sun az %.0f el %.0f, shadows: %s)\n",
 			lighting.envName(), lighting.rigName(), lighting.sunAzimuth, lighting.sunElevation, shadowStr)
 	}
-	fmt.Fprintf(&b, "Cam: el %.0f deg az %.0f deg dist %.2f   SS: %dx   PiP: %s   Load: %s\n",
-		cam.Alpha, cam.Beta, cam.Distance, supersample, pipStr, loadStr)
+	fmt.Fprintf(&b, "Cam: el %.0f deg az %.0f deg dist %.2f   AA: %s   Post: %s   PiP: %s   Load: %s\n",
+		cam.Alpha, cam.Beta, cam.Distance, formatAAStatus(msaa, supersample), postStr, pipStr, loadStr)
 
 	if v.selectedHit != nil {
 		pos, _ := v.pickWorldPos()
@@ -255,7 +276,7 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 	if h.lastCapture != "" {
 		fmt.Fprintf(&b, "Saved: %s\n", h.lastCapture)
 	}
-	b.WriteString("[`/Click] Menu [O/Drop] Open [W] Gizmo [E] Env [L] Light [K] Shadow [G] Floor [P] Shot [T] Turntable")
+	b.WriteString("[`/Click] Menu [O/Drop] Open [M/4] MSAA [X/F12] Post [E] Env [L] Light [K] Shadow [G] Floor [P] Shot")
 	return b.String()
 }
 

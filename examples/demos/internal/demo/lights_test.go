@@ -319,3 +319,47 @@ func TestLightsStartOnLamps(t *testing.T) {
 		t.Fatalf("initial preset %q, want lamps", name)
 	}
 }
+
+func TestLightPostAndAACycle(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	session := picture.NewTerminalSession(picture.TerminalOptions{Kitty: picture.KittyCapabilityUnsupported})
+	defer session.Close()
+	d.view = nt3dwidget.New(d.scene, 20, 8, nt3dwidget.WithRenderMode(nt3d.Software), nt3dwidget.WithTerminalSession(session), nt3dwidget.WithFrameDecorator(d.decorate))
+	defer d.view.Close()
+	settle(t, d.view, d.view.Init())
+
+	for i := 1; i <= len(lightPostPresets); i++ {
+		_, cmd := d.Update(tea.KeyPressMsg{Code: 'p'})
+		settle(t, d.view, cmd)
+		want := i % len(lightPostPresets)
+		if d.lights.post != want {
+			t.Fatalf("step %d: post = %d, want %d", i, d.lights.post, want)
+		}
+		f, err := d.scene.Frame(d.view.Camera(), 64, 48)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.decorateLights(&f)
+		if f.PostProcess != lightPostPresets[want].post {
+			t.Fatalf("step %d: PostProcess = %+v, want %+v", i, f.PostProcess, lightPostPresets[want].post)
+		}
+		if view := d.lightsView(""); !strings.Contains(view, lightPostPresets[want].name) {
+			t.Fatalf("step %d: status missing %q: %s", i, lightPostPresets[want].name, view)
+		}
+	}
+
+	// 'x' steps 1x -> 4x MSAA -> 2x SS -> 3x SS -> 1x.
+	_, cmd := d.Update(tea.KeyPressMsg{Code: 'x'})
+	settle(t, d.view, cmd)
+	if !d.view.MSAA() || d.view.Supersample() != 1 || !strings.Contains(d.lightsView(""), "4× MSAA") {
+		t.Fatalf("after first x: msaa=%v ss=%d view=%q", d.view.MSAA(), d.view.Supersample(), d.lightsView(""))
+	}
+	_, cmd = d.Update(tea.KeyPressMsg{Code: 'x'})
+	settle(t, d.view, cmd)
+	if d.view.MSAA() || d.view.Supersample() != 2 {
+		t.Fatalf("after second x: msaa=%v ss=%d", d.view.MSAA(), d.view.Supersample())
+	}
+}

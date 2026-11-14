@@ -392,11 +392,14 @@ func (v *viewerState) toggleModelFloor() {
 	fmt.Printf("Studio shadow-catcher floor: %v\n", v.hasFloor)
 }
 
-func (v *viewerState) buildFrame(camera nt3d.Camera, w, h, supersample int) (nt3d.Frame, error) {
+func (v *viewerState) buildFrame(camera nt3d.Camera, w, h int, msaa bool, supersample int) (nt3d.Frame, error) {
 	if v.runner != nil {
 		f, err := v.runner.Frame(camera, w, h)
 		if err != nil {
 			return f, err
+		}
+		if msaa {
+			f.MSAA = true
 		}
 		if supersample > f.Supersample {
 			f.Supersample = supersample
@@ -407,6 +410,7 @@ func (v *viewerState) buildFrame(camera nt3d.Camera, w, h, supersample int) (nt3
 	if err != nil {
 		return f, err
 	}
+	f.MSAA = msaa
 	f.Supersample = supersample
 	return f, nil
 }

@@ -384,7 +384,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.cycleParticleBlend()
 				break
 			}
-			if v.String() == "x" && (d.fur != nil || d.mipmaps != nil) {
+			if v.String() == "x" && (d.fur != nil || d.mipmaps != nil || d.lights != nil) {
 				return d, d.cycleSupersample()
 			}
 			if d.dynamic == nil {
@@ -399,6 +399,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.stepDynamic()
 			}
 		case "p":
+			if d.lights != nil {
+				d.cycleLightPost()
+				break
+			}
 			if !d.terrainScene() {
 				return d, nil
 			}
@@ -784,8 +788,9 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	medium := flag.String("medium", "auto", "auto, direct, or shm")
 	frameEdits := flag.String("kitty-frame-edits", "auto", "auto, on, or off; on forces Kitty partial-frame updates (requires terminal support)")
 	up := flag.String("up", "z", "mesh files' up axis: z, y, or -y for Y-down captures")
-	supersample := flag.Int("supersample", 0, "GPU supersampling, 1..4 (x cycles it in the fur demo)")
-	effectName := flag.String("effect", "none", "fur demo post effect: none, soft focus, or vignette")
+	msaa := flag.Bool("msaa", false, "4x GPU multisample anti-aliasing (x cycles AA in fur, mipmaps, and lights)")
+	supersample := flag.Int("supersample", 0, "GPU supersampling, 1..4 (x cycles AA in fur, mipmaps, and lights)")
+	effectName := flag.String("effect", "none", "post effect: none, studio, bloom, ssao, vignette, or soft focus")
 	flag.Parse()
 	frameCapability, err := parseKittyFrameEdits(*frameEdits)
 	if err != nil {
@@ -988,17 +993,33 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Beta = 30
 		d.view.SetCamera(camera)
 		d.view.Fit()
-		d.view.SetSupersample(2) // Fur's thin strands are what supersampling smooths best.
-		for i, e := range effects {
-			if e.name == *effectName {
-				d.fur.effect = i
-				d.view.SetPostProcess(e.apply)
-			}
+		if !*msaa {
+			d.view.SetSupersample(2) // Fur's thin strands are what supersampling smooths best.
 		}
 	case sceneAnimate, sceneCharacters:
 		d.frameAnimatedSample()
 	case sceneModels:
 		d.frameSample()
+	}
+	if *effectName != "none" {
+		matched := false
+		for i, e := range effects {
+			if e.name == *effectName {
+				matched = true
+				if d.fur != nil {
+					d.fur.effect = i
+				}
+				d.view.SetEffects(e.post)
+				d.view.SetPostProcess(e.apply)
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("invalid effect %q", *effectName)
+		}
+	}
+	if *msaa {
+		d.view.SetMSAA(true)
 	}
 	if *supersample != 0 {
 		d.view.SetSupersample(*supersample)

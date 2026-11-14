@@ -81,7 +81,7 @@ dc.MarkPreserveContent()
 Run `task gogpu` (or `task gogpu -- -demo water` for any of the 18 gallery demos, or `task gogpu -- -file scene.sog` for any `.glb`, `.gltf`, `.sog`, `.spz`, `.ply`, `.stl`, `.obj`, or `.3mf` file) in `examples/gogpu` for a complete native desktop application:
 - **18 gallery demos & file viewer**: switch between all 18 gallery demos with `[` / `]` or the interactive top-left HUD dropdown menu (`M`), or drag and drop 3D model and Gaussian splat files directly onto the window.
 - **Interactive 3D gizmo & orientation triad**: click to pick with `session.Pick` (with 3D callout labels, `DynamicLines`, and selection outlines), press `G` to cycle the 3D transform gizmo (`Translate` → `Rotate` → `Scale` → `Off`) and drag axes or the uniform-scale center handle to manipulate picked nodes, and click the top-right 3D Camera Orientation Triad (`+X`, `-X`, `+Y`, `-Y`, `+Z`, `-Z`) to snap the camera to cardinal views.
-- **Lighting, capture & multi-view**: switch lighting presets (`1`–`5`), environment skies (`E`), and shadows (`K`), capture PNG screenshots (`P`) or 36-frame animated GIF turntables (`T`) via `RenderToImage` / `RenderToImageInto`, and toggle the 2D HUD (`I`), animation clips (`C`), Gaussian SH and splat budget controls (`H`, `U`/`Y`/`Z`), picture-in-picture sub-viewport (`V`), `Load` compositing (`L`), supersampling (`S`), and a second window sharing the same GPU device (`2`).
+- **Lighting, post-processing, capture & multi-view**: switch lighting presets (`L`/`F7`), environment skies (`E`/`F6`), shadows (`K`/`F8`), 4× GPU MSAA (`M`/`4`), supersampling (`S`), and GPU post-processing presets (`X`/`F12`: Studio, Bloom+ACES, SSAO, Cinema Warm, Reinhard), capture PNG screenshots (`P`/`F9`) or animated GIF turntables (`T`/`F10`) via `RenderToImage` / `RenderToImageInto`, and toggle the 2D HUD (`I`/`F1`), animation clips (`C`), Gaussian SH and splat budget controls (`H`, `U`/`Y`/`Z`), picture-in-picture sub-viewport (`V`/`F2`), `Load` compositing (`B`/`F3`), and a second window sharing the same GPU device (`2`/`F4`).
 
 **Software** draws the same picture on the CPU, with the same primitives, textures, and lighting. It's the fallback when there's no GPU, and it's slower: in interactive frames it thins out points, lines, and arrows, and the widget lowers its resolution, then switches to wireframe if frames are still too slow. `Snapshot` always draws everything. `RenderSoftware(frame)` also returns the depth buffer, for outlines or compositing done afterwards. Both its image and depth are independently owned.
 
@@ -118,7 +118,24 @@ Point maps use six 1024² depth faces on the GPU and for complete software frame
 
 **Linear light.** Frames from `Scene.Frame` light, blend, and average colors in linear light, decoding sRGB first and encoding the result, so light adds as it does physically. Surfaces turning away from the light dim gradually, and blended and smoothed edges keep their brightness instead of darkening. Hand-built frames work in encoded color unless they set `Frame.Linear`.
 
-**Supersampling.** `Frame.Supersample` (1 to 4) renders at that multiple of the frame's size and averages each block down to one pixel, smoothing edges, thin strands, and cutouts. On the GPU this costs little; in software, a lot. Points, lines, and overlays keep their size.
+**Anti-aliasing (`MSAA` and `Supersample`).** `Frame.MSAA` enables 4× hardware multisample anti-aliasing on WebGPU (`Renderer` and `GPUSession`, shared across `NewView`), smoothing triangle silhouettes, outlines, lines, boxes, and points at low fragment cost while preserving `Transmission` captures and `GPUSession.Pick` depth reads. Software and wireframe renderers ignore `MSAA`. `Frame.Supersample` (1 to 4) renders at that multiple of the frame's size and averages each block down to one pixel, also smoothing interior shader aliasing, thin fur strands, and alpha cutouts (at higher cost, especially in software). The two compose when both are set; points, lines, and overlays keep their pixel sizes.
+
+**Post-processing (`Frame.PostProcess`).** `Frame.PostProcess` runs a built-in HDR effect chain after 3D scene passes and before 2D `Overlays`, so HUD borders and reticles stay crisp and ungraded:
+
+```go
+frame.MSAA = true
+frame.PostProcess = nt3d.PostProcess{
+    SSAO:     nt3d.SSAO{Strength: 0.65, Radius: 0.35},
+    Bloom:    nt3d.Bloom{Strength: 0.35, Threshold: 0.85, Radius: 1},
+    Exposure: 0.2,
+    ToneMap:  nt3d.ACESToneMap, // or nt3d.ReinhardToneMap, nt3d.NoToneMap
+    Vignette: 0.35,
+}
+```
+
+- **WebGPU (`Renderer` and `GPUSession`)** runs the full chain in shaders on `RGBA16Float`: depth-reconstructed hemisphere `SSAO` with a separable depth-aware bilateral blur, soft-knee HDR `Bloom` across a five-level downsample/tent-upsample mip pyramid, linear `Exposure` (in stops, `2^Exposure`), `ToneMap` (`NoToneMap`, `ReinhardToneMap`, or filmic `ACESToneMap`), and `Vignette`, respecting `GPUTarget.Viewport` and `GPUTarget.Load`.
+- **Software** provides a tiered CPU fallback: unclamped float accumulation preserves HDR highlights above 1.0 for exact `Exposure`, `ToneMap`, and `Vignette` on every frame, `Bloom` uses a fast quarter-resolution two-level tent pyramid, and `SSAO` runs only on complete frames (`Frame.Complete`, such as `Snapshot`) so interactive software pacing stays responsive.
+- **Wireframe** ignores `PostProcess`.
 
 **Fog.** `Frame.Fog` fades everything drawn in the scene toward a color (the background, by default), from `Near` to `Far` world units from the camera. Overlays and wireframe aren't fogged. The demos' `d` key scales it with the camera's distance.
 
