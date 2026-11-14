@@ -16,15 +16,41 @@ import (
 const maxEnvironmentSpecMips = 6
 
 // Environment is an immutable distant sky, diffuse light, and reflection source.
-// Construct one with NewEnvironment or GradientEnvironment and share it between
-// scenes. It does not contribute geometry, bounds, picking, or shadow casters.
+// Construct one with NewEnvironment, NewHDREnvironment, NewSHEnvironment, or
+// GradientEnvironment and share it between scenes. It does not contribute
+// geometry, bounds, picking, or shadow casters.
 type Environment struct {
-	texture  *Texture
-	panorama *image.NRGBA
+	texture    *Texture
+	panorama   *image.NRGBA
+	hdr        bool
+	hdrBase    hdrImage
+	hdrMipOnce sync.Once
+	hdrMips    []hdrImage
 	// Degree-two diffuse SH, cosine-convolved and divided by pi.
 	diffuse  [9]nt3dsh.RGB
 	specOnce sync.Once
 	spec     []*image.NRGBA
+	hdrSpec  []hdrImage
+}
+
+func (e *Environment) valid() bool {
+	if e == nil {
+		return false
+	}
+	if e.hdr {
+		return e.hdrBase.valid()
+	}
+	return e.panorama != nil && e.texture != nil && e.texture.valid()
+}
+
+func (e *Environment) specMipCount() int {
+	if e == nil {
+		return 0
+	}
+	if e.hdr {
+		return len(e.hdrSpecularLevels())
+	}
+	return len(e.specularLevels())
 }
 
 // NewEnvironment snapshots an sRGB equirectangular image (normally 2:1).
@@ -84,6 +110,9 @@ func (s *Scene) SetEnvironment(e *Environment) {
 func (e *Environment) sample(d nt3dmath.Vec3) [4]float32 {
 	u := float32(math.Atan2(float64(d.Y), float64(d.X))/(2*math.Pi) + .5)
 	v := float32(math.Acos(float64(max(-1, min(1, d.Z)))) / math.Pi)
+	if e.hdr {
+		return sampleHDRImg(e.hdrBase, u, v)
+	}
 	half := .5 / float32(e.texture.height)
 	return sampleLevel(e.panorama, UV{u, max(half, min(1-half, v))}, true)
 }
@@ -179,6 +208,10 @@ func samplePanoramaChain(chain []*image.NRGBA, d nt3dmath.Vec3, lod float32) [4]
 func (e *Environment) sampleSpecular(d nt3dmath.Vec3, roughness float32) [4]float32 {
 	if roughness <= 0 {
 		return e.sample(d)
+	}
+	if e.hdr {
+		levels := e.hdrSpecularLevels()
+		return sampleHDRChain(levels, d, min(1, roughness)*float32(len(levels)-1))
 	}
 	levels := e.specularLevels()
 	return samplePanoramaChain(levels, d, min(1, roughness)*float32(len(levels)-1))

@@ -129,9 +129,11 @@ func (m *Model) frame() Frame {
 	g := m.pic.RasterGeometry()
 	f, _ := m.scene.Frame(m.camera, max(1, g.Pixels.X), max(1, g.Pixels.Y))
 	f.Matrix = m.camera.Matrix(float32(g.DisplayAspect))
-	f.Background = m.background
-	f.Lighting, f.Fog = m.lighting, m.fog
-	f.Supersample, f.MSAA, f.PostProcess = m.supersample, m.msaa, m.effects
+	f.Background, f.Fog = m.background, m.fog
+	if m.lightingSet || len(m.scene.SceneLights(nt3d.Root)) == 0 {
+		f.Lighting = m.lighting
+	}
+	f.Supersample, f.MSAA, f.OIT, f.PostProcess = m.supersample, m.msaa, m.oit, m.effects
 	if m.decorate != nil {
 		m.decorate(&f)
 	}

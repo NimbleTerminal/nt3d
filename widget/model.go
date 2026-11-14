@@ -40,6 +40,7 @@ type Model struct {
 	sceneRevision                   uint64
 	camera                          nt3d.Camera
 	lighting                        nt3d.Lighting
+	lightingSet                     bool
 	fog                             nt3d.Fog
 	background                      color.RGBA
 	renderer                        nt3d.Renderer
@@ -72,6 +73,7 @@ type Model struct {
 	renderErr                       error // The last frame's, until a frame draws without one.
 	supersample                     int
 	msaa                            bool
+	oit                             bool
 	effects                         nt3d.PostProcess
 	postProcess                     func(*image.RGBA)
 	shown                           []time.Time   // When frames were shown, over the last second.
@@ -116,6 +118,12 @@ func WithSupersample(n int) Option {
 // Software and wireframe modes ignore it.
 func WithMSAA(enabled bool) Option {
 	return func(m *Model) { m.msaa = enabled }
+}
+
+// WithOIT enables Weighted Blended Order-Independent Transparency for
+// Material.Transparent meshes on GPU and software frames and snapshots.
+func WithOIT(enabled bool) Option {
+	return func(m *Model) { m.oit = enabled }
 }
 
 // WithEffects configures built-in post-processing (SSAO, HDR bloom, exposure,
@@ -242,6 +250,17 @@ func (m *Model) MSAA() bool { return m.msaa }
 // SetMSAA enables or disables 4x GPU multisampling and schedules a render.
 func (m *Model) SetMSAA(enabled bool) tea.Cmd {
 	m.msaa = enabled
+	return m.changed(false)
+}
+
+// OIT reports whether Weighted Blended Order-Independent Transparency is
+// enabled; see WithOIT.
+func (m *Model) OIT() bool { return m.oit }
+
+// SetOIT enables or disables Weighted Blended Order-Independent Transparency
+// and schedules a render.
+func (m *Model) SetOIT(enabled bool) tea.Cmd {
+	m.oit = enabled
 	return m.changed(false)
 }
 
@@ -392,8 +411,11 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	if err != nil {
 		return nil, m.requestedRenderMode, err
 	}
-	f.Background, f.Lighting, f.Fog = m.background, m.lighting, m.fog
-	f.Supersample, f.MSAA, f.PostProcess = m.supersample, m.msaa, m.effects
+	f.Background, f.Fog = m.background, m.fog
+	if m.lightingSet || len(m.scene.SceneLights(nt3d.Root)) == 0 {
+		f.Lighting = m.lighting
+	}
+	f.Supersample, f.MSAA, f.OIT, f.PostProcess = m.supersample, m.msaa, m.oit, m.effects
 	if m.decorate != nil {
 		m.decorate(&f)
 	}
@@ -504,11 +526,12 @@ func (m *Model) SetBackground(c color.Color) tea.Cmd {
 }
 
 // SetLighting sets how the scene is lit: ambient light and up to
-// nt3d.MaxLights directional or point lights. The lights are copied, so the
-// caller may change its own while frames render.
+// nt3d.MaxLights directional, point, or spot lights. The lights are copied, so
+// the caller may change its own while frames render.
 func (m *Model) SetLighting(l nt3d.Lighting) tea.Cmd {
 	m.lighting = l
 	m.lighting.Lights = slices.Clone(l.Lights)
+	m.lightingSet = true
 	return m.changed(false)
 }
 

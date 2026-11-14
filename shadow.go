@@ -172,15 +172,28 @@ func (m *shadowMap) visibility(p, n, l nt3dmath.Vec3) float32 {
 		d := p.Sub(m.position)
 		texel := 2 * max(abs(d.X), abs(d.Y), abs(d.Z)) / float32(m.faces[0].size)
 		p = p.Add(n.Scale(1.5 * texel))
-		return m.faces[pointShadowFace(p.Sub(m.position))].visibility(p, n, l)
+		return m.faces[pointShadowFace(p.Sub(m.position))].visibilityFace(p, n, l, true)
 	}
-	pos := p.Add(n.Scale(1.5 * m.texel))
+	pos := p
+	if m.perspective {
+		_, _, _, w0 := m.matrix.Transform(p)
+		if w0 <= 0 {
+			return 1
+		}
+		pos = p.Add(n.Scale(1.5 * w0 * m.texel))
+	} else {
+		pos = p.Add(n.Scale(1.5 * m.texel))
+	}
+	return m.visibilityFace(pos, n, l, false)
+}
+
+func (m *shadowMap) visibilityFace(pos, n, l nt3dmath.Vec3, clampEdge bool) float32 {
 	_, _, _, w := m.matrix.Transform(pos)
 	if w <= 0 {
 		return 1
 	}
 	x, y, z := m.mapCoords(pos)
-	if m.perspective {
+	if clampEdge {
 		x = min(float32(m.size)-.001, max(float32(0), x))
 		y = min(float32(m.size)-.001, max(float32(0), y))
 	}
@@ -246,16 +259,83 @@ func pointShadowFace(v nt3dmath.Vec3) int {
 	return 4
 }
 
-// fitShadows returns one orthographic view or six 90-degree perspective views.
-// Bounds include all drawn receivers, while Range can shorten point-light depth.
+func fitSpotShadow(f *Frame, drawn []bool, index, size int) (v shadowView, ok bool) {
+	light := f.Lighting.Lights[index]
+	forward := light.Direction.Normalize()
+	if forward == (nt3dmath.Vec3{}) {
+		return v, false
+	}
+	maxZ := float32(0)
+	found := false
+	for i, g := range f.Geometry {
+		if !drawn[i] || !g.Bounds.IsValid() {
+			continue
+		}
+		b := g.Bounds.Transformed(instance(*f, i).World)
+		for _, x := range []float32{b.Min.X, b.Max.X} {
+			for _, y := range []float32{b.Min.Y, b.Max.Y} {
+				for _, z := range []float32{b.Min.Z, b.Max.Z} {
+					dz := nt3dmath.Vec3{X: x, Y: y, Z: z}.Sub(light.Position).Dot(forward)
+					if dz > maxZ {
+						maxZ = dz
+						found = true
+					}
+				}
+			}
+		}
+	}
+	if !found || maxZ <= 1e-4 {
+		return v, false
+	}
+	far := max(maxZ*1.01, 1e-3)
+	if light.Range > 0 {
+		far = min(far, light.Range)
+	}
+	near := far * 1e-4
+	outer := min(float64(light.outerCone()), math.Pi*.495)
+	tanHalf := float32(math.Tan(outer)) * (1 + 2/float32(size))
+	cot := 1 / max(tanHalf, 1e-4)
+	up := nt3dmath.Vec3{Z: 1}
+	if forward.Z > .99 || forward.Z < -.99 {
+		up = nt3dmath.Vec3{Y: 1}
+	}
+	right := forward.Cross(up).Normalize()
+	up = right.Cross(forward)
+	eye := light.Position
+	k := far / (far - near)
+	v = shadowView{
+		texel:       2 * tanHalf / float32(size),
+		size:        size,
+		light:       index,
+		perspective: true,
+		matrix: nt3dmath.Mat4{
+			cot * right.X, cot * up.X, k * forward.X, forward.X,
+			cot * right.Y, cot * up.Y, k * forward.Y, forward.Y,
+			cot * right.Z, cot * up.Z, k * forward.Z, forward.Z,
+			-cot * right.Dot(eye), -cot * up.Dot(eye), -k * (forward.Dot(eye) + near), -forward.Dot(eye),
+		},
+	}
+	return v, true
+}
+
+// fitShadows returns one orthographic view, one perspective spot view, or six
+// 90-degree perspective cubemap views. Bounds include all drawn receivers,
+// while Range can shorten positional-light depth.
 func fitShadows(f *Frame, drawn []bool, size int) []shadowView {
 	index := shadowCaster(f.Lighting)
 	if index < 0 || size <= 0 {
 		return nil
 	}
 	light := f.Lighting.Lights[index]
-	if light.Kind != PointLight {
+	switch light.Kind {
+	case DirectionalLight:
 		v, ok := fitShadow(f, drawn, size)
+		if !ok {
+			return nil
+		}
+		return []shadowView{v}
+	case SpotLight:
+		v, ok := fitSpotShadow(f, drawn, index, size)
 		if !ok {
 			return nil
 		}

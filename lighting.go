@@ -38,22 +38,38 @@ const (
 	// PointLight shines from Position in every direction, fading with
 	// distance.
 	PointLight
+	// SpotLight shines from Position along Direction within OuterCone,
+	// fading with distance like a PointLight and smoothly from InnerCone to
+	// OuterCone.
+	SpotLight
 )
 
 // MaxLights is the most lights a frame's Lighting may have.
 const MaxLights = 8
 
-// Light is a directional or point light. Color is sRGB; zero (alpha zero)
-// means white. Intensity scales it; zero means 1. A point light with a
-// Range fades smoothly to nothing there, by (1-(d/Range)²)²; without one
-// it fades as 1/(1+d²), in world units, and never quite reaches nothing.
+// defaultSpotOuterCone is the default OuterCone half-angle (45 degrees) when
+// a SpotLight leaves OuterCone zero.
+const defaultSpotOuterCone = math.Pi / 4
+
+// Light is a directional, point, or spot light. Color is sRGB; zero (alpha
+// zero) means white. Intensity scales it; zero means 1. A point or spot light
+// with a Range fades smoothly to nothing there, by (1-(d/Range)²)²; without
+// one it fades as 1/(1+d²), in world units, and never quite reaches nothing.
+//
+// For DirectionalLight, Direction points toward the light and is required.
+// For SpotLight, Direction is the aim vector the beam shines along from
+// Position (required), OuterCone is the outer cone half-angle in radians in
+// (0, π/2) (zero means π/4), and InnerCone is the full-strength inner cone
+// half-angle in [0, OuterCone].
 type Light struct {
 	Kind      LightKind
-	Direction nt3dmath.Vec3 // Directional: toward the light; required.
-	Position  nt3dmath.Vec3 // Point: in world space.
+	Direction nt3dmath.Vec3 // Directional: toward the light; Spot: beam direction; required for both.
+	Position  nt3dmath.Vec3 // Point and Spot: in world space.
 	Color     color.RGBA
 	Intensity float32
-	Range     float32 // Point only.
+	Range     float32 // Point and Spot only.
+	InnerCone float32 // Spot only: inner cone half-angle in radians, 0..OuterCone.
+	OuterCone float32 // Spot only: outer cone half-angle in radians, (0, π/2); 0 means π/4.
 	Shadows   bool    // Only the first light with Shadows casts shadows.
 }
 
@@ -86,18 +102,31 @@ func (l Light) intensity() float32 {
 	return l.Intensity
 }
 
+func (l Light) outerCone() float32 {
+	if l.OuterCone == 0 {
+		return defaultSpotOuterCone
+	}
+	return l.OuterCone
+}
+
 func validLighting(l Lighting) bool {
 	if len(l.Lights) > MaxLights || !validFloat(l.Ambient.Intensity) || l.Ambient.Intensity < 0 {
 		return false
 	}
 	for _, x := range l.Lights {
-		if x.Kind > PointLight || !finiteVec(x.Direction) || !finiteVec(x.Position) || !validFloat(x.Intensity, x.Range) || x.Intensity < 0 || x.Range < 0 {
+		if x.Kind > SpotLight || !finiteVec(x.Direction) || !finiteVec(x.Position) || !validFloat(x.Intensity, x.Range, x.InnerCone, x.OuterCone) || x.Intensity < 0 || x.Range < 0 {
 			return false
 		}
-		// A directional light needs a direction: without one, it is most
-		// likely a point light missing its Kind.
-		if x.Kind == DirectionalLight && x.Direction == (nt3dmath.Vec3{}) {
+		// Directional and spot lights need a direction: without one, a
+		// directional light is most likely a point light missing its Kind.
+		if (x.Kind == DirectionalLight || x.Kind == SpotLight) && x.Direction == (nt3dmath.Vec3{}) {
 			return false
+		}
+		if x.Kind == SpotLight {
+			outer := x.outerCone()
+			if x.InnerCone < 0 || outer <= 0 || outer >= math.Pi/2 || x.InnerCone > outer {
+				return false
+			}
 		}
 	}
 	return true
@@ -113,14 +142,17 @@ type lightRig struct {
 	sky, ground       [3]float32
 	lights            []rigLight
 	shadowLight       int  // Index of the shadow-casting light, or -1.
-	points            bool // Whether any light is a point light, so shading needs surface positions.
+	points            bool // Whether any light is positional, so shading needs surface positions.
 }
 
 type rigLight struct {
-	kind  LightKind
-	v     nt3dmath.Vec3 // Directional: the unit direction toward the light. Point: its position.
-	color [3]float32
-	rng   float32
+	kind     LightKind
+	v        nt3dmath.Vec3 // Directional: unit direction toward the light. Point/Spot: position.
+	spotDir  nt3dmath.Vec3 // Spot: unit beam direction from position.
+	cosOuter float32
+	invSpan  float32
+	color    [3]float32
+	rng      float32
 }
 
 func newRig(f *Frame) lightRig {
@@ -149,18 +181,26 @@ func newRig(f *Frame) lightRig {
 		if c.A == 0 {
 			c = color.RGBA{255, 255, 255, 255}
 		}
-		v := x.Position
+		rl := rigLight{kind: x.Kind, v: x.Position, color: work(c, x.intensity()), rng: x.Range}
 		if x.Kind == DirectionalLight {
-			v = x.Direction.Normalize()
+			rl.v = x.Direction.Normalize()
+		} else if x.Kind == SpotLight {
+			rl.spotDir = x.Direction.Normalize()
+			outer := float64(x.outerCone())
+			inner := float64(x.InnerCone)
+			cosOut := float32(math.Cos(outer))
+			cosIn := float32(math.Cos(inner))
+			rl.cosOuter = cosOut
+			rl.invSpan = 1 / max(1e-4, cosIn-cosOut)
 		}
-		r.points = r.points || x.Kind == PointLight
-		r.lights = append(r.lights, rigLight{kind: x.Kind, v: v, color: work(c, x.intensity()), rng: x.Range})
+		r.points = r.points || x.Kind != DirectionalLight
+		r.lights = append(r.lights, rl)
 	}
 	return r
 }
 
 // toward is the unit direction from world point p toward the light, and how
-// much of its light reaches p. A point light at p reaches it not at all.
+// much of its light reaches p. A positional light at p reaches it not at all.
 func (l *rigLight) toward(p nt3dmath.Vec3) (nt3dmath.Vec3, float32) {
 	if l.kind == DirectionalLight {
 		return l.v, 1
@@ -170,12 +210,17 @@ func (l *rigLight) toward(p nt3dmath.Vec3) (nt3dmath.Vec3, float32) {
 	if d2 == 0 {
 		return nt3dmath.Vec3{}, 0
 	}
+	dir := v.Scale(float32(1 / math.Sqrt(float64(d2))))
 	fade := 1 / (1 + d2)
 	if l.rng > 0 {
 		k := max(0, 1-d2/(l.rng*l.rng))
 		fade = k * k
 	}
-	return v.Scale(float32(1 / math.Sqrt(float64(d2)))), fade
+	if l.kind == SpotLight {
+		cone := max(0, min(1, (-dir.Dot(l.spotDir)-l.cosOuter)*l.invSpan))
+		fade *= cone * cone
+	}
+	return dir, fade
 }
 
 // light multiplies a surface color, per channel, by the light reaching
@@ -201,17 +246,15 @@ func (r *lightRig) lightNormal(rgb *[3]float32, n, p, geometric nt3dmath.Vec3) {
 	for i := range r.lights {
 		l := &r.lights[i]
 		var s float32
+		dir := l.v
 		if l.kind == DirectionalLight {
 			s = n.X*l.v.X + n.Y*l.v.Y + n.Z*l.v.Z
 		} else {
-			dir, fade := l.toward(p)
+			var fade float32
+			dir, fade = l.toward(p)
 			s = n.Dot(dir) * fade
 		}
-		if i == r.shadowLight && r.shadow != nil {
-			dir := l.v
-			if l.kind == PointLight {
-				dir, _ = l.toward(p)
-			}
+		if s > 0 && i == r.shadowLight && r.shadow != nil {
 			s *= r.shadow.visibility(p, geometric, dir)
 		}
 		if s > 0 {

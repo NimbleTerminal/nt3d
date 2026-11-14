@@ -136,7 +136,7 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 			plan.slotSlices = append(plan.slotSlices, span)
 			plan.points += len(g.Points)
 		}
-		if transparent(g) || blendedPoints(g) && g.PointStyle.Blend == AdditiveBlend {
+		if (!f.OIT && transparent(g)) || blendedPoints(g) && g.PointStyle.Blend == AdditiveBlend {
 			b := blendBounds(g)
 			_, _, z, _ := f.Matrix.Mul(instance(f, gi).World).Transform(b.Min.Add(b.Max).Scale(.5))
 			s := plan.sliceOf(z)
@@ -147,6 +147,27 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 		return plan, fmt.Errorf("nt3d: frame exceeds GPU binding limit")
 	}
 	return plan, nil
+}
+
+// hasOITWork reports whether f uses Weighted Blended OIT for at least one
+// drawn transparent mesh.
+func hasOITWork(f Frame, drawn []bool) bool {
+	if !f.OIT {
+		return false
+	}
+	for i := range f.Geometry {
+		if drawn[i] && transparent(&f.Geometry[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// oitWeight is McGuire & Bavoil's depth-and-opacity weight for normalized clip
+// depth z in [0, 1], tuned to stay well within IEEE binary16 range on GPU.
+func oitWeight(z, alpha float32) float32 {
+	d := max(0, min(1, 1-z))
+	return max(.03, (.03+200*d*d*d)*alpha)
 }
 
 // depth16 quantizes a clip-space depth over the plan's range to 16 bits,

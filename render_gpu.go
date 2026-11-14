@@ -33,10 +33,10 @@ func sceneShaderSource() string {
 
 // uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
 // and light count, eye, forward, fog, fog color, ground ambient, and
-// MaxLights lights of two vec4s each, shadow matrix and lookup params,
+// MaxLights lights of three vec4s each, shadow matrix and lookup params,
 // nine diffuse environment coefficients, three sky camera basis vectors, and
-// six light-view matrices (one used for a directional light).
-const uniformSize = 160 + 16 + MaxLights*32 + 80 + 192 + 6*64 + 64
+// six light-view matrices (one used for directional and spot lights).
+const uniformSize = 160 + 16 + MaxLights*48 + 80 + 192 + 6*64 + 64
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -136,6 +136,7 @@ type gpuShared struct {
 	depthPickLayouts       [2]*wgpu.BindGroupLayout
 	depthPickPipelines     [2]*wgpu.ComputePipeline
 	post                   gpuPostShared
+	oit                    gpuOITShared
 	geometries             map[geometryKey]*sharedGeometry
 	textures               map[textureKey]*gpuTexture
 	environments           map[*Environment]*gpuEnvironmentTexture
@@ -200,6 +201,7 @@ func (s *gpuShared) release() {
 	}
 	s.mu.Unlock()
 	s.post.release()
+	s.oit.release()
 	for i := range s.msaaSets {
 		s.msaaSets[i].release()
 	}
@@ -399,6 +401,7 @@ type gpuRenderer struct {
 	uploads         uint64
 	target          sceneTarget
 	post            gpuPost
+	oit             gpuOITTarget
 	depthPick       gpuDepthPicker
 	// deviceLimit is the most bytes one storage binding on the device holds,
 	// the smaller of its binding and buffer limits, read at setup; a geometry
@@ -699,7 +702,7 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	}
 	maxEnvMip := float32(0)
 	if f.Environment != nil {
-		maxEnvMip = float32(len(f.Environment.specularLevels()) - 1)
+		maxEnvMip = float32(max(0, f.Environment.specMipCount()-1))
 	}
 	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), linear, environmentActive, rig.sky[0], rig.sky[1], rig.sky[2], float32(len(rig.lights)),
 		f.Eye.X, f.Eye.Y, f.Eye.Z, perspective, f.Forward.X, f.Forward.Y, f.Forward.Z, maxEnvMip)...)
@@ -716,11 +719,20 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 		}
 	}
 	ub = append(ub, floats(fog[:]...)...)
-	// Each light: its direction toward it or its position, and its kind;
-	// its color times intensity, and its range. Unused lights are zero.
-	var lights [MaxLights * 8]float32
+	// Each light: its direction toward it or its position, and its kind
+	// encoding (0 directional, 1 point, -invSpan spot); its color times
+	// intensity and its range; and for spotlights, beam direction and cosOuter.
+	var lights [MaxLights * 12]float32
 	for i, l := range rig.lights {
-		copy(lights[i*8:], []float32{l.v.X, l.v.Y, l.v.Z, float32(l.kind), l.color[0], l.color[1], l.color[2], l.rng})
+		kind := float32(l.kind)
+		if l.kind == SpotLight {
+			kind = -l.invSpan
+		}
+		copy(lights[i*12:], []float32{
+			l.v.X, l.v.Y, l.v.Z, kind,
+			l.color[0], l.color[1], l.color[2], l.rng,
+			l.spotDir.X, l.spotDir.Y, l.spotDir.Z, l.cosOuter,
+		})
 	}
 	environmentStrength := f.EnvironmentStrength
 	if environmentStrength == 0 {
@@ -777,6 +789,10 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	if err = g.prepareOutlines(dev, f); err != nil {
 		return err
 	}
+	oitActive := hasOITWork(f, drawn)
+	if err = g.prepareOIT(dev, f, drawn); err != nil {
+		return err
+	}
 	if g.shadowActive && (g.shadowTarget.texture == nil || g.shadowTarget.size != size || len(g.shadowTarget.faces) != len(views)) {
 		g.shadowTarget.release()
 		g.shadowTarget, err = g.makeShadowTarget(dev, size, len(views))
@@ -823,7 +839,7 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	// the uniform viewport, so points and lines keep their size when
 	// supersampled.
 	return g.renderScene(dev, encoder, f, target, func(color, depth *wgpu.TextureView) error {
-		return g.drawScene(f, snapshot, target.Load, encoder, color, depth)
+		return g.drawScene(f, snapshot, oitActive, target.Load, encoder, color, depth)
 	})
 }
 
@@ -855,7 +871,7 @@ func (g *gpuRenderer) setScenePipeline(pass *wgpu.RenderPassEncoder, pipeline *w
 }
 
 // drawScene records the scene's pass into a color and depth target.
-func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
+func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
 		if g.shadowActive {
 			if err := g.drawShadow(f, encoder); err != nil {
@@ -939,6 +955,19 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, load bool, encoder *wgpu.Comm
 							return err
 						}
 					}
+				}
+				if oitActive {
+					if err := pass.End(); err != nil {
+						return err
+					}
+					if err = g.encodeOITPass(f, encoder, depth); err != nil {
+						return err
+					}
+					pass, err = g.resumeScene(encoder, color, depth)
+					if err != nil {
+						return err
+					}
+					g.drawOITComposite(pass)
 				}
 				// Then blend them, far to near in depth slices: each slice's
 				// transparent meshes and additive points, then its run of every
@@ -1268,6 +1297,7 @@ func (g *gpuRenderer) releaseResources() {
 	g.noShadow.release()
 	g.shadowTarget.release()
 	g.screen.release()
+	g.oit.release()
 	g.post.release(g.shared != nil)
 	g.depthPick.release(g.shared != nil)
 	if g.shared != nil {

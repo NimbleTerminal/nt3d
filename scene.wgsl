@@ -3,7 +3,7 @@
 @group(1) @binding(2) var reflectionSampler: sampler;
 @group(1) @binding(3) var sceneColor: texture_2d<f32>;
 @group(1) @binding(4) var sceneDepth: texture_depth_2d;
-struct Light { a: vec4<f32>, b: vec4<f32> };
+struct Light { a: vec4<f32>, b: vec4<f32>, c: vec4<f32> };
 struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,9>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6>, inverse:mat4x4<f32> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -54,15 +54,20 @@ fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
 }
 // toward is the unit direction from world point p toward a light (xyz) and
 // how much of its light reaches p (w): all of a directional light's; a
-// point light's fading to nothing at its range, or as 1/(1+d²) without one,
-// and none from a light at p.
+// point or spot light's fading to nothing at its range, or as 1/(1+d²)
+// without one (plus cone attenuation for spotlights), and none at p.
 fn toward(l:Light,p:vec3<f32>)->vec4<f32> {
- if l.a.w<0.5 {return vec4<f32>(l.a.xyz,1.0);}
+ if abs(l.a.w)<0.5 {return vec4<f32>(l.a.xyz,1.0);}
  let v=l.a.xyz-p;let d2=dot(v,v);
  if d2==0.0 {return vec4<f32>(0.0);}
+ let dir=v*inverseSqrt(d2);
  var fade=1.0/(1.0+d2);
  if l.b.w>0.0 {let k=max(0.0,1.0-d2/(l.b.w*l.b.w));fade=k*k;}
- return vec4<f32>(v*inverseSqrt(d2),fade);
+ if l.a.w<0.0 {
+  let cone=clamp((-dot(dir,l.c.xyz)-l.c.w)*(-l.a.w),0.0,1.0);
+  fade*=cone*cone;
+ }
+ return vec4<f32>(dir,fade);
 }
 // Manual depth lookup uses only core textureLoad, with clamped PCF taps.
 fn pointShadowFace(v:vec3<f32>)->u32 {
@@ -73,10 +78,14 @@ fn pointShadowFace(v:vec3<f32>)->u32 {
 }
 fn shadowVisibility(p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
  var face=0u;var pos=p+n*(1.5*u.shadowParams.z);var matrix=u.shadow;
- let light=u.lights[u32(u.shadowParams.x)];let point=light.a.w>0.5;
+ let light=u.lights[u32(u.shadowParams.x)];let point=light.a.w>0.5;let spot=light.a.w<-0.5;
  if point {
   let d=abs(p-light.a.xyz);let texel=2.0*max(d.x,max(d.y,d.z))/u.shadowParams.w;
   pos=p+n*(1.5*texel);face=pointShadowFace(pos-light.a.xyz);matrix=u.pointShadows[face];
+ } else if spot {
+  let w0=(u.shadow*vec4<f32>(p,1.0)).w;
+  if w0<=0.0 {return 1.0;}
+  pos=p+n*(1.5*w0*u.shadowParams.z);
  }
  let clip=matrix*vec4<f32>(pos,1.0);
  if clip.w<=0.0{return 1.0;}
@@ -86,7 +95,7 @@ fn shadowVisibility(p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
  if any(xy<vec2<f32>(0.0)) || any(xy>=vec2<f32>(u.shadowParams.w)) || q.z<0.0 || q.z>1.0 {return 1.0;}
  let center=vec2<i32>(floor(xy));let size=i32(u.shadowParams.w);
  var bias=u.shadowParams.y*(1.0+2.0*(1.0-max(0.0,dot(n,l))));var lit=0.0;
- if point {bias*=max(1.0-q.z,0.000001);}
+ if point || spot {bias*=max(1.0-q.z,0.000001);}
  for(var y=-1;y<=1;y=y+1) {for(var x=-1;x<=1;x=x+1) {
  let texel=clamp(center+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(size-1));
  if textureLoad(shadowMap,texel,i32(face),0)>=q.z-bias {lit+=1.0;}
@@ -631,7 +640,7 @@ struct SkyOut { @builtin(position) clip:vec4<f32>, @location(0) ray:vec3<f32> };
  let half=0.5/f32(textureDimensions(reflectionMap).y);
  let uv=vec2<f32>(atan2(d.y,d.x)/6.28318530718+0.5,clamp(acos(clamp(d.z,-1.0,1.0))/3.14159265359,half,1.0-half));
  let c=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
- if u.viewport.z<0.5 {return vec4<f32>(select(1.055*pow(c,vec3<f32>(1.0/2.4))-0.055,c*12.92,c<=vec3<f32>(0.0031308)),1.0);}
+ if u.viewport.z<0.5 {let v=clamp(c,vec3<f32>(0.0),vec3<f32>(1.0));return vec4<f32>(select(1.055*pow(v,vec3<f32>(1.0/2.4))-0.055,v*12.92,v<=vec3<f32>(0.0031308)),1.0);}
  return vec4<f32>(c,1.0);
 }
 
@@ -848,4 +857,36 @@ fn normalFlowTap(at:vec2<f32>,gx:vec2<f32>,gy:vec2<f32>,repeat:f32)->vec3<f32> {
  var uv=at;
  if repeat<0.5 {let half=vec2<f32>(0.5)/vec2<f32>(textureDimensions(normalTexture));uv=clamp(uv,half,vec2<f32>(1.0)-half);}
  return textureSampleGrad(normalTexture,normalSampler,uv,gx,gy).rgb;
+}
+
+struct OITOut { @location(0) accum:vec4<f32>, @location(1) reveal:vec4<f32> };
+fn oitWeight(z:f32,alpha:f32)->f32 {
+ let d=clamp(1.0-z,0.0,1.0);
+ return max(0.03,(0.03+200.0*d*d*d)*alpha);
+}
+fn oitPack(rgb:vec3<f32>,rawAlpha:f32,z:f32)->OITOut {
+ let a=clamp(rawAlpha,0.0,1.0);
+ let aw=a*oitWeight(z,a);
+ return OITOut(vec4<f32>(rgb*aw,aw),vec4<f32>(0.0,0.0,0.0,a));
+}
+@fragment fn fs_oit_main(@builtin(front_facing) front:bool,oIn:Out)->OITOut {
+ var o=oIn;
+ var side=1.0;if !front {side=-1.0;}
+ o.normal*=side;
+ return oitPack(finish(o,o.color.rgb),o.color.a,o.clip.z);
+}
+@fragment fn fs_oit_texture(@builtin(front_facing) front:bool,oIn:Out)->OITOut {
+ var o=oIn;
+ var side=1.0;if !front {side=-1.0;}
+ o.normal*=side;o.tangent.w*=side;
+ let gx=dpdx(o.uv);let gy=dpdy(o.uv);
+ let t=sampleMap(o.uv,gx,gy,o.repeat);
+ let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
+ let orm=sampleORM(o.uv,gx,gy);
+ let em=mapColor(sampleEmissive(o.uv,gx,gy));
+ return oitPack(shadeSurface(o,mapColor(t.rgb)*o.color.rgb,n,orm,em),t.a*o.cut,o.clip.z);
+}
+@fragment fn fs_oit_outline_blend(o:Out)->OITOut {
+ let alpha=sampleMap(o.uv,dpdx(o.uv),dpdy(o.uv),o.repeat).a*o.cut;
+ return oitPack(finish(o,o.color.rgb),alpha,o.clip.z);
 }

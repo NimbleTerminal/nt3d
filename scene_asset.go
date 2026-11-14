@@ -9,6 +9,7 @@ import nt3dmath "nimbleterminal.dev/nt3d/math"
 // an earlier node index. Skeleton and clip NodeIDs are one-based node indices.
 type AssetNode struct {
 	Camera      *Camera
+	Light       *Light
 	Name        string
 	Parent      int
 	Local       nt3dmath.Mat4
@@ -61,6 +62,11 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 		}
 		if n.Camera != nil {
 			if e = s.SetNodeCamera(id, *n.Camera); e != nil {
+				return nil, e
+			}
+		}
+		if n.Light != nil {
+			if e = s.SetNodeLight(id, *n.Light); e != nil {
 				return nil, e
 			}
 		}

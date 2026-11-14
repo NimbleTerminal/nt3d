@@ -132,16 +132,6 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		off := i * 4
 		img.Pix[off], img.Pix[off+1], img.Pix[off+2], img.Pix[off+3] = f.Background.R, f.Background.G, f.Background.B, 255
 	}
-	if f.Environment != nil {
-		right, up, forward := f.skyBasis()
-		for y := 0; y < f.Height; y++ {
-			row := forward.Add(up.Scale(1 - 2*(float32(y)+.5)/float32(f.Height)))
-			for x := 0; x < f.Width; x++ {
-				ray := row.Add(right.Scale(2*(float32(x)+.5)/float32(f.Width) - 1)).Normalize()
-				img.SetRGBA(x, y, f.Environment.pixel(ray))
-			}
-		}
-	}
 	// Surfaces are shaded in 0..255, in linear light or as encoded, as the
 	// frame works; pixels are 8-bit sRGB.
 	linear, rig, aniso := f.Linear, newRig(&f), f.anisotropy()
@@ -177,8 +167,28 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			acc[i*3], acc[i*3+1], acc[i*3+2] = fromPixel(img.Pix[off]), fromPixel(img.Pix[off+1]), fromPixel(img.Pix[off+2])
 		}
 	}
-	if wantHDR {
+	if wantHDR || (f.Environment != nil && f.Environment.hdr && linear) {
 		accumulate()
+	}
+	if f.Environment != nil {
+		right, up, forward := f.skyBasis()
+		for y := 0; y < f.Height; y++ {
+			row := forward.Add(up.Scale(1 - 2*(float32(y)+.5)/float32(f.Height)))
+			for x := 0; x < f.Width; x++ {
+				ray := row.Add(right.Scale(2*(float32(x)+.5)/float32(f.Width) - 1)).Normalize()
+				c := f.Environment.sample(ray)
+				px := color.RGBA{encode8(c[0]), encode8(c[1]), encode8(c[2]), 255}
+				img.SetRGBA(x, y, px)
+				if acc != nil {
+					i := (y*f.Width + x) * 3
+					if linear {
+						acc[i], acc[i+1], acc[i+2] = max(0, c[0])*255, max(0, c[1])*255, max(0, c[2])*255
+					} else {
+						acc[i], acc[i+1], acc[i+2] = float32(px.R), float32(px.G), float32(px.B)
+					}
+				}
+			}
+		}
 	}
 	put := func(x, y int, z float32, c color.RGBA) {
 		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
@@ -237,8 +247,12 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		}
 		return func(c color.RGBA, t float32) color.RGBA { return fogColor(c, f.eyeDistance(a.Add(b.Sub(a).Scale(t)))) }
 	}
-	// blend mixes a transparent fragment over the pixel, if no surface
-	// hides it, leaving the depth for what lies behind.
+	var oitAccum []float32
+	var oitReveal []float32
+	oitMode := false
+	// blend mixes a transparent fragment over the pixel (or into WBOIT
+	// accumulation when oitMode is active), if no surface hides it, leaving
+	// the depth for what lies behind.
 	blend := func(x, y int, z float32, rgb [3]float32, alpha float32) {
 		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
 			return
@@ -246,6 +260,16 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		i := y*f.Width + x
 		if z <= depth[i]+.00001 {
 			alpha = max(0, min(1, alpha))
+			if oitMode {
+				aw := alpha * oitWeight(z, alpha)
+				ao := i * 4
+				oitAccum[ao] += rgb[0] * aw
+				oitAccum[ao+1] += rgb[1] * aw
+				oitAccum[ao+2] += rgb[2] * aw
+				oitAccum[ao+3] += aw
+				oitReveal[i] *= 1 - alpha
+				return
+			}
 			accumulate()
 			off, a := i*4, acc[i*3:i*3+3]
 			for k, v := range rgb {
@@ -936,6 +960,46 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			}
 		}
 	}
+	if hasOITWork(f, drawn) {
+		accumulate()
+		oitAccum = make([]float32, len(depth)*4)
+		oitReveal = make([]float32, len(depth))
+		for i := range oitReveal {
+			oitReveal[i] = 1
+		}
+		oitMode = true
+		for gi := range f.Geometry {
+			g := &f.Geometry[gi]
+			if !drawn[gi] || !transparent(g) {
+				continue
+			}
+			drawOutline(gi, outlineTransparent)
+			inst := instance(f, gi)
+			m := f.Matrix.Mul(inst.World)
+			inverse, _ := inst.World.InverseAffine()
+			normals := inverse.Transpose()
+			for _, side := range []int{backFaces, frontFaces} {
+				for i := 0; i+2 < len(g.Indices); i += 3 {
+					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{})
+				}
+			}
+		}
+		oitMode = false
+		for i, rev := range oitReveal {
+			if rev >= .99999 {
+				continue
+			}
+			wSum := max(oitAccum[i*4+3], 1e-5)
+			cov := 1 - rev
+			off, a := i*4, acc[i*3:i*3+3]
+			for k := range 3 {
+				avg := oitAccum[i*4+k] / wSum
+				a[k] = avg*cov + a[k]*(1-cov)
+				img.Pix[off+k] = toPixel(a[k])
+			}
+		}
+	}
+
 	// Blended work goes over everything opaque, far to near in depth slices:
 	// each slice's transparent meshes and additive points, then its alpha
 	// points, ordered across geometries by the plan's keys, as the GPU does.

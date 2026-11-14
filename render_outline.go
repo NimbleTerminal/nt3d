@@ -22,7 +22,10 @@ func (g *gpuRenderer) prepareOutlines(dev *wgpu.Device, f Frame) error {
 		if geom.Outline.Width == 0 || len(geom.Indices) == 0 {
 			continue
 		}
-		kinds := []int{outlinePipelineKind(geom)}
+		var kinds []int
+		if !f.OIT || !transparent(geom) {
+			kinds = append(kinds, outlinePipelineKind(geom))
+		}
 		if creased(geom) {
 			kinds = append(kinds, creasePipeline)
 		}

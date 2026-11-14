@@ -320,6 +320,48 @@ func TestMSAAAndEffects(t *testing.T) {
 	}
 }
 
+func TestOITAndSceneLightsDefaultVsOverride(t *testing.T) {
+	s := scene(t)
+	lightNode, err := s.Add(nt3d.Root, "spot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeLight(lightNode, nt3d.Light{
+		Kind:      nt3d.SpotLight,
+		Intensity: 2.5,
+		InnerCone: 0.2,
+		OuterCone: 0.5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &recordRenderer{}
+	m := New(s, 30, 10, WithRenderer(r), WithOIT(true))
+	defer m.Close()
+	if !m.OIT() {
+		t.Fatal("expected initial OIT=true")
+	}
+	m.started = true
+	_ = m.schedule()().(rendered)
+	if !r.frame.OIT {
+		t.Fatal("scheduled frame missing OIT=true")
+	}
+	if len(r.frame.Lighting.Lights) != 1 || r.frame.Lighting.Lights[0].Kind != nt3d.SpotLight {
+		t.Fatalf("expected SceneLights preserved when SetLighting not called, got %+v", r.frame.Lighting.Lights)
+	}
+
+	m.SetOIT(false)
+	custom := nt3d.Lighting{Lights: []nt3d.Light{{Kind: nt3d.DirectionalLight, Direction: nt3dmath.Vec3{Z: 1}, Intensity: 0.7}}}
+	m.SetLighting(custom)
+	if m.OIT() {
+		t.Fatal("expected updated OIT=false")
+	}
+	_, _, err = m.Snapshot(32, 16)
+	if err != nil || r.frame.OIT || len(r.frame.Lighting.Lights) != 1 || r.frame.Lighting.Lights[0].Kind != nt3d.DirectionalLight {
+		t.Fatalf("snapshot OIT=%v Lights=%+v err=%v", r.frame.OIT, r.frame.Lighting.Lights, err)
+	}
+}
+
 // The frame rate counts frames shown over the last second, and falls to
 // zero once a second passes without one.
 func TestFrameRate(t *testing.T) {

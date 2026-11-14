@@ -42,21 +42,65 @@ func (t *gpuEnvironmentTexture) release() {
 	*t = gpuEnvironmentTexture{}
 }
 
-func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment) (*gpuEnvironmentTexture, error) {
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		if t := g.shared.environments[e]; t != nil {
-			t.refs++
-			g.shared.mu.Unlock()
-			return t, nil
+func createEnvironmentTexture(dev *wgpu.Device, e *Environment, label string) (*wgpu.Texture, *wgpu.TextureView, *wgpu.Sampler, error) {
+	if e.hdr {
+		levels := e.hdrSpecularLevels()
+		w, h := e.hdrBase.width, e.hdrBase.height
+		size := wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}
+		tex, err := dev.CreateTexture(&wgpu.TextureDescriptor{
+			Label:         label,
+			Size:          size,
+			MipLevelCount: uint32(len(levels)),
+			SampleCount:   1,
+			Dimension:     wgpu.TextureDimension2D,
+			Format:        gputypes.TextureFormatRGBA16Float,
+			Usage:         gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst,
+		})
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		g.shared.mu.Unlock()
+		view, err := dev.CreateTextureView(tex, nil)
+		if err != nil {
+			tex.Release()
+			return nil, nil, nil, err
+		}
+		sampler, err := dev.CreateSampler(&wgpu.SamplerDescriptor{
+			AddressModeU: gputypes.AddressModeRepeat,
+			AddressModeV: gputypes.AddressModeClampToEdge,
+			MagFilter:    gputypes.FilterModeLinear,
+			MinFilter:    gputypes.FilterModeLinear,
+			MipmapFilter: gputypes.FilterModeLinear,
+			Anisotropy:   1,
+		})
+		if err != nil {
+			view.Release()
+			tex.Release()
+			return nil, nil, nil, err
+		}
+		for m, level := range levels {
+			lw, lh := level.width, level.height
+			rowStride := (lw*8 + 255) &^ 255
+			lsize := wgpu.Extent3D{Width: uint32(lw), Height: uint32(lh), DepthOrArrayLayers: 1}
+			if err := dev.Queue().WriteTexture(
+				&wgpu.ImageCopyTexture{Texture: tex, MipLevel: uint32(m)},
+				packHDRRows(level, rowStride),
+				&wgpu.ImageDataLayout{BytesPerRow: uint32(rowStride), RowsPerImage: uint32(lh)},
+				&lsize,
+			); err != nil {
+				sampler.Release()
+				view.Release()
+				tex.Release()
+				return nil, nil, nil, err
+			}
+		}
+		return tex, view, sampler, nil
 	}
+
 	levels := e.specularLevels()
 	w, h := e.texture.width, e.texture.height
 	size := wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}
 	tex, err := dev.CreateTexture(&wgpu.TextureDescriptor{
-		Label:         "environment panorama",
+		Label:         label,
 		Size:          size,
 		MipLevelCount: uint32(len(levels)),
 		SampleCount:   1,
@@ -65,12 +109,12 @@ func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment
 		Usage:         gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	view, err := dev.CreateTextureView(tex, nil)
 	if err != nil {
 		tex.Release()
-		return nil, err
+		return nil, nil, nil, err
 	}
 	sampler, err := dev.CreateSampler(&wgpu.SamplerDescriptor{
 		AddressModeU: gputypes.AddressModeRepeat,
@@ -83,7 +127,7 @@ func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment
 	if err != nil {
 		view.Release()
 		tex.Release()
-		return nil, err
+		return nil, nil, nil, err
 	}
 	for m, level := range levels {
 		lw, lh := level.Rect.Dx(), level.Rect.Dy()
@@ -97,8 +141,25 @@ func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment
 			sampler.Release()
 			view.Release()
 			tex.Release()
-			return nil, err
+			return nil, nil, nil, err
 		}
+	}
+	return tex, view, sampler, nil
+}
+
+func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment) (*gpuEnvironmentTexture, error) {
+	if g.shared != nil {
+		g.shared.mu.Lock()
+		if t := g.shared.environments[e]; t != nil {
+			t.refs++
+			g.shared.mu.Unlock()
+			return t, nil
+		}
+		g.shared.mu.Unlock()
+	}
+	tex, view, sampler, err := createEnvironmentTexture(dev, e, "environment panorama")
+	if err != nil {
+		return nil, err
 	}
 	t := &gpuEnvironmentTexture{texture: tex, view: view, sampler: sampler}
 	if g.shared != nil {

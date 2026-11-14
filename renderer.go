@@ -98,6 +98,12 @@ type Frame struct {
 	// times as Supersample does. Software and wireframe rendering ignore it.
 	// It may be combined with Supersample.
 	MSAA bool
+	// OIT enables McGuire & Bavoil Weighted Blended Order-Independent
+	// Transparency for Material.Transparent meshes on WebGPU (including 4x MSAA)
+	// and software, compositing intersecting or overlapping transparent layers
+	// in a single unsorted pass without view-dependent popping. Wireframe
+	// ignores it.
+	OIT bool
 	// PostProcess configures built-in post-processing passes applied after the
 	// scene is drawn and before overlays: screen-space ambient occlusion, HDR
 	// bloom, exposure, tone mapping, and vignette.
@@ -169,6 +175,9 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 		return Frame{}, err
 	}
 	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Environment: s.environment, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Cull: true, Linear: true, SplatBudget: s.splatBudget}
+	if lights := s.SceneLights(Root); len(lights) > 0 {
+		f.Lighting.Lights = lights
+	}
 	if width < 1 || height < 1 || width > MaxFramePixels || height > MaxFramePixels/width {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)
 	}
@@ -366,11 +375,11 @@ func validateFrame(f Frame) error {
 	if !validFloat(f.Matrix[:]...) {
 		return fmt.Errorf("nt3d: non-finite frame")
 	}
-	if !validFloat(f.EnvironmentStrength) || f.EnvironmentStrength < 0 || (f.Environment != nil && (f.Environment.panorama == nil || f.Environment.texture == nil || !f.Environment.texture.valid() || !finiteVec(f.Forward))) {
+	if !validFloat(f.EnvironmentStrength) || f.EnvironmentStrength < 0 || (f.Environment != nil && (!f.Environment.valid() || !finiteVec(f.Forward))) {
 		return fmt.Errorf("nt3d: invalid environment")
 	}
 	if !validLighting(f.Lighting) {
-		return fmt.Errorf("nt3d: lighting needs at most %d lights of known kinds, finite, with nonnegative intensity and range, and directional lights a direction", MaxLights)
+		return fmt.Errorf("nt3d: lighting needs at most %d lights of known kinds, finite, with nonnegative intensity and range, directional and spot lights a direction, and spot lights valid cone angles", MaxLights)
 	}
 	if len(f.DynamicLines)%2 != 0 {
 		return fmt.Errorf("nt3d: incomplete dynamic line")
