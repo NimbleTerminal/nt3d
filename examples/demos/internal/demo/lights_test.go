@@ -363,3 +363,34 @@ func TestLightPostAndAACycle(t *testing.T) {
 		t.Fatalf("after second x: msaa=%v ss=%d", d.view.MSAA(), d.view.Supersample())
 	}
 }
+
+func TestLightMaterialCycle(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	session := picture.NewTerminalSession(picture.TerminalOptions{Kitty: picture.KittyCapabilityUnsupported})
+	defer session.Close()
+	d.view = nt3dwidget.New(d.scene, 20, 8, nt3dwidget.WithRenderMode(nt3d.Software), nt3dwidget.WithTerminalSession(session), nt3dwidget.WithFrameDecorator(d.decorate))
+	defer d.view.Close()
+	settle(t, d.view, d.view.Init())
+	for step := range len(lightMaterialNames) {
+		if d.lights.material != step {
+			t.Fatalf("material = %d, want %d", d.lights.material, step)
+		}
+		if view := d.lightsView(""); !strings.Contains(view, lightMaterialNames[step]) {
+			t.Fatalf("status missing %q: %s", lightMaterialNames[step], view)
+		}
+		f, err := d.scene.Frame(nt3d.DefaultCamera(), 64, 48)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.decorateLights(&f)
+		if _, err := nt3d.NewSoftwareRenderer().Render(f); err != nil {
+			t.Fatalf("mode %s render: %v", lightMaterialNames[step], err)
+		}
+		if err := d.toggleLightShine(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

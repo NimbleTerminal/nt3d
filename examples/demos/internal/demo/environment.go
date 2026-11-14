@@ -51,6 +51,44 @@ var reliefNormalMap = sync.OnceValue(func() *nt3d.Texture {
 	return tex
 })
 
+// Packed linear ORM map aligned with reliefNormalMap: R = ambient occlusion in
+// valleys, G = smoother crests and rougher valleys, B = metallic crests.
+var reliefORMMap = sync.OnceValue(func() *nt3d.Texture {
+	img := image.NewNRGBA(image.Rect(0, 0, 128, 128))
+	for y := 0; y < 128; y++ {
+		for x := 0; x < 128; x++ {
+			u, v := (float64(x)+.5)/128*8*math.Pi, (float64(y)+.5)/128*8*math.Pi
+			crest := .5 + .5*math.Sin(u)*math.Sin(v)
+			ao := uint8(95 + 160*crest)
+			rough := uint8(215 - 165*crest)
+			metal := uint8(45 + 210*math.Pow(crest, 1.4))
+			img.SetNRGBA(x, y, color.NRGBA{ao, rough, metal, 255})
+		}
+	}
+	tex, _ := nt3d.NewORMMap(img)
+	return tex
+})
+
+// Emissive inlay map: glowing filaments nestled in the recessed relief valleys.
+var inlayEmissiveMap = sync.OnceValue(func() *nt3d.Texture {
+	img := image.NewNRGBA(image.Rect(0, 0, 128, 128))
+	for y := 0; y < 128; y++ {
+		for x := 0; x < 128; x++ {
+			u, v := (float64(x)+.5)/128*8*math.Pi, (float64(y)+.5)/128*8*math.Pi
+			valley := math.Max(0, -math.Sin(u)*math.Sin(v))
+			glow := math.Pow(valley, 5)
+			img.SetNRGBA(x, y, color.NRGBA{
+				uint8(255 * glow),
+				uint8(145 * glow),
+				uint8(45 * glow),
+				255,
+			})
+		}
+	}
+	tex, _ := nt3d.NewTexture(img)
+	return tex
+})
+
 // Twelve rotations share a single projected analytic studio environment.
 // The lights demo changes only the environment pointer when h is pressed.
 var shEnvironments = sync.OnceValue(func() []*nt3d.Environment {

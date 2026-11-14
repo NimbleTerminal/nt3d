@@ -106,9 +106,9 @@ func buildDemoScene() (*viewerState, error) {
 		Heights: heights,
 		Color:   color.RGBA{90, 110, 130, 255},
 		Material: &nt3d.Material{
-			Specular:     0.25,
-			Shininess:    24,
-			Reflectivity: 0.15,
+			PBR:       true,
+			Metallic:  0.1,
+			Roughness: 0.42,
 		},
 	})
 	if err != nil {
@@ -123,14 +123,14 @@ func buildDemoScene() (*viewerState, error) {
 		return nil, err
 	}
 
-	// Reflective center sphere.
+	// Brushed copper-gold conductor center sphere.
 	centerSphere, err := nt3d.BuildSphere(nt3d.Sphere{
 		Radius: 0.42,
-		Color:  color.RGBA{240, 135, 55, 255},
+		Color:  color.RGBA{242, 165, 75, 255},
 		Material: &nt3d.Material{
-			Specular:     0.7,
-			Shininess:    48,
-			Reflectivity: 0.35,
+			PBR:       true,
+			Metallic:  0.94,
+			Roughness: 0.18,
 		},
 	})
 	if err != nil {
@@ -144,14 +144,17 @@ func buildDemoScene() (*viewerState, error) {
 		return nil, err
 	}
 
-	// Orbiting torus ring.
+	// Anodized cyan metallic torus ring with subtle HDR emissive glow.
 	torus, err := nt3d.BuildTorus(nt3d.Torus{
 		MajorRadius: 0.72,
 		MinorRadius: 0.10,
 		Color:       color.RGBA{75, 195, 235, 255},
 		Material: &nt3d.Material{
-			Specular:  0.6,
-			Shininess: 32,
+			PBR:               true,
+			Metallic:          0.85,
+			Roughness:         0.26,
+			Emissive:          color.RGBA{30, 150, 225, 255},
+			EmissiveIntensity: 1.6,
 		},
 	})
 	if err != nil {
@@ -165,14 +168,15 @@ func buildDemoScene() (*viewerState, error) {
 		return nil, err
 	}
 
-	// Translucent glass satellites.
+	// High-IOR crystal glass satellites.
 	satSphere, err := nt3d.BuildSphere(nt3d.Sphere{
 		Radius: 0.18,
 		Color:  color.RGBA{255, 95, 145, 165},
 		Material: &nt3d.Material{
+			PBR:         true,
 			Transparent: true,
-			Specular:    0.8,
-			Shininess:   64,
+			Roughness:   0.12,
+			IOR:         1.8,
 		},
 	})
 	if err != nil {

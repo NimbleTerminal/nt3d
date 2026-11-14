@@ -51,13 +51,56 @@ Other materials ignore alpha.
 GPU and software perturb diffuse, specular, and environment lighting. See
 [normal maps](../normal-maps/) for sampling, tangent frames, animation, and glTF mapping.
 
-## Highlights
+## Highlights and PBR
+
+`Material` supports both classic Blinn-Phong highlights and metallic/roughness physically based shading (PBR) in the same unified struct.
+
+### Classic highlights
 
 `Material.Specular` (0 to 1) adds a white highlight where the surface reflects the light toward the camera, and `Shininess` (1 to 1024, default 32) sets how tight it is. It's worked out per pixel, so highlights stay round even on coarse meshes. Boxes, unlit materials, and wireframe have none.
 
 `Material.Reflectivity` adds [environment reflections](../environment/#reflections).
 Zero disables them; `.02` suits water and `1` makes a mirror. Normal maps also
 perturb reflection direction. Unlit materials ignore reflections.
+
+### Metallic/roughness PBR and ORM maps
+
+Setting `PBR: true` (or a positive `Metallic`, `Roughness`, or non-nil `ORMMap`) switches a lit surface to Cook-Torrance GGX microfacet shading on both GPU and software:
+
+```go
+orm, err := nt3d.NewORMMap(ormImg) // R = occlusion, G = roughness, B = metallic
+mat := &nt3d.Material{
+    PBR:               true,
+    Metallic:          1.0,
+    Roughness:         1.0,
+    IOR:               1.5, // 1..3; 0 defaults to 1.5 (dielectric F0 = 0.04)
+    ORMMap:            orm,
+    ORMRepeat:         true,
+    OcclusionStrength: .85, // 0..1; 0 defaults to 1 when ORMMap is set
+}
+```
+
+- **Conductors vs. dielectrics.** `Metallic` (0 to 1) blends between a dielectric surface (diffuse base color plus achromatic Fresnel specular `F0` derived from `IOR`) and a conductor (`(1 - Metallic)` diffuse attenuation with base-color-tinted `F0`).
+- **Roughness and prefiltered IBL.** `Roughness` (0 to 1) widens the GGX microfacet lobe and blurs [environment](../environment/) reflections across a lazily prefiltered six-level GGX equirectangular mip chain combined with a split-sum Fresnel BRDF. Without an environment, hemisphere ambient provides grazing specular reflections.
+- **Packed linear ORM maps.** `NewORMMap` snapshots a linear-data texture following glTF's channel layout: **R** scales indirect diffuse and specular ambient occlusion by `OcclusionStrength` (leaving direct lights unoccluded), **G** multiplies `Roughness`, and **B** multiplies `Metallic`. `NewShaderORMMap` and `NewShaderORMMapWithParameters` generate linear ORM mip chains on the GPU; `Scene.SetORMMap` swaps an existing ORM map without reuploading geometry.
+- **Composability.** PBR composes with `Toon` (quantizing GGX direct lobes and diffuse bands), `Transmission` / `Refraction` / `Absorption` (refracting behind diffuse before adding Fresnel reflections and GGX highlights), `NormalMap`, `Cutout`, and `Transparent`. Press `e` in the [lights demo](../demos/#lights) to compare `PBR`, `PBR ORM+glow`, `shiny`, and `dull`.
+
+### Emissive colors and maps
+
+Any lit or unlit surface (except outline hulls and wireframe) can emit light of its own:
+
+```go
+mat := &nt3d.Material{
+    PBR:               true,
+    Roughness:         .4,
+    Emissive:          color.RGBA{255, 140, 40, 255},
+    EmissiveIntensity: 3.5, // > 1 produces HDR radiance for Frame.PostProcess.Bloom
+    EmissiveMap:       glowTex,
+    EmissiveRepeat:    true,
+}
+```
+
+`Emissive` is an sRGB color multiplied by `EmissiveIntensity` (default `1` when zero) and optional `EmissiveMap` (`NewTexture` or `NewShaderTexture`, replaceable via `Scene.SetEmissiveMap`). Emission is added before fog. Values with `EmissiveIntensity > 1` exceed `1.0` in HDR scene passes and software float buffers, driving selective glow when `Frame.PostProcess.Bloom` is active.
 
 ## Shader textures
 

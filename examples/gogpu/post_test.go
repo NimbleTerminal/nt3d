@@ -37,4 +37,7 @@ func TestPostPresetsAndFrameBuilder(t *testing.T) {
 	if got := formatAAStatus(true, 2); got != "4x MSAA+2x SS" {
 		t.Fatalf("formatAAStatus(true, 2) = %q", got)
 	}
+	if _, err := nt3d.NewSoftwareRenderer().Render(f); err != nil {
+		t.Fatalf("software render of PBR demo scene: %v", err)
+	}
 }

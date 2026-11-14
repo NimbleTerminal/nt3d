@@ -23,11 +23,13 @@ type lightScene struct {
 	preset     int  // Index into lightPresets.
 	post       int  // Index into lightPostPresets.
 	ranged     bool // Point lights fade to nothing at their range, rather than with distance alone.
-	dull       bool // The shapes without highlights.
+	material   int  // 0 PBR, 1 PBR ORM+glow, 2 shiny Blinn-Phong, 3 dull Lambert.
 	t, phase   float64
 	lamps      [nt3d.MaxLights]nt3d.NodeID // A small glowing sphere at each point light.
 	lampColor  [nt3d.MaxLights]color.RGBA  // What each lamp's geometry is colored, to rebuild it only on change.
 }
+
+var lightMaterialNames = [...]string{"PBR", "PBR ORM+glow", "shiny", "dull"}
 
 var lightPostPresets = []struct {
 	name string
@@ -113,23 +115,27 @@ var lightPresets = []lightPreset{
 	{name: "eight", background: gray(30), ambient: nt3d.Ambient{Sky: gray(255), Ground: gray(255), Intensity: .04}, lamps: eightLamps()},
 }
 
-// Shapes are pale, so lights show their colors.
+// Shapes showcase conductors and dielectrics in PBR modes, or pale surfaces in classic modes.
 var lightShapes = []struct {
-	name  string
-	build func(*nt3d.Material) (nt3d.Geometry, error)
-	at    nt3dmath.Vec3
+	name                string
+	classicCol, pbrCol  color.RGBA
+	metallic, roughness float32
+	ior                 float32
+	emissive            bool
+	build               func(color.RGBA, *nt3d.Material) (nt3d.Geometry, error)
+	at                  nt3dmath.Vec3
 }{
-	{"sphere", func(m *nt3d.Material) (nt3d.Geometry, error) {
-		return nt3d.BuildSphere(nt3d.Sphere{Radius: .45, Color: gray(225), Material: m})
+	{"sphere", gray(225), color.RGBA{242, 198, 92, 255}, .95, .18, 0, false, func(c color.RGBA, m *nt3d.Material) (nt3d.Geometry, error) {
+		return nt3d.BuildSphere(nt3d.Sphere{Radius: .45, Color: c, Material: m})
 	}, nt3dmath.Vec3{X: -.7, Y: .2, Z: .45}},
-	{"torus", func(m *nt3d.Material) (nt3d.Geometry, error) {
-		return nt3d.BuildTorus(nt3d.Torus{MajorRadius: .38, MinorRadius: .14, Color: color.RGBA{232, 214, 196, 255}, Material: m})
+	{"torus", color.RGBA{232, 214, 196, 255}, color.RGBA{236, 152, 112, 255}, .9, .32, 0, true, func(c color.RGBA, m *nt3d.Material) (nt3d.Geometry, error) {
+		return nt3d.BuildTorus(nt3d.Torus{MajorRadius: .38, MinorRadius: .14, Color: c, Material: m})
 	}, nt3dmath.Vec3{X: .75, Y: .45, Z: .14}},
-	{"column", func(m *nt3d.Material) (nt3d.Geometry, error) {
-		return nt3d.BuildCylinder(nt3d.Cylinder{BottomRadius: .22, TopRadius: .22, Height: .9, Color: color.RGBA{204, 218, 232, 255}, Material: m})
+	{"column", color.RGBA{204, 218, 232, 255}, color.RGBA{204, 218, 232, 255}, 0, .15, 1.65, false, func(c color.RGBA, m *nt3d.Material) (nt3d.Geometry, error) {
+		return nt3d.BuildCylinder(nt3d.Cylinder{BottomRadius: .22, TopRadius: .22, Height: .9, Color: c, Material: m})
 	}, nt3dmath.Vec3{X: .3, Y: -.75, Z: .45}},
-	{"cube", func(m *nt3d.Material) (nt3d.Geometry, error) {
-		return nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: .45, Y: .45, Z: .45}, Color: gray(210), Material: m})
+	{"cube", gray(210), color.RGBA{198, 204, 214, 255}, .8, .45, 0, true, func(c color.RGBA, m *nt3d.Material) (nt3d.Geometry, error) {
+		return nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: .45, Y: .45, Z: .45}, Color: c, Material: m})
 	}, nt3dmath.Vec3{X: -.55, Y: -.85, Z: .225}},
 }
 
@@ -140,17 +146,6 @@ func (d *demo) setupLights() error {
 		if p.name == "lamps" {
 			d.lights.preset = i
 		}
-	}
-	// The floor is two triangles: a point light's bright spot on it is
-	// found per pixel, where no vertex is.
-	const s = 3
-	up := nt3dmath.Vec3{Z: 1}
-	floor := nt3d.Geometry{Indices: []uint32{0, 1, 2, 0, 2, 3}}
-	for _, p := range [][2]float32{{-s, -s}, {s, -s}, {s, s}, {-s, s}} {
-		floor.Vertices = append(floor.Vertices, nt3d.Vertex{Position: nt3dmath.Vec3{X: p[0], Y: p[1]}, Normal: up, Color: gray(200)})
-	}
-	if _, err := d.scene.SetGeometry("floor", floor); err != nil {
-		return err
 	}
 	if err := d.buildLightShapes(); err != nil {
 		return err
@@ -166,19 +161,59 @@ func (d *demo) setupLights() error {
 	return err
 }
 
-// buildLightShapes places the shapes, shiny unless dull.
+// buildLightShapes places the floor and shapes for the active material mode.
 func (d *demo) buildLightShapes() error {
-	m := &nt3d.Material{Specular: .5, Shininess: 48}
-	if d.lights.dull {
-		m = &nt3d.Material{}
+	// The floor is two triangles: a point light's bright spot on it is
+	// found per pixel, where no vertex is.
+	const s = 3
+	up := nt3dmath.Vec3{Z: 1}
+	var floorMat *nt3d.Material
+	if d.lights.material <= 1 {
+		floorMat = &nt3d.Material{PBR: true, Metallic: .08, Roughness: .42}
 	}
-	if d.lights.normal {
-		m.NormalMap = reliefNormalMap()
-		m.NormalStrength = .65
-		m.NormalRepeat = true
+	floor := nt3d.Geometry{Indices: []uint32{0, 1, 2, 0, 2, 3}, Material: floorMat}
+	for _, p := range [][2]float32{{-s, -s}, {s, -s}, {s, s}, {-s, s}} {
+		floor.Vertices = append(floor.Vertices, nt3d.Vertex{Position: nt3dmath.Vec3{X: p[0], Y: p[1]}, Normal: up, Color: gray(200)})
 	}
+	if _, err := d.scene.SetGeometry("floor", floor); err != nil {
+		return err
+	}
+
 	for _, shape := range lightShapes {
-		g, err := shape.build(m)
+		col := shape.classicCol
+		var m *nt3d.Material
+		switch d.lights.material {
+		case 0: // PBR
+			col = shape.pbrCol
+			m = &nt3d.Material{PBR: true, Metallic: shape.metallic, Roughness: shape.roughness, IOR: shape.ior}
+		case 1: // PBR ORM + HDR emissive inlay
+			col = shape.pbrCol
+			m = &nt3d.Material{
+				PBR:               true,
+				Metallic:          1,
+				Roughness:         1,
+				IOR:               shape.ior,
+				ORMMap:            reliefORMMap(),
+				ORMRepeat:         true,
+				OcclusionStrength: .85,
+			}
+			if shape.emissive {
+				m.Emissive = color.RGBA{255, 255, 255, 255}
+				m.EmissiveIntensity = 3.2
+				m.EmissiveMap = inlayEmissiveMap()
+				m.EmissiveRepeat = true
+			}
+		case 2: // Classic Blinn-Phong
+			m = &nt3d.Material{Specular: .5, Shininess: 48}
+		default: // Classic matte Lambert
+			m = &nt3d.Material{}
+		}
+		if d.lights.normal {
+			m.NormalMap = reliefNormalMap()
+			m.NormalStrength = .65
+			m.NormalRepeat = true
+		}
+		g, err := shape.build(col, m)
 		if err != nil {
 			return err
 		}
@@ -243,8 +278,14 @@ func (d *demo) applyLights() (nt3d.Lighting, error) {
 		}
 		lp := p.lamps[i]
 		if ls.lampColor[i] != lp.color {
-			// Lamps are unlit: they show their light's color whatever lights them.
-			g, err := nt3d.BuildSphere(nt3d.Sphere{Radius: .05, Segments: 12, Rings: 8, Color: lp.color, Material: &nt3d.Material{Unlit: true}})
+			// Lamps are unlit with HDR emissive boost so bloom presets halo them.
+			g, err := nt3d.BuildSphere(nt3d.Sphere{
+				Radius:   .05,
+				Segments: 12,
+				Rings:    8,
+				Color:    lp.color,
+				Material: &nt3d.Material{Unlit: true, Emissive: lp.color, EmissiveIntensity: 3.0},
+			})
 			if err != nil {
 				return l, err
 			}
@@ -303,7 +344,7 @@ func (d *demo) toggleFalloff() error {
 }
 
 func (d *demo) toggleLightShine() error {
-	d.lights.dull = !d.lights.dull
+	d.lights.material = (d.lights.material + 1) % len(lightMaterialNames)
 	return d.buildLightShapes()
 }
 
@@ -321,15 +362,12 @@ func (d *demo) lightsView(content string) string {
 	if !d.lights.ranged {
 		falloff = "1/(1+d²)"
 	}
-	shine := "shiny"
-	if d.lights.dull {
-		shine = "dull"
-	}
+	shine := lightMaterialNames[d.lights.material]
 	aa := ""
 	if d.view != nil && (d.view.MSAA() || d.view.Supersample() > 1) {
 		aa = " · " + d.aaLabel()
 	}
-	return fmt.Sprintf("nt3d lights · l preset · h SH rotation · f falloff · e highlights · n normal map · b lift · s shadows · p post · x AA · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · %s%s · drag orbit · wheel zoom · r rotate · %s",
+	return fmt.Sprintf("nt3d lights · l preset · h SH rotation · f falloff · e material · n normal map · b lift · s shadows · p post · x AA · a pause · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %d of %d lights · %s · %s · %s%s · drag orbit · wheel zoom · r rotate · %s",
 		content, d.rendering(), p.name, n, nt3d.MaxLights, falloff, fmt.Sprintf("%s · normal map %t · lifted %t · %s", shine, d.lights.normal, d.lights.lift, d.lights.shadows.String()), lightPostPresets[d.lights.post].name, aa, d.status)
 }
 

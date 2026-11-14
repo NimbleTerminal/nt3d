@@ -80,6 +80,17 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Cook-Torrance GGX PBR, ORM maps, roughness-filtered IBL, HDR emissive
+  materials, and glTF material extensions**: unified `Material` gains `PBR`,
+  `Metallic`, `Roughness`, `IOR`, packed linear `ORMMap` (`NewORMMap`,
+  `NewShaderORMMap`, `Scene.SetORMMap`, `OcclusionStrength`), and HDR
+  `Emissive` / `EmissiveIntensity` / `EmissiveMap` (`Scene.SetEmissiveMap`) on
+  both WebGPU (consolidated 8-binding material group + procedural GPU mip
+  downsampling + 6-level GGX-prefiltered environment specular mip chain) and
+  software, composing with `Toon` and `Transmission`. `mesh/gltf` decodes real
+  PBR factors, packed/merged ORM textures, emissive maps, and
+  `KHR_materials_emissive_strength`, `KHR_materials_ior`,
+  `KHR_materials_transmission`, and `KHR_materials_volume`.
 - **4× WebGPU MSAA and GPU post-processing pipeline**: `Frame.MSAA` enables 4×
   hardware multisampling across every WebGPU scene pass, transmission snapshot,
   and GPU depth pick (`GPUSession.NewView` shares both 1× and 4× pipeline sets,

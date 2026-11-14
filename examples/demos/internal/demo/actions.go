@@ -81,7 +81,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.cloud != nil:
 		return "cloud", keys{[]key.Binding{bind("l", "l", "LOD"), bind("n", "n", "count"), bind("-", "-", "zoom out"), bind("=", "=", "zoom in")}}
 	case d.lights != nil:
-		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("h", "h", "SH rotation"), bind("e", "e", "highlights"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("b", "b", "lift"), bind("p", "p", "post"), bind("a", "a", "pause")}}
+		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("h", "h", "SH rotation"), bind("e", "e", "material"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("b", "b", "lift"), bind("p", "p", "post"), bind("a", "a", "pause")}}
 	case d.forest != nil:
 		return "forest", keys{[]key.Binding{bind("l", "l", "LOD"), bind("i", "i", "instancing"), bind("n", "n", "trees"), bind("s", "s", "shadows"), bind("a", "a", "wind")}}
 	case d.mipmaps != nil:

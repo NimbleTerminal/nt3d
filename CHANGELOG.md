@@ -11,6 +11,17 @@
   `nt3d` package into `nimbleterminal.dev/nt3d/fur` (`package nt3dfur`) as
   `Config`, `Coat`, and `New`. Expose `Texture.NRGBAAt` and `Texture.Sample`
   for straight-alpha texel reads and bilinear UV sampling.
+- Add Cook-Torrance GGX metallic/roughness PBR, packed linear ORM maps,
+  roughness-filtered specular IBL, and HDR emissive materials to `Material` on
+  both WebGPU and software renderers (`PBR`, `Metallic`, `Roughness`, `IOR`,
+  `ORMMap`, `ORMRepeat`, `OcclusionStrength`, `Emissive`, `EmissiveIntensity`,
+  `EmissiveMap`, `EmissiveRepeat`, `NewORMMap`, `NewShaderORMMap`,
+  `NewShaderORMMapWithParameters`, `Scene.SetORMMap`, and
+  `Scene.SetEmissiveMap`). Update `nt3d/mesh/gltf` to decode real PBR
+  metallic/roughness, merged occlusion/metallic-roughness ORM maps, emissive
+  textures, and `KHR_materials_emissive_strength`, `KHR_materials_ior`,
+  `KHR_materials_transmission`, and `KHR_materials_volume`, and showcase PBR
+  and emissive materials in `lights` (`e` material cycle) and `examples/gogpu`.
 - Add `Frame.MSAA` (4× WebGPU multisample anti-aliasing across scene passes,
   transmission captures, and `GPUSession.Pick` depth reads, shared across
   `GPUSession.NewView`) and `Frame.PostProcess` (`SSAO`, HDR `Bloom`,
