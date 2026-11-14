@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking:** move Gerstner wave surfaces, wake impulses, tiled water meshes,
+  and Archimedes hull buoyancy, drag, and planing evaluation out of the root
+  `nt3d` package into `nimbleterminal.dev/nt3d/water` (`package nt3dwater`),
+  renaming `WaterSurface`, `WaterBodyState`, and `WaterForces` to `Surface`,
+  `BodyState`, and `Forces`.
+- **Breaking:** move shell-fur and silhouette-fin builders out of the root
+  `nt3d` package into `nimbleterminal.dev/nt3d/fur` (`package nt3dfur`) as
+  `Config`, `Coat`, and `New`. Expose `Texture.NRGBAAt` and `Texture.Sample`
+  for straight-alpha texel reads and bilinear UV sampling.
+- Add `Frame.MSAA` (4× WebGPU multisample anti-aliasing across scene passes,
+  transmission captures, and `GPUSession.Pick` depth reads, shared across
+  `GPUSession.NewView`) and `Frame.PostProcess` (`SSAO`, HDR `Bloom`,
+  `Exposure`, `ReinhardToneMap` / `ACESToneMap`, and `Vignette`) on GPU with
+  tiered CPU software fallbacks and `nt3dwidget` `WithMSAA` / `SetMSAA` and
+  `WithEffects` / `SetEffects`. Wire AA and post-processing controls into the
+  demos (`--msaa`, `--effect`, `fur`, `mipmaps`, `lights`) and `examples/gogpu`
+  (`-msaa`, `-post`, `4`/`M`, `F12`/`X`).
+- Add `Scene.SetLOD` and `LODLevel` for multi-tier distance-based level of
+  detail with shared GPU buffers and BVH pick indexes across instances,
+  per-tier outline overrides, and optional far-distance cutoffs.
+- Add `Frame.Stats` and `FrameStats` to report total, visible, and
+  frustum-drawn instances, draw batches, triangles, lines, and splat-budgeted
+  points. Update the `forest` demo to showcase three-tier tree LODs (`l` to
+  cycle `LOD on`, `LOD tint`, and `LOD off`) and live `Frame.Stats` counters.
+- Add `Camera.Forward` and `Camera.Basis` to return the camera's world-space
+  viewing direction and orthonormal right/up/forward basis alongside
+  `Camera.Eye`.
+- Document remaining exported symbols across all library packages, and separate
+  file copyright headers from `package` clauses so `go doc` and `pkg.go.dev`
+  render clean package overviews.
+- Split the `examples/gogpu` desktop viewer into focused source files,
+  consolidate benchmark artifacts under `docs/performance/`, add
+  `CODE_OF_CONDUCT.md`, and refresh `README.md`.
+
+----
+
 ## v0.9.0 (2026-11-12)
 
 This release adds toon shading and crease outlines to the GPU and software
