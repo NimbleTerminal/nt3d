@@ -30,7 +30,7 @@ type meshScene struct {
 	sources       []nt3d.Geometry // As built or read, per node.
 	normals       int             // Index into meshNormals.
 	outlined      bool            // Expanded back-face contours.
-	glass         bool            // Shapes drawn transparent.
+	glass         int             // 0 opaque, 1 glass (OIT), 2 glass (sorted).
 	shiny         bool            // Shapes with specular highlights.
 	triangles     int
 	title         string
@@ -305,9 +305,9 @@ func (d *demo) cycleNormals() error {
 	return d.rebuildMeshes()
 }
 
-// toggleGlass makes every mesh transparent, or opaque again.
+// toggleGlass cycles opaque -> glass (OIT) -> glass (sorted).
 func (d *demo) toggleGlass() error {
-	d.meshes.glass = !d.meshes.glass
+	d.meshes.glass = (d.meshes.glass + 1) % 3
 	return d.rebuildMeshes()
 }
 
@@ -346,7 +346,7 @@ func (d *demo) rebuildMeshes() error {
 		case 2:
 			g, err = nt3d.SmoothNormals(g, 40)
 		}
-		if err == nil && (d.meshes.glass || d.meshes.shiny) {
+		if err == nil && (d.meshes.glass > 0 || d.meshes.shiny) {
 			m := nt3d.Material{}
 			if g.Material != nil {
 				m = *g.Material
@@ -354,7 +354,7 @@ func (d *demo) rebuildMeshes() error {
 			if d.meshes.shiny {
 				m.Specular, m.Shininess = .5, 48
 			}
-			if d.meshes.glass {
+			if d.meshes.glass > 0 {
 				m.Transparent, m.Cutout, m.EdgeOn = true, false, false
 				g.Vertices = append([]nt3d.Vertex(nil), g.Vertices...)
 				for j := range g.Vertices {
@@ -457,8 +457,11 @@ func (d *demo) meshesView(content string) string {
 	if d.meshes.outlined {
 		outlines = "outlines on"
 	}
-	if d.meshes.glass {
-		glass = "glass"
+	switch d.meshes.glass {
+	case 1:
+		glass = "glass (OIT)"
+	case 2:
+		glass = "glass (sorted)"
 	}
 	if d.meshes.shiny {
 		shine = "highlights"

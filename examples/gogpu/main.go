@@ -8,8 +8,8 @@
 //     -file or positional file paths (.glb, .gltf, .sog, .spz, .ply, .stl, .obj, .3mf).
 //
 // Controls:
-//   - Drag & Drop files (.glb, .gltf, .sog, .spz, .ply, .stl, .obj, .3mf, .png, .jpg) onto window
-//   - O or Ctrl+O: open native file picker dialog for 3D models, splats, or panoramas
+//   - Drag & Drop files (.glb, .gltf, .sog, .spz, .ply, .stl, .obj, .3mf, .hdr, .png, .jpg) onto window
+//   - O or Ctrl+O: open native file picker dialog for 3D models, splats, or panoramas (.hdr/.png/.jpg)
 //   - Click top-left "[v] Scene: ..." bar (or press ` / F5): open interactive Demo Dropdown Menu
 //   - Left-mouse drag: orbit camera (Alt + Left-drag: rotate sun/key light direction)
 //   - Right-mouse drag (or Shift + Left-drag): pan camera
@@ -19,9 +19,10 @@
 //   - W or F11: cycle 3D Transform Gizmo mode (Translate -> Rotate -> Scale -> Off)
 //   - Backspace / Delete: reset selected node's transform to its original pose
 //   - Mouse wheel: zoom camera
-//   - E or F6: cycle Environment / IBL skybox preset (or dropped panorama)
-//   - L or F7: cycle Lighting Rig preset (Key+Sky, 3-Point, RGB Lamps, Lantern, 8-Lamp, Pure IBL)
-//   - K or F8: toggle real-time GPU Shadow Mapping
+//   - E or F6: cycle Environment / IBL skybox preset (including HDR Studio Sun or dropped .hdr/.png)
+//   - L or F7: cycle Lighting Rig preset (Key+Sky, 3-Point, Spotlights, RGB Lamps, Lantern, 8-Lamp, Pure IBL)
+//   - K or F8: toggle real-time GPU Shadow Mapping (orthographic sun or perspective spotlight)
+//   - N: toggle Weighted Blended Order-Independent Transparency (OIT, in viewer mode)
 //   - M or 4: toggle 4x GPU MSAA (multisample anti-aliasing); S toggles 2x supersampling in viewer mode
 //   - X or F12: cycle GPU Post-Processing preset (Off, Studio, Bloom+ACES, SSAO, Cinema Warm, Reinhard)
 //   - P or F9: capture offscreen PNG screenshot via GPUSession.RenderToImage
@@ -67,10 +68,12 @@ func main() {
 	demoNames := gallery.Names()
 	demoFlag := flag.String("demo", "", "interactive demo to run ("+strings.Join(demoNames, ", ")+", or 'list')")
 	fileFlag := flag.String("file", "", "path to a 3D model or Gaussian splat file (.glb, .gltf, .sog, .spz, .ply, .stl, .obj, .3mf)")
+	envFlag := flag.String("env", "", "path to an environment panorama (.hdr, .pic, .png, .jpg)")
 	yUp := flag.Bool("y-up", false, "convert Y-up files to Z-up when loading")
 	width := flag.Int("width", 960, "initial window width")
 	height := flag.Int("height", 640, "initial window height")
 	msaaFlag := flag.Bool("msaa", false, "enable 4x GPU multisample anti-aliasing (M or 4 toggles)")
+	oitFlag := flag.Bool("oit", true, "enable Weighted Blended Order-Independent Transparency (N toggles in viewer)")
 	supersampleFlag := flag.Int("supersample", 1, "GPU supersampling factor, 1..4 (S toggles in viewer)")
 	postFlag := flag.String("post", "off", "GPU post-processing preset: off, studio, bloom, ssao, cinema, reinhard (X or F12 cycles)")
 	maxFrames := flag.Int("frames", 0, "exit automatically after N rendered frames (0 = interactive)")
@@ -150,6 +153,7 @@ func main() {
 		wantSecond      bool
 		hasSecond       bool
 	)
+	lighting.oit = *oitFlag
 	if err := lighting.setPostByName(*postFlag); err != nil {
 		log.Fatal(err)
 	}
@@ -173,6 +177,51 @@ func main() {
 		}
 	}()
 
+	loadPanoramaPath := func(p string) bool {
+		switch strings.ToLower(filepath.Ext(p)) {
+		case ".hdr", ".pic":
+			data, err := os.ReadFile(p)
+			if err != nil {
+				log.Printf("read HDR panorama %q: %v", p, err)
+				return false
+			}
+			env, err := nt3d.NewHDREnvironment(data)
+			if err != nil {
+				log.Printf("NewHDREnvironment(%q): %v", p, err)
+				return false
+			}
+			lighting.setCustomPanorama(filepath.Base(p), env, viewer)
+			fmt.Printf("Loaded custom HDR environment panorama: %s\n", filepath.Base(p))
+			return true
+		case ".png", ".jpg", ".jpeg":
+			f, err := os.Open(p)
+			if err != nil {
+				log.Printf("open panorama %q: %v", p, err)
+				return false
+			}
+			img, _, err := image.Decode(f)
+			_ = f.Close()
+			if err != nil {
+				log.Printf("decode panorama %q: %v", p, err)
+				return false
+			}
+			env, err := nt3d.NewEnvironment(img)
+			if err != nil {
+				log.Printf("NewEnvironment(%q): %v", p, err)
+				return false
+			}
+			lighting.setCustomPanorama(filepath.Base(p), env, viewer)
+			fmt.Printf("Loaded custom environment panorama: %s (%dx%d)\n",
+				filepath.Base(p), img.Bounds().Dx(), img.Bounds().Dy())
+			return true
+		default:
+			return false
+		}
+	}
+	if *envFlag != "" {
+		loadPanoramaPath(*envFlag)
+	}
+
 	loadDroppedOrSelectedPaths := func(paths []string) {
 		if len(paths) == 0 {
 			return
@@ -180,26 +229,8 @@ func main() {
 		var modelPaths []string
 		for _, p := range paths {
 			switch strings.ToLower(filepath.Ext(p)) {
-			case ".png", ".jpg", ".jpeg":
-				f, err := os.Open(p)
-				if err != nil {
-					log.Printf("open panorama %q: %v", p, err)
-					continue
-				}
-				img, _, err := image.Decode(f)
-				_ = f.Close()
-				if err != nil {
-					log.Printf("decode panorama %q: %v", p, err)
-					continue
-				}
-				env, err := nt3d.NewEnvironment(img)
-				if err != nil {
-					log.Printf("NewEnvironment(%q): %v", p, err)
-					continue
-				}
-				lighting.setCustomPanorama(filepath.Base(p), env, viewer)
-				fmt.Printf("Loaded custom environment panorama: %s (%dx%d)\n",
-					filepath.Base(p), img.Bounds().Dx(), img.Bounds().Dy())
+			case ".hdr", ".pic", ".png", ".jpg", ".jpeg":
+				loadPanoramaPath(p)
 			default:
 				modelPaths = append(modelPaths, p)
 			}
@@ -245,15 +276,15 @@ func main() {
 			Filters: []gogpu.FileTypeFilter{
 				{
 					Name:       "3D Models, Splats & Panoramas",
-					Extensions: []string{"glb", "gltf", "sog", "spz", "ply", "stl", "obj", "3mf", "png", "jpg", "jpeg"},
+					Extensions: []string{"glb", "gltf", "sog", "spz", "ply", "stl", "obj", "3mf", "hdr", "pic", "png", "jpg", "jpeg"},
 				},
 				{
 					Name:       "3D Models & Gaussian Splats",
 					Extensions: []string{"glb", "gltf", "sog", "spz", "ply", "stl", "obj", "3mf"},
 				},
 				{
-					Name:       "Environment Panoramas",
-					Extensions: []string{"png", "jpg", "jpeg"},
+					Name:       "Environment Panoramas (.hdr, .png, .jpg)",
+					Extensions: []string{"hdr", "pic", "png", "jpg", "jpeg"},
 				},
 			},
 			Multiple: true,
@@ -753,6 +784,8 @@ func main() {
 			lighting.cycleRig()
 		case gpucontext.KeyK:
 			lighting.toggleShadows()
+		case gpucontext.KeyN:
+			lighting.toggleOIT()
 		case gpucontext.KeyG:
 			if viewer != nil {
 				viewer.toggleModelFloor()
@@ -878,7 +911,7 @@ func main() {
 				if err != nil {
 					return
 				}
-				lighting.applyFrameLighting(&f, viewer.runner != nil)
+				lighting.applyFrameLighting(&f, viewer)
 				lighting.applyFramePost(&f, viewer.runner != nil)
 				viewer.decorateFrame(&f, topCam, showHUD, true)
 				if err := secondSess.Encode(f, dc.CommandEncoder(), nt3d.GPUTarget{
@@ -982,7 +1015,7 @@ func main() {
 			log.Printf("buildFrame: %v", err)
 			return
 		}
-		lighting.applyFrameLighting(&f, viewer.runner != nil)
+		lighting.applyFrameLighting(&f, viewer)
 		lighting.applyFramePost(&f, viewer.runner != nil)
 		if len(viewer.splatNodes) > 0 && !loadCompose && lighting.envIndex == 0 {
 			f.Background = color.RGBA{18, 20, 26, 255}
@@ -1025,7 +1058,7 @@ func main() {
 				topCam.Alpha = 78
 				topCam.Beta = camera.Beta + 90
 				if pipFrame, err := viewer.buildFrame(topCam, pipW, pipH, msaa, 1); err == nil {
-					lighting.applyFrameLighting(&pipFrame, viewer.runner != nil)
+					lighting.applyFrameLighting(&pipFrame, viewer)
 					lighting.applyFramePost(&pipFrame, viewer.runner != nil)
 					if len(viewer.splatNodes) > 0 && lighting.envIndex == 0 {
 						pipFrame.Background = color.RGBA{26, 30, 38, 255}

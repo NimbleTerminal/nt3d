@@ -394,3 +394,51 @@ func TestLightMaterialCycle(t *testing.T) {
 		}
 	}
 }
+
+func TestSpotlightsAndHDRPresets(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	foundHDR, foundSpots := false, false
+	for i, p := range lightPresets {
+		if p.name == "HDR IBL" {
+			foundHDR = true
+			d.lights.preset = i
+			d.lights.post = 2 // bloom + ACES
+			if _, err := d.applyLights(); err != nil {
+				t.Fatal(err)
+			}
+			f, err := d.scene.Frame(nt3d.DefaultCamera(), 64, 48)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d.decorateLights(&f)
+			if _, err := nt3d.NewSoftwareRenderer().Render(f); err != nil {
+				t.Fatalf("HDR IBL render: %v", err)
+			}
+		}
+		if p.name == "spotlights" {
+			foundSpots = true
+			d.lights.preset = i
+			d.lights.shadows = shadowMap
+			if _, err := d.applyLights(); err != nil {
+				t.Fatal(err)
+			}
+			f, err := d.scene.Frame(nt3d.DefaultCamera(), 64, 48)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d.decorateLights(&f)
+			if len(f.Lighting.Lights) != 3 || f.Lighting.Lights[0].Kind != nt3d.SpotLight || !f.Lighting.Lights[0].Shadows {
+				t.Fatalf("spotlights preset = %+v", f.Lighting.Lights)
+			}
+			if _, err := nt3d.NewSoftwareRenderer().Render(f); err != nil {
+				t.Fatalf("spotlights shadow render: %v", err)
+			}
+		}
+	}
+	if !foundHDR || !foundSpots {
+		t.Fatalf("missing presets: foundHDR=%v foundSpots=%v", foundHDR, foundSpots)
+	}
+}

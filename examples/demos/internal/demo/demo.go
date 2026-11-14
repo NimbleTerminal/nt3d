@@ -642,6 +642,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	if d.mipmaps != nil && d.mipmaps.mode == mipOnly {
 		f.Anisotropy = 1
 	}
+	if d.meshes != nil && d.meshes.glass == 1 {
+		f.OIT = true
+	}
 	if d.showsSplats() {
 		d.splats.drawn, d.splats.resident = f.SplatSelection()
 	}

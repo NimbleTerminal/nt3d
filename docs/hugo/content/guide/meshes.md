@@ -123,6 +123,13 @@ These are generic APIs: procedural sources can call `SetNodeCamera`, or set `Ass
 
 See the [glTF camera specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#cameras) and [KHR_texture_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) for the source conventions.
 
+### Authored punctual lights (`KHR_lights_punctual`)
+
+`nt3dgltf.Decode` also decodes `KHR_lights_punctual` (`directional`, `point`, and `spot` lights, including `color`, `intensity`, `range`, and `spot.innerConeAngle` / `spot.outerConeAngle`, accepted when listed in `extensionsRequired`) onto `AssetNode.Light`. Instantiating the scene via `AddTo` or `SceneAsset.Instantiate` attaches each light with `scene.SetNodeLight(id, light)`:
+
+- `scene.Lights(root)` lists punctual light nodes in hierarchy order, `scene.NodeLight(id)` resolves one light's current world position and `-Z` forward orientation (including animated parent nodes), and `scene.SceneLights(root)` resolves up to `nt3d.MaxLights` visible lights.
+- `Scene.Frame` populates `Frame.Lighting.Lights` automatically from `scene.SceneLights(nt3d.Root)` whenever visible light nodes exist, and `nt3dwidget` preserves those scene lights unless `SetLighting` is called explicitly.
+
 ## Writing
 
 `EncodeSTL`, `EncodeOBJ`, `Encode3MF`, and `EncodePLY` write triangles; OBJ writes lines too. Nothing is normalized on the way out. `nt3dsog.Encode` writes a Gaussian cloud whose bands above DC are a palette (see [Preprocessing splats](#preprocessing-splats)) as a SOG bundle.

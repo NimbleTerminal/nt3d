@@ -39,7 +39,8 @@ A click sends your program a `PickMsg` saying what was hit; see [Picking](../pic
 ## Options
 
 - `WithRenderMode` chooses WebGPU, software, or wireframe; `SetRenderMode` changes it.
-- `WithCamera`, `WithBackground`, `SetLighting`, and `SetFog` set up the look.
+- `WithCamera`, `WithBackground`, `SetLighting`, and `SetFog` set up the look. Until `SetLighting` is called, any visible `SetNodeLight` / glTF `KHR_lights_punctual` lights on the scene are used automatically.
+- `WithOIT(true)` and `SetOIT` enable Weighted Blended [order-independent transparency](../rendering/#how-it-looks) (`Frame.OIT`) on WebGPU and software (ignored in wireframe).
 - `WithMSAA(true)` and `SetMSAA` enable 4× hardware multisampling on WebGPU (ignored in software and wireframe).
 - `WithSupersample(n)` and `SetSupersample` render GPU frames at `1..4×` resolution and box-filter down. Software frames aren't supersampled during interactive updates, since they're already trading resolution for speed (`Snapshot` honors both `Supersample` and complete-frame effects).
 - `WithEffects(nt3d.PostProcess{...})` and `SetEffects` run the built-in HDR [post-processing chain](../rendering/#how-it-looks) (`SSAO`, `Bloom`, `Exposure`, `ToneMap`, `Vignette`) on the GPU with tiered CPU software fallbacks.

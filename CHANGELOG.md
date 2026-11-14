@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Add `NewHDREnvironment` (zero-dependency Radiance RGBE `.hdr` / `.pic`
+  panorama decoder feeding unclamped `RGBA16Float` radiance into GGX specular
+  IBL, diffuse SH, HDR skies, and `Bloom`), `SpotLight` (`InnerCone`,
+  `OuterCone`, and single-face perspective shadow maps on GPU and software),
+  scene-graph punctual light nodes (`Scene.SetNodeLight`, `Lights`, `NodeLight`,
+  `SceneLights`) with glTF `KHR_lights_punctual` decoding in `nt3d/mesh/gltf`,
+  and McGuire & Bavoil Weighted Blended Order-Independent Transparency
+  (`Frame.OIT` and `nt3dwidget` `WithOIT` / `SetOIT` / `OIT`, compatible with
+  1× and 4× WebGPU MSAA and software float accumulation). Wire `HDR IBL` and
+  `spotlights` into `lights`, `glass (OIT)` vs `glass (sorted)` into `shapes` /
+  `meshes`, and `.hdr` panorama loading, `Spotlights`, and `OIT` into
+  `examples/gogpu`.
 - **Breaking:** move Gerstner wave surfaces, wake impulses, tiled water meshes,
   and Archimedes hull buoyancy, drag, and planing evaluation out of the root
   `nt3d` package into `nimbleterminal.dev/nt3d/water` (`package nt3dwater`),

@@ -3,6 +3,8 @@
 package demo
 
 import (
+	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -32,6 +34,52 @@ var imageEnvironment = sync.OnceValue(func() *nt3d.Environment {
 		}
 	}
 	e, _ := nt3d.NewEnvironment(img)
+	return e
+})
+
+// hdrEnvironment encodes a synthetic Radiance RGBE (.hdr) panorama with an
+// unclamped solar disk (radiance ~12) and warm/cool studio sky, exercising
+// NewHDREnvironment's RGBA16Float GGX specular mip chain, SH sky, and HDR bloom.
+var hdrEnvironment = sync.OnceValue(func() *nt3d.Environment {
+	const w, h = 128, 64
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y %d +X %d\n", h, w)
+	rgbe := func(r, g, b float64) [4]byte {
+		v := max(r, max(g, b))
+		if v < 1e-32 {
+			return [4]byte{}
+		}
+		m, exp := math.Frexp(v)
+		s := m * 256 / v
+		c := func(x float64) byte { return byte(max(0, min(255, int(x*s)))) }
+		return [4]byte{c(r), c(g), c(b), byte(exp + 128)}
+	}
+	sunDir := nt3dmath.Vec3{X: .65, Y: -.45, Z: .61}.Normalize()
+	for y := range h {
+		theta := (float64(y) + .5) / h * math.Pi
+		sinT, cosT := math.Sin(theta), math.Cos(theta)
+		for x := range w {
+			phi := ((float64(x)+.5)/w - .5) * 2 * math.Pi
+			d := nt3dmath.Vec3{X: float32(sinT * math.Cos(phi)), Y: float32(sinT * math.Sin(phi)), Z: float32(cosT)}
+			sky := max(0, float64(d.Z))
+			warm := max(0, float64(d.X)) * sinT
+			r := .08 + .28*warm + .06*(1-sky)
+			g := .11 + .20*warm + .14*sky
+			b := .18 + .08*warm + .42*sky
+			if dot := float64(d.Dot(sunDir)); dot > .975 {
+				s := math.Pow((dot-.975)/.025, 2)
+				r += 12.0 * s
+				g += 9.8 * s
+				b += 6.8 * s
+			}
+			px := rgbe(r, g, b)
+			buf.Write(px[:])
+		}
+	}
+	e, err := nt3d.NewHDREnvironment(buf.Bytes())
+	if err != nil {
+		panic(err)
+	}
 	return e
 })
 

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
@@ -64,6 +65,45 @@ var (
 		})
 		return radiance
 	})
+	envHDRStudioSun = sync.OnceValue(func() *nt3d.Environment {
+		const w, h = 192, 96
+		var buf bytes.Buffer
+		fmt.Fprintf(&buf, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y %d +X %d\n", h, w)
+		rgbe := func(r, g, b float64) [4]byte {
+			v := max(r, max(g, b))
+			if v < 1e-32 {
+				return [4]byte{}
+			}
+			m, exp := math.Frexp(v)
+			s := m * 256 / v
+			c := func(x float64) byte { return byte(max(0, min(255, int(x*s)))) }
+			return [4]byte{c(r), c(g), c(b), byte(exp + 128)}
+		}
+		sunDir := nt3dmath.Vec3{X: 0.65, Y: -0.45, Z: 0.61}.Normalize()
+		for y := range h {
+			theta := (float64(y) + 0.5) / h * math.Pi
+			sinT, cosT := math.Sin(theta), math.Cos(theta)
+			for x := range w {
+				phi := ((float64(x)+0.5)/w - 0.5) * 2 * math.Pi
+				d := nt3dmath.Vec3{X: float32(sinT * math.Cos(phi)), Y: float32(sinT * math.Sin(phi)), Z: float32(cosT)}
+				sky := max(0, float64(d.Z))
+				warm := max(0, float64(d.X)) * sinT
+				r := 0.08 + 0.30*warm + 0.06*(1-sky)
+				g := 0.11 + 0.22*warm + 0.15*sky
+				b := 0.19 + 0.08*warm + 0.45*sky
+				if dot := float64(d.Dot(sunDir)); dot > 0.978 {
+					s := math.Pow((dot-0.978)/0.022, 2)
+					r += 14.0 * s
+					g += 11.2 * s
+					b += 7.8 * s
+				}
+				px := rgbe(r, g, b)
+				buf.Write(px[:])
+			}
+		}
+		e, _ := nt3d.NewHDREnvironment(buf.Bytes())
+		return e
+	})
 )
 
 type studioLighting struct {
@@ -73,11 +113,13 @@ type studioLighting struct {
 	sunAzimuth         float64 // Degrees around Z.
 	sunElevation       float64 // Degrees above XY plane.
 	shadows            bool
+	oit                bool
 	lampPhase          float64
 	customEnv          *nt3d.Environment
 	customEnvName      string
 	overrideInDemo     bool
 	overridePostInDemo bool
+	overrideOITInDemo  bool
 }
 
 type postPreset struct {
@@ -116,6 +158,7 @@ var postPresets = []postPreset{
 
 var envPresetNames = []string{
 	"Studio Horizon",
+	"HDR Studio Sun",
 	"Clear Day",
 	"Golden Sunset",
 	"Softbox Panorama",
@@ -126,6 +169,7 @@ var envPresetNames = []string{
 var rigPresetNames = []string{
 	"Key + Sky Fill",
 	"3-Point Studio",
+	"Spotlights",
 	"Orbiting RGB",
 	"Night Lantern",
 	"8-Lamp Ring",
@@ -138,6 +182,7 @@ func newStudioLighting() *studioLighting {
 		rigIndex:     0,
 		sunAzimuth:   -45,
 		sunElevation: 48,
+		oit:          true,
 	}
 }
 
@@ -173,12 +218,14 @@ func (l *studioLighting) environment() *nt3d.Environment {
 	case 0:
 		return envStudioHorizon()
 	case 1:
-		return envClearDay()
+		return envHDRStudioSun()
 	case 2:
-		return envGoldenSunset()
+		return envClearDay()
 	case 3:
-		return envSoftboxPanorama()
+		return envGoldenSunset()
 	case 4:
+		return envSoftboxPanorama()
+	case 5:
 		rad := l.sunAzimuth * math.Pi / 180
 		if rotated, err := nt3dsh.Rotate(envSHBaseRadiance(), nt3dmath.RotationZ(rad)); err == nil {
 			if env, err := nt3d.NewSHEnvironment(rotated); err == nil {
@@ -186,7 +233,7 @@ func (l *studioLighting) environment() *nt3d.Environment {
 			}
 		}
 		return envStudioHorizon()
-	case 5:
+	case 6:
 		return nil
 	default:
 		return envStudioHorizon()
@@ -231,6 +278,12 @@ func (l *studioLighting) toggleShadows() {
 	fmt.Printf("GPU Shadow Mapping: %v\n", l.shadows)
 }
 
+func (l *studioLighting) toggleOIT() {
+	l.oit = !l.oit
+	l.overrideOITInDemo = true
+	fmt.Printf("Weighted Blended OIT: %v\n", l.oit)
+}
+
 func (l *studioLighting) postName() string {
 	if l.postIndex >= 0 && l.postIndex < len(postPresets) {
 		return postPresets[l.postIndex].name
@@ -262,6 +315,9 @@ func (l *studioLighting) cyclePost() {
 }
 
 func (l *studioLighting) applyFramePost(f *nt3d.Frame, isDemo bool) {
+	if !isDemo || l.overrideOITInDemo {
+		f.OIT = l.oit
+	}
 	if isDemo && !l.overridePostInDemo {
 		return
 	}
@@ -279,7 +335,7 @@ func (l *studioLighting) rotateSun(dAzimuth, dElevation float64, v *viewerState)
 	}
 	l.sunElevation = max(5, min(88, l.sunElevation+dElevation))
 	l.overrideInDemo = true
-	if l.envIndex == 4 {
+	if l.envIndex == 5 {
 		l.applyEnvironment(v)
 	}
 }
@@ -309,15 +365,24 @@ func hueWheel(h float64) color.RGBA {
 	return color.RGBA{ch(0), ch(4), ch(2), 255}
 }
 
-func (l *studioLighting) applyFrameLighting(f *nt3d.Frame, isDemo bool) {
+func (l *studioLighting) applyFrameLighting(f *nt3d.Frame, v *viewerState) {
+	isDemo := v != nil && v.runner != nil
 	if isDemo && !l.overrideInDemo {
 		return
 	}
-	if l.envIndex == 5 {
+	if l.envIndex == 6 {
 		f.Environment = nil
 		f.Background = color.RGBA{20, 24, 32, 255}
 	} else if isDemo {
 		f.Environment = l.environment()
+	}
+	// Preserve authored glTF KHR_lights_punctual SceneLights until the user cycles rigs.
+	hasSceneLights := v != nil && v.scene != nil && len(v.scene.Lights(nt3d.Root)) > 0
+	if !isDemo && !l.overrideInDemo && hasSceneLights && len(f.Lighting.Lights) > 0 {
+		if l.shadows {
+			f.Lighting.Lights[0].Shadows = true
+		}
+		return
 	}
 	sunDir := sunDirection(l.sunAzimuth, l.sunElevation)
 	switch l.rigIndex {
@@ -367,7 +432,34 @@ func (l *studioLighting) applyFrameLighting(f *nt3d.Frame, isDemo bool) {
 				},
 			},
 		}
-	case 2: // Orbiting RGB
+	case 2: // Spotlights
+		f.Lighting = nt3d.Lighting{
+			Ambient: nt3d.Ambient{
+				Sky:       color.RGBA{50, 56, 72, 255},
+				Ground:    color.RGBA{20, 20, 26, 255},
+				Intensity: 0.25,
+			},
+		}
+		spotColors := [3]color.RGBA{{255, 226, 188, 255}, {80, 188, 255, 255}, {255, 95, 165, 255}}
+		speeds := [3]float64{0.45, -0.35, 0.55}
+		intensities := [3]float32{3.4, 2.5, 2.3}
+		for i := range 3 {
+			a := l.lampPhase*speeds[i] + float64(i)*2*math.Pi/3
+			pos := nt3dmath.Vec3{X: 1.85 * float32(math.Cos(a)), Y: 1.85 * float32(math.Sin(a)), Z: 1.75}
+			aim := nt3dmath.Vec3{Z: 0.1}
+			f.Lighting.Lights = append(f.Lighting.Lights, nt3d.Light{
+				Kind:      nt3d.SpotLight,
+				Position:  pos,
+				Direction: aim.Sub(pos).Normalize(),
+				Color:     spotColors[i],
+				Intensity: intensities[i],
+				Range:     5.5,
+				InnerCone: 0.20,
+				OuterCone: 0.48,
+				Shadows:   i == 0 && l.shadows,
+			})
+		}
+	case 3: // Orbiting RGB
 		f.Lighting = nt3d.Lighting{
 			Ambient: nt3d.Ambient{
 				Sky:       color.RGBA{45, 48, 58, 255},
@@ -397,7 +489,7 @@ func (l *studioLighting) applyFrameLighting(f *nt3d.Frame, isDemo bool) {
 				Range:     3.8,
 			})
 		}
-	case 3: // Night Lantern
+	case 4: // Night Lantern
 		a := l.lampPhase * 0.65
 		f.Lighting = nt3d.Lighting{
 			Ambient: nt3d.Ambient{
@@ -422,7 +514,7 @@ func (l *studioLighting) applyFrameLighting(f *nt3d.Frame, isDemo bool) {
 			Intensity: 2.25,
 			Range:     3.5,
 		})
-	case 4: // 8-Lamp Ring
+	case 5: // 8-Lamp Ring
 		f.Lighting = nt3d.Lighting{
 			Ambient: nt3d.Ambient{
 				Sky:       color.RGBA{38, 38, 46, 255},
@@ -452,7 +544,7 @@ func (l *studioLighting) applyFrameLighting(f *nt3d.Frame, isDemo bool) {
 				Range:     2.6,
 			})
 		}
-	case 5: // Pure IBL
+	case 6: // Pure IBL
 		f.Lighting = nt3d.Lighting{}
 	}
 }

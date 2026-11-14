@@ -172,7 +172,7 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 	}
 
 	var b strings.Builder
-	pipStr, loadStr, shadowStr := "off", "off", "off"
+	pipStr, loadStr, shadowStr, oitStr := "off", "off", "off", "off"
 	if pipView {
 		pipStr = "on"
 	}
@@ -181,6 +181,9 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 	}
 	if lighting != nil && lighting.shadows {
 		shadowStr = "on"
+	}
+	if lighting != nil && lighting.oit {
+		oitStr = "on"
 	}
 
 	if v.runner != nil {
@@ -255,11 +258,15 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 	postStr := "Off"
 	if lighting != nil {
 		postStr = lighting.postName()
+		rigLabel := lighting.rigName()
+		if !lighting.overrideInDemo && v != nil && v.scene != nil && len(v.scene.Lights(nt3d.Root)) > 0 {
+			rigLabel = fmt.Sprintf("Scene (%d punctual)", len(v.scene.Lights(nt3d.Root)))
+		}
 		fmt.Fprintf(&b, "Env: %s   Light: %s (sun az %.0f el %.0f, shadows: %s)\n",
-			lighting.envName(), lighting.rigName(), lighting.sunAzimuth, lighting.sunElevation, shadowStr)
+			lighting.envName(), rigLabel, lighting.sunAzimuth, lighting.sunElevation, shadowStr)
 	}
-	fmt.Fprintf(&b, "Cam: el %.0f deg az %.0f deg dist %.2f   AA: %s   Post: %s   PiP: %s   Load: %s\n",
-		cam.Alpha, cam.Beta, cam.Distance, formatAAStatus(msaa, supersample), postStr, pipStr, loadStr)
+	fmt.Fprintf(&b, "Cam: el %.0f deg az %.0f deg dist %.2f   AA: %s   OIT: %s   Post: %s   PiP: %s   Load: %s\n",
+		cam.Alpha, cam.Beta, cam.Distance, formatAAStatus(msaa, supersample), oitStr, postStr, pipStr, loadStr)
 
 	if v.selectedHit != nil {
 		pos, _ := v.pickWorldPos()
@@ -276,7 +283,7 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 	if h.lastCapture != "" {
 		fmt.Fprintf(&b, "Saved: %s\n", h.lastCapture)
 	}
-	b.WriteString("[`/Click] Menu [O/Drop] Open [M/4] MSAA [X/F12] Post [E] Env [L] Light [K] Shadow [G] Floor [P] Shot")
+	b.WriteString("[`/Click] Menu [O/Drop] Open [M/4] MSAA [N] OIT [X/F12] Post [E] Env [L] Light [K] Shadow [G] Floor [P] Shot")
 	return b.String()
 }
 

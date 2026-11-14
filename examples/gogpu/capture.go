@@ -115,7 +115,7 @@ func buildCaptureFrame(v *viewerState, cam nt3d.Camera, lighting *studioLighting
 		return nt3d.Frame{}, err
 	}
 	if lighting != nil {
-		lighting.applyFrameLighting(&f, v.runner != nil)
+		lighting.applyFrameLighting(&f, v)
 		lighting.applyFramePost(&f, v.runner != nil)
 	}
 	if len(v.splatNodes) > 0 && (lighting == nil || lighting.envIndex == 0) {

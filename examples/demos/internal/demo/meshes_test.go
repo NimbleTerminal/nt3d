@@ -312,3 +312,50 @@ func TestPaletteKeyNothingToBuild(t *testing.T) {
 		}
 	}
 }
+
+func TestMeshGlassOITCycle(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene(), meshes: &meshScene{}}
+	group, err := d.scene.Add(nt3d.Root, "shapes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.group = group
+	if err := d.setupShapes(); err != nil {
+		t.Fatal(err)
+	}
+	d.view = nt3dwidget.New(d.scene, 40, 16, nt3dwidget.WithRenderMode(nt3d.Software), nt3dwidget.WithFrameDecorator(d.decorate))
+	defer d.view.Close()
+
+	steps := []struct {
+		wantLabel string
+		wantOIT   bool
+		wantGlass bool
+	}{
+		{"glass (OIT)", true, true},
+		{"glass (sorted)", false, true},
+		{"opaque", false, false},
+	}
+	for i, tc := range steps {
+		if err := d.toggleGlass(); err != nil {
+			t.Fatalf("step %d: %v", i, err)
+		}
+		if view := d.meshesView(""); !strings.Contains(view, tc.wantLabel) {
+			t.Fatalf("step %d: status missing %q: %s", i, tc.wantLabel, view)
+		}
+		f, err := d.scene.Frame(nt3d.DefaultCamera(), 48, 36)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.decorate(&f)
+		if f.OIT != tc.wantOIT {
+			t.Fatalf("step %d: f.OIT = %v, want %v", i, f.OIT, tc.wantOIT)
+		}
+		hasTrans := f.Geometry[0].Material != nil && f.Geometry[0].Material.Transparent
+		if hasTrans != tc.wantGlass {
+			t.Fatalf("step %d: Transparent = %v, want %v", i, hasTrans, tc.wantGlass)
+		}
+		if _, err := nt3d.NewSoftwareRenderer().Render(f); err != nil {
+			t.Fatalf("step %d render: %v", i, err)
+		}
+	}
+}

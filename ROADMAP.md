@@ -19,6 +19,42 @@ Nothing queued; the sections below are the open work.
   `clod`, and demo GPU suites separately (`task test-gpu` stops at the first
   failing package). Ordinary Linux CI and the Metal GPU suites pass.
 
+- [ ] **Shader hooks with Go fallbacks (vertex displacement, material color)**:
+  extend the `NewShaderTexture` / `NewShaderNormalMap` pattern (WGSL source
+  plus a software fallback) to two more places, keeping GPU, software and WASM
+  in parity. (1) *Vertex displacement*: a geometry carries a displacement
+  function of (rest position, time, small parameter block). WGSL runs on the
+  GPU path; a Go `func` runs in software and tests. Gerstner waves, boat wakes,
+  foliage sway and flags then animate without per-frame CPU vertex rewrites
+  and re-uploads. (2) *Material color function*: WGSL plus a Go fallback,
+  evaluated per fragment (or per software sample) from position, normal, view,
+  time and parameters, for stylized water bands, foam, ink or heat-shimmer
+  looks beyond the built-in material knobs. Both stay data-shaped (a named
+  function plus parameters, not arbitrary scene code), and each ships with a
+  parity test that renders GPU and software and compares. Motivation: a
+  downstream game's per-episode "looks as data", large-area water with
+  wakes, and city-wide foliage; until this lands it uses CPU `WaveSurface`
+  rings plus shader normal maps.
+
+- [ ] **Per-material environment reflections with background-only sky**:
+  `Frame.EnvironmentBackgroundOnly` disables both diffuse environment light
+  and reflections frame-wide, and `EnvironmentStrength` is frame-wide (zero
+  means 1). Allow a material (e.g. water with `Reflectivity`) to sample the
+  environment for reflections while the frame keeps environment diffuse light
+  off, so a stylized sky panorama can be backdrop-only for land yet reflect in
+  water. Until then the downstream water bakes a view-reflected sky sample
+  into vertex color.
+
+- [ ] **In-place vertex updates for fixed-topology meshes**: a
+  `SetNodeGeometry` of an animated triangle mesh re-validates, clones,
+  recomputes bounds and outline normals, and re-uploads de-indexed per-index
+  records (48 B each, plus a 48 B tangent extension when normal-mapped) into a
+  fresh buffer. Downstream camera-centred water rings (~80k indices updated
+  every frame) spend ~4 ms per frame there. Add a same-topology update path
+  (positions/normals/colors only, `WriteBuffer` into the existing buffers,
+  bounds supplied by the caller) mirroring `UpdateNodePoints` for points.
+  `WaveTile.Update` would benefit too.
+
 - [ ] **Clustered LOD follow-ups**: draw points straight from `nt3dclod.GPU`'s
   item and indirect buffers; hierarchical levels that draw an interior node
   as one aggregate (a preprocessing tool's job); per-frame rebuilds cheap
@@ -46,8 +82,6 @@ Nothing queued; the sections below are the open work.
   `SetTexture` and `SetNormalMap`. It has to decide what happens to textures
   and normal maps on replacement, and fields like `Transparent` and `Cutout`
   move a mesh between render passes.
-- [ ] **Order-independent transparency**: only if scenes hit the sorting
-  limits (intersecting glass, overlapping layers of one mesh).
 - [ ] **Fur fins don't sway** with the wind; only slightly visible.
 
 ## Formats
@@ -80,6 +114,25 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Radiance `.hdr` panoramas, `SpotLight` + `KHR_lights_punctual`, and Weighted
+  Blended Order-Independent Transparency (`Frame.OIT`)**: `NewHDREnvironment`
+  decodes Radiance RGBE (`.hdr` / `.pic`) panoramas (adaptive RLE and
+  uncompressed, `EXPOSURE`, and `-Y/+Y`/`+X/-X` orientations) with zero
+  dependencies, feeding unclamped `RGBA16Float` radiance into the 6-level GGX
+  specular IBL mip chain, degree-2 SH diffuse sky, HDR sky background pass,
+  `Bloom`, and `ACESToneMap` on both WebGPU and software (with 8-bit wireframe
+  fallback). `SpotLight` (`InnerCone`, `OuterCone`) adds smooth quadratic cone
+  attenuation and single-face 2048² perspective shadow maps alongside
+  `SetNodeLight` / `NodeLight` / `Lights` / `SceneLights` and glTF
+  `KHR_lights_punctual` decoding (`directional`, `point`, and `spot` lights on
+  scene nodes). `Frame.OIT` (`WithOIT` / `SetOIT` on `nt3dwidget`) implements
+  McGuire & Bavoil Weighted Blended OIT across `RGBA16Float` accumulation +
+  `R8Unorm` revealage targets on WebGPU (compatible with both 1× and 4× MSAA and
+  shared across `GPUSession.NewView`) and matching float accumulators in
+  software, eliminating mesh-order popping on intersecting glass and multi-layer
+  shells. Showcased in `lights` (`HDR IBL` and `spotlights` presets), `shapes` /
+  `meshes` (`t` cycles `opaque` → `glass (OIT)` → `glass (sorted)`), and
+  `examples/gogpu` (`-env`, `-oit`, `HDR Studio Sun`, `Spotlights`, `N` OIT).
 - **Cook-Torrance GGX PBR, ORM maps, roughness-filtered IBL, HDR emissive
   materials, and glTF material extensions**: unified `Material` gains `PBR`,
   `Metallic`, `Roughness`, `IOR`, packed linear `ORMMap` (`NewORMMap`,

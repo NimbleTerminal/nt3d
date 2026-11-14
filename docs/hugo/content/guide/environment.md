@@ -20,22 +20,27 @@ changing it when the application is not already scheduling frames. Remove it
 with `scene.SetEnvironment(nil)`. Environment objects are immutable and can be
 shared between scenes; frames retain the environment they were made with.
 
-## Image skies
+## Image and Radiance `.hdr` skies
 
-Pass a decoded PNG, JPEG, or other Go image to `nt3d.NewEnvironment(img)`.
-It snapshots the pixels, so callers may reuse or modify the source afterwards.
+Pass a decoded PNG, JPEG, or other Go image to `nt3d.NewEnvironment(img)` for an 8-bit sRGB panorama, or pass raw Radiance RGBE (`.hdr` / `.pic`) bytes to `nt3d.NewHDREnvironment(data)` for unclamped linear HDR radiance. Both snapshot their input, so callers may reuse or discard the source afterwards.
 The image is an **equirectangular panorama**, normally twice as wide as it is tall.
 The top is +Z, the center faces +X, and increasing U turns toward +Y. Horizontal
 sampling wraps at the seam, while the poles clamp. Alpha is ignored. The same
-8192-pixel side limit as `NewTexture` applies. Input colors are sRGB, not HDR.
+8192-pixel side limit as `NewTexture` applies.
 
 ```go
-environment, err := nt3d.NewEnvironment(img)
+hdrBytes, err := os.ReadFile("studio.hdr")
+if err != nil {
+    return err
+}
+environment, err := nt3d.NewHDREnvironment(hdrBytes)
 if err != nil {
     return err
 }
 scene.SetEnvironment(environment)
 ```
+
+`NewHDREnvironment` decodes adaptive per-channel RLE and uncompressed RGBE scanlines (`FORMAT=32-bit_rle_rgbe`), honors `EXPOSURE=` headers and `-Y/+Y`/`+X/-X` resolution orientations, and uploads `RGBA16Float` mip chains on WebGPU alongside matching float buffers in software. Unclamped solar disks and studio softboxes feed directly into `DiffuseSH()`, PBR roughness-filtered specular IBL, `Frame.PostProcess.Bloom`, `Exposure`, and `ACESToneMap` (while clamping gracefully to 8-bit cell backgrounds in wireframe).
 
 The sky follows camera orientation but stays fixed under translation and zoom.
 Perspective views use the camera's authored field of view and roll. Orthographic
@@ -106,5 +111,4 @@ color-space behavior. `EnvironmentStrength` scales reflected light too;
 `EnvironmentBackgroundOnly` disables it along with diffuse environment light.
 Without an environment, reflectivity has no effect.
 
-This is a sharp distant-sky reflection. It does not reflect nearby geometry
-or prefilter rough surfaces. `Shininess` controls direct highlights only.
+This is a distant-sky reflection that does not reflect nearby geometry. On classic materials (`PBR: false`), reflections sample the sharp base panorama while `Shininess` controls direct highlights; on [PBR materials](../materials/#metallicroughness-pbr-and-orm-maps), `Roughness` samples a six-level GGX-prefiltered mip chain of the LDR or `.hdr` panorama.

@@ -56,13 +56,16 @@ var lightPostPresets = []struct {
 	}},
 }
 
-// lamp is a point light circling the scene's middle.
+// lamp is a point or spot light circling the scene's middle.
 type lamp struct {
-	color          color.RGBA
-	radius, height float32
-	speed, offset  float64 // Radians a second, and where it starts.
-	intensity      float32
-	rng            float32
+	color                color.RGBA
+	radius, height       float32
+	speed, offset        float64 // Radians a second, and where it starts.
+	intensity            float32
+	rng                  float32
+	spot                 bool
+	innerCone, outerCone float32
+	aim                  nt3dmath.Vec3
 }
 
 type lightPreset struct {
@@ -98,6 +101,7 @@ func hue(h float64) color.RGBA {
 
 var lightPresets = []lightPreset{
 	{name: "sky and key", environment: dayEnvironment, sun: &nt3d.Light{Direction: nt3dmath.Vec3{X: 1, Y: -1, Z: 2}, Intensity: .65}},
+	{name: "HDR IBL", environment: hdrEnvironment},
 	{name: "sky IBL", environment: dayEnvironment},
 	{name: "image IBL", environment: imageEnvironment},
 	{name: "SH studio", environment: func() *nt3d.Environment { return shEnvironments()[0] }},
@@ -108,6 +112,11 @@ var lightPresets = []lightPreset{
 		{color: color.RGBA{255, 60, 50, 255}, radius: 1.5, height: .5, speed: .9, offset: 0, intensity: 1.8, rng: 3.5},
 		{color: color.RGBA{60, 255, 90, 255}, radius: 1.2, height: .8, speed: -.7, offset: 2.1, intensity: 1.8, rng: 3.5},
 		{color: color.RGBA{70, 110, 255, 255}, radius: 1.8, height: 1.1, speed: .5, offset: 4.2, intensity: 1.8, rng: 3.5},
+	}},
+	{name: "spotlights", background: gray(20), ambient: nt3d.Ambient{Sky: color.RGBA{180, 195, 225, 255}, Ground: gray(60), Intensity: .05}, lamps: []lamp{
+		{color: color.RGBA{255, 224, 180, 255}, radius: 1.85, height: 1.75, speed: .45, offset: 0, intensity: 3.6, rng: 5.5, spot: true, innerCone: .20, outerCone: .48, aim: nt3dmath.Vec3{Z: .2}},
+		{color: color.RGBA{80, 185, 255, 255}, radius: 1.75, height: 1.55, speed: -.35, offset: 2.1, intensity: 2.8, rng: 5.0, spot: true, innerCone: .16, outerCone: .42, aim: nt3dmath.Vec3{X: .2, Y: .1, Z: .2}},
+		{color: color.RGBA{255, 95, 165, 255}, radius: 1.65, height: 1.45, speed: .6, offset: 4.2, intensity: 2.6, rng: 5.0, spot: true, innerCone: .16, outerCone: .40, aim: nt3dmath.Vec3{X: -.2, Y: -.1, Z: .2}},
 	}},
 	{name: "night", background: color.RGBA{10, 12, 24, 255}, ambient: nt3d.Ambient{Sky: color.RGBA{24, 30, 56, 255}, Ground: gray(8), Intensity: 1}, lamps: []lamp{
 		{color: color.RGBA{255, 172, 92, 255}, radius: 1.75, height: .3, speed: .6, intensity: 2.2, rng: 2.8},
@@ -243,7 +252,14 @@ func (p lightPreset) lights(t float64, ranged bool) nt3d.Lighting {
 	}
 	for _, lp := range p.lamps {
 		a := lp.offset + lp.speed*t
-		light := nt3d.Light{Kind: nt3d.PointLight, Position: nt3dmath.Vec3{X: lp.radius * float32(math.Cos(a)), Y: lp.radius * float32(math.Sin(a)), Z: lp.height}, Color: lp.color, Intensity: lp.intensity}
+		pos := nt3dmath.Vec3{X: lp.radius * float32(math.Cos(a)), Y: lp.radius * float32(math.Sin(a)), Z: lp.height}
+		light := nt3d.Light{Kind: nt3d.PointLight, Position: pos, Color: lp.color, Intensity: lp.intensity}
+		if lp.spot {
+			light.Kind = nt3d.SpotLight
+			light.Direction = lp.aim.Sub(pos).Normalize()
+			light.InnerCone = lp.innerCone
+			light.OuterCone = lp.outerCone
+		}
 		if ranged {
 			light.Range = lp.rng
 		}

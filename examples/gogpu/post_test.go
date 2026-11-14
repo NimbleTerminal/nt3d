@@ -31,13 +31,49 @@ func TestPostPresetsAndFrameBuilder(t *testing.T) {
 		t.Fatal(err)
 	}
 	lighting.applyFramePost(&f, false)
-	if !f.MSAA || f.Supersample != 2 || f.PostProcess.ToneMap != nt3d.ACESToneMap || f.PostProcess.SSAO.Strength <= 0 {
-		t.Fatalf("frame settings not applied: msaa=%v ss=%d post=%+v", f.MSAA, f.Supersample, f.PostProcess)
+	if !f.MSAA || !f.OIT || f.Supersample != 2 || f.PostProcess.ToneMap != nt3d.ACESToneMap || f.PostProcess.SSAO.Strength <= 0 {
+		t.Fatalf("frame settings not applied: msaa=%v oit=%v ss=%d post=%+v", f.MSAA, f.OIT, f.Supersample, f.PostProcess)
 	}
 	if got := formatAAStatus(true, 2); got != "4x MSAA+2x SS" {
 		t.Fatalf("formatAAStatus(true, 2) = %q", got)
 	}
 	if _, err := nt3d.NewSoftwareRenderer().Render(f); err != nil {
-		t.Fatalf("software render of PBR demo scene: %v", err)
+		t.Fatalf("software render of PBR+OIT demo scene: %v", err)
+	}
+
+	// Verify HDR Studio Sun environment + Spotlights rig with perspective shadow maps!
+	lighting.envIndex = 1 // HDR Studio Sun
+	lighting.rigIndex = 2 // Spotlights
+	lighting.shadows = true
+	lighting.applyEnvironment(v)
+	f2, err := v.buildFrame(nt3d.DefaultCamera(), 160, 100, false, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lighting.applyFrameLighting(&f2, v)
+	lighting.applyFramePost(&f2, false)
+	if len(f2.Lighting.Lights) != 3 || f2.Lighting.Lights[0].Kind != nt3d.SpotLight || !f2.Lighting.Lights[0].Shadows {
+		t.Fatalf("expected Spotlights rig with key shadow, got %+v", f2.Lighting.Lights)
+	}
+	if _, err := nt3d.NewSoftwareRenderer().Render(f2); err != nil {
+		t.Fatalf("software render of HDR+Spotlights+OIT scene: %v", err)
+	}
+
+	// Verify authored node lights (KHR_lights_punctual) are preserved until overridden.
+	ln, err := v.scene.Add(nt3d.Root, "gltf-spot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v.scene.SetNodeLight(ln, nt3d.Light{Kind: nt3d.SpotLight, Intensity: 2.0, InnerCone: 0.2, OuterCone: 0.5}); err != nil {
+		t.Fatal(err)
+	}
+	lighting.overrideInDemo = false
+	f3, err := v.buildFrame(nt3d.DefaultCamera(), 160, 100, false, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lighting.applyFrameLighting(&f3, v)
+	if len(f3.Lighting.Lights) != 1 || f3.Lighting.Lights[0].Kind != nt3d.SpotLight || !f3.Lighting.Lights[0].Shadows {
+		t.Fatalf("expected preserved scene spotlight, got %+v", f3.Lighting.Lights)
 	}
 }
