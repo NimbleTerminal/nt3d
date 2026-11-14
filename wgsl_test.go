@@ -13,7 +13,22 @@ import (
 // the native tests exercise can therefore break every browser frame that
 // uses it, so each embedded shader is scanned for the mix.
 func TestWGSLShiftsAreParenthesized(t *testing.T) {
-	for name, source := range map[string]string{"scene.wgsl": sceneShader, "skin.wgsl": skinShader, "sort.wgsl": sortShader} {
+	shaders := map[string]string{
+		"scene.wgsl":    sceneShader,
+		"skin.wgsl":     skinShader,
+		"sort.wgsl":     sortShader,
+		"resolve":       resolveShader,
+		"capture":       captureShader,
+		"captureMSAA":   captureShaderMSAA,
+		"depthPick":     depthPickShader,
+		"depthPickMSAA": depthPickShaderMSAA,
+		"ssao1x":        ssaoDepth1xHeader + ssaoShaderBody,
+		"ssaoMSAA":      ssaoDepthMSAAHeader + ssaoShaderBody,
+		"ssaoBlur":      ssaoBlurShader,
+		"bloom":         bloomShader,
+		"postResolve":   postResolveShader,
+	}
+	for name, source := range shaders {
 		for _, problem := range wgslShiftMixes(source) {
 			t.Errorf("%s:%s", name, problem)
 		}

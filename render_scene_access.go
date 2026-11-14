@@ -9,7 +9,8 @@ import (
 
 type sceneSnapshot struct {
 	source                *wgpu.TextureView
-	w, h                  int
+	depthSource           *wgpu.TextureView
+	w, h, samples         int
 	color, depth          *wgpu.Texture
 	colorView, depthView  *wgpu.TextureView
 	captureBind           *wgpu.BindGroup
@@ -48,10 +49,11 @@ func (s *sceneSnapshot) release() {
 	*s = sceneSnapshot{}
 }
 func (g *gpuRenderer) prepareSnapshot(dev *wgpu.Device, w, h int) (err error) {
-	if g.screen.w == w && g.screen.h == h && g.screen.source == g.target.colorView {
+	samples := max(1, g.target.samples)
+	if g.screen.w == w && g.screen.h == h && g.screen.source == g.target.colorView && g.screen.depthSource == g.target.depthView && g.screen.samples == samples {
 		return nil
 	}
-	s := sceneSnapshot{w: w, h: h, source: g.target.colorView}
+	s := sceneSnapshot{w: w, h: h, samples: samples, source: g.target.colorView, depthSource: g.target.depthView}
 	defer func() {
 		if err != nil {
 			s.release()
@@ -78,7 +80,7 @@ func (g *gpuRenderer) prepareSnapshot(dev *wgpu.Device, w, h int) (err error) {
 		}
 	}
 	if g.target.colorView != nil {
-		if err = s.setupCapture(dev, g.target.colorView, g.target.depthView); err != nil {
+		if err = s.setupCapture(dev, g.target.colorView, g.target.depthView, samples > 1); err != nil {
 			return err
 		}
 	}
@@ -128,7 +130,12 @@ func (g *gpuRenderer) captureScene(e *wgpu.CommandEncoder) error {
 	return p.End()
 }
 func (g *gpuRenderer) resumeScene(e *wgpu.CommandEncoder, color, depth *wgpu.TextureView) (*wgpu.RenderPassEncoder, error) {
-	return e.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{View: color, LoadOp: gputypes.LoadOpLoad, StoreOp: gputypes.StoreOpStore}}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpLoad, DepthStoreOp: gputypes.StoreOpStore, StencilReadOnly: true}})
+	att := wgpu.RenderPassColorAttachment{View: color, LoadOp: gputypes.LoadOpLoad, StoreOp: gputypes.StoreOpStore}
+	if g.target.samples > 1 {
+		att.View = g.target.msaaColorView
+		att.ResolveTarget = color
+	}
+	return e.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{att}, DepthStencilAttachment: &wgpu.RenderPassDepthStencilAttachment{View: depth, DepthLoadOp: gputypes.LoadOpLoad, DepthStoreOp: gputypes.StoreOpStore, StencilReadOnly: true}})
 }
 
 const captureShader = `
@@ -143,14 +150,35 @@ struct Sample { @location(0) color:vec4<f32>, @builtin(frag_depth) depth:f32 };
 }
 `
 
-func (s *sceneSnapshot) setupCapture(dev *wgpu.Device, color, depth *wgpu.TextureView) (err error) {
-	s.captureShader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "scene capture", WGSL: captureShader})
+const captureShaderMSAA = `
+@group(0) @binding(0) var color: texture_2d<f32>;
+@group(0) @binding(1) var depth: texture_depth_multisampled_2d;
+@vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4<f32> {
+ let x=f32((i<<1u)&2u);let y=f32(i&2u);return vec4<f32>(x*2.0-1.0,y*2.0-1.0,0.0,1.0);
+}
+struct Sample { @location(0) color:vec4<f32>, @builtin(frag_depth) depth:f32 };
+@fragment fn both(@builtin(position) p:vec4<f32>)->Sample {
+ let c=vec2<i32>(p.xy);
+ let d0=textureLoad(depth,c,0);
+ let d1=textureLoad(depth,c,1);
+ let d2=textureLoad(depth,c,2);
+ let d3=textureLoad(depth,c,3);
+ return Sample(textureLoad(color,c,0),min(min(d0,d1),min(d2,d3)));
+}
+`
+
+func (s *sceneSnapshot) setupCapture(dev *wgpu.Device, color, depth *wgpu.TextureView, msaa bool) (err error) {
+	wgsl := captureShader
+	if msaa {
+		wgsl = captureShaderMSAA
+	}
+	s.captureShader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "scene capture", WGSL: wgsl})
 	if err != nil {
 		return err
 	}
 	s.captureLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{
 		{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}},
-		{Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}},
+		{Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D, Multisampled: msaa}},
 	}})
 	if err != nil {
 		return err

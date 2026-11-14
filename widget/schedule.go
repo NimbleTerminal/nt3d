@@ -131,6 +131,7 @@ func (m *Model) frame() Frame {
 	f.Matrix = m.camera.Matrix(float32(g.DisplayAspect))
 	f.Background = m.background
 	f.Lighting, f.Fog = m.lighting, m.fog
+	f.Supersample, f.MSAA, f.PostProcess = m.supersample, m.msaa, m.effects
 	if m.decorate != nil {
 		m.decorate(&f)
 	}
@@ -153,7 +154,6 @@ func (m *Model) schedule() tea.Cmd {
 	f := m.frame()
 	geometry := m.pic.RasterGeometry()
 	id, seq, renderMode, r, cols, rows, fallBack, post := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height, m.gpuFailure == FallBackOnGPUFailure, m.postProcess
-	f.Supersample = m.supersample
 	return tea.Batch(resolutionCmd, func() tea.Msg {
 		start := time.Now()
 		var img image.Image

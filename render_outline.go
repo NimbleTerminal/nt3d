@@ -39,11 +39,13 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 	if g.outlinePipelines[kind] != nil {
 		return nil
 	}
+	idx := g.sampleIdx
 	if g.shared != nil {
 		g.shared.mu.Lock()
 		defer g.shared.mu.Unlock()
-		if g.shared.outlinePipelines[kind] != nil {
-			g.outlinePipelines[kind] = g.shared.outlinePipelines[kind]
+		if p := g.shared.msaaSets[idx].outlinePipelines[kind]; p != nil {
+			g.outlinePipelines[kind] = p
+			g.msaaSets[idx].outlinePipelines[kind] = p
 			return nil
 		}
 	}
@@ -60,9 +62,10 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 	if kind == 4 {
 		fragment = "fs_outline_blend"
 	}
+	ms := g.multisample()
 	var err error
 	if kind != creasePipeline && transparent(geom) {
-		g.outlinePipelines[kind], err = blendPipeline(dev, layout, g.shader, vertex, fragment, 0)
+		g.outlinePipelines[kind], err = blendPipelineMS(dev, layout, g.shader, vertex, fragment, 0, ms)
 	} else {
 		label := "outline hull"
 		if kind == creasePipeline {
@@ -72,15 +75,16 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 			Label: label, Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: vertex},
 			Primitive:    gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: cull},
 			DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual},
-			Multisample:  gputypes.DefaultMultisampleState(),
+			Multisample:  ms,
 			Fragment:     &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}},
 		})
 	}
 	if err != nil {
 		return err
 	}
+	g.msaaSets[idx].outlinePipelines[kind] = g.outlinePipelines[kind]
 	if g.shared != nil {
-		g.shared.outlinePipelines[kind] = g.outlinePipelines[kind]
+		g.shared.msaaSets[idx].outlinePipelines[kind] = g.outlinePipelines[kind]
 	}
 	return nil
 }

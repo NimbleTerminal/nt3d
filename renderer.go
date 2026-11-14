@@ -93,6 +93,15 @@ type Frame struct {
 	// 8192 pixels a side. Costs grow with its square, on the GPU and far more
 	// in software.
 	Supersample int
+	// MSAA multisamples the GPU scene pass at 4 samples per pixel, smoothing
+	// polygon, line, and point edges without shading interior fragments four
+	// times as Supersample does. Software and wireframe rendering ignore it.
+	// It may be combined with Supersample.
+	MSAA bool
+	// PostProcess configures built-in post-processing passes applied after the
+	// scene is drawn and before overlays: screen-space ambient occlusion, HDR
+	// bloom, exposure, tone mapping, and vignette.
+	PostProcess PostProcess
 	// Eye and Forward are the camera's position and viewing direction, in
 	// world space, and Perspective whether its view converges at Eye. They
 	// serve view-dependent materials (Material.EdgeOn); Scene.Frame sets them.
@@ -338,6 +347,9 @@ func validateFrame(f Frame) error {
 	}
 	if !validFog(f.Fog) {
 		return fmt.Errorf("nt3d: non-finite fog")
+	}
+	if err := f.PostProcess.validate(); err != nil {
+		return err
 	}
 	if len(f.GeometryRevisions) != 0 {
 		if len(f.GeometryRevisions) != len(f.Geometry) || len(f.Instances) != len(f.Geometry) {

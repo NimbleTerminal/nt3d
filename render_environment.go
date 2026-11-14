@@ -137,32 +137,36 @@ func (g *gpuRenderer) prepareEnvironment(dev *wgpu.Device, f Frame) error {
 	if f.Environment == nil || (g.environmentPipeline != nil && g.environmentBind != nil) {
 		return nil
 	}
+	idx := g.sampleIdx
+	ms := g.multisample()
 	if g.shared != nil {
 		g.shared.mu.Lock()
-		if g.shared.environmentPipeline == nil {
+		if g.shared.environmentUniform == nil {
 			uniform, err := dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}}})
 			if err != nil {
 				g.shared.mu.Unlock()
 				return err
 			}
-			layout, err := dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{uniform, g.shadowLayout}})
+			g.shared.environmentUniform = uniform
+		}
+		if g.shared.msaaSets[idx].environmentPipeline == nil {
+			layout, err := dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.shared.environmentUniform, g.shadowLayout}})
 			if err != nil {
-				uniform.Release()
 				g.shared.mu.Unlock()
 				return err
 			}
-			pipeline, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "environment", Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_environment"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionAlways}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_environment", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
+			pipeline, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "environment", Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_environment"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionAlways}, Multisample: ms, Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_environment", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
 			layout.Release()
 			if err != nil {
-				uniform.Release()
 				g.shared.mu.Unlock()
 				return err
 			}
-			g.shared.environmentUniform = uniform
-			g.shared.environmentPipeline = pipeline
+			g.shared.msaaSets[idx].environmentPipeline = pipeline
 		}
 		uniformLayout := g.shared.environmentUniform
-		g.environmentPipeline = g.shared.environmentPipeline
+		g.environmentUniform = uniformLayout
+		g.environmentPipeline = g.shared.msaaSets[idx].environmentPipeline
+		g.msaaSets[idx].environmentPipeline = g.environmentPipeline
 		g.shared.mu.Unlock()
 		if g.environmentBind == nil {
 			bind, err := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: uniformLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}}})
@@ -173,25 +177,32 @@ func (g *gpuRenderer) prepareEnvironment(dev *wgpu.Device, f Frame) error {
 		}
 		return nil
 	}
-	uniform, err := dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}}})
-	if err != nil {
-		return err
+	if g.environmentUniform == nil {
+		uniform, err := dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment, Buffer: &gputypes.BufferBindingLayout{Type: gputypes.BufferBindingTypeUniform}}}})
+		if err != nil {
+			return err
+		}
+		g.environmentUniform = uniform
 	}
-	defer uniform.Release()
-	layout, err := dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{uniform, g.shadowLayout}})
-	if err != nil {
-		return err
+	if g.environmentPipeline == nil {
+		layout, err := dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.environmentUniform, g.shadowLayout}})
+		if err != nil {
+			return err
+		}
+		pipeline, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "environment", Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_environment"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionAlways}, Multisample: ms, Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_environment", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
+		layout.Release()
+		if err != nil {
+			return err
+		}
+		g.environmentPipeline = pipeline
+		g.msaaSets[idx].environmentPipeline = pipeline
 	}
-	defer layout.Release()
-	bind, err := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: uniform, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}}})
-	if err != nil {
-		return err
+	if g.environmentBind == nil {
+		bind, err := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.environmentUniform, Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}}})
+		if err != nil {
+			return err
+		}
+		g.environmentBind = bind
 	}
-	pipeline, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "environment", Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_environment"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionAlways}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_environment", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
-	if err != nil {
-		bind.Release()
-		return err
-	}
-	g.environmentBind, g.environmentPipeline = bind, pipeline
 	return nil
 }

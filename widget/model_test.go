@@ -289,6 +289,37 @@ func TestSupersampleAndPostProcess(t *testing.T) {
 	}
 }
 
+func TestMSAAAndEffects(t *testing.T) {
+	r := &recordRenderer{}
+	fx := nt3d.PostProcess{
+		Exposure: 0.5,
+		ToneMap:  nt3d.ACESToneMap,
+		Vignette: 0.4,
+		Bloom:    nt3d.Bloom{Strength: 0.6, Threshold: 0.8},
+		SSAO:     nt3d.SSAO{Strength: 0.5},
+	}
+	m := New(scene(t), 30, 10, WithRenderer(r), WithMSAA(true), WithEffects(fx))
+	defer m.Close()
+	if !m.MSAA() || m.Effects() != fx {
+		t.Fatalf("initial MSAA=%v Effects=%+v", m.MSAA(), m.Effects())
+	}
+	m.started = true
+	_ = m.schedule()().(rendered)
+	if !r.frame.MSAA || r.frame.PostProcess != fx {
+		t.Fatalf("scheduled frame MSAA=%v PostProcess=%+v", r.frame.MSAA, r.frame.PostProcess)
+	}
+	m.SetMSAA(false)
+	fx2 := nt3d.PostProcess{Vignette: 0.25}
+	m.SetEffects(fx2)
+	if m.MSAA() || m.Effects() != fx2 {
+		t.Fatalf("updated MSAA=%v Effects=%+v", m.MSAA(), m.Effects())
+	}
+	_, _, err := m.Snapshot(32, 16)
+	if err != nil || r.frame.MSAA || r.frame.PostProcess != fx2 {
+		t.Fatalf("snapshot MSAA=%v PostProcess=%+v err=%v", r.frame.MSAA, r.frame.PostProcess, err)
+	}
+}
+
 // The frame rate counts frames shown over the last second, and falls to
 // zero once a second passes without one.
 func TestFrameRate(t *testing.T) {

@@ -16,7 +16,25 @@ import (
 	gpuimage "nimbleterminal.dev/ntgpuimage"
 )
 
-const depthPickShader = `
+const depthPick1xHeader = `
+@group(0) @binding(1) var depthTex: texture_depth_2d;
+fn loadPickDepth(c: vec2<i32>) -> f32 {
+	return textureLoad(depthTex, c, 0);
+}
+`
+
+const depthPickMSAAHeader = `
+@group(0) @binding(1) var depthTex: texture_depth_multisampled_2d;
+fn loadPickDepth(c: vec2<i32>) -> f32 {
+	let d0 = textureLoad(depthTex, c, 0);
+	let d1 = textureLoad(depthTex, c, 1);
+	let d2 = textureLoad(depthTex, c, 2);
+	let d3 = textureLoad(depthTex, c, 3);
+	return min(min(d0, d1), min(d2, d3));
+}
+`
+
+const depthPickShaderBody = `
 struct DepthQuery {
 	center: vec2<f32>,
 	pixel: vec2<i32>,
@@ -26,7 +44,6 @@ struct DepthQuery {
 };
 
 @group(0) @binding(0) var<uniform> q: DepthQuery;
-@group(0) @binding(1) var depthTex: texture_depth_2d;
 @group(0) @binding(2) var<storage, read_write> result: vec4<f32>;
 
 @compute @workgroup_size(1)
@@ -42,7 +59,7 @@ fn main() {
 	let y1 = clamp((q.pixel.y + 1) * q.factor - 1, 0, q.size.y - 1);
 	for (var sy = y0; sy <= y1; sy++) {
 		for (var sx = x0; sx <= x1; sx++) {
-			let d = textureLoad(depthTex, vec2<i32>(sx, sy), 0);
+			let d = loadPickDepth(vec2<i32>(sx, sy));
 			if d >= 0.0 && d < bestDepth {
 				bestDepth = d;
 				bestX = f32(sx) + 0.5;
@@ -68,7 +85,7 @@ fn main() {
 				let dx = fx - q.center.x;
 				let dy = fy - q.center.y;
 				if dx * dx + dy * dy <= r2 {
-					let d = textureLoad(depthTex, vec2<i32>(sx, sy), 0);
+					let d = loadPickDepth(vec2<i32>(sx, sy));
 					if d >= 0.0 && d < bestDepth {
 						bestDepth = d;
 						bestX = fx;
@@ -84,12 +101,19 @@ fn main() {
 }
 `
 
+const (
+	depthPickShader     = depthPick1xHeader + depthPickShaderBody
+	depthPickShaderMSAA = depthPickMSAAHeader + depthPickShaderBody
+)
+
 type gpuDepthPicker struct {
-	layout                 *wgpu.BindGroupLayout
+	layouts                [2]*wgpu.BindGroupLayout
+	pipelines              [2]*wgpu.ComputePipeline
 	pipeline               *wgpu.ComputePipeline
 	uniform, result, stage *wgpu.Buffer
 	bind                   *wgpu.BindGroup
 	view                   *wgpu.TextureView
+	samples                int
 }
 
 func (p *gpuDepthPicker) release(shared bool) {
@@ -102,11 +126,13 @@ func (p *gpuDepthPicker) release(shared bool) {
 		}
 	}
 	if !shared {
-		if p.pipeline != nil {
-			p.pipeline.Release()
-		}
-		if p.layout != nil {
-			p.layout.Release()
+		for i := range p.pipelines {
+			if p.pipelines[i] != nil {
+				p.pipelines[i].Release()
+			}
+			if p.layouts[i] != nil {
+				p.layouts[i].Release()
+			}
 		}
 	}
 	*p = gpuDepthPicker{}
@@ -114,34 +140,40 @@ func (p *gpuDepthPicker) release(shared bool) {
 
 func (g *gpuRenderer) initDepthPick(dev *wgpu.Device) error {
 	p := &g.depthPick
-	if p.pipeline == nil {
+	msaa := g.target.samples > 1
+	idx := 0
+	if msaa {
+		idx = 1
+	}
+	if p.pipelines[idx] == nil {
 		if g.shared != nil {
 			g.shared.mu.Lock()
-			if g.shared.depthPickPipeline != nil {
-				p.layout = g.shared.depthPickLayout
-				p.pipeline = g.shared.depthPickPipeline
+			if g.shared.depthPickPipelines[idx] != nil {
+				p.layouts[idx] = g.shared.depthPickLayouts[idx]
+				p.pipelines[idx] = g.shared.depthPickPipelines[idx]
 				g.shared.mu.Unlock()
 			} else {
-				layout, pipeline, err := createDepthPickPipeline(dev)
+				layout, pipeline, err := createDepthPickPipeline(dev, msaa)
 				if err != nil {
 					g.shared.mu.Unlock()
 					return err
 				}
-				g.shared.depthPickLayout = layout
-				g.shared.depthPickPipeline = pipeline
-				p.layout = layout
-				p.pipeline = pipeline
+				g.shared.depthPickLayouts[idx] = layout
+				g.shared.depthPickPipelines[idx] = pipeline
+				p.layouts[idx] = layout
+				p.pipelines[idx] = pipeline
 				g.shared.mu.Unlock()
 			}
 		} else {
-			layout, pipeline, err := createDepthPickPipeline(dev)
+			layout, pipeline, err := createDepthPickPipeline(dev, msaa)
 			if err != nil {
 				return err
 			}
-			p.layout = layout
-			p.pipeline = pipeline
+			p.layouts[idx] = layout
+			p.pipelines[idx] = pipeline
 		}
 	}
+	p.pipeline = p.pipelines[idx]
 	if p.uniform == nil {
 		var err error
 		p.uniform, err = dev.CreateBuffer(&wgpu.BufferDescriptor{
@@ -175,14 +207,14 @@ func (g *gpuRenderer) initDepthPick(dev *wgpu.Device) error {
 			return err
 		}
 	}
-	if p.view != g.target.depthView {
+	if p.view != g.target.depthView || p.samples != g.target.samples {
 		if p.bind != nil {
 			p.bind.Release()
 			p.bind = nil
 			p.view = nil
 		}
 		bind, err := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{
-			Layout: p.layout,
+			Layout: p.layouts[idx],
 			Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, Buffer: p.uniform, Size: 32},
 				{Binding: 1, TextureView: g.target.depthView},
@@ -194,11 +226,12 @@ func (g *gpuRenderer) initDepthPick(dev *wgpu.Device) error {
 		}
 		p.bind = bind
 		p.view = g.target.depthView
+		p.samples = g.target.samples
 	}
 	return nil
 }
 
-func createDepthPickPipeline(dev *wgpu.Device) (*wgpu.BindGroupLayout, *wgpu.ComputePipeline, error) {
+func createDepthPickPipeline(dev *wgpu.Device, msaa bool) (*wgpu.BindGroupLayout, *wgpu.ComputePipeline, error) {
 	layout, err := dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Label: "nt3d depth pick layout",
 		Entries: []gputypes.BindGroupLayoutEntry{
@@ -213,6 +246,7 @@ func createDepthPickPipeline(dev *wgpu.Device) (*wgpu.BindGroupLayout, *wgpu.Com
 				Texture: &gputypes.TextureBindingLayout{
 					SampleType:    gputypes.TextureSampleTypeDepth,
 					ViewDimension: gputypes.TextureViewDimension2D,
+					Multisampled:  msaa,
 				},
 			},
 			{
@@ -233,9 +267,13 @@ func createDepthPickPipeline(dev *wgpu.Device) (*wgpu.BindGroupLayout, *wgpu.Com
 		return nil, nil, err
 	}
 	defer pipelineLayout.Release()
+	wgsl := depthPickShader
+	if msaa {
+		wgsl = depthPickShaderMSAA
+	}
 	shader, err := dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label: "nt3d depth pick",
-		WGSL:  depthPickShader,
+		WGSL:  wgsl,
 	})
 	if err != nil {
 		layout.Release()

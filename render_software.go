@@ -23,6 +23,26 @@ func softwareRender(f Frame) image.Image {
 // Unlike RenderSoftware, image-only rendering needs no reduced depth result.
 func softwareRenderScratch(f Frame, depth []float32) image.Image {
 	s := supersampleFactor(f)
+	if f.PostProcess.on() {
+		if s == 1 {
+			scene := f
+			scene.Overlays = nil
+			img, d, acc := softwareDrawDepthHDR(scene, 1, depth, true)
+			applyPostSoftware(f, img, acc, d)
+			drawOverlays(img, f)
+			return img
+		}
+		big := f
+		big.Width, big.Height, big.Overlays, big.PostProcess = f.Width*s, f.Height*s, nil, PostProcess{}
+		_, bigDepth, bigAcc := softwareDrawDepthHDR(big, s, depth, true)
+		acc1x, depth1x := shrinkPost(f.Width, f.Height, s, bigAcc, bigDepth, f.Linear)
+		img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
+		fLin := f
+		fLin.Linear = true
+		applyPostSoftware(fLin, img, acc1x, depth1x)
+		drawOverlays(img, f)
+		return img
+	}
 	if s == 1 {
 		img, _ := softwareDrawDepth(f, 1, depth)
 		return img
@@ -40,6 +60,26 @@ func softwareRenderScratch(f Frame, depth []float32) image.Image {
 // supersampled pixel's is the nearest of its block.
 func softwareRenderDepth(f Frame) (*image.RGBA, []float32) {
 	s := supersampleFactor(f)
+	if f.PostProcess.on() {
+		if s == 1 {
+			scene := f
+			scene.Overlays = nil
+			img, depth, acc := softwareDrawDepthHDR(scene, 1, make([]float32, f.Width*f.Height), true)
+			applyPostSoftware(f, img, acc, depth)
+			drawOverlays(img, f)
+			return img, depth
+		}
+		big := f
+		big.Width, big.Height, big.Overlays, big.PostProcess = f.Width*s, f.Height*s, nil, PostProcess{}
+		_, bigDepth, bigAcc := softwareDrawDepthHDR(big, s, make([]float32, big.Width*big.Height), true)
+		acc1x, depth := shrinkPost(f.Width, f.Height, s, bigAcc, bigDepth, f.Linear)
+		img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
+		fLin := f
+		fLin.Linear = true
+		applyPostSoftware(fLin, img, acc1x, depth)
+		drawOverlays(img, f)
+		return img, depth
+	}
 	if s == 1 {
 		return softwareDraw(f, 1)
 	}
@@ -75,6 +115,11 @@ func softwareDraw(f Frame, scale int) (*image.RGBA, []float32) {
 
 // depth is exactly Width*Height values and is reset even on equal-area resizes.
 func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []float32) {
+	img, d, _ := softwareDrawDepthHDR(f, scale, depth, false)
+	return img, d
+}
+
+func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*image.RGBA, []float32, []float32) {
 	px := float32(scale)
 	inverseScene, _ := inverseProjection(f.Matrix)
 	var opaqueColor []byte
@@ -132,6 +177,9 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			acc[i*3], acc[i*3+1], acc[i*3+2] = fromPixel(img.Pix[off]), fromPixel(img.Pix[off+1]), fromPixel(img.Pix[off+2])
 		}
 	}
+	if wantHDR {
+		accumulate()
+	}
 	put := func(x, y int, z float32, c color.RGBA) {
 		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
 			return
@@ -143,6 +191,20 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = c.R, c.G, c.B
 			if acc != nil {
 				acc[i*3], acc[i*3+1], acc[i*3+2] = fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)
+			}
+		}
+	}
+	putWork := func(x, y int, z float32, rgb [3]float32) {
+		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
+			return
+		}
+		i := y*f.Width + x
+		if z <= depth[i]+.00001 {
+			depth[i] = z
+			off := i * 4
+			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = toPixel(rgb[0]), toPixel(rgb[1]), toPixel(rgb[2])
+			if acc != nil {
+				acc[i*3], acc[i*3+1], acc[i*3+2] = max(0, rgb[0]), max(0, rgb[1]), max(0, rgb[2])
 			}
 		}
 	}
@@ -398,7 +460,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 					blend(x, y, u*z0+v*z1+t*z2, rgb, opacity)
 					continue
 				}
-				put(x, y, u*z0+v*z1+t*z2, color.RGBA{toPixel(rgb[0]), toPixel(rgb[1]), toPixel(rgb[2]), 255})
+				putWork(x, y, u*z0+v*z1+t*z2, rgb)
 			}
 		}
 	}
@@ -602,7 +664,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 						if style.Blend == AlphaBlend {
 							blend(sx, sy, z, tinted, opacity)
 						} else {
-							put(sx, sy, z, color.RGBA{toPixel(tinted[0]), toPixel(tinted[1]), toPixel(tinted[2]), 255})
+							putWork(sx, sy, z, tinted)
 						}
 					}
 					continue
@@ -920,7 +982,7 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 		}
 	}
 	drawOverlays(img, f)
-	return img, depth
+	return img, depth, acc
 }
 
 // edge is twice the signed area of the triangle a, b, p: zero on the line

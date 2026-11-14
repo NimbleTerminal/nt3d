@@ -66,37 +66,73 @@ func releaseBatch(b gpuBatch) {
 	}
 }
 
-func (g *gpuRenderer) setupTextures(dev *wgpu.Device, sampledLayout *wgpu.BindGroupLayout) (err error) {
-	g.textureLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout, sampledLayout, sampledLayout}})
-	if err != nil {
-		return err
-	}
-	pipeline := func(label, fragment string) (*wgpu.RenderPipeline, error) {
-		return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: label, Layout: g.textureLayout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_texture"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
-	}
-	g.texturePipeline, err = pipeline("textured mesh", "fs_texture")
-	if err == nil {
-		g.cutoutPipeline, err = pipeline("cutout mesh", "fs_cutout")
-	}
-	for i, entry := range []string{"vs_texture_back", "vs_texture"} {
-		if err == nil {
-			g.textureBlends[i], err = blendPipeline(dev, g.textureLayout, g.shader, entry, "fs_blend_texture", i)
+func (g *gpuRenderer) setupTextureLayouts(dev *wgpu.Device, sampledLayout *wgpu.BindGroupLayout) (err error) {
+	if g.textureLayout == nil {
+		g.textureLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout, sampledLayout, sampledLayout}})
+		if err != nil {
+			return err
+		}
+		if err = g.setupTexturedShadowPipelines(dev); err != nil {
+			g.textureLayout.Release()
+			g.textureLayout = nil
+			return err
 		}
 	}
-	if err == nil {
-		err = g.setupTexturedShadowPipelines(dev)
+	if g.spriteLayout == nil {
+		g.spriteLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.pointBindLayout, g.shadowLayout, sampledLayout}})
+		if err != nil {
+			return err
+		}
 	}
-	if err != nil {
-		for _, p := range []**wgpu.RenderPipeline{&g.texturePipeline, &g.cutoutPipeline, &g.textureBlends[0], &g.textureBlends[1]} {
-			if *p != nil {
-				(*p).Release()
-				*p = nil
+	return nil
+}
+
+func (g *gpuRenderer) setupTexturePipelines(dev *wgpu.Device) (err error) {
+	ms := g.multisample()
+	var texPipe, cutPipe *wgpu.RenderPipeline
+	var texBlends [2]*wgpu.RenderPipeline
+	var sprites [3]*wgpu.RenderPipeline
+	defer func() {
+		if err != nil {
+			for _, p := range []*wgpu.RenderPipeline{texPipe, cutPipe, texBlends[0], texBlends[1], sprites[0], sprites[1], sprites[2]} {
+				if p != nil {
+					p.Release()
+				}
 			}
 		}
-		g.textureLayout.Release()
-		g.textureLayout = nil
+	}()
+	pipeline := func(label, fragment string) (*wgpu.RenderPipeline, error) {
+		return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: label, Layout: g.textureLayout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_texture"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: ms, Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
+	}
+	if texPipe, err = pipeline("textured mesh", "fs_texture"); err != nil {
 		return err
 	}
+	if cutPipe, err = pipeline("cutout mesh", "fs_cutout"); err != nil {
+		return err
+	}
+	for i, entry := range []string{"vs_texture_back", "vs_texture"} {
+		if texBlends[i], err = blendPipelineMS(dev, g.textureLayout, g.shader, entry, "fs_blend_texture", i, ms); err != nil {
+			return err
+		}
+	}
+	if sprites[0], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "opaque sprites", Layout: g.spriteLayout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_sprite"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: ms, Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_sprite", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}}); err != nil {
+		return err
+	}
+	if sprites[1], err = pointPipelineMS(dev, g.spriteLayout, g.shader, "vs_sprite_sorted", "fs_sprite_alpha", false, ms); err != nil {
+		return err
+	}
+	if sprites[2], err = pointPipelineMS(dev, g.spriteLayout, g.shader, "vs_sprite", "fs_sprite_add", true, ms); err != nil {
+		return err
+	}
+	g.texturePipeline = texPipe
+	g.cutoutPipeline = cutPipe
+	g.textureBlends = texBlends
+	g.spritePipelines = sprites
+	idx := g.sampleIdx
+	g.msaaSets[idx].texturePipeline = texPipe
+	g.msaaSets[idx].cutoutPipeline = cutPipe
+	g.msaaSets[idx].textureBlends = texBlends
+	g.msaaSets[idx].spritePipelines = sprites
 	return nil
 }
 
@@ -196,81 +232,56 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 			delete(g.textures, key)
 		}
 	}
-	if sampledLayout != nil && (g.texturePipeline == nil || g.spriteLayout == nil) {
+	if sampledLayout != nil && (g.textureLayout == nil || g.spriteLayout == nil || g.texturePipeline == nil || g.spritePipelines[0] == nil) {
+		idx := g.sampleIdx
 		if g.shared != nil {
 			g.shared.mu.Lock()
 			defer g.shared.mu.Unlock()
-			if g.shared.texturePipeline == nil {
-				if err := g.setupTextures(dev, sampledLayout); err != nil {
+			if g.shared.textureLayout == nil || g.shared.spriteLayout == nil {
+				g.textureLayout = g.shared.textureLayout
+				g.spriteLayout = g.shared.spriteLayout
+				if err := g.setupTextureLayouts(dev, sampledLayout); err != nil {
 					return err
 				}
 				g.shared.textureLayout = g.textureLayout
-				g.shared.texturePipeline = g.texturePipeline
-				g.shared.cutoutPipeline = g.cutoutPipeline
-				g.shared.textureBlends = g.textureBlends
+				g.shared.spriteLayout = g.spriteLayout
 				g.shared.shadowPipelines[2] = g.shadowPipelines[2]
 				g.shared.shadowPipelines[3] = g.shadowPipelines[3]
 			} else {
 				g.textureLayout = g.shared.textureLayout
-				g.texturePipeline = g.shared.texturePipeline
-				g.cutoutPipeline = g.shared.cutoutPipeline
-				g.textureBlends = g.shared.textureBlends
+				g.spriteLayout = g.shared.spriteLayout
 				g.shadowPipelines[2] = g.shared.shadowPipelines[2]
 				g.shadowPipelines[3] = g.shared.shadowPipelines[3]
 			}
-			if g.shared.spriteLayout == nil {
-				if err := g.setupSprites(dev, sampledLayout); err != nil {
+			if g.shared.msaaSets[idx].texturePipeline == nil {
+				if err := g.setupTexturePipelines(dev); err != nil {
 					return err
 				}
-				g.shared.spriteLayout = g.spriteLayout
-				g.shared.spritePipelines = g.spritePipelines
+				g.shared.msaaSets[idx].texturePipeline = g.texturePipeline
+				g.shared.msaaSets[idx].cutoutPipeline = g.cutoutPipeline
+				g.shared.msaaSets[idx].textureBlends = g.textureBlends
+				g.shared.msaaSets[idx].spritePipelines = g.spritePipelines
 			} else {
-				g.spriteLayout = g.shared.spriteLayout
-				g.spritePipelines = g.shared.spritePipelines
+				ps := &g.shared.msaaSets[idx]
+				g.texturePipeline = ps.texturePipeline
+				g.cutoutPipeline = ps.cutoutPipeline
+				g.textureBlends = ps.textureBlends
+				g.spritePipelines = ps.spritePipelines
+				g.msaaSets[idx].texturePipeline = ps.texturePipeline
+				g.msaaSets[idx].cutoutPipeline = ps.cutoutPipeline
+				g.msaaSets[idx].textureBlends = ps.textureBlends
+				g.msaaSets[idx].spritePipelines = ps.spritePipelines
 			}
 			return nil
 		}
-		if g.texturePipeline == nil {
-			if err := g.setupTextures(dev, sampledLayout); err != nil {
-				return err
-			}
+		if err := g.setupTextureLayouts(dev, sampledLayout); err != nil {
+			return err
 		}
-		if g.spriteLayout == nil {
-			return g.setupSprites(dev, sampledLayout)
+		if g.texturePipeline == nil || g.spritePipelines[0] == nil {
+			return g.setupTexturePipelines(dev)
 		}
 	}
 	return nil
-}
-
-func (g *gpuRenderer) setupSprites(dev *wgpu.Device, sampled *wgpu.BindGroupLayout) (err error) {
-	defer func() {
-		if err != nil {
-			for i, p := range g.spritePipelines {
-				if p != nil {
-					p.Release()
-					g.spritePipelines[i] = nil
-				}
-			}
-			if g.spriteLayout != nil {
-				g.spriteLayout.Release()
-				g.spriteLayout = nil
-			}
-		}
-	}()
-	g.spriteLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.pointBindLayout, g.shadowLayout, sampled}})
-	if err != nil {
-		return err
-	}
-	g.spritePipelines[0], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "opaque sprites", Layout: g.spriteLayout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: "vs_sprite"}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState(), Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: "fs_sprite", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
-	if err != nil {
-		return err
-	}
-	g.spritePipelines[1], err = pointPipeline(dev, g.spriteLayout, g.shader, "vs_sprite_sorted", "fs_sprite_alpha", false)
-	if err != nil {
-		return err
-	}
-	g.spritePipelines[2], err = pointPipeline(dev, g.spriteLayout, g.shader, "vs_sprite", "fs_sprite_add", true)
-	return err
 }
 
 // drawSprite draws a geometry's sprites unsorted: opaque or additive. Its

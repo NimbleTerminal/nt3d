@@ -71,6 +71,8 @@ type Model struct {
 	failed                          error // A reported GPU failure; rendering waits for a change.
 	renderErr                       error // The last frame's, until a frame draws without one.
 	supersample                     int
+	msaa                            bool
+	effects                         nt3d.PostProcess
 	postProcess                     func(*image.RGBA)
 	shown                           []time.Time   // When frames were shown, over the last second.
 	renderTime                      time.Duration // The last frame's render.
@@ -108,6 +110,19 @@ type RenderFailedMsg struct {
 // resolution for speed; Snapshot supersamples on every backend.
 func WithSupersample(n int) Option {
 	return func(m *Model) { m.supersample = max(0, min(nt3d.MaxSupersample, n)) }
+}
+
+// WithMSAA enables 4x hardware multisampling on GPU frames and snapshots.
+// Software and wireframe modes ignore it.
+func WithMSAA(enabled bool) Option {
+	return func(m *Model) { m.msaa = enabled }
+}
+
+// WithEffects configures built-in post-processing (SSAO, HDR bloom, exposure,
+// tone mapping, and vignette) applied to rendered frames and snapshots before
+// overlays and any custom WithPostProcess callback.
+func WithEffects(pp nt3d.PostProcess) Option {
+	return func(m *Model) { m.effects = pp }
 }
 
 // WithPostProcess runs fn on each rendered image, GPU or software, before it
@@ -218,6 +233,24 @@ func (m *Model) Supersample() int { return max(1, m.supersample) }
 // SetSupersample changes the GPU supersampling factor, 1..4.
 func (m *Model) SetSupersample(n int) tea.Cmd {
 	m.supersample = max(0, min(nt3d.MaxSupersample, n))
+	return m.changed(false)
+}
+
+// MSAA reports whether 4x GPU multisampling is enabled; see WithMSAA.
+func (m *Model) MSAA() bool { return m.msaa }
+
+// SetMSAA enables or disables 4x GPU multisampling and schedules a render.
+func (m *Model) SetMSAA(enabled bool) tea.Cmd {
+	m.msaa = enabled
+	return m.changed(false)
+}
+
+// Effects returns the built-in post-processing configuration; see WithEffects.
+func (m *Model) Effects() nt3d.PostProcess { return m.effects }
+
+// SetEffects updates the built-in post-processing configuration and schedules a render.
+func (m *Model) SetEffects(pp nt3d.PostProcess) tea.Cmd {
+	m.effects = pp
 	return m.changed(false)
 }
 
@@ -360,10 +393,10 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 		return nil, m.requestedRenderMode, err
 	}
 	f.Background, f.Lighting, f.Fog = m.background, m.lighting, m.fog
+	f.Supersample, f.MSAA, f.PostProcess = m.supersample, m.msaa, m.effects
 	if m.decorate != nil {
 		m.decorate(&f)
 	}
-	f.Supersample = m.supersample
 	img, mode, err := nt3d.Snapshot(f, m.requestedRenderMode, m.renderer)
 	return postProcessed(img, m.postProcess), mode, err
 }

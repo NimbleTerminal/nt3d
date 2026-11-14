@@ -94,10 +94,14 @@ type resolveKey struct {
 
 // sceneTarget is the GPU renderer's scene target and resolve pass.
 type sceneTarget struct {
-	w, h                 int
+	w, h, samples        int
 	color, depth         *wgpu.Texture
 	colorView, depthView *wgpu.TextureView
+	msaaColor            *wgpu.Texture
+	msaaColorView        *wgpu.TextureView
 	sampled              *wgpu.BindGroup // colorView, for the resolve.
+	overlaySrc           *wgpu.TextureView
+	overlaySampled       *wgpu.BindGroup
 	pipeline             *wgpu.RenderPipeline
 	pipelines            map[resolveKey]*wgpu.RenderPipeline
 	layout               *wgpu.PipelineLayout
@@ -165,20 +169,25 @@ func resolveTransfer(linear bool, format gputypes.TextureFormat) float32 {
 
 // releaseTextures frees the target's textures.
 func (t *sceneTarget) releaseTextures() {
-	if t.sampled != nil {
-		t.sampled.Release()
+	for _, b := range []*wgpu.BindGroup{t.sampled, t.overlaySampled} {
+		if b != nil {
+			b.Release()
+		}
 	}
-	for _, v := range []*wgpu.TextureView{t.colorView, t.depthView} {
+	for _, v := range []*wgpu.TextureView{t.colorView, t.depthView, t.msaaColorView} {
 		if v != nil {
 			v.Release()
 		}
 	}
-	for _, x := range []*wgpu.Texture{t.color, t.depth} {
+	for _, x := range []*wgpu.Texture{t.color, t.depth, t.msaaColor} {
 		if x != nil {
 			x.Release()
 		}
 	}
-	t.w, t.h, t.color, t.depth, t.colorView, t.depthView, t.sampled = 0, 0, nil, nil, nil, nil, nil
+	t.w, t.h, t.samples = 0, 0, 0
+	t.color, t.depth, t.msaaColor = nil, nil, nil
+	t.colorView, t.depthView, t.msaaColorView = nil, nil, nil
+	t.sampled, t.overlaySrc, t.overlaySampled = nil, nil, nil
 }
 
 // prepareTarget sizes the scene target for this frame, creating the resolve
@@ -186,8 +195,12 @@ func (t *sceneTarget) releaseTextures() {
 func (g *gpuRenderer) prepareTarget(dev *wgpu.Device, f Frame) (err error) {
 	s := supersampleFactor(f)
 	w, h := f.Width*s, f.Height*s
+	samples := 1
+	if f.MSAA {
+		samples = 4
+	}
 	t := &g.target
-	if t.pipeline != nil && t.w == w && t.h == h {
+	if t.pipeline != nil && t.w == w && t.h == h && t.samples == samples {
 		return nil
 	}
 	if t.pipeline == nil {
@@ -196,8 +209,8 @@ func (g *gpuRenderer) prepareTarget(dev *wgpu.Device, f Frame) (err error) {
 		}
 	}
 	t.releaseTextures()
-	texture := func(label string, format gputypes.TextureFormat, usage gputypes.TextureUsage) (*wgpu.Texture, *wgpu.TextureView, error) {
-		x, err := dev.CreateTexture(&wgpu.TextureDescriptor{Label: label, Size: wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}, MipLevelCount: 1, SampleCount: 1, Dimension: wgpu.TextureDimension2D, Format: format, Usage: usage})
+	texture := func(label string, format gputypes.TextureFormat, sc uint32, usage gputypes.TextureUsage) (*wgpu.Texture, *wgpu.TextureView, error) {
+		x, err := dev.CreateTexture(&wgpu.TextureDescriptor{Label: label, Size: wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}, MipLevelCount: 1, SampleCount: sc, Dimension: wgpu.TextureDimension2D, Format: format, Usage: usage})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -208,10 +221,16 @@ func (g *gpuRenderer) prepareTarget(dev *wgpu.Device, f Frame) (err error) {
 		}
 		return x, v, nil
 	}
-	if t.color, t.colorView, err = texture("nt3d scene", sceneFormat, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
+	if t.color, t.colorView, err = texture("nt3d scene", sceneFormat, 1, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
 		return err
 	}
-	if t.depth, t.depthView, err = texture("nt3d scene depth", gputypes.TextureFormatDepth32Float, wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
+	if samples > 1 {
+		if t.msaaColor, t.msaaColorView, err = texture("nt3d scene msaa", sceneFormat, uint32(samples), wgpu.TextureUsageRenderAttachment); err != nil {
+			t.releaseTextures()
+			return err
+		}
+	}
+	if t.depth, t.depthView, err = texture("nt3d scene depth", gputypes.TextureFormatDepth32Float, uint32(samples), wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageTextureBinding); err != nil {
 		t.releaseTextures()
 		return err
 	}
@@ -219,7 +238,7 @@ func (g *gpuRenderer) prepareTarget(dev *wgpu.Device, f Frame) (err error) {
 		t.releaseTextures()
 		return err
 	}
-	t.w, t.h = w, h
+	t.w, t.h, t.samples = w, h, samples
 	return nil
 }
 
@@ -311,6 +330,12 @@ func (t *sceneTarget) resolvePipeline(dev *wgpu.Device, shared *gpuShared, forma
 // target.
 func (g *gpuRenderer) renderScene(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame, target GPUTarget, draw func(color, depth *wgpu.TextureView) error) error {
 	t := &g.target
+	if f.PostProcess.on() {
+		if err := draw(t.colorView, t.depthView); err != nil {
+			return err
+		}
+		return g.resolveWithPost(dev, encoder, f, target)
+	}
 	pipeline, err := t.resolvePipeline(dev, g.shared, target.Format, target.Load)
 	if err != nil {
 		return err
@@ -318,6 +343,34 @@ func (g *gpuRenderer) renderScene(dev *wgpu.Device, encoder *wgpu.CommandEncoder
 	if err := draw(t.colorView, t.depthView); err != nil {
 		return err
 	}
+	return g.encodePlainResolve(dev, encoder, pipeline, f, target, supersampleFactor(f), t.sampled)
+}
+
+func (g *gpuRenderer) resolve1xView(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame, target GPUTarget, srcView *wgpu.TextureView) error {
+	t := &g.target
+	pipeline, err := t.resolvePipeline(dev, g.shared, target.Format, target.Load)
+	if err != nil {
+		return err
+	}
+	if t.overlaySrc != srcView || t.overlaySampled == nil {
+		if t.overlaySampled != nil {
+			t.overlaySampled.Release()
+			t.overlaySampled = nil
+		}
+		t.overlaySampled, err = dev.CreateBindGroup(&wgpu.BindGroupDescriptor{
+			Layout:  t.sampledGroup,
+			Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: srcView}},
+		})
+		if err != nil {
+			return err
+		}
+		t.overlaySrc = srcView
+	}
+	return g.encodePlainResolve(dev, encoder, pipeline, f, target, 1, t.overlaySampled)
+}
+
+func (g *gpuRenderer) encodePlainResolve(dev *wgpu.Device, encoder *wgpu.CommandEncoder, pipeline *wgpu.RenderPipeline, f Frame, target GPUTarget, factor int, sampled *wgpu.BindGroup) error {
+	t := &g.target
 	vp := targetViewport(target)
 	fullTarget := vp.Min.X == 0 && vp.Min.Y == 0 && vp.Max.X == target.Width && vp.Max.Y == target.Height
 	load := float32(0)
@@ -325,7 +378,7 @@ func (g *gpuRenderer) renderScene(dev *wgpu.Device, encoder *wgpu.CommandEncoder
 		load = 1
 	}
 	var uniform [32]byte
-	binary.LittleEndian.PutUint32(uniform[0:], math.Float32bits(float32(supersampleFactor(f))))
+	binary.LittleEndian.PutUint32(uniform[0:], math.Float32bits(float32(factor)))
 	binary.LittleEndian.PutUint32(uniform[4:], math.Float32bits(resolveTransfer(f.Linear, target.Format)))
 	binary.LittleEndian.PutUint32(uniform[8:], math.Float32bits(load))
 	binary.LittleEndian.PutUint32(uniform[16:], uint32(int32(vp.Min.X)))
@@ -359,7 +412,7 @@ func (g *gpuRenderer) renderScene(dev *wgpu.Device, encoder *wgpu.CommandEncoder
 	}
 	pass.SetPipeline(pipeline)
 	pass.SetBindGroup(0, t.bind, nil)
-	pass.SetBindGroup(1, t.sampled, nil)
+	pass.SetBindGroup(1, sampled, nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: 3, InstanceCount: 1})
 	return pass.End()
 }
