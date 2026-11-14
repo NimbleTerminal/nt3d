@@ -168,6 +168,58 @@ func buildDemoScene() (*viewerState, error) {
 		return nil, err
 	}
 
+	// Intersecting ruby and sapphire crystal-glass gyroscope rings around the core
+	// (showcasing zero-popping Weighted Blended OIT when toggling N).
+	rubyRing, err := nt3d.BuildTorus(nt3d.Torus{
+		MajorRadius: 0.56,
+		MinorRadius: 0.052,
+		Color:       color.RGBA{245, 68, 92, 145},
+		Material: &nt3d.Material{
+			PBR:         true,
+			Transparent: true,
+			Roughness:   0.10,
+			IOR:         1.75,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	rubyID, err := s.SetGeometry("glass-ring-ruby", rubyRing)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Reparent(rubyID, rigID); err != nil {
+		return nil, err
+	}
+	if err := s.SetTransform(rubyID, nt3dmath.Translation(nt3dmath.Vec3{Z: 0.015}).Mul(nt3dmath.RotationX(0.66))); err != nil {
+		return nil, err
+	}
+
+	sapphireRing, err := nt3d.BuildTorus(nt3d.Torus{
+		MajorRadius: 0.56,
+		MinorRadius: 0.052,
+		Color:       color.RGBA{65, 185, 255, 145},
+		Material: &nt3d.Material{
+			PBR:         true,
+			Transparent: true,
+			Roughness:   0.10,
+			IOR:         1.75,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	sapphireID, err := s.SetGeometry("glass-ring-sapphire", sapphireRing)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Reparent(sapphireID, rigID); err != nil {
+		return nil, err
+	}
+	if err := s.SetTransform(sapphireID, nt3dmath.Translation(nt3dmath.Vec3{Z: -0.015}).Mul(nt3dmath.RotationY(-0.66))); err != nil {
+		return nil, err
+	}
+
 	// High-IOR crystal glass satellites.
 	satSphere, err := nt3d.BuildSphere(nt3d.Sphere{
 		Radius: 0.18,
@@ -201,11 +253,11 @@ func buildDemoScene() (*viewerState, error) {
 		}
 	}
 
-	totalTris := (len(floorGeom.Indices) + len(centerSphere.Indices) + len(torus.Indices) + 4*len(satSphere.Indices)) / 3
+	totalTris := (len(floorGeom.Indices) + len(centerSphere.Indices) + len(torus.Indices) + len(rubyRing.Indices) + len(sapphireRing.Indices) + 4*len(satSphere.Indices)) / 3
 	s.WarmPickIndices()
 	state := &viewerState{
 		scene:          s,
-		summary:        "procedural demo (7 meshes)",
+		summary:        "procedural demo (9 meshes)",
 		rigID:          rigID,
 		fitBounds:      s.Bounds(),
 		totalTriangles: totalTris,

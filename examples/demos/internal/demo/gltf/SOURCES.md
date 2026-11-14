@@ -11,8 +11,9 @@ Model assets are **CC0-1.0**. Upstream licenses identify metadata, including the
 
 Only `cmd/animate` imports this embed package. No runtime download is needed, and these files are in the separate `examples/demos` module, outside the main library module's distribution.
 
-## Original assembly
+## Original generated samples
 
-`Assembly/assembly.glb` is original generated CC0 data, not a Khronos sample.
-Its reproducible generator is `generate/main.go`; see `Assembly/README.md` and
-`Assembly/LICENSE.md`. The generator is not embedded or imported by demo binaries.
+`Assembly/assembly.glb` and `Spotlights/spotlights.glb` are original generated CC0 data,
+not Khronos samples. Their reproducible generator is `generate/main.go`; see
+`Assembly/README.md`, `Spotlights/README.md`, and their `LICENSE.md` files.
+The generator is not embedded or imported by demo binaries.

@@ -83,3 +83,28 @@ func TestGPUAssemblyCameras(t *testing.T) {
 		d.cycleSampleCamera()
 	}
 }
+
+func TestGPUSpotlightStageShadows(t *testing.T) {
+	d := newAnimateDemo(t)
+	if err := d.loadAnimatedSample(1, 0); err != nil {
+		t.Fatal(err)
+	}
+	d.frameAnimatedSample()
+	renderer := nt3d.NewGPURenderer()
+	defer renderer.Close()
+	for _, ts := range []float64{0, 1.1, 2.3} {
+		if err := d.animation.Sample(ts); err != nil {
+			t.Fatal(err)
+		}
+		f, err := d.scene.Frame(d.view.Camera(), 160, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.decorate(&f)
+		img, err := renderer.Render(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertAnimatedSampleVisible(t, img, f.Background)
+	}
+}

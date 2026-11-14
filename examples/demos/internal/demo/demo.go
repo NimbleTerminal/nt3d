@@ -323,6 +323,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, nil
 		case "m":
+			if d.meshes != nil && d.meshes.builtin {
+				if err = d.toggleShapeScene(); err != nil {
+					d.status = err.Error()
+					return d, d.view.Refresh()
+				}
+				return d, tea.Batch(d.fitMeshes(), d.view.Refresh())
+			}
 			if d.mipmaps != nil {
 				err = d.cycleFiltering()
 				break
@@ -629,6 +636,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	}
 	if d.lights != nil {
 		d.decorateLights(f)
+	}
+	if d.animatedSamples != nil {
+		d.decorateAnimate(f)
 	}
 	if d.particles != nil {
 		f.Background = color.RGBA{16, 14, 20, 255} // Night, so the fire glows.

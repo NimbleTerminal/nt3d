@@ -11,8 +11,10 @@
   and McGuire & Bavoil Weighted Blended Order-Independent Transparency
   (`Frame.OIT` and `nt3dwidget` `WithOIT` / `SetOIT` / `OIT`, compatible with
   1× and 4× WebGPU MSAA and software float accumulation). Wire `HDR IBL` and
-  `spotlights` into `lights`, `glass (OIT)` vs `glass (sorted)` into `shapes` /
-  `meshes`, and `.hdr` panorama loading, `Spotlights`, and `OIT` into
+  `spotlights` into `lights`, an intersecting-glass OIT showcase (`m` and `t`)
+  into `shapes`, an animated `KHR_lights_punctual` **Spotlight stage** scene
+  into `animate`, `RotationX` / `RotationY` into `nt3d/math`, and `.hdr`
+  panorama loading, `Spotlights`, and intersecting crystal-glass `OIT` into
   `examples/gogpu`.
 - **Breaking:** move Gerstner wave surfaces, wake impulses, tiled water meshes,
   and Archimedes hull buoyancy, drag, and planing evaluation out of the root

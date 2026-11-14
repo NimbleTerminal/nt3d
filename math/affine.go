@@ -18,6 +18,22 @@ func Scaling(v Vec3) Mat4 {
 	return m
 }
 
+// RotationX rotates counterclockwise about X, in radians.
+func RotationX(radians float64) Mat4 {
+	m := Identity()
+	c, s := float32(math.Cos(radians)), float32(math.Sin(radians))
+	m[5], m[6], m[9], m[10] = c, s, -s, c
+	return m
+}
+
+// RotationY rotates counterclockwise about Y, in radians.
+func RotationY(radians float64) Mat4 {
+	m := Identity()
+	c, s := float32(math.Cos(radians)), float32(math.Sin(radians))
+	m[0], m[2], m[8], m[10] = c, -s, s, c
+	return m
+}
+
 // RotationZ rotates counterclockwise about Z, in radians.
 func RotationZ(radians float64) Mat4 {
 	m := Identity()

@@ -51,3 +51,14 @@ func TestAABBIgnoresNonFinite(t *testing.T) {
 		t.Fatalf("bounds %+v", b)
 	}
 }
+
+func TestRotationXYRightHanded(t *testing.T) {
+	rx := RotationX(math.Pi / 2).Direction(Vec3{Y: 1})
+	if math.Abs(float64(rx.Z-1)) > 1e-6 || math.Abs(float64(rx.X)) > 1e-6 || math.Abs(float64(rx.Y)) > 1e-6 {
+		t.Fatalf("RotationX(pi/2)(+Y) = %v, want +Z", rx)
+	}
+	ry := RotationY(math.Pi / 2).Direction(Vec3{Z: 1})
+	if math.Abs(float64(ry.X-1)) > 1e-6 || math.Abs(float64(ry.Y)) > 1e-6 || math.Abs(float64(ry.Z)) > 1e-6 {
+		t.Fatalf("RotationY(pi/2)(+Z) = %v, want +X", ry)
+	}
+}

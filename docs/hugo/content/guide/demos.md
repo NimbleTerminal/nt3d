@@ -97,7 +97,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 <img class="poster" src="../../posters/shapes.png" alt="A textured cube, golden torus, purple cone, orange cylinder, and green globe in a row">
 
-`task shapes`. Every [shape builder](../shapes/), lit and textured. `s` cycles the normals between as built, flat, and smooth; `t` turns them to glass, `e` adds highlights, `b` toggles [silhouette outlines](../materials/#outlines), and `d` adds fog.
+`task shapes`. Every [shape builder](../shapes/), lit and textured. `m` switches between the classic shape lineup and an **intersecting glass** sculpture (crossed ruby and cyan glass panes, interlocking amber and violet rings, and an emerald glass shell around an opaque core), `t` cycles `opaque`, `glass (OIT)` (Weighted Blended Order-Independent Transparency), and `glass (sorted)` so you can compare order-independent blending against per-object depth-sort popping, `s` cycles normals between as built, flat, and smooth, `e` toggles highlights, `b` toggles [silhouette outlines](../materials/#outlines), and `d` adds fog.
 
 ## Mesh files
 
@@ -178,9 +178,10 @@ The gallery links to every demo, each running inside [booba](https://github.com/
 
 <img class="poster" src="../../posters/animate.png" alt="An articulated assembly with textured tiles">
 
-`task animate` opens an original generated assembly, followed by three self-contained [Khronos glTF samples](https://github.com/KhronosGroup/glTF-Sample-Assets):
+`task animate` opens two original generated CC0 scenes, followed by three self-contained [Khronos glTF samples](https://github.com/KhronosGroup/glTF-Sample-Assets):
 
 - **Assembly lab** (6 KB GLB): nested turntable, shoulder, and tool pivots; authored perspective and orthographic cameras; reference and transformed texture tiles. The tool combines transformed color UVs with independent relief normal-map UVs. Press `k` to cycle the orbit and authored cameras. Camera navigation restores the saved orbit view. GPU and software show the textures; wireframe shows the articulated structure.
+- **Spotlight stage** (24 KB GLB): an overhead carousel rig carrying three animated `KHR_lights_punctual` spotlights (warm gold, cyan, and magenta) and `KHR_materials_emissive_strength` lamp canisters that orbit and nod their gimbals across a counter-rotating PBR gold ring, three ceramic pillars, and a stage floor, paired with an overhead `point` fill light, key-spotlight perspective shadow mapping, and an authored `"Stage front"` camera (`k`).
 
 - **AnimatedMorphCube** (GLB): two morph targets turn a cube into a thin slab and a ramp.
 - **SimpleSkin** (glTF plus binary buffers): two joints bend a strip through blended vertex weights and inverse bind matrices.
@@ -188,7 +189,7 @@ The gallery links to every demo, each running inside [booba](https://github.com/
 
 `[` and `]` change models, `a` toggles play/pause, Enter restarts, and `,` and `.` switch clips when a model has more than one. The bundled samples each have one clip. `1`, `2`, and `3` select GPU, software, and wireframe. Playback uses the generic animation API, and changing clips starts from a fresh instance so untracked channels return to the bind pose.
 
-The original assembly is **CC0** and can be regenerated with `go -C examples/demos generate ./internal/demo/gltf`. The Khronos model assets are **CC0**, by Microsoft (AnimatedMorphCube) and Marco Hutter (SimpleSkin and AnimatedTriangle). Upstream metadata is **CC-BY-4.0**. Original READMEs and licenses accompany every sample, with a pinned source revision in `examples/demos/internal/demo/gltf/SOURCES.md`. All sample files together, including provenance, occupy less than 30 KB.
+The original Assembly and Spotlights scenes are **CC0** and can be regenerated with `go -C examples/demos generate ./internal/demo/gltf`. The Khronos model assets are **CC0**, by Microsoft (AnimatedMorphCube) and Marco Hutter (SimpleSkin and AnimatedTriangle). Upstream metadata is **CC-BY-4.0**. Original READMEs and licenses accompany every sample, with a pinned source revision in `examples/demos/internal/demo/gltf/SOURCES.md`. All sample files together, including provenance, occupy less than 60 KB.
 
 Only `cmd/animate` imports the glTF sample embed package and assigns its `Files` to `demo.SampleFiles`. Relative `.bin` files are read through the mesh loader's `Options.Open`. Other demo binaries do not embed these samples, and the separate `examples/demos` module keeps them out of the main library's distribution. The generated `animation` demo and general-purpose `meshes` viewer and Gobkit character demo also opt into glTF decoding; other demos do not import that decoder.
 

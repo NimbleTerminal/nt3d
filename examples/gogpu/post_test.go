@@ -76,4 +76,38 @@ func TestPostPresetsAndFrameBuilder(t *testing.T) {
 	if len(f3.Lighting.Lights) != 1 || f3.Lighting.Lights[0].Kind != nt3d.SpotLight || !f3.Lighting.Lights[0].Shadows {
 		t.Fatalf("expected preserved scene spotlight, got %+v", f3.Lighting.Lights)
 	}
+
+	// Verify intersecting crystal-glass rings in default scene show distinct OIT vs sorted output.
+	fOIT, err := v.buildFrame(nt3d.DefaultCamera(), 120, 90, false, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lighting.oit = true
+	lighting.applyFramePost(&fOIT, false)
+	fSorted := fOIT
+	lighting.toggleOIT()
+	lighting.applyFramePost(&fSorted, false)
+	if !fOIT.OIT || fSorted.OIT {
+		t.Fatalf("unexpected OIT toggle flags: oit=%v sorted=%v", fOIT.OIT, fSorted.OIT)
+	}
+	sw := nt3d.NewSoftwareRenderer()
+	imgOIT, err := sw.Render(fOIT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgSorted, err := sw.Render(fSorted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff := 0
+	for y := 0; y < 90; y++ {
+		for x := 0; x < 120; x++ {
+			if imgOIT.At(x, y) != imgSorted.At(x, y) {
+				diff++
+			}
+		}
+	}
+	if diff < 20 {
+		t.Fatalf("expected intersecting glass rings in gogpu scene to differ between OIT and sorted, got %d pixels", diff)
+	}
 }

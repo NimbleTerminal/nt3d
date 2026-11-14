@@ -26,7 +26,10 @@ type meshScene struct {
 	hasSH, dcOnly bool
 	splats        bool // Gaussian splats, with or without spherical harmonics.
 	capture       bool // A splat capture, framed on its subject rather than its bounds.
+	builtin       bool // Procedural shape builders / intersecting-glass showcase.
+	intersecting  bool // Intersecting-glass sculpture contrasting WBOIT vs sorted glass.
 	nodes         []nt3d.NodeID
+	keepOpaque    []bool          // Per-node flag keeping interior core opaque in glass mode.
 	sources       []nt3d.Geometry // As built or read, per node.
 	normals       int             // Index into meshNormals.
 	outlined      bool            // Expanded back-face contours.
@@ -202,6 +205,7 @@ var meshNormals = []string{"as built", "flat", "smooth 40°"}
 func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 	d.meshes = &meshScene{shiny: true}
 	if len(files) == 0 {
+		d.meshes.builtin = true
 		if err := d.setupShapes(); err != nil {
 			return err
 		}
@@ -293,10 +297,123 @@ func (d *demo) setupShapes() error {
 			return err
 		}
 		d.meshes.nodes = append(d.meshes.nodes, id)
+		d.meshes.keepOpaque = append(d.meshes.keepOpaque, false)
 		d.meshes.sources = append(d.meshes.sources, g)
 		d.meshes.triangles += len(g.Indices) / 3
 	}
 	return nil
+}
+
+func (d *demo) setupIntersectingGlass() error {
+	d.meshes.title = "intersecting glass"
+	grid, err := nt3d.NewTexture(mapImage(false))
+	if err != nil {
+		return err
+	}
+	type part struct {
+		name   string
+		opaque bool
+		pose   nt3dmath.Mat4
+		build  func() (nt3d.Geometry, error)
+	}
+	parts := []part{
+		{
+			name:   "opaque core",
+			opaque: true,
+			pose:   nt3dmath.Identity(),
+			build: func() (nt3d.Geometry, error) {
+				return nt3d.BuildSphere(nt3d.Sphere{Radius: 0.19, Material: &nt3d.Material{Texture: grid}})
+			},
+		},
+		{
+			name: "ruby glass pane",
+			pose: nt3dmath.Translation(nt3dmath.Vec3{Y: 0.025}),
+			build: func() (nt3d.Geometry, error) {
+				return nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 1.28, Y: 0.045, Z: 0.96}, Color: color.RGBA{235, 62, 82, 255}})
+			},
+		},
+		{
+			name: "cyan glass pane",
+			pose: nt3dmath.Translation(nt3dmath.Vec3{X: -0.025}),
+			build: func() (nt3d.Geometry, error) {
+				return nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 0.045, Y: 1.28, Z: 0.96}, Color: color.RGBA{52, 198, 240, 255}})
+			},
+		},
+		{
+			name: "amber glass ring",
+			pose: nt3dmath.Translation(nt3dmath.Vec3{Z: 0.02}).Mul(nt3dmath.RotationX(0.64)),
+			build: func() (nt3d.Geometry, error) {
+				return nt3d.BuildTorus(nt3d.Torus{MajorRadius: 0.58, MinorRadius: 0.082, Color: color.RGBA{245, 188, 52, 255}})
+			},
+		},
+		{
+			name: "violet glass ring",
+			pose: nt3dmath.Translation(nt3dmath.Vec3{Z: -0.02}).Mul(nt3dmath.RotationY(-0.64)),
+			build: func() (nt3d.Geometry, error) {
+				return nt3d.BuildTorus(nt3d.Torus{MajorRadius: 0.58, MinorRadius: 0.082, Color: color.RGBA{172, 92, 242, 255}})
+			},
+		},
+		{
+			name: "emerald glass shell",
+			pose: nt3dmath.Identity(),
+			build: func() (nt3d.Geometry, error) {
+				return nt3d.BuildSphere(nt3d.Sphere{Radius: 0.44, Color: color.RGBA{78, 222, 158, 255}})
+			},
+		},
+	}
+	for _, p := range parts {
+		g, err := p.build()
+		if err != nil {
+			return err
+		}
+		g, err = nt3d.TransformGeometry(g, p.pose)
+		if err != nil {
+			return err
+		}
+		id, err := d.scene.SetGeometry(p.name, g)
+		if err != nil {
+			return err
+		}
+		if err = d.scene.Reparent(id, d.group); err != nil {
+			return err
+		}
+		d.meshes.nodes = append(d.meshes.nodes, id)
+		d.meshes.keepOpaque = append(d.meshes.keepOpaque, p.opaque)
+		d.meshes.sources = append(d.meshes.sources, g)
+		d.meshes.triangles += len(g.Indices) / 3
+	}
+	return nil
+}
+
+// toggleShapeScene switches between the shape-builders lineup and the
+// intersecting-glass OIT showcase.
+func (d *demo) toggleShapeScene() error {
+	if d.meshes == nil || !d.meshes.builtin {
+		return nil
+	}
+	for _, id := range d.meshes.nodes {
+		if err := d.scene.Remove(id); err != nil {
+			return err
+		}
+	}
+	d.meshes.nodes = nil
+	d.meshes.keepOpaque = nil
+	d.meshes.sources = nil
+	d.meshes.triangles = 0
+	d.meshes.intersecting = !d.meshes.intersecting
+	if d.meshes.intersecting && d.meshes.glass == 0 {
+		d.meshes.glass = 1
+	}
+	var err error
+	if d.meshes.intersecting {
+		err = d.setupIntersectingGlass()
+	} else {
+		err = d.setupShapes()
+	}
+	if err != nil {
+		return err
+	}
+	return d.rebuildMeshes()
 }
 
 // cycleNormals rebuilds every mesh with the next normal style.
@@ -346,15 +463,20 @@ func (d *demo) rebuildMeshes() error {
 		case 2:
 			g, err = nt3d.SmoothNormals(g, 40)
 		}
-		if err == nil && (d.meshes.glass > 0 || d.meshes.shiny) {
+		isOpaqueCore := i < len(d.meshes.keepOpaque) && d.meshes.keepOpaque[i]
+		if err == nil && ((d.meshes.glass > 0 && !isOpaqueCore) || d.meshes.shiny) {
 			m := nt3d.Material{}
 			if g.Material != nil {
 				m = *g.Material
 			}
 			if d.meshes.shiny {
-				m.Specular, m.Shininess = .5, 48
+				if d.meshes.intersecting && d.meshes.glass > 0 && !isOpaqueCore {
+					m.PBR, m.Roughness, m.IOR = true, 0.14, 1.55
+				} else {
+					m.Specular, m.Shininess = .5, 48
+				}
 			}
-			if d.meshes.glass > 0 {
+			if d.meshes.glass > 0 && !isOpaqueCore {
 				m.Transparent, m.Cutout, m.EdgeOn = true, false, false
 				g.Vertices = append([]nt3d.Vertex(nil), g.Vertices...)
 				for j := range g.Vertices {
@@ -466,8 +588,12 @@ func (d *demo) meshesView(content string) string {
 	if d.meshes.shiny {
 		shine = "highlights"
 	}
-	return fmt.Sprintf("nt3d meshes · %s · s normals · t glass · e highlights · b outlines · d fog · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · %s · %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
-		d.meshes.title, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], glass, shine, outlines, d.status)
+	sceneHint := ""
+	if d.meshes.builtin {
+		sceneHint = " · m scene"
+	}
+	return fmt.Sprintf("nt3d meshes · %s%s · s normals · t glass · e highlights · b outlines · d fog · n rotate · v visibility · 1/2/3 backend · q quit\n%s\n%s · %d triangles · normals %s · %s · %s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
+		d.meshes.title, sceneHint, content, d.rendering(), d.meshes.triangles, meshNormals[d.meshes.normals], glass, shine, outlines, d.status)
 }
 
 // splatFraming is the box a splat capture is framed by: a cube around the

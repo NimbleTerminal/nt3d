@@ -102,7 +102,11 @@ func (d *demo) sceneKeys() (string, keys) {
 			}
 			return "splats", keys{controls}
 		}
-		return "shapes", keys{[]key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("e", "e", "highlights"), bind("b", "b", "outlines"), bind("n", "n", "turn")}}
+		controls := []key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("e", "e", "highlights"), bind("b", "b", "outlines"), bind("n", "n", "turn")}
+		if d.meshes.builtin {
+			controls = append([]key.Binding{bind("m", "m", "scene")}, controls...)
+		}
+		return "shapes", keys{controls}
 	case d.dynamic != nil:
 		return "dynamic", keys{[]key.Binding{bind("a", "a", "pause"), bind("m", "m", "deform"), bind("b", "b", "add"), bind("x", "x", "remove"), bind("v", "v", "visibility")}}
 	}

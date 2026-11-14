@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"io/fs"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ func AnimateMain() { mainDemo(false, sceneAnimate) }
 
 var animatedSamples = []sample{
 	{file: "Assembly/assembly.glb", title: "Assembly lab", about: "parent → shoulder → tool · reference / transformed UV tiles · independent relief normals", beta: -55},
+	{file: "Spotlights/spotlights.glb", title: "Spotlight stage", about: "animated KHR_lights_punctual spotlights + point fill · perspective spotlight shadows · PBR gold & emissive lamps", beta: -35},
 	{file: "AnimatedMorphCube/glTF-Binary/AnimatedMorphCube.glb", title: "Animated Morph Cube", about: "two morph targets: thin cube and ramp", beta: 40},
 	{file: "SimpleSkin/glTF/SimpleSkin.gltf", title: "Simple Skin", about: "two joints bending a strip with blended vertex weights", beta: -90},
 	{file: "AnimatedTriangle/glTF/AnimatedTriangle.gltf", title: "Animated Triangle", about: "quaternion rotation of a triangle", beta: -90},
@@ -27,6 +29,7 @@ var animatedSamples = []sample{
 
 type animateScene struct {
 	cameras       []nt3d.NodeID
+	lights        []nt3d.NodeID
 	camera        int // Zero is the interactive orbit camera; authored cameras are one-based.
 	cameraScale   float64
 	orbit         nt3d.Camera
@@ -122,6 +125,7 @@ func (d *demo) loadAnimatedSample(index, clip int) error {
 		state.camera = 0
 	}
 	state.cameras = d.scene.Cameras(root)
+	state.lights = d.scene.Lights(root)
 	if state.camera > len(state.cameras) {
 		state.camera = 0
 	}
@@ -177,7 +181,8 @@ func (d *demo) animateView(content string) string {
 		play = "paused"
 	}
 	credit := state.credit
-	if state.samples[state.index].file == "Assembly/assembly.glb" {
+	file := state.samples[state.index].file
+	if strings.HasPrefix(file, "Assembly/") || strings.HasPrefix(file, "Spotlights/") {
 		credit = "nt3d original · CC0"
 	}
 	cameraLabel := "orbit camera"
@@ -189,12 +194,38 @@ func (d *demo) animateView(content string) string {
 			cameraLabel = node.Name[strings.LastIndex(node.Name, ":")+1:]
 		}
 	}
+	lightInfo := ""
+	if len(state.lights) > 0 {
+		lightInfo = fmt.Sprintf("%d punctual lights · ", len(state.lights))
+	}
 	name := state.clips[state.clip].Name
 	if name == "" {
 		name = fmt.Sprintf("clip %d", state.clip+1)
 	}
 	return fmt.Sprintf("nt3d %s · %s (%d/%d) · [ ] model · , . clip · a play/pause · enter restart · b outlines%s · 1/2/3 backend · q quit\n%s\n%s · %s · %s (%d/%d) · %s · %s · %s",
-		state.title, state.samples[state.index].title, state.index+1, len(state.samples), cameraKeys, content, d.rendering(), play, name, state.clip+1, len(state.clips), outlines, credit, cameraLabel+" · "+d.status)
+		state.title, state.samples[state.index].title, state.index+1, len(state.samples), cameraKeys, content, d.rendering(), play, name, state.clip+1, len(state.clips), outlines, credit, lightInfo+cameraLabel+" · "+d.status)
+}
+
+func (d *demo) decorateAnimate(f *nt3d.Frame) {
+	state := d.animatedSamples
+	if state == nil || len(state.lights) == 0 || len(f.Lighting.Lights) == 0 {
+		return
+	}
+	f.Background = color.RGBA{18, 20, 28, 255}
+	f.Lighting.Ambient = nt3d.Ambient{
+		Sky:       color.RGBA{46, 52, 68, 255},
+		Ground:    color.RGBA{20, 20, 26, 255},
+		Intensity: 0.35,
+	}
+	f.Lighting.Lights = slices.Clone(f.Lighting.Lights)
+	if scale := float32(state.cameraScale); scale > 0 {
+		for i := range f.Lighting.Lights {
+			if f.Lighting.Lights[i].Range > 0 {
+				f.Lighting.Lights[i].Range *= scale
+			}
+		}
+	}
+	f.Lighting.Lights[0].Shadows = true
 }
 
 var animatedOutline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}}

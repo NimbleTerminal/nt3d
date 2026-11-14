@@ -133,7 +133,17 @@ func TestAnimationClipSwitchResetsPose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := animatedSamples[2].file
+	skinIndex := -1
+	for i, s := range animatedSamples {
+		if strings.HasSuffix(s.file, ".gltf") {
+			skinIndex = i
+			break
+		}
+	}
+	if skinIndex < 0 {
+		t.Fatal("missing JSON .gltf sample")
+	}
+	name := animatedSamples[skinIndex].file
 	var doc map[string]any
 	if err = json.Unmarshal(files[name].Data, &doc); err != nil {
 		t.Fatal(err)
@@ -151,7 +161,7 @@ func TestAnimationClipSwitchResetsPose(t *testing.T) {
 		t.Fatal(err)
 	}
 	SampleFiles = files
-	if err = d.loadAnimatedSample(2, 0); err != nil {
+	if err = d.loadAnimatedSample(skinIndex, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err = d.animation.Sample(.3); err != nil {
@@ -195,7 +205,7 @@ func TestEmbeddedAnimationAssetsAreSmall(t *testing.T) {
 	if total >= 100*1024 {
 		t.Fatalf("sample files total %d bytes", total)
 	}
-	for _, name := range []string{"Assembly", "AnimatedMorphCube", "SimpleSkin", "AnimatedTriangle"} {
+	for _, name := range []string{"Assembly", "Spotlights", "AnimatedMorphCube", "SimpleSkin", "AnimatedTriangle"} {
 		for _, file := range []string{"README.md", "LICENSE.md"} {
 			if _, err := fs.ReadFile(gltfsamples.Files, name+"/"+file); err != nil {
 				t.Fatal(err)
@@ -275,5 +285,68 @@ func TestAssemblyCameraControls(t *testing.T) {
 	d.stepAnimatedSample(1)
 	if d.animatedSamples.camera != 0 || d.view.Camera().Pose != nt3d.DefaultCamera().Pose {
 		t.Fatal("changing model retained authored camera")
+	}
+}
+
+func TestSpotlightStagePunctualLights(t *testing.T) {
+	d := newAnimateDemo(t)
+	if err := d.loadAnimatedSample(1, 0); err != nil {
+		t.Fatalf("load Spotlight stage: %v", err)
+	}
+	d.frameAnimatedSample()
+	if got := len(d.animatedSamples.lights); got != 4 {
+		t.Fatalf("Spotlight stage light nodes = %d, want 4", got)
+	}
+	view := d.animateView("frame")
+	if !strings.Contains(view, "4 punctual lights") || !strings.Contains(view, "nt3d original · CC0") {
+		t.Fatalf("unexpected Spotlight stage view: %s", view)
+	}
+
+	f0, err := d.scene.Frame(d.view.Camera(), 160, 120)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.decorate(&f0)
+	if len(f0.Lighting.Lights) != 4 || f0.Lighting.Lights[0].Kind != nt3d.SpotLight || f0.Lighting.Lights[3].Kind != nt3d.PointLight {
+		t.Fatalf("unexpected resolved KHR_lights_punctual lights: %+v", f0.Lighting.Lights)
+	}
+	if !f0.Lighting.Lights[0].Shadows || f0.Lighting.Lights[0].Range <= 0 {
+		t.Fatalf("expected key spotlight shadow and scaled range, got %+v", f0.Lighting.Lights[0])
+	}
+	img0, err := nt3d.NewSoftwareRenderer().Render(f0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnimatedSampleVisible(t, img0, f0.Background)
+
+	// Advance animation and verify spotlight position & cone direction sweep across the stage.
+	if err := d.animation.Sample(1.1); err != nil {
+		t.Fatal(err)
+	}
+	f1, err := d.scene.Frame(d.view.Camera(), 160, 120)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.decorate(&f1)
+	p0, p1 := f0.Lighting.Lights[0].Position, f1.Lighting.Lights[0].Position
+	dir0, dir1 := f0.Lighting.Lights[0].Direction, f1.Lighting.Lights[0].Direction
+	if p0.Sub(p1).Dot(p0.Sub(p1)) < 0.05 || dir0.Sub(dir1).Dot(dir0.Sub(dir1)) < 0.02 {
+		t.Fatalf("animated spotlight did not move: pos %v -> %v, dir %v -> %v", p0, p1, dir0, dir1)
+	}
+	img1, err := nt3d.NewSoftwareRenderer().Render(f1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnimatedSampleVisible(t, img1, f1.Background)
+	changed := 0
+	for y := 0; y < 120; y++ {
+		for x := 0; x < 160; x++ {
+			if img0.At(x, y) != img1.At(x, y) {
+				changed++
+			}
+		}
+	}
+	if changed < 100 {
+		t.Fatalf("expected sweeping spotlights to change rendered stage, only %d pixels changed", changed)
 	}
 }

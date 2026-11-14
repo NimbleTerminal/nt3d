@@ -359,3 +359,82 @@ func TestMeshGlassOITCycle(t *testing.T) {
 		}
 	}
 }
+
+func TestIntersectingGlassShowcase(t *testing.T) {
+	d := &demo{scene: nt3d.NewScene()}
+	group, err := d.scene.Add(nt3d.Root, "shapes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.group = group
+	if err := d.setupMeshes(nil, nt3dmesh.ZUp); err != nil {
+		t.Fatal(err)
+	}
+	d.view = nt3dwidget.New(d.scene, 48, 18, nt3dwidget.WithRenderMode(nt3d.Software), nt3dwidget.WithFrameDecorator(d.decorate))
+	defer d.view.Close()
+
+	// Press 'm' to switch from shape builders -> intersecting glass (opens directly in glass (OIT)).
+	d.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	if !d.meshes.intersecting || d.meshes.glass != 1 || d.meshes.title != "intersecting glass" {
+		t.Fatalf("after m: intersecting=%v glass=%d title=%q", d.meshes.intersecting, d.meshes.glass, d.meshes.title)
+	}
+	if view := d.meshesView(""); !strings.Contains(view, "intersecting glass") || !strings.Contains(view, "m scene") || !strings.Contains(view, "glass (OIT)") {
+		t.Fatalf("unexpected intersecting glass view: %s", view)
+	}
+
+	cam := nt3d.DefaultCamera()
+	cam.Distance = 2.6
+	fOIT, err := d.scene.Frame(cam, 96, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.decorate(&fOIT)
+	if !fOIT.OIT || len(fOIT.Geometry) != 6 {
+		t.Fatalf("expected OIT frame with 6 sculpture parts, got OIT=%v len=%d", fOIT.OIT, len(fOIT.Geometry))
+	}
+	if fOIT.Geometry[0].Material != nil && fOIT.Geometry[0].Material.Transparent {
+		t.Fatal("expected interior core to remain opaque")
+	}
+	for i := 1; i < len(fOIT.Geometry); i++ {
+		if fOIT.Geometry[i].Material == nil || !fOIT.Geometry[i].Material.Transparent {
+			t.Fatalf("expected part %d to be transparent glass", i)
+		}
+	}
+	sw := nt3d.NewSoftwareRenderer()
+	imgOIT, err := sw.Render(fOIT)
+	if err != nil {
+		t.Fatalf("render intersecting glass (OIT): %v", err)
+	}
+
+	// Press 't' to switch to glass (sorted) and confirm OIT vs sorted produces distinct intersection compositing.
+	d.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
+	fSorted, err := d.scene.Frame(cam, 96, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.decorate(&fSorted)
+	if fSorted.OIT {
+		t.Fatal("expected fSorted.OIT == false in glass (sorted) mode")
+	}
+	imgSorted, err := sw.Render(fSorted)
+	if err != nil {
+		t.Fatalf("render intersecting glass (sorted): %v", err)
+	}
+	diff := 0
+	for y := 0; y < 72; y++ {
+		for x := 0; x < 96; x++ {
+			if imgOIT.At(x, y) != imgSorted.At(x, y) {
+				diff++
+			}
+		}
+	}
+	if diff < 50 {
+		t.Fatalf("expected intersecting glass OIT vs sorted to differ visibly, got %d differing pixels", diff)
+	}
+
+	// Press 'm' again to return to classic shape builders.
+	d.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	if d.meshes.intersecting || d.meshes.title != "shape builders" || len(d.meshes.nodes) != 5 {
+		t.Fatalf("expected return to 5 shape builders, got intersecting=%v title=%q len=%d", d.meshes.intersecting, d.meshes.title, len(d.meshes.nodes))
+	}
+}
