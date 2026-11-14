@@ -92,6 +92,10 @@ type Material struct {
 	// Fresnel increases reflection toward grazing angles. Requires an Environment;
 	// ignored for Unlit materials. Reflections sample the distant sky, not objects.
 	Reflectivity float32
+	// EnvironmentReflect samples Frame.Environment for material reflections
+	// (Reflectivity or PBR specular IBL) even when Frame.EnvironmentBackgroundOnly
+	// disables frame-wide environment diffuse light and reflections.
+	EnvironmentReflect bool
 	// NormalMap is created with NewNormalMap and uses Geometry.UV. NormalStrength
 	// scales tangent X/Y; set 1 for normal detail, 0 to disable. NormalRepeat
 	// controls its sampler independently of the base-color texture.

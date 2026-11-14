@@ -67,6 +67,8 @@ type DropShadow struct {
 // Scene setters copy geometry; frame consumers must treat snapshots as read-only.
 type Geometry struct {
 	pointUpdate *pointUpdate
+	meshUpdate  *meshUpdate
+	meshCert    meshCertificate
 	stored      *storedGeometry
 	posed       *posedGeometry
 	retainKeys  []geometryKey
@@ -225,7 +227,9 @@ func validateClusterBounds(s *nt3dclod.Set, n int) error {
 	return nil
 }
 
-func validateGeometry(g Geometry) error {
+func validateGeometry(g Geometry) error { return validateGeometryCert(g, false) }
+
+func validateGeometryCert(g Geometry, certifiedMesh bool) error {
 	if err := g.Outline.validate(); err != nil {
 		return err
 	}
@@ -257,17 +261,21 @@ func validateGeometry(g Geometry) error {
 	if len(g.Tangents) != 0 && len(g.Tangents) != len(g.Vertices) {
 		return fmt.Errorf("nt3d: tangent length mismatch")
 	}
-	for _, t := range g.Tangents {
-		if !finiteVec(t.Direction) || t.W != 1 && t.W != -1 {
-			return fmt.Errorf("nt3d: invalid tangent")
+	if !certifiedMesh {
+		for _, t := range g.Tangents {
+			if !finiteVec(t.Direction) || t.W != 1 && t.W != -1 {
+				return fmt.Errorf("nt3d: invalid tangent")
+			}
 		}
 	}
 	if extended(g) && len(g.Indices) > MeshIndexLimit()/2 {
 		return fmt.Errorf("nt3d: normal-mapped mesh with tangents or independent UVs exceeds GPU binding limit")
 	}
-	for _, uv := range g.NormalUV {
-		if !validFloat(uv.U, uv.V) {
-			return fmt.Errorf("nt3d: non-finite normal UV")
+	if !certifiedMesh {
+		for _, uv := range g.NormalUV {
+			if !validFloat(uv.U, uv.V) {
+				return fmt.Errorf("nt3d: non-finite normal UV")
+			}
 		}
 	}
 	if len(g.UV) != 0 && len(g.UV) != len(g.Vertices) {
@@ -335,9 +343,11 @@ func validateGeometry(g Geometry) error {
 	if m := g.Material; m != nil && m.Transparent && (m.Cutout || m.EdgeOn) {
 		return fmt.Errorf("nt3d: a transparent material cannot be a cutout")
 	}
-	for _, uv := range g.UV {
-		if !validFloat(uv.U, uv.V) {
-			return fmt.Errorf("nt3d: non-finite UV")
+	if !certifiedMesh {
+		for _, uv := range g.UV {
+			if !validFloat(uv.U, uv.V) {
+				return fmt.Errorf("nt3d: non-finite UV")
+			}
 		}
 	}
 
@@ -357,9 +367,11 @@ func validateGeometry(g Geometry) error {
 			return err
 		}
 	}
-	for _, v := range g.Vertices {
-		if !validFloat(v.Position.X, v.Position.Y, v.Position.Z, v.Normal.X, v.Normal.Y, v.Normal.Z) {
-			return fmt.Errorf("nt3d: non-finite vertex")
+	if !certifiedMesh {
+		for _, v := range g.Vertices {
+			if !validFloat(v.Position.X, v.Position.Y, v.Position.Z, v.Normal.X, v.Normal.Y, v.Normal.Z) {
+				return fmt.Errorf("nt3d: non-finite vertex")
+			}
 		}
 	}
 	for _, v := range g.Lines {
@@ -409,9 +421,11 @@ func validateGeometry(g Geometry) error {
 	if len(g.Indices)%3 != 0 || len(g.Lines)%2 != 0 {
 		return fmt.Errorf("nt3d: incomplete triangle or line")
 	}
-	for _, i := range g.Indices {
-		if int(i) >= len(g.Vertices) {
-			return fmt.Errorf("nt3d: invalid vertex index")
+	if !certifiedMesh {
+		for _, i := range g.Indices {
+			if int(i) >= len(g.Vertices) {
+				return fmt.Errorf("nt3d: invalid vertex index")
+			}
 		}
 	}
 	return nil

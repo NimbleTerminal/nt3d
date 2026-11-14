@@ -178,10 +178,13 @@ func (d *demo) stepWaterTiles() error {
 			m.FlowStrength = .7
 		}
 		tile.wave.Geometry.Material = &m
+		if err := d.scene.SetMaterial(tile.mesh, &m); err != nil {
+			return err
+		}
 		if err := tile.wave.Update(w.surface, d.animationTime); err != nil {
 			return err
 		}
-		if err := d.scene.SetNodeGeometry(tile.mesh, tile.wave.Geometry); err != nil {
+		if err := tile.wave.Apply(d.scene, tile.mesh); err != nil {
 			return err
 		}
 		if err := d.scene.SetVisible(tile.foam, w.shoreOn()); err != nil {

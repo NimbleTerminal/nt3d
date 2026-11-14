@@ -61,3 +61,48 @@ func TestShaderNormalMapData(t *testing.T) {
 		t.Fatal("accepted non-finite parameter")
 	}
 }
+
+func TestEnvironmentReflectBackgroundOnly(t *testing.T) {
+	sky := GradientEnvironment(color.RGBA{240, 80, 40, 255}, color.RGBA{220, 120, 50, 255}, color.RGBA{40, 80, 220, 255})
+
+	// Matte land under EnvironmentBackgroundOnly receives zero diffuse SH even
+	// with a bright sky panorama.
+	matte := normalFrame(t)
+	matte.Forward = nt3dmath.Vec3{Z: -1}
+	matte.Environment = sky
+	matte.EnvironmentBackgroundOnly = true
+	matte.Lighting = Lighting{}
+	matte.Geometry[0].Material = &Material{}
+	if c := at(softwareRender(matte), 40, 40); c.R != 0 || c.G != 0 || c.B != 0 {
+		t.Fatalf("matte surface received diffuse sky light under EnvironmentBackgroundOnly: %v", c)
+	}
+
+	// Classic reflective water without EnvironmentReflect stays unreflected under
+	// EnvironmentBackgroundOnly, while EnvironmentReflect: true reflects the sky
+	// without enabling diffuse SH!
+	waterOff := matte
+	waterOff.Geometry = append([]Geometry(nil), matte.Geometry...)
+	waterOff.Geometry[0].Material = &Material{Reflectivity: 1}
+	if c := at(softwareRender(waterOff), 40, 40); c.R != 0 {
+		t.Fatalf("expected reflections off without EnvironmentReflect, got %v", c)
+	}
+
+	waterOn := matte
+	waterOn.Geometry = append([]Geometry(nil), matte.Geometry...)
+	waterOn.Geometry[0].Material = &Material{Reflectivity: 1, EnvironmentReflect: true}
+	if c := at(softwareRender(waterOn), 40, 40); c.R < 200 {
+		t.Fatalf("EnvironmentReflect did not sample sky under EnvironmentBackgroundOnly: %v", c)
+	}
+
+	// PBR mirror metal with EnvironmentReflect: true also samples prefiltered
+	// specular IBL while keeping diffuse SH off.
+	pbrOff := matte
+	pbrOff.Geometry = append([]Geometry(nil), matte.Geometry...)
+	pbrOff.Geometry[0].Material = &Material{PBR: true, Metallic: 1, Roughness: .05}
+	pbrOn := matte
+	pbrOn.Geometry = append([]Geometry(nil), matte.Geometry...)
+	pbrOn.Geometry[0].Material = &Material{PBR: true, Metallic: 1, Roughness: .05, EnvironmentReflect: true}
+	if at(softwareRender(pbrOn), 40, 40).R <= at(softwareRender(pbrOff), 40, 40).R+100 {
+		t.Fatal("PBR EnvironmentReflect did not reflect sky under EnvironmentBackgroundOnly")
+	}
+}

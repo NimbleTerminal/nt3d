@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Add `Scene.SetNodeVertices`, `Scene.UpdateNodeVertices`,
+  `Scene.SetNodeVerticesWithTangents`, and `(*nt3dwater.WaveTile).Apply` for
+  in-place fixed-topology mesh updates that preserve indices, UVs, and
+  materials, skip redundant per-frame `O(V + I)` validation and smooth-grid
+  outline-normal maps, and overwrite existing WebGPU vertex buffers via
+  `WriteBuffer` without buffer reallocations. Add `Material.EnvironmentReflect`
+  so reflective (`Reflectivity > 0`) and `PBR` materials can sample
+  `Frame.Environment` reflections when `Frame.EnvironmentBackgroundOnly` keeps
+  diffuse environment SH lighting off for the rest of the scene, and add
+  `Scene.SetMaterial` to replace or clear materials atomically across indexed
+  meshes in a subtree (including `SharedGeometry`, `LOD` tiers, and deformed
+  meshes) while preserving GPU mesh buffers when vertex-baked fields are
+  unchanged. Wire all three into the `water` demo.
 - Add `NewHDREnvironment` (zero-dependency Radiance RGBE `.hdr` / `.pic`
   panorama decoder feeding unclamped `RGBA16Float` radiance into GGX specular
   IBL, diffuse SH, HDR skies, and `Bloom`), `SpotLight` (`InnerCone`,

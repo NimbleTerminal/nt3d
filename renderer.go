@@ -79,7 +79,8 @@ type Frame struct {
 	CellText     []CellText
 	// Environment supplies a distant sky, diffuse light, and material reflections.
 	// Nil preserves the solid Background. EnvironmentStrength scales the light;
-	// zero means 1. EnvironmentBackgroundOnly disables diffuse light and reflections.
+	// zero means 1. EnvironmentBackgroundOnly disables diffuse light and
+	// reflections unless a Material sets EnvironmentReflect.
 	Environment               *Environment
 	EnvironmentStrength       float32
 	EnvironmentBackgroundOnly bool

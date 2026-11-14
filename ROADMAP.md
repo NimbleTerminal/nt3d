@@ -36,25 +36,6 @@ Nothing queued; the sections below are the open work.
   wakes, and city-wide foliage; until this lands it uses CPU `WaveSurface`
   rings plus shader normal maps.
 
-- [ ] **Per-material environment reflections with background-only sky**:
-  `Frame.EnvironmentBackgroundOnly` disables both diffuse environment light
-  and reflections frame-wide, and `EnvironmentStrength` is frame-wide (zero
-  means 1). Allow a material (e.g. water with `Reflectivity`) to sample the
-  environment for reflections while the frame keeps environment diffuse light
-  off, so a stylized sky panorama can be backdrop-only for land yet reflect in
-  water. Until then the downstream water bakes a view-reflected sky sample
-  into vertex color.
-
-- [ ] **In-place vertex updates for fixed-topology meshes**: a
-  `SetNodeGeometry` of an animated triangle mesh re-validates, clones,
-  recomputes bounds and outline normals, and re-uploads de-indexed per-index
-  records (48 B each, plus a 48 B tangent extension when normal-mapped) into a
-  fresh buffer. Downstream camera-centred water rings (~80k indices updated
-  every frame) spend ~4 ms per frame there. Add a same-topology update path
-  (positions/normals/colors only, `WriteBuffer` into the existing buffers,
-  bounds supplied by the caller) mirroring `UpdateNodePoints` for points.
-  `WaveTile.Update` would benefit too.
-
 - [ ] **Clustered LOD follow-ups**: draw points straight from `nt3dclod.GPU`'s
   item and indirect buffers; hierarchical levels that draw an interior node
   as one aggregate (a preprocessing tool's job); per-frame rebuilds cheap
@@ -77,11 +58,6 @@ Nothing queued; the sections below are the open work.
   threshold the shadow map's texels hard, as the toon demo's ground shows.
   Accepted as it is for now (2026-11-09); blending the shadow term across
   the band threshold would smooth it, at the cost of the crisp edge.
-- [ ] **A general `Scene.SetMaterial` for a subtree**, possibly: `SetToon`
-  is the third one-off setter for a single material field, after
-  `SetTexture` and `SetNormalMap`. It has to decide what happens to textures
-  and normal maps on replacement, and fields like `Transparent` and `Cutout`
-  move a mesh between render passes.
 - [ ] **Fur fins don't sway** with the wind; only slightly visible.
 
 ## Formats
@@ -113,6 +89,22 @@ Nothing queued; the sections below are the open work.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **In-place fixed-topology mesh updates, `Material.EnvironmentReflect`, and
+  subtree `Scene.SetMaterial`**: `Scene.SetNodeVertices`,
+  `Scene.UpdateNodeVertices`, `Scene.SetNodeVerticesWithTangents`, and
+  `(*nt3dwater.WaveTile).Apply` update animated mesh vertices and tangents
+  without re-validating or cloning indices/UVs/materials, skip `O(V + I)` frame
+  re-validation via mesh certificates and smooth-grid `outlineNormals` map
+  allocations, and overwrite existing WebGPU vertex buffers via `WriteBuffer`
+  with reusable scratch buffers (~5.2× faster CPU scene updates and zero GPU
+  buffer reallocations). `Material.EnvironmentReflect` opts classic
+  `Reflectivity` and `PBR` surfaces into environment reflections while
+  `Frame.EnvironmentBackgroundOnly` keeps diffuse environment SH lighting off
+  for the rest of the scene. `Scene.SetMaterial` atomically validates and
+  replaces (or clears) materials across indexed meshes in a subtree—including
+  `SharedGeometry`, `LOD` tiers, and deformed meshes—preserving GPU mesh
+  buffers and instanced `SharedGeometry` when vertex-baked fields are unchanged.
 
 - **Radiance `.hdr` panoramas, `SpotLight` + `KHR_lights_punctual`, and Weighted
   Blended Order-Independent Transparency (`Frame.OIT`)**: `NewHDREnvironment`

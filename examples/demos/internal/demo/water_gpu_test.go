@@ -17,7 +17,8 @@ func TestGPUWaterMotionAndMaterials(t *testing.T) {
 	camera := nt3d.DefaultCamera()
 	camera.Distance = 11
 	camera.Projection = nt3d.Perspective
-	for _, at := range []float64{0, .5, 1, 2, 5} {
+	var tileRev uint64
+	for i, at := range []float64{0, .5, 1, 2, 5} {
 		d.animationTime = at
 		if err := d.stepWater(); err != nil {
 			t.Fatal(err)
@@ -25,6 +26,15 @@ func TestGPUWaterMotionAndMaterials(t *testing.T) {
 		f, err := d.scene.Frame(camera, 160, 100)
 		if err != nil {
 			t.Fatal(err)
+		}
+		for k, inst := range f.Instances {
+			if inst.Node == d.water.mesh {
+				if i == 0 {
+					tileRev = f.GeometryRevisions[k]
+				} else if f.GeometryRevisions[k] != tileRev {
+					t.Fatalf("water tile geometryRevision changed across wave step %d: %d != %d", i, f.GeometryRevisions[k], tileRev)
+				}
+			}
 		}
 		if _, err = r.Render(f); err != nil {
 			t.Fatal(err)

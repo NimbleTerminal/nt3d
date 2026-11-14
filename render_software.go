@@ -318,7 +318,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		if normalMapped && !framed {
 			tangent, bitangent = normalBasis(a, b, c)
 		}
-		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && f.Environment != nil && !f.EnvironmentBackgroundOnly
+		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && f.Environment != nil && (!f.EnvironmentBackgroundOnly || material.EnvironmentReflect)
 		specular := !pbr && material != nil && material.Specular > 0 && !material.Unlit
 		// A triangle with normals is lit; unlit ones have none.
 		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})

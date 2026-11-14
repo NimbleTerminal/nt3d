@@ -68,8 +68,9 @@ water, convert world queries into that local system and transform samples back.
 ## The water demo
 
 Run `task water`, or open Water in the browser gallery. Three waves displace an
-81 × 81 grid split into four tiles. Each frame updates its positions, analytic normals, and bounds,
-then replaces that node's geometry. GPU, software, wireframe, picking, and
+81 × 81 grid split into four tiles. Each frame updates positions, analytic normals, tangents, and bounds
+in place via `(*WaveTile).Apply` (`Scene.SetNodeVerticesWithTangents`), keeping GPU buffers allocated once.
+GPU, software, wireframe, picking, and
 shadows consequently use the same mesh; there is no GPU-only displacement.
 World queries evaluate the continuous surface, while the grid is its triangle
 approximation. Finer grids reduce the difference between them.
@@ -193,15 +194,18 @@ snapshot with linear-data mipmaps. Authored tangent directions follow the
 Gerstner mesh. `n` disables ripple strength without changing geometry or physics.
 
 `Material.Reflectivity` enables distant environment reflection with Schlick
-Fresnel blending. Water uses `.02` at normal incidence, rising toward full
+Fresnel blending, and `Material.EnvironmentReflect: true` keeps sky reflections
+active on water even when `Frame.EnvironmentBackgroundOnly` disables diffuse
+environment light on surrounding terrain. Water uses `.02` at normal incidence, rising toward full
 reflection at grazing angles. The procedural cloud panorama supplies both the
 sky and reflections. `e` disables reflection; direct-light highlights remain.
-These reflections show the distant panorama, not the craft or nearby objects.
-There is no roughness prefilter or screen-space reflection. Refraction uses the
+These reflections show the distant panorama, not the craft or nearby objects
+(there is no screen-space reflection; classic water samples the sharp panorama
+while PBR materials sample a roughness-prefiltered mip chain). Refraction uses the
 opaque scene as described below.
 
-Mesh evaluation runs on the CPU and replaces water geometry and bounds each
-update. This is a modest patch, not a large-ocean performance claim. All
+Mesh evaluation runs on the CPU and updates each tile's vertex buffer and bounds
+in place via `tile.Apply(scene, node)` and `scene.SetMaterial`. This is a modest patch, not a large-ocean performance claim. All
 renderers and picking see that mesh; queries sample the continuous surface.
 Wireframe shows large waves and craft motion, not ripple detail or reflections.
 
@@ -298,13 +302,18 @@ tiles, err := nt3dwater.BuildWaveTiles(nt3dwater.WaveGrid{
 if err != nil { return err }
 for i, tile := range tiles {
     if err := tile.Update(surface, seconds); err != nil { return err }
-    if err := scene.SetNodeGeometry(nodes[i], tile.Geometry); err != nil { return err }
+    if err := tile.Apply(scene, nodes[i]); err != nil { return err }
 }
 ```
 
-Create one scene node per tile before the update loop. `Update` reuses vertex,
-tangent, and index storage, updates exact bounds, and evaluates identical global
-coordinates at shared edges. Neighboring tiles match positions, normals, UVs,
+Create one scene node per tile with `SetGeometry` / `SetNodeGeometry` before
+the update loop. `Update` reuses vertex, tangent, and index storage, updates
+exact bounds, and evaluates identical global coordinates at shared edges; `Apply`
+pushes the updated vertices, analytic tangents, and bounds through
+`Scene.SetNodeVerticesWithTangents` so WebGPU overwrites existing vertex buffers
+via `WriteBuffer` without reallocating buffers or re-validating static indices
+and UVs (pair with `scene.SetMaterial(nodes[i], material)` when animating
+`FlowPhase` or material toggles). Neighboring tiles match positions, normals, UVs,
 and tangents exactly, including partially filled edge tiles. Base UVs span the
 whole field; normal UVs are anchored to world XY. `RestBounds()` supplies the
 undisplaced tile extent for application bookkeeping.

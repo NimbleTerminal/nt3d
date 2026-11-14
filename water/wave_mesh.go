@@ -96,6 +96,7 @@ func (t *WaveTile) Update(surface *WaveSurface, time float64) error {
 	if t == nil || surface == nil || !waveFinite(time) || t.nx < 2 || t.ny < 2 || len(t.Geometry.Vertices) != t.nx*t.ny || len(t.Geometry.Tangents) != t.nx*t.ny {
 		return fmt.Errorf("nt3dwater: invalid wave tile update")
 	}
+	var bounds nt3dmath.AABB
 	for y := range t.ny {
 		for x := range t.nx {
 			px, py := t.rest(x, y)
@@ -106,10 +107,24 @@ func (t *WaveTile) Update(surface *WaveSurface, time float64) error {
 			at := y*t.nx + x
 			t.Geometry.Vertices[at].Position, t.Geometry.Vertices[at].Normal = s.Position, s.Normal
 			t.Geometry.Tangents[at] = nt3d.Tangent{Direction: s.TangentX.Normalize(), W: -1}
+			bounds.Include(s.Position)
 		}
 	}
-	t.Geometry.Bounds = nt3d.GeometryBounds(t.Geometry)
+	if len(t.Geometry.Points) == 0 && len(t.Geometry.Lines) == 0 && len(t.Geometry.Arrows) == 0 && len(t.Geometry.Boxes) == 0 {
+		t.Geometry.Bounds = bounds
+	} else {
+		t.Geometry.Bounds = nt3d.GeometryBounds(t.Geometry)
+	}
 	return nil
+}
+
+// Apply updates id's fixed-topology mesh vertices, tangents, and bounds on s
+// from t without cloning unchanged indices/UVs or reallocating GPU buffers.
+func (t *WaveTile) Apply(s *nt3d.Scene, id nt3d.NodeID) error {
+	if t == nil || s == nil {
+		return fmt.Errorf("nt3dwater: invalid wave tile apply")
+	}
+	return s.SetNodeVerticesWithTangents(id, t.Geometry.Vertices, t.Geometry.Tangents, t.Geometry.Bounds)
 }
 
 // RestBounds is this tile's undisplaced XY extent at mean water height zero.

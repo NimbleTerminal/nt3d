@@ -193,6 +193,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
   let nX=normalize(shadeNormal+nx);let nY=normalize(shadeNormal+ny);
   let pX=o.world+wx;let pY=o.world+wy;
   let bands=style.x;let soft=style.y/max(bands,1.0);
+  let envRefl=u.viewport.w>0.5 || (u.viewport.w>0.1 && style.z>0.5);
   if pbr.z>=0.5 {
    let roughness=clamp(pbr.y*orm.y,0.045,1.0);
    let metallic=clamp(pbr.x*orm.z,0.0,1.0);
@@ -249,7 +250,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     let sAO=pbrSpecularAO(nv,ao,alpha);
     let hemiReflT=reflected.z*0.5+0.5;
     var specEnv=mix(u.ground.rgb,u.sky.rgb,mix(hemiReflT,0.5,alpha));
-    if u.viewport.w>0.5 {
+    if envRefl {
      let envUV=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,acos(clamp(reflected.z,-1.0,1.0))/3.14159265359);
      var sky=textureSampleLevel(reflectionMap,reflectionSampler,envUV,roughness*u.forward.w).rgb;
      if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
@@ -300,7 +301,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     c*=illuminate(n,o.world,normalize(o.normal));
    }
    if o.optics.x>0.0 {c=transmit(o,c,n);}
-   if o.absorption.w>0.0 && u.viewport.w>0.5 {
+   if o.absorption.w>0.0 && envRefl {
     let rn=select(n,-n,dot(n,view)<0.0);
     let reflected=reflect(-view,rn);
     let half=0.5/f32(textureDimensions(reflectionMap).y);

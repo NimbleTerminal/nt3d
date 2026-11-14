@@ -36,3 +36,17 @@ smooth, err := nt3d.SmoothNormals(stlGeometry, 40)
 - `MergeGeometry` joins geometries that share a material.
 - `FlatNormals` gives each face its own normal, for a faceted look.
 - `SmoothNormals` averages the normals of faces meeting at a point, if they meet at less than the crease angle you give, weighting each by its corner's angle. It matches corners by position, so it smooths STL files, whose triangles share no vertices, too.
+
+## Updating fixed-topology meshes
+
+When an indexed triangle mesh animates on the CPU without changing its triangle indices, UVs, or material—such as [water tiles](../water/#larger-water-meshes), cloth, or terrain patches—update its vertices in place instead of calling `SetNodeGeometry`:
+
+```go
+err := scene.SetNodeVertices(node, vertices, bounds)
+// Partial vertex-range replacement:
+err = scene.UpdateNodeVertices(node, start, vertices[start:end], bounds)
+// Or supply updated analytic tangents alongside vertices (for normal-mapped surfaces):
+err = scene.SetNodeVerticesWithTangents(node, vertices, tangents, bounds)
+```
+
+These methods validate and clone only the updated vertex (and optional tangent) slices, reuse the existing `Indices`, `UV`, `NormalUV`, and `Material`, trust the caller-supplied `bounds` (verifying updated vertices lie inside it), and overwrite existing WebGPU vertex buffers via `WriteBuffer` without reallocating GPU buffers or bind groups. On a 64×64 normal-mapped mesh (`BenchmarkMeshUpdate64x64`), `SetNodeVerticesWithTangents` runs ~5× faster on the CPU than `SetNodeGeometry` with zero GPU buffer reallocations. Use `SetNodeGeometry` when topology, UVs, or morph/skin deformation changes, and `Scene.SetMaterial` to update material parameters independently.

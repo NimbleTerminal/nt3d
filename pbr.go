@@ -212,7 +212,7 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 		rig.ground[1] + (rig.sky[1]-rig.ground[1])*hemiSpecT,
 		rig.ground[2] + (rig.sky[2]-rig.ground[2])*hemiSpecT,
 	}
-	if f.Environment != nil && !f.EnvironmentBackgroundOnly {
+	if f.Environment != nil && (!f.EnvironmentBackgroundOnly || m.EnvironmentReflect) {
 		sky := f.Environment.sampleSpecular(reflected, roughness)
 		strength := f.EnvironmentStrength
 		if strength == 0 {

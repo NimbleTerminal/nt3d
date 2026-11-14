@@ -77,3 +77,28 @@ func TestWaveTileUpdateAllocations(t *testing.T) {
 		t.Fatal("tile updates allocate", allocations)
 	}
 }
+
+func TestWaveTileApplyPreservesSceneTopology(t *testing.T) {
+	surface, err := NewWaveSurface([]GerstnerWave{{Direction: nt3dmath.Vec3{X: 1}, Wavelength: 3, Amplitude: .25}}, 9.81)
+	check(t, err)
+	tiles, err := BuildWaveTiles(WaveGrid{NX: 9, NY: 9, MinX: -2, MaxX: 2, MinY: -2, MaxY: 2})
+	check(t, err)
+	s := nt3d.NewScene()
+	id, err := s.SetGeometry("tile-0", tiles[0].Geometry)
+	check(t, err)
+	f0, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
+	check(t, err)
+	check(t, tiles[0].Update(surface, 1.3))
+	check(t, tiles[0].Apply(s, id))
+	f1, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
+	check(t, err)
+	if f0.GeometryRevisions[0] != f1.GeometryRevisions[0] {
+		t.Fatal("WaveTile.Apply changed geometryRevision")
+	}
+	if &f0.Geometry[0].Indices[0] != &f1.Geometry[0].Indices[0] {
+		t.Fatal("WaveTile.Apply cloned static indices")
+	}
+	if f0.Geometry[0].Vertices[40].Position == f1.Geometry[0].Vertices[40].Position {
+		t.Fatal("WaveTile.Apply did not advance wave vertices")
+	}
+}

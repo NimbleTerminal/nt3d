@@ -282,6 +282,7 @@ func prepareStoredGeometry(g Geometry) (Geometry, error) {
 	g.Bounds = GeometryBounds(g)
 	g.stored = &storedGeometry{g.Points, g.PointStyle, g.Clusters, newSHCertificate(&g)} // Validated above.
 	generateTangentsOnUpload(&g)
+	g.meshCert = newMeshCertificate(&g, hasDuplicatePositions(g.Vertices))
 	return g, nil
 }
 
@@ -310,6 +311,7 @@ func NewSharedGeometry(g Geometry) (*SharedGeometry, error) {
 	g.posed = nil
 	g.Bounds = GeometryBounds(g)
 	generateTangentsOnUpload(&g)
+	g.meshCert = newMeshCertificate(&g, hasDuplicatePositions(g.Vertices))
 	return &SharedGeometry{geometry: g, id: nextRevision.Add(1)}, nil
 }
 

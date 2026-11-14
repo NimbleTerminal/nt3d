@@ -96,3 +96,42 @@ func TestGPUShaderNormalMaps(t *testing.T) {
 		t.Fatal("old normal snapshot changed")
 	}
 }
+
+func TestGPUEnvironmentReflectBackgroundOnly(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	env := GradientEnvironment(color.RGBA{240, 70, 35, 255}, color.RGBA{200, 180, 60, 255}, color.RGBA{35, 70, 235, 255})
+	var rev uint64 = 100
+	for _, linear := range []bool{false, true} {
+		for _, pbr := range []bool{false, true} {
+			for _, envRefl := range []bool{false, true} {
+				rev++
+				f := normalFrame(t)
+				f.Revision = rev
+				f.Linear = linear
+				f.Environment = env
+				f.EnvironmentBackgroundOnly = true
+				f.EnvironmentStrength = .85
+				f.Forward = nt3dmath.Vec3{Z: -1}
+				f.Eye = nt3dmath.Vec3{Z: 3}
+				f.Perspective = true
+				if pbr {
+					f.Geometry[0].Material = &Material{PBR: true, Metallic: .9, Roughness: .1, EnvironmentReflect: envRefl}
+				} else {
+					f.Geometry[0].Material.Reflectivity = .6
+					f.Geometry[0].Material.EnvironmentReflect = envRefl
+				}
+				got, err := r.Render(f)
+				check(t, err)
+				want := softwareRender(f)
+				for y := 28; y < 52; y += 6 {
+					for x := 28; x < 52; x += 6 {
+						if !closeRGB(at(got, x, y), at(want, x, y), 5) {
+							t.Fatalf("linear=%v pbr=%v envReflect=%v (%d,%d): gpu=%v sw=%v", linear, pbr, envRefl, x, y, at(got, x, y), at(want, x, y))
+						}
+					}
+				}
+			}
+		}
+	}
+}

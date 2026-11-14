@@ -138,5 +138,5 @@ func validateFrameGeometry(g Geometry) error {
 		}
 		g.Clusters = nil
 	}
-	return g.Validate()
+	return validateGeometryCert(g, g.meshCert.certifies(&g))
 }

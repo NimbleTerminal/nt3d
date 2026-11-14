@@ -75,6 +75,7 @@ type sharedGeometry struct {
 	axes, shBytes gpuBatch
 	order         gpuBatch
 	pointRevision uint64
+	meshRevision  uint64
 	skin          *gpuSkin
 	batches       [9]gpuBatch
 }
@@ -87,6 +88,8 @@ type gpuGeometry struct {
 	axes, shBytes gpuBatch // Compact Gaussians' half axes and SH bytes.
 	order         gpuBatch // Clustered Gaussians' Clusters.Order, which the sort keys ranges of.
 	pointRevision uint64
+	meshRevision  uint64
+	creasesRev    uint64
 	skin          *gpuSkin
 	batches       [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
 	sets          []*instanceSet
@@ -102,6 +105,19 @@ type gpuGeometry struct {
 type gpuCrease struct {
 	batch gpuBatch
 	used  uint64 // The crease frame a draw last used it in.
+}
+
+func (n *gpuGeometry) clearCreases() {
+	for _, c := range n.creases {
+		releaseBatch(c.batch)
+	}
+	n.creases = nil
+	for _, s := range n.sets {
+		for _, b := range s.creaseBinds {
+			b.Release()
+		}
+		s.creaseBinds = nil
+	}
 }
 
 func (n *gpuGeometry) release(shared *gpuShared) {
@@ -191,6 +207,7 @@ type transformState struct {
 	outline                           OutlineStyle
 	toon                              ToonStyle // Zero unless a lit mesh's material is toon.
 	unlit                             bool
+	envReflect                        bool
 	world                             nt3dmath.Mat4
 	specular, shininess, reflectivity float32
 	procedural                        bool   // Its texture is drawn each frame: wrapped by hand.
@@ -247,12 +264,13 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		node.used = 0
 	}
 	type groupKey struct {
-		outline  OutlineStyle
-		geometry geometryKey
-		base     textureKey
-		normal   textureKey
-		orm      textureKey
-		emissive textureKey
+		outline      OutlineStyle
+		geometry     geometryKey
+		base         textureKey
+		normal       textureKey
+		orm          textureKey
+		emissive     textureKey
+		transmitting bool
 	}
 	type group struct {
 		key     geometryKey
@@ -275,6 +293,8 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					shBytes:       sg.shBytes,
 					order:         sg.order,
 					pointRevision: sg.pointRevision,
+					meshRevision:  sg.meshRevision,
+					creasesRev:    sg.meshRevision,
 					skin:          sg.skin,
 					batches:       sg.batches,
 					shared:        sg,
@@ -300,6 +320,10 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			}
 			if geom.pointUpdate != nil {
 				node.pointRevision = geom.pointUpdate.revision
+			}
+			if geom.meshUpdate != nil {
+				node.meshRevision = geom.meshUpdate.revision
+				node.creasesRev = geom.meshUpdate.revision
 			}
 			if err := g.uploadData(dev, &node.sh, gaussianSHData(&geom), 4); err != nil {
 				node.release(nil)
@@ -337,6 +361,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					shBytes:       node.shBytes,
 					order:         node.order,
 					pointRevision: node.pointRevision,
+					meshRevision:  node.meshRevision,
 					batches:       node.batches,
 				}
 				if keys[i].manual {
@@ -353,6 +378,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		if node.shared != nil {
 			node.order = node.shared.order
 			node.pointRevision = node.shared.pointRevision
+			node.meshRevision = node.shared.meshRevision
 			node.skin = node.shared.skin
 		}
 		if geom.Clusters == nil && node.order.buffer != nil {
@@ -397,9 +423,35 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			}
 			node.pointRevision = revision
 		}
+		mu := geom.meshUpdate
+		meshRev := uint64(0)
+		if mu != nil {
+			meshRev = mu.revision
+		}
+		if node.creasesRev != meshRev {
+			node.clearCreases()
+			node.creasesRev = meshRev
+		}
+		if node.meshRevision != meshRev && len(geom.Indices) > 0 {
+			slot := 1
+			if mapped(geom) {
+				slot = 7
+			}
+			g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, geom)
+			if err := dev.Queue().WriteBuffer(node.batches[slot].buffer, 0, g.meshScratch); err != nil {
+				return err
+			}
+			if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() && node.batches[8].buffer != nil {
+				if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, dropShadowData(&geom)); err != nil {
+					return err
+				}
+			}
+			node.meshRevision = meshRev
+		}
 		if node.shared != nil {
 			node.shared.order = node.order
 			node.shared.pointRevision = node.pointRevision
+			node.shared.meshRevision = node.meshRevision
 		}
 		g.nodes[i] = node
 		if !drawn[i] {
@@ -409,7 +461,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			groups = append(groups, &group{keys[i], []int{i}, true})
 			continue
 		}
-		k := groupKey{geometry: keys[i], outline: geom.Outline}
+		k := groupKey{geometry: keys[i], outline: geom.Outline, transmitting: transmitting(&geom)}
 		if mapped(geom) {
 			aniso := f.anisotropy()
 			k.base = baseKey(geom.Material, aniso)
@@ -565,6 +617,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 		}
 		if m != nil && !m.Unlit {
 			states[k].reflectivity = m.Reflectivity
+			states[k].envReflect = m.EnvironmentReflect
 		}
 		if mapped(f.Geometry[i]) {
 			states[k].procedural = baseMap(m).shader != ""
@@ -578,7 +631,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	}
 	data := make([]byte, 0, instanceRecordSize*len(states))
 	for _, st := range states {
-		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.extension, st.optics, st.toon, st.pbr, st.emissive)...)
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.envReflect, st.extension, st.optics, st.toon, st.pbr, st.emissive)...)
 	}
 	s.last = states
 	return dev.Queue().WriteBuffer(s.transform, 0, data)
@@ -591,7 +644,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 // unlit flag, reflection F0, and where the mesh's extension records start (its index
 // count; the shader cannot trust arrayLength, which Metal reports from
 // the allocation, not the binding).
-func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32, optics [8]float32, toon ToonStyle, pbr [4]float32, emissive [3]float32) []byte {
+func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit, envReflect bool, extension uint32, optics [8]float32, toon ToonStyle, pbr [4]float32, emissive [3]float32) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
@@ -615,7 +668,11 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 	data = appendFloats(data, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, outlineW)
 	data = appendFloats(data, optics[:]...)
 	shade := toon.shade()
-	data = appendFloats(data, shade[0], shade[1], shade[2], toon.Rim, float32(toon.Bands), toon.Softness, 0, 0)
+	envRefl := float32(0)
+	if envReflect {
+		envRefl = 1
+	}
+	data = appendFloats(data, shade[0], shade[1], shade[2], toon.Rim, float32(toon.Bands), toon.Softness, envRefl, 0)
 	return appendFloats(data, pbr[0], pbr[1], pbr[2], pbr[3], emissive[0], emissive[1], emissive[2], 0)
 }
 
@@ -627,7 +684,7 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Materi
 	if m != nil && !m.Unlit {
 		reflectivity = m.Reflectivity
 	}
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, 0, [8]float32{}, toonParams(m), pbrParams(m), emissiveFactor(m, false)))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, m != nil && !m.Unlit && m.EnvironmentReflect, 0, [8]float32{}, toonParams(m), pbrParams(m), emissiveFactor(m, false)))
 }
 
 // uploadData uploads a geometry batch's records, to be bound per instance set.
@@ -673,17 +730,121 @@ func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, tr
 	return nil
 }
 
+func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []UV) {
+	if len(geom.Indices) == 0 {
+		return dst, flowScratch
+	}
+	needed := len(geom.Indices) * 48
+	if extended(geom) {
+		needed *= 2
+	}
+	if cap(dst)-len(dst) < needed {
+		next := make([]byte, len(dst), len(dst)+needed)
+		copy(next, dst)
+		dst = next
+	}
+	blended := transparent(&geom)
+	var outlineCodes []uint32
+	if geom.posed == nil && geom.splitOutlines() {
+		outlineCodes = outlineNormals(geom.Vertices)
+	}
+	isMapped := mapped(geom)
+	isExt := isMapped && extended(geom)
+	for _, index := range geom.Indices {
+		v := geom.Vertices[index]
+		var outlineCode uint32
+		if outlineCodes != nil {
+			outlineCode = outlineCodes[index]
+		}
+		// Opaque triangles are wholly opaque; transparent ones carry their
+		// vertices' alpha, where a mesh's radius or a texture's cutout
+		// threshold would be.
+		opacity := float32(1)
+		if blended {
+			opacity = float32(v.Color.A) / 255
+		}
+		if isMapped {
+			// The texture gives color, so the color slot carries the cutout
+			// threshold (or a transparent vertex's opacity), flags (1 repeat,
+			// 2 edge-on, 4 tint, 8 extension records follow, 16 they carry
+			// tangent frames, and bits 6..23 carry any smooth outline normal),
+			// and, for a tint, the vertex color as a 24-bit integer, which a
+			// float holds exactly.
+			m, flags, cut := geom.Material, int(outlineCode)<<6, geom.Material.threshold()
+			if m.NormalRepeat {
+				flags |= 32
+			}
+			if isExt {
+				flags |= 8
+				if len(geom.Tangents) > 0 {
+					flags |= 16
+				}
+			}
+			if blended {
+				cut = opacity
+			}
+			if m.Repeat {
+				flags |= 1
+			}
+			if m.EdgeOn && m.Texture != nil {
+				flags |= 2
+			}
+			if m.Tint || m.Texture == nil {
+				flags |= 4
+			}
+			rgb := float32(int(v.Color.R)<<16 | int(v.Color.G)<<8 | int(v.Color.B))
+			strength := float32(0)
+			if m.NormalMap != nil {
+				strength = m.NormalStrength
+			}
+			uv := geom.UV[index]
+			dst = appendFloats(dst, v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, strength)
+		} else {
+			dst = appendFloats(dst, v.Position.X, v.Position.Y, v.Position.Z, opacity, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, float32(outlineCode))
+		}
+	}
+	// A normal-mapped mesh with tangents or independent normal UVs has an
+	// extension record for each index after the primary ones: the normal
+	// map's coordinates, and the tangent frame with its handedness in w
+	// (zero without tangents).
+	if isExt {
+		// Flow is fixed in the rest UV field. Resolve it once per vertex, not once
+		// per repeated triangle index, when streaming a large animated grid.
+		var flows []UV
+		if geom.Material.FlowMap != nil {
+			if cap(flowScratch) < len(geom.Vertices) {
+				flowScratch = make([]UV, len(geom.Vertices))
+			}
+			flows = flowScratch[:len(geom.Vertices)]
+			for i := range flows {
+				flows[i] = materialFlow(geom.Material, geom.UV[i])
+			}
+		}
+		for _, i := range geom.Indices {
+			uv := geom.UV[i]
+			if len(geom.NormalUV) > 0 {
+				uv = geom.NormalUV[i]
+			}
+			var t Tangent
+			if len(geom.Tangents) > 0 {
+				t = geom.Tangents[i]
+			}
+			flow := UV{}
+			if flows != nil {
+				flow = flows[i]
+			}
+			dst = appendFloats(dst, uv.U, uv.V, flow.U, flow.V, t.Direction.X, t.Direction.Y, t.Direction.Z, t.W, 0, 0, 0, 0)
+		}
+	}
+	return dst, flowScratch
+}
+
 func geometryData(geom Geometry) (data [9][]byte) {
 	// Each record is twelve floats; each kind is sized once, so encoding
 	// allocates per kind rather than per record.
 	const record = 12 * 4
 	var records [9]int
 	records[0], records[2], records[3], records[6] = len(geom.Points), len(geom.Boxes), len(geom.Lines), len(geom.Arrows)
-	if mapped(geom) {
-		records[7] = len(geom.Indices)
-	} else {
-		records[1] = len(geom.Indices)
-	}
 	for kind, n := range records {
 		if n > 0 {
 			size := record
@@ -709,93 +870,12 @@ func geometryData(geom Geometry) (data [9][]byte) {
 		data[0] = appendFloats(data[0], p.Position.X, p.Position.Y, p.Position.Z, sign*p.Radius)
 		data[0] = binary.LittleEndian.AppendUint32(data[0], uint32(p.Color.R)|uint32(p.Color.G)<<8|uint32(p.Color.B)<<16|uint32(p.Color.A)<<24)
 	}
-	blended := transparent(&geom)
-	var outlineCodes []uint32
-	if len(geom.Indices) > 0 && geom.posed == nil {
-		outlineCodes = outlineNormals(geom.Vertices)
-	}
-	for _, index := range geom.Indices {
-		v := geom.Vertices[index]
-		var outlineCode uint32
-		if outlineCodes != nil {
-			outlineCode = outlineCodes[index]
-		}
-		// Opaque triangles are wholly opaque; transparent ones carry their
-		// vertices' alpha, where a mesh's radius or a texture's cutout
-		// threshold would be.
-		opacity := float32(1)
-		if blended {
-			opacity = float32(v.Color.A) / 255
-		}
+	if len(geom.Indices) > 0 {
+		slot := 1
 		if mapped(geom) {
-			// The texture gives color, so the color slot carries the cutout
-			// threshold (or a transparent vertex's opacity), flags (1 repeat,
-			// 2 edge-on, 4 tint, 8 extension records follow, 16 they carry
-			// tangent frames, and bits 6..23 carry any smooth outline normal),
-			// and, for a tint, the vertex color as a 24-bit integer, which a
-			// float holds exactly.
-			m, flags, cut := geom.Material, int(outlineCode)<<6, geom.Material.threshold()
-			if m.NormalRepeat {
-				flags |= 32
-			}
-			if extended(geom) {
-				flags |= 8
-				if len(geom.Tangents) > 0 {
-					flags |= 16
-				}
-			}
-			if blended {
-				cut = opacity
-			}
-			if m.Repeat {
-				flags |= 1
-			}
-			if m.EdgeOn && m.Texture != nil {
-				flags |= 2
-			}
-			if m.Tint || m.Texture == nil {
-				flags |= 4
-			}
-			rgb := float32(int(v.Color.R)<<16 | int(v.Color.G)<<8 | int(v.Color.B))
-			strength := float32(0)
-			if m.NormalMap != nil {
-				strength = m.NormalStrength
-			}
-			uv := geom.UV[index]
-			data[7] = appendFloats(data[7], v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, strength)
-		} else {
-			data[1] = appendFloats(data[1], v.Position.X, v.Position.Y, v.Position.Z, opacity, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, float32(outlineCode))
+			slot = 7
 		}
-	}
-	// A normal-mapped mesh with tangents or independent normal UVs has an
-	// extension record for each index after the primary ones: the normal
-	// map's coordinates, and the tangent frame with its handedness in w
-	// (zero without tangents).
-	if extended(geom) {
-		// Flow is fixed in the rest UV field. Resolve it once per vertex, not once
-		// per repeated triangle index, when streaming a large animated grid.
-		var flows []UV
-		if geom.Material.FlowMap != nil {
-			flows = make([]UV, len(geom.Vertices))
-			for i := range flows {
-				flows[i] = materialFlow(geom.Material, geom.UV[i])
-			}
-		}
-		for _, i := range geom.Indices {
-			uv := geom.UV[i]
-			if len(geom.NormalUV) > 0 {
-				uv = geom.NormalUV[i]
-			}
-			var t Tangent
-			if len(geom.Tangents) > 0 {
-				t = geom.Tangents[i]
-			}
-			flow := UV{}
-			if flows != nil {
-				flow = flows[i]
-			}
-			data[7] = appendFloats(data[7], uv.U, uv.V, flow.U, flow.V, t.Direction.X, t.Direction.Y, t.Direction.Z, t.W, 0, 0, 0, 0)
-		}
+		data[slot], _ = appendMeshRecords(nil, nil, geom)
 	}
 	for _, b := range geom.Boxes {
 		vertex(2, Vertex{b.Min, b.Size, b.Color}, 1)

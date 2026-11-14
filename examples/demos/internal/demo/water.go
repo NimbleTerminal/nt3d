@@ -43,7 +43,7 @@ func (d *demo) setupWater() error {
 	if err != nil {
 		return err
 	}
-	w := &waterScene{surface: surface, baseSurface: surface, material: nt3d.Material{Specular: .8, Shininess: 64, Reflectivity: .02, NormalStrength: 1, NormalRepeat: true}}
+	w := &waterScene{surface: surface, baseSurface: surface, material: nt3d.Material{Specular: .8, Shininess: 64, Reflectivity: .02, EnvironmentReflect: true, NormalStrength: 1, NormalRepeat: true}}
 	w.craft = waterCraft{x: 0, y: -2.7, throttle: .65, autopilot: true}
 	w.ripples, w.reflections = true, true
 	w.optics, w.softSpray = true, true

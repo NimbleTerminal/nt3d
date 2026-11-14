@@ -386,6 +386,8 @@ type gpuRenderer struct {
 	blendDraw       map[int]int    // A transparent frame geometry's draw.
 	sortedRuns      []sortedRun    // The frame's alpha point slots, resolved once, in plan order.
 	runOffsets      []uint32       // Each slice's run offset for each slot, one dynamic offset apiece.
+	meshScratch     []byte         // Reusable encoding scratch for in-place mesh updates.
+	flowScratch     []UV           // Reusable vertex flow scratch for in-place mesh updates.
 	textureUploads  uint64
 	mu              sync.Mutex
 	closed          bool
@@ -699,6 +701,8 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	environmentActive := float32(0)
 	if rig.environmentActive {
 		environmentActive = 1
+	} else if f.Environment != nil {
+		environmentActive = 0.25
 	}
 	maxEnvMip := float32(0)
 	if f.Environment != nil {

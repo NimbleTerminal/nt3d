@@ -60,8 +60,11 @@ GPU and software perturb diffuse, specular, and environment lighting. See
 `Material.Specular` (0 to 1) adds a white highlight where the surface reflects the light toward the camera, and `Shininess` (1 to 1024, default 32) sets how tight it is. It's worked out per pixel, so highlights stay round even on coarse meshes. Boxes, unlit materials, and wireframe have none.
 
 `Material.Reflectivity` adds [environment reflections](../environment/#reflections).
-Zero disables them; `.02` suits water and `1` makes a mirror. Normal maps also
-perturb reflection direction. Unlit materials ignore reflections.
+Zero disables them; `.02` suits water and `1` makes a mirror. Set
+`Material.EnvironmentReflect: true` when `Frame.EnvironmentBackgroundOnly`
+keeps the sky backdrop without diffuse environment light yet the surface should
+still reflect the sky. Normal maps also perturb reflection direction. Unlit
+materials ignore reflections.
 
 ### Metallic/roughness PBR and ORM maps
 
@@ -311,3 +314,29 @@ texture bindings and works in GPU and software, including normal-driven
 reflection and refraction. Small field details require correspondingly dense
 mesh vertices. Flow changes shading, not geometry or simulation velocities.
 See [Water](../water/) for a shoreline example and tiled mesh API.
+
+## Replacing materials on a subtree
+
+For geometry already in a scene—such as a loaded glTF hierarchy, an animated
+character, `SharedGeometry` instances, or multi-tier `LOD` nodes—`Scene.SetMaterial`
+replaces (or clears, when `nil`) the material on every indexed triangle mesh
+under `root`:
+
+```go
+err := scene.SetMaterial(root, &nt3d.Material{
+    PBR:                true,
+    Roughness:          .25,
+    EnvironmentReflect: true,
+})
+```
+
+Every affected mesh (including all `LOD` tiers and deformed rest meshes) is
+validated before any node is modified, so a missing UV set for a textured or
+normal-mapped material returns an error without partial updates. When
+vertex-baked fields (`Tint`, `Unlit`, `Transparent`, `Cutout`, `Threshold`,
+`EdgeOn`, normal-map tangent presence, and `FlowMap` / `FlowRepeat`) are
+unchanged, existing GPU mesh buffers and `SharedGeometry` instancing stay
+intact—including per-frame parameter updates like `FlowPhase`, `FlowStrength`,
+`Reflectivity`, `Toon`, or render-pass switches like `Transmission`. Changing a
+vertex-baked field re-encodes only the affected mesh (detaching `SharedGeometry`
+into an owned copy on that node).
