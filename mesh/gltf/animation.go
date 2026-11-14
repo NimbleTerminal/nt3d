@@ -120,6 +120,14 @@ func (d *gltfDecoder) sceneAsset() error {
 				asset.Nodes[ids[i]].Name = d.doc.Cameras[*n.Camera].Name
 			}
 		}
+		if light, name, err := d.nodeLight(n.Extensions); err != nil {
+			return err
+		} else if light != nil && selected[i] {
+			asset.Nodes[ids[i]].Light = light
+			if asset.Nodes[ids[i]].Name == "" {
+				asset.Nodes[ids[i]].Name = name
+			}
+		}
 	}
 	meshes := map[int][]int{}
 	for ni, n := range d.doc.Nodes {

@@ -123,10 +123,13 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if err := d.extensions(); err != nil {
 		return nil, err
 	}
+	if err := d.decodeLights(); err != nil {
+		return nil, err
+	}
 	if err := d.scene(); err != nil {
 		return nil, err
 	}
-	if len(d.m.Objects) == 0 && len(d.doc.Cameras) == 0 {
+	if len(d.m.Objects) == 0 && len(d.doc.Cameras) == 0 && len(d.lights) == 0 {
 		return nil, errors.New("nt3dmesh: glTF scene holds no meshes")
 	}
 	for i := range d.m.Objects {
@@ -148,10 +151,11 @@ var supportedExtensions = []string{
 	"KHR_materials_ior",
 	"KHR_materials_transmission",
 	"KHR_materials_volume",
+	"KHR_lights_punctual",
 }
 
 // ignoredExtensions are passed over silently: they refine looks nt3d does not draw.
-var ignoredExtensions = []string{"KHR_lights_punctual", "KHR_materials_specular", "KHR_materials_clearcoat", "KHR_materials_sheen", "KHR_materials_variants"}
+var ignoredExtensions = []string{"KHR_materials_specular", "KHR_materials_clearcoat", "KHR_materials_sheen", "KHR_materials_variants"}
 
 type gltfDecoder struct {
 	decodedLeft    *int64
@@ -167,6 +171,7 @@ type gltfDecoder struct {
 	normalTextures map[int]*nt3d.Texture
 	ormTextures    map[[2]int]*nt3d.Texture
 	textures       map[int]*nt3d.Texture // By texture index; nil when it failed.
+	lights         []punctualLight
 	warned         map[string]bool
 	visits         int
 	points         int // Across the model, within maxPoints.
