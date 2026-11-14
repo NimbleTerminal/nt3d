@@ -296,6 +296,27 @@ func validateGeometry(g Geometry) error {
 		if m.NormalMap != nil && (!m.NormalMap.valid() || !m.NormalMap.data || len(g.UV) != len(g.Vertices)) {
 			return fmt.Errorf("nt3d: normal map requires NewNormalMap and vertex UVs")
 		}
+		if !validFloat(m.Metallic, m.Roughness, m.IOR, m.OcclusionStrength, m.EmissiveIntensity) {
+			return fmt.Errorf("nt3d: non-finite PBR or emissive parameter")
+		}
+		if m.Metallic < 0 || m.Metallic > 1 || m.Roughness < 0 || m.Roughness > 1 {
+			return fmt.Errorf("nt3d: metallic and roughness must be 0..1")
+		}
+		if m.IOR != 0 && (m.IOR < 1 || m.IOR > 3) {
+			return fmt.Errorf("nt3d: IOR must be 0 or 1..3")
+		}
+		if m.OcclusionStrength < 0 || m.OcclusionStrength > 1 {
+			return fmt.Errorf("nt3d: occlusion strength must be 0..1")
+		}
+		if m.ORMMap != nil && (!m.ORMMap.valid() || !m.ORMMap.data || len(g.UV) != len(g.Vertices)) {
+			return fmt.Errorf("nt3d: ORM map requires NewORMMap and vertex UVs")
+		}
+		if m.EmissiveIntensity < 0 {
+			return fmt.Errorf("nt3d: emissive intensity must be nonnegative")
+		}
+		if m.EmissiveMap != nil && (!m.EmissiveMap.valid() || m.EmissiveMap.data || len(g.UV) != len(g.Vertices)) {
+			return fmt.Errorf("nt3d: emissive map requires a color texture and vertex UVs")
+		}
 	}
 	if g.Material != nil && (!validFloat(g.Material.Threshold) || g.Material.Threshold < 0 || g.Material.Threshold > 1) {
 		return fmt.Errorf("nt3d: cutout threshold must be 0..1")

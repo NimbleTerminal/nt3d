@@ -52,12 +52,13 @@ func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment
 		}
 		g.shared.mu.Unlock()
 	}
-	w, h, data := e.texture.width, e.texture.height, e.panorama.Pix
+	levels := e.specularLevels()
+	w, h := e.texture.width, e.texture.height
 	size := wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}
 	tex, err := dev.CreateTexture(&wgpu.TextureDescriptor{
 		Label:         "environment panorama",
 		Size:          size,
-		MipLevelCount: 1,
+		MipLevelCount: uint32(len(levels)),
 		SampleCount:   1,
 		Dimension:     wgpu.TextureDimension2D,
 		Format:        gputypes.TextureFormatRGBA8UnormSrgb,
@@ -76,7 +77,7 @@ func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment
 		AddressModeV: gputypes.AddressModeClampToEdge,
 		MagFilter:    gputypes.FilterModeLinear,
 		MinFilter:    gputypes.FilterModeLinear,
-		MipmapFilter: gputypes.FilterModeNearest,
+		MipmapFilter: gputypes.FilterModeLinear,
 		Anisotropy:   1,
 	})
 	if err != nil {
@@ -84,16 +85,20 @@ func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment
 		tex.Release()
 		return nil, err
 	}
-	if err := dev.Queue().WriteTexture(
-		&wgpu.ImageCopyTexture{Texture: tex},
-		data,
-		&wgpu.ImageDataLayout{BytesPerRow: uint32(w * 4), RowsPerImage: uint32(h)},
-		&size,
-	); err != nil {
-		sampler.Release()
-		view.Release()
-		tex.Release()
-		return nil, err
+	for m, level := range levels {
+		lw, lh := level.Rect.Dx(), level.Rect.Dy()
+		lsize := wgpu.Extent3D{Width: uint32(lw), Height: uint32(lh), DepthOrArrayLayers: 1}
+		if err := dev.Queue().WriteTexture(
+			&wgpu.ImageCopyTexture{Texture: tex, MipLevel: uint32(m)},
+			level.Pix,
+			&wgpu.ImageDataLayout{BytesPerRow: uint32(lw * 4), RowsPerImage: uint32(lh)},
+			&lsize,
+		); err != nil {
+			sampler.Release()
+			view.Release()
+			tex.Release()
+			return nil, err
+		}
 	}
 	t := &gpuEnvironmentTexture{texture: tex, view: view, sampler: sampler}
 	if g.shared != nil {

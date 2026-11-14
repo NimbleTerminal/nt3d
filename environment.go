@@ -7,9 +7,13 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"math/bits"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/sh"
+	"sync"
 )
+
+const maxEnvironmentSpecMips = 6
 
 // Environment is an immutable distant sky, diffuse light, and reflection source.
 // Construct one with NewEnvironment or GradientEnvironment and share it between
@@ -18,14 +22,16 @@ type Environment struct {
 	texture  *Texture
 	panorama *image.NRGBA
 	// Degree-two diffuse SH, cosine-convolved and divided by pi.
-	diffuse [9]nt3dsh.RGB
+	diffuse  [9]nt3dsh.RGB
+	specOnce sync.Once
+	spec     []*image.NRGBA
 }
 
 // NewEnvironment snapshots an sRGB equirectangular image (normally 2:1).
 // +Z is up (top row); the image center faces +X, and U increases toward +Y.
 // Alpha is ignored. Dimensions have the same limits as NewTexture.
-// Diffuse lighting uses a low-frequency approximation; reflective materials
-// sample the panorama directly, without roughness filtering.
+// Diffuse lighting uses a low-frequency approximation; PBR materials sample a
+// GGX-prefiltered roughness mip chain, while classic Reflectivity samples level 0.
 func NewEnvironment(src image.Image) (*Environment, error) {
 	t, err := NewTexture(src)
 	if err != nil {
@@ -149,3 +155,129 @@ func NewSHEnvironment(radiance []nt3dsh.RGB) (*Environment, error) {
 
 // DiffuseSH returns a copy of the degree-two, cosine-convolved lighting.
 func (e *Environment) DiffuseSH() [9]nt3dsh.RGB { return e.diffuse }
+
+func samplePanoramaImg(img *image.NRGBA, u, v float32) [4]float32 {
+	half := .5 / float32(img.Rect.Dy())
+	return sampleLevel(img, UV{u, max(half, min(1-half, v))}, true)
+}
+
+func samplePanoramaChain(chain []*image.NRGBA, d nt3dmath.Vec3, lod float32) [4]float32 {
+	u := float32(math.Atan2(float64(d.Y), float64(d.X))/(2*math.Pi) + .5)
+	v := float32(math.Acos(float64(max(-1, min(1, d.Z)))) / math.Pi)
+	lod = max(0, min(lod, float32(len(chain)-1)))
+	l0 := int(lod)
+	c := samplePanoramaImg(chain[l0], u, v)
+	if f := lod - float32(l0); f > 0 && l0+1 < len(chain) {
+		b := samplePanoramaImg(chain[l0+1], u, v)
+		for i := range c {
+			c[i] += (b[i] - c[i]) * f
+		}
+	}
+	return c
+}
+
+func (e *Environment) sampleSpecular(d nt3dmath.Vec3, roughness float32) [4]float32 {
+	if roughness <= 0 {
+		return e.sample(d)
+	}
+	levels := e.specularLevels()
+	return samplePanoramaChain(levels, d, min(1, roughness)*float32(len(levels)-1))
+}
+
+func radicalInverseVdC(i uint32) float64 {
+	return float64(bits.Reverse32(i)) / float64(1<<32)
+}
+
+// specularLevels builds and caches a GGX-prefiltered equirectangular mip chain
+// (level 0 is the sharp panorama; higher levels blur by perceptual roughness).
+func (e *Environment) specularLevels() []*image.NRGBA {
+	e.specOnce.Do(func() {
+		srcMips := e.texture.levels()
+		n := min(maxEnvironmentSpecMips, len(srcMips))
+		levels := make([]*image.NRGBA, n)
+		levels[0] = e.panorama
+		if n <= 1 {
+			e.spec = levels
+			return
+		}
+		const taps = 24
+		type ggxTap struct {
+			hx, hy, hz float32
+			nl, lod    float32
+		}
+		omegaP := 4 * math.Pi / float64(max(1, e.texture.width*e.texture.height))
+		for m := 1; m < n; m++ {
+			mw, mh := srcMips[m].Rect.Dx(), srcMips[m].Rect.Dy()
+			roughness := float64(m) / float64(n-1)
+			alpha := roughness * roughness
+			a2 := alpha * alpha
+			var pre [taps]ggxTap
+			used := 0
+			for s := uint32(0); s < taps; s++ {
+				u1 := (float64(s) + .5) / taps
+				u2 := radicalInverseVdC(s)
+				phi := 2 * math.Pi * u2
+				cosT := math.Sqrt((1 - u1) / (1 + (a2-1)*u1))
+				nl := 2*cosT*cosT - 1
+				if nl <= 0 {
+					continue
+				}
+				sinT := math.Sqrt(max(0, 1-cosT*cosT))
+				denom := cosT*cosT*(a2-1) + 1
+				dTerm := a2 / (math.Pi * denom * denom)
+				pdf := max(1e-6, dTerm*.25)
+				omegaS := 1.0 / (taps * pdf)
+				lod := max(0, min(float64(len(srcMips)-1), .5*math.Log2(max(1, omegaS/omegaP))))
+				pre[used] = ggxTap{
+					hx:  float32(sinT * math.Cos(phi)),
+					hy:  float32(sinT * math.Sin(phi)),
+					hz:  float32(cosT),
+					nl:  float32(nl),
+					lod: float32(lod),
+				}
+				used++
+			}
+			dst := image.NewNRGBA(image.Rect(0, 0, mw, mh))
+			for y := 0; y < mh; y++ {
+				theta := (float64(y) + .5) / float64(mh) * math.Pi
+				sinTh, cosTh := math.Sin(theta), math.Cos(theta)
+				for x := 0; x < mw; x++ {
+					phi := ((float64(x)+.5)/float64(mw) - .5) * 2 * math.Pi
+					nrm := nt3dmath.Vec3{
+						X: float32(sinTh * math.Cos(phi)),
+						Y: float32(sinTh * math.Sin(phi)),
+						Z: float32(cosTh),
+					}
+					up := nt3dmath.Vec3{Z: 1}
+					if abs(nrm.Z) > .999 {
+						up = nt3dmath.Vec3{X: 1}
+					}
+					tangent := up.Cross(nrm).Normalize()
+					bitangent := nrm.Cross(tangent)
+					var sum [3]float32
+					var weight float32
+					for k := 0; k < used; k++ {
+						tp := pre[k]
+						h := tangent.Scale(tp.hx).Add(bitangent.Scale(tp.hy)).Add(nrm.Scale(tp.hz))
+						l := h.Scale(2 * tp.hz).Sub(nrm)
+						c := samplePanoramaChain(srcMips, l, tp.lod)
+						sum[0] += c[0] * tp.nl
+						sum[1] += c[1] * tp.nl
+						sum[2] += c[2] * tp.nl
+						weight += tp.nl
+					}
+					var r, g, b uint8
+					if weight > 0 {
+						inv := 1 / weight
+						r, g, b = encode8(sum[0]*inv), encode8(sum[1]*inv), encode8(sum[2]*inv)
+					}
+					off := y*dst.Stride + x*4
+					dst.Pix[off], dst.Pix[off+1], dst.Pix[off+2], dst.Pix[off+3] = r, g, b, 255
+				}
+			}
+			levels[m] = dst
+		}
+		e.spec = levels
+	})
+	return e.spec
+}

@@ -8,7 +8,7 @@ struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye:
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
-struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, absorption:vec4<f32>, optics:vec4<f32>, toon:vec4<f32>, toonStyle:vec4<f32> };
+struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, absorption:vec4<f32>, optics:vec4<f32>, toon:vec4<f32>, toonStyle:vec4<f32>, pbr:vec4<f32>, emissive:vec4<f32> };
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
 // Points have records of their own, five words each: position, radius
 // (negative in world units), and color as RGBA8. Alpha points are drawn in
@@ -134,77 +134,195 @@ fn toonLobe(n:vec3<f32>,p:vec3<f32>,l:Light,shininess:f32)->f32 {
  if dot(h,h)<=0.0 {return 0.0;}
  return pow(max(0.0,dot(n,normalize(h))),shininess);
 }
+fn pbrPow5(x:f32)->f32 {
+ let c=clamp(x,0.0,1.0);let c2=c*c;return c2*c2*c;
+}
+fn envBRDF(f0:vec3<f32>,roughness:f32,nv:f32)->vec3<f32> {
+ let r0=-roughness+1.0;
+ let r1=-0.0275*roughness+0.0425;
+ let r2=-0.572*roughness+1.04;
+ let r3=0.022*roughness-0.04;
+ let a004=min(r0*r0,exp2(-9.28*nv))*r0+r1;
+ let abX=-1.04*a004+r2;
+ let abY=1.04*a004+r3;
+ let f90=clamp(50.0*max(f0.r,max(f0.g,f0.b)),0.0,1.0);
+ return f0*abX+vec3<f32>(f90*abY);
+}
+fn pbrSpecularAO(nv:f32,ao:f32,alpha:f32)->f32 {
+ if ao>=1.0 {return 1.0;}
+ let e=exp2(-16.0*alpha-1.0);
+ return clamp(pow(max(1e-5,nv+ao),e)-1.0+ao,0.0,1.0);
+}
+fn pbrToonLobe(n:vec3<f32>,p:vec3<f32>,l:Light,a2:f32)->f32 {
+ let h=toward(l,p).xyz+viewAt(p);
+ if dot(h,h)<=0.0 {return 0.0;}
+ let nh=clamp(dot(n,normalize(h)),0.0,1.0);
+ let denom=nh*nh*(a2-1.0)+1.0;
+ return a2/max(1e-7,denom*denom)*0.25;
+}
 // finish lights a surface, adds each light's specular highlight, and fades
 // into the fog. Fragments without a normal are unlit. A mesh's fragments
 // carry their instance (optics.w, one more than its index; zero otherwise)
-// to read its toon style: flat ambient tinted by the shade, each light's
-// cosine and cast shadow snapped to bands, a flat specular spot, and a rim.
+// to read its toon, PBR, and emissive parameters.
 // Band edges blend across about a pixel: each stepped term is found again a
 // pixel over in x and in y, from the screen derivatives of the normal and
 // the world position, so a flat face under a point light or a perspective
 // view blends as a curved one does. The derivatives are taken here, before
 // any branch on a varying.
-fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {return finishNormal(o,rgb,o.normal);}
-fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {
+fn finish(o:Out,rgb:vec3<f32>)->vec3<f32> {return shadeSurface(o,rgb,o.normal,vec3<f32>(1.0),vec3<f32>(1.0));}
+fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {return shadeSurface(o,rgb,shadeNormal,vec3<f32>(1.0),vec3<f32>(1.0));}
+fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample:vec3<f32>)->vec3<f32> {
  var c=rgb;
  let nx=dpdx(shadeNormal);let ny=dpdy(shadeNormal);
  let wx=dpdx(o.world);let wy=dpdy(o.world);
+ var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);var pbr=vec4<f32>(0.0);var emissive=vec3<f32>(0.0);
+ if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;pbr=inst.pbr;emissive=inst.emissive.rgb;}
  if dot(o.normal,o.normal)>0.0 {
   let n=normalize(shadeNormal);
   let view=viewAt(o.world);
   // The normal and position a pixel over, for the toon band edges.
   let nX=normalize(shadeNormal+nx);let nY=normalize(shadeNormal+ny);
   let pX=o.world+wx;let pY=o.world+wy;
-  var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);
-  if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;}
   let bands=style.x;let soft=style.y/max(bands,1.0);
-  var direct=vec3<f32>(0.0);
-  if bands>0.5 {
-   var ambient=mix(u.ground.rgb,u.sky.rgb,0.5);
-   if u.viewport.w>0.5 {ambient+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
+  if pbr.z>=0.5 {
+   let roughness=clamp(pbr.y*orm.y,0.045,1.0);
+   let metallic=clamp(pbr.x*orm.z,0.0,1.0);
+   let ao=1.0+(orm.x-1.0)*pbr.w;
+   let alpha=roughness*roughness;let a2=alpha*alpha;
+   let df0=pbr.z-1.0;
+   let f0=mix(vec3<f32>(df0),c,metallic);
+   let diffColor=c*(1.0-metallic);
    let geometric=normalize(o.normal);
-   for(var i=0u;i<u32(u.sky.w);i=i+1u) {
-    let l=u.lights[i];let t=toward(l,o.world);let s=dot(n,t.xyz);
-    if t.w>0.0 && s>0.0 {
-     let w=max(0.0001,abs(toonCosine(nX,pX,l)-s)+abs(toonCosine(nY,pY,l)-s)+soft);
-     direct+=l.b.rgb*(t.w*toonBand(s*lightVisibility(i,o.world,geometric,t.xyz),bands,w));
-    }
-   }
-   c*=ambient*toon.rgb+direct;
-  } else {
-   c*=illuminate(n,o.world,normalize(o.normal));
-  }
-  if o.optics.x>0.0 {c=transmit(o,c,n);}
-  if o.absorption.w>0.0 && u.viewport.w>0.5 {
-   let rn=select(n,-n,dot(n,view)<0.0);
-   let reflected=reflect(-view,rn);
-   let half=0.5/f32(textureDimensions(reflectionMap).y);
-   let uv=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,clamp(acos(clamp(reflected.z,-1.0,1.0))/3.14159265359,half,1.0-half));
-   var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
-   if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
-   let fresnel=o.absorption.w+(1.0-o.absorption.w)*pow(1.0-clamp(dot(rn,view),0.0,1.0),5.0);
-   c=mix(c,sky*u.ground.w,fresnel);
-  }
-  if o.spec.x>0.0 {
-   for(var i=0u;i<u32(u.sky.w);i=i+1u) {
-    let l=u.lights[i];let t=toward(l,o.world);let h=t.xyz+view;
-    if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {
-     let hn=normalize(h);let nh=max(0.0,dot(n,hn));
-     var lobe=pow(nh,o.spec.y);
-     if bands>0.5 {
-      let w=max(0.0001,abs(toonLobe(nX,pX,l,o.spec.y)-lobe)+abs(toonLobe(nY,pY,l,o.spec.y)-lobe)+soft);
-      lobe=toonStep(0.5,w,lobe);
+   var rn=n;var facing=dot(n,view);
+   if facing<0.0 {rn=-n;facing=-facing;}
+   let nv=clamp(facing,1e-4,1.0);
+   let reflected=normalize(rn*(2.0*facing)-view);
+   var diffOut=vec3<f32>(0.0);var specOut=vec3<f32>(0.0);
+   if bands>0.5 {
+    var ambient=mix(u.ground.rgb,u.sky.rgb,0.5);
+    if u.viewport.w>0.5 {ambient+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
+    var direct=vec3<f32>(0.0);
+    for(var i=0u;i<u32(u.sky.w);i=i+1u) {
+     let l=u.lights[i];let t=toward(l,o.world);let nl=dot(n,t.xyz);
+     if t.w>0.0 && nl>0.0 {
+      let vis=lightVisibility(i,o.world,geometric,t.xyz);
+      let w=max(0.0001,abs(toonCosine(nX,pX,l)-nl)+abs(toonCosine(nY,pY,l)-nl)+soft);
+      direct+=l.b.rgb*(t.w*toonBand(nl*vis,bands,w));
+      let h=t.xyz+view;
+      if dot(h,h)>0.0 {
+       let hn=normalize(h);let nh=clamp(dot(n,hn),0.0,1.0);let vh=clamp(dot(view,hn),0.0,1.0);
+       let denom=nh*nh*(a2-1.0)+1.0;
+       let lobe=a2/max(1e-7,denom*denom)*0.25;
+       let sw=max(0.0001,abs(pbrToonLobe(nX,pX,l,a2)-lobe)+abs(pbrToonLobe(nY,pY,l,a2)-lobe)+soft);
+       let spot=toonStep(0.5,sw,lobe)*t.w*vis;
+       let fk=f0+(vec3<f32>(1.0)-f0)*pbrPow5(1.0-vh);
+       specOut+=l.b.rgb*spot*fk;
+      }
      }
-     c+=l.b.rgb*(lightVisibility(i,o.world,normalize(o.normal),t.xyz)*t.w*o.spec.x*lobe);
+    }
+    diffOut=diffColor*(ambient*toon.rgb*ao+direct);
+    if toon.w>0.0 {
+     let rimFacing=max(0.0,dot(n,view));
+     let rw=max(0.0001,abs(max(0.0,dot(nX,viewAt(pX)))-rimFacing)+abs(max(0.0,dot(nY,viewAt(pY)))-rimFacing)+soft);
+     specOut+=direct*(toon.w*toonStep(0.7,rw,1.0-rimFacing));
+    }
+   } else {
+    var indDiff=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
+    if u.viewport.w>0.5 {
+     var shIrr=vec3<f32>(0.0);
+     for(var k=0u;k<9u;k++){shIrr+=u.environment[k].rgb*nt3dSHBasis(k,n);}
+     indDiff+=max(vec3<f32>(0.0),shIrr);
+    }
+    let f90=max(vec3<f32>(1.0-roughness),f0);
+    let ks=f0+(f90-f0)*pbrPow5(1.0-nv);
+    diffOut=diffColor*(vec3<f32>(1.0)-ks)*indDiff*ao;
+    let brdf=envBRDF(f0,roughness,nv);
+    let sAO=pbrSpecularAO(nv,ao,alpha);
+    let hemiReflT=reflected.z*0.5+0.5;
+    var specEnv=mix(u.ground.rgb,u.sky.rgb,mix(hemiReflT,0.5,alpha));
+    if u.viewport.w>0.5 {
+     let envUV=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,acos(clamp(reflected.z,-1.0,1.0))/3.14159265359);
+     var sky=textureSampleLevel(reflectionMap,reflectionSampler,envUV,roughness*u.forward.w).rgb;
+     if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
+     specEnv+=sky*u.ground.w;
+    }
+    specOut+=specEnv*brdf*sAO;
+    let oneMinusA2=1.0-a2;
+    for(var i=0u;i<u32(u.sky.w);i=i+1u) {
+     let l=u.lights[i];let t=toward(l,o.world);let nl=dot(n,t.xyz);
+     if t.w>0.0 && nl>0.0 {
+      let vis=t.w*lightVisibility(i,o.world,geometric,t.xyz);
+      if vis>0.0 {
+       var dTerm=0.0;var vh=0.0;
+       let h=t.xyz+view;
+       if dot(h,h)>0.0 {
+        let hn=normalize(h);let nh=clamp(dot(n,hn),0.0,1.0);vh=clamp(dot(view,hn),0.0,1.0);
+        let denom=nh*nh*(a2-1.0)+1.0;
+        let piD=a2/max(1e-7,denom*denom);
+        let ggxV=nl*sqrt(nv*nv*oneMinusA2+a2);
+        let ggxL=nv*sqrt(nl*nl*oneMinusA2+a2);
+        dTerm=piD*(0.5/max(1e-5,ggxV+ggxL));
+       }
+       let fk=f0+(vec3<f32>(1.0)-f0)*pbrPow5(1.0-vh);
+       let w=vis*nl;
+       diffOut+=l.b.rgb*w*(vec3<f32>(1.0)-fk)*diffColor;
+       specOut+=l.b.rgb*(w*dTerm)*fk;
+      }
+     }
     }
    }
-  }
-  if bands>0.5 && toon.w>0.0 {
-   let facing=max(0.0,dot(n,view));
-   let w=max(0.0001,abs(max(0.0,dot(nX,viewAt(pX)))-facing)+abs(max(0.0,dot(nY,viewAt(pY)))-facing)+soft);
-   c+=direct*(toon.w*toonStep(0.7,w,1.0-facing));
+   if o.optics.x>0.0 {diffOut=transmit(o,diffOut,n);}
+   c=diffOut+specOut;
+  } else {
+   var direct=vec3<f32>(0.0);
+   if bands>0.5 {
+    var ambient=mix(u.ground.rgb,u.sky.rgb,0.5);
+    if u.viewport.w>0.5 {ambient+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
+    let geometric=normalize(o.normal);
+    for(var i=0u;i<u32(u.sky.w);i=i+1u) {
+     let l=u.lights[i];let t=toward(l,o.world);let s=dot(n,t.xyz);
+     if t.w>0.0 && s>0.0 {
+      let w=max(0.0001,abs(toonCosine(nX,pX,l)-s)+abs(toonCosine(nY,pY,l)-s)+soft);
+      direct+=l.b.rgb*(t.w*toonBand(s*lightVisibility(i,o.world,geometric,t.xyz),bands,w));
+     }
+    }
+    c*=ambient*toon.rgb+direct;
+   } else {
+    c*=illuminate(n,o.world,normalize(o.normal));
+   }
+   if o.optics.x>0.0 {c=transmit(o,c,n);}
+   if o.absorption.w>0.0 && u.viewport.w>0.5 {
+    let rn=select(n,-n,dot(n,view)<0.0);
+    let reflected=reflect(-view,rn);
+    let half=0.5/f32(textureDimensions(reflectionMap).y);
+    let uv=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,clamp(acos(clamp(reflected.z,-1.0,1.0))/3.14159265359,half,1.0-half));
+    var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
+    if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
+    let fresnel=o.absorption.w+(1.0-o.absorption.w)*pow(1.0-clamp(dot(rn,view),0.0,1.0),5.0);
+    c=mix(c,sky*u.ground.w,fresnel);
+   }
+   if o.spec.x>0.0 {
+    for(var i=0u;i<u32(u.sky.w);i=i+1u) {
+     let l=u.lights[i];let t=toward(l,o.world);let h=t.xyz+view;
+     if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {
+      let hn=normalize(h);let nh=max(0.0,dot(n,hn));
+      var lobe=pow(nh,o.spec.y);
+      if bands>0.5 {
+       let w=max(0.0001,abs(toonLobe(nX,pX,l,o.spec.y)-lobe)+abs(toonLobe(nY,pY,l,o.spec.y)-lobe)+soft);
+       lobe=toonStep(0.5,w,lobe);
+      }
+      c+=l.b.rgb*(lightVisibility(i,o.world,normalize(o.normal),t.xyz)*t.w*o.spec.x*lobe);
+     }
+    }
+   }
+   if bands>0.5 && toon.w>0.0 {
+    let facing=max(0.0,dot(n,view));
+    let w=max(0.0001,abs(max(0.0,dot(nX,viewAt(pX)))-facing)+abs(max(0.0,dot(nY,viewAt(pY)))-facing)+soft);
+    c+=direct*(toon.w*toonStep(0.7,w,1.0-facing));
+   }
   }
  }
+ c+=emissive*emSample;
  c=mix(c,u.fogColor.rgb,fogAmount(o.world));
  return c;
 }
@@ -394,8 +512,18 @@ fn mapColor(c:vec3<f32>)->vec3<f32> {
  let v=clamp(c,vec3<f32>(0.0),vec3<f32>(1.0));
  return select(1.055*pow(v,vec3<f32>(1.0/2.4))-0.055,v*12.92,v<=vec3<f32>(0.0031308));
 }
-@group(3) @binding(0) var normalTexture: texture_2d<f32>;
-@group(3) @binding(1) var normalSampler: sampler;
+@group(2) @binding(2) var normalTexture: texture_2d<f32>;
+@group(2) @binding(3) var normalSampler: sampler;
+@group(2) @binding(4) var ormTexture: texture_2d<f32>;
+@group(2) @binding(5) var ormSampler: sampler;
+@group(2) @binding(6) var emissiveTexture: texture_2d<f32>;
+@group(2) @binding(7) var emissiveSampler: sampler;
+fn sampleORM(uv:vec2<f32>,gx:vec2<f32>,gy:vec2<f32>)->vec3<f32> {
+ return textureSampleGrad(ormTexture,ormSampler,uv,gx,gy).rgb;
+}
+fn sampleEmissive(uv:vec2<f32>,gx:vec2<f32>,gy:vec2<f32>)->vec3<f32> {
+ return textureSampleGrad(emissiveTexture,emissiveSampler,uv,gx,gy).rgb;
+}
 // surfaceNormal is the shading normal: the interpolated normal, tilted by
 // the normal map's sample in the vertices' tangent frame (W × (N × T) its
 // bitangent), or, for a mesh without one, in a per-triangle basis from the
@@ -430,25 +558,32 @@ fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
- return vec4<f32>(finishNormal(o,mapColor(sampleMap(o.uv,gx,gy,o.repeat).rgb)*o.color.rgb,n),1.0);
+ let orm=sampleORM(o.uv,gx,gy);
+ let em=mapColor(sampleEmissive(o.uv,gx,gy));
+ return vec4<f32>(shadeSurface(o,mapColor(sampleMap(o.uv,gx,gy,o.repeat).rgb)*o.color.rgb,n,orm,em),1.0);
 }
 // Transparent materials blend by the texture's alpha times the vertex's.
 @fragment fn fs_blend_texture(o:Out)->@location(0) vec4<f32> {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
  let t=sampleMap(o.uv,gx,gy,o.repeat);
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
- return vec4<f32>(finishNormal(o,mapColor(t.rgb)*o.color.rgb,n),t.a*o.cut);
+ let orm=sampleORM(o.uv,gx,gy);
+ let em=mapColor(sampleEmissive(o.uv,gx,gy));
+ return vec4<f32>(shadeSurface(o,mapColor(t.rgb)*o.color.rgb,n,orm,em),t.a*o.cut);
 }
 // Cutout materials skip texels under their threshold; what remains is
 // opaque. An image cutout is uploaded with its coverage-preserving chain,
 // sampled trilinearly (its sampler has no anisotropy), so distance does
 // not average the cut away; a procedural one samples full size.
 @fragment fn fs_cutout(o:Out)->@location(0) vec4<f32> {
+ let gx=dpdx(o.uv);let gy=dpdy(o.uv);
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
  let k=1.0-o.full;
- let t=sampleMap(o.uv,dpdx(o.uv)*k,dpdy(o.uv)*k,o.repeat);
+ let t=sampleMap(o.uv,gx*k,gy*k,o.repeat);
  if t.a<o.cut {discard;}
- return vec4<f32>(finishNormal(o,mapColor(t.rgb)*o.color.rgb,n),1.0);
+ let orm=sampleORM(o.uv,gx,gy);
+ let em=mapColor(sampleEmissive(o.uv,gx,gy));
+ return vec4<f32>(shadeSurface(o,mapColor(t.rgb)*o.color.rgb,n,orm,em),1.0);
 }
 
 @vertex fn vs_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return boxOutput(vi,ii);}

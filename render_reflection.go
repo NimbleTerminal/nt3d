@@ -49,12 +49,31 @@ func (g *gpuRenderer) updateReflection(dev *wgpu.Device, e *Environment) (err er
 		r.view = g.environmentTexture.view
 		r.sampler = g.environmentTexture.sampler
 		r.borrowed = true
-	} else {
-		w, h, data := 1, 1, []byte{0, 0, 0, 255}
-		if e != nil {
-			w, h, data = e.texture.width, e.texture.height, e.panorama.Pix
-		}
+	} else if e != nil {
+		levels := e.specularLevels()
+		w, h := e.texture.width, e.texture.height
 		size := wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}
+		r.texture, err = dev.CreateTexture(&wgpu.TextureDescriptor{Label: "environment reflection", Size: size, MipLevelCount: uint32(len(levels)), SampleCount: 1, Dimension: wgpu.TextureDimension2D, Format: gputypes.TextureFormatRGBA8UnormSrgb, Usage: gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst})
+		if err != nil {
+			return err
+		}
+		r.view, err = dev.CreateTextureView(r.texture, nil)
+		if err != nil {
+			return err
+		}
+		r.sampler, err = dev.CreateSampler(&wgpu.SamplerDescriptor{AddressModeU: gputypes.AddressModeRepeat, AddressModeV: gputypes.AddressModeClampToEdge, MagFilter: gputypes.FilterModeLinear, MinFilter: gputypes.FilterModeLinear, MipmapFilter: gputypes.FilterModeLinear, Anisotropy: 1})
+		if err != nil {
+			return err
+		}
+		for m, level := range levels {
+			lw, lh := level.Rect.Dx(), level.Rect.Dy()
+			lsize := wgpu.Extent3D{Width: uint32(lw), Height: uint32(lh), DepthOrArrayLayers: 1}
+			if err = dev.Queue().WriteTexture(&wgpu.ImageCopyTexture{Texture: r.texture, MipLevel: uint32(m)}, level.Pix, &wgpu.ImageDataLayout{BytesPerRow: uint32(lw * 4), RowsPerImage: uint32(lh)}, &lsize); err != nil {
+				return err
+			}
+		}
+	} else {
+		size := wgpu.Extent3D{Width: 1, Height: 1, DepthOrArrayLayers: 1}
 		r.texture, err = dev.CreateTexture(&wgpu.TextureDescriptor{Label: "environment reflection", Size: size, MipLevelCount: 1, SampleCount: 1, Dimension: wgpu.TextureDimension2D, Format: gputypes.TextureFormatRGBA8UnormSrgb, Usage: gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst})
 		if err != nil {
 			return err
@@ -63,11 +82,11 @@ func (g *gpuRenderer) updateReflection(dev *wgpu.Device, e *Environment) (err er
 		if err != nil {
 			return err
 		}
-		r.sampler, err = dev.CreateSampler(&wgpu.SamplerDescriptor{AddressModeU: gputypes.AddressModeRepeat, AddressModeV: gputypes.AddressModeClampToEdge, MagFilter: gputypes.FilterModeLinear, MinFilter: gputypes.FilterModeLinear, MipmapFilter: gputypes.FilterModeNearest, Anisotropy: 1})
+		r.sampler, err = dev.CreateSampler(&wgpu.SamplerDescriptor{AddressModeU: gputypes.AddressModeRepeat, AddressModeV: gputypes.AddressModeClampToEdge, MagFilter: gputypes.FilterModeLinear, MinFilter: gputypes.FilterModeLinear, MipmapFilter: gputypes.FilterModeLinear, Anisotropy: 1})
 		if err != nil {
 			return err
 		}
-		if err = dev.Queue().WriteTexture(&wgpu.ImageCopyTexture{Texture: r.texture}, data, &wgpu.ImageDataLayout{BytesPerRow: uint32(w * 4), RowsPerImage: uint32(h)}, &size); err != nil {
+		if err = dev.Queue().WriteTexture(&wgpu.ImageCopyTexture{Texture: r.texture}, []byte{0, 0, 0, 255}, &wgpu.ImageDataLayout{BytesPerRow: 4, RowsPerImage: 1}, &size); err != nil {
 			return err
 		}
 	}

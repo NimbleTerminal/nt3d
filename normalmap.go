@@ -25,7 +25,9 @@ func NewNormalMap(src image.Image) (*Texture, error) {
 	return t, nil
 }
 
-func mapped(g Geometry) bool { return textured(g) || g.Material != nil && g.Material.NormalMap != nil }
+func mapped(g Geometry) bool {
+	return textured(g) || g.Material != nil && (g.Material.NormalMap != nil || g.Material.ORMMap != nil || g.Material.EmissiveMap != nil)
+}
 
 var whiteMap = func() *Texture {
 	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
@@ -39,18 +41,154 @@ var neutralMap = func() *Texture {
 	t, _ := NewNormalMap(img)
 	return t
 }()
+var defaultORMMap = func() *Texture {
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	img.SetNRGBA(0, 0, color.NRGBA{255, 255, 255, 255})
+	t, _ := NewORMMap(img)
+	return t
+}()
 
 func baseMap(m *Material) *Texture {
-	if m.Texture != nil {
+	if m != nil && m.Texture != nil {
 		return m.Texture
 	}
 	return whiteMap
 }
 func normalMap(m *Material) *Texture {
-	if m.NormalMap != nil {
+	if m != nil && m.NormalMap != nil {
 		return m.NormalMap
 	}
 	return neutralMap
+}
+func ormMap(m *Material) *Texture {
+	if m != nil && m.ORMMap != nil {
+		return m.ORMMap
+	}
+	return defaultORMMap
+}
+func emissiveMap(m *Material) *Texture {
+	if m != nil && m.EmissiveMap != nil {
+		return m.EmissiveMap
+	}
+	return whiteMap
+}
+
+// NewORMMap snapshots a linear occlusion/roughness/metallic RGB image without
+// sRGB conversion: red encodes ambient occlusion, green encodes perceptual
+// roughness, and blue encodes metalness in [0,1]. Alpha is ignored.
+func NewORMMap(src image.Image) (*Texture, error) {
+	return NewNormalMap(src)
+}
+
+// NewShaderORMMap creates a linear-data procedural ORM map with zero parameters.
+func NewShaderORMMap(source string, fallback image.Image) (*Texture, error) {
+	return NewShaderNormalMapWithParameters(source, [4]float32{}, fallback)
+}
+
+// NewShaderORMMapWithParameters generates linear ORM data on the GPU and uses
+// fallback in software.
+func NewShaderORMMapWithParameters(source string, parameters [4]float32, fallback image.Image) (*Texture, error) {
+	return NewShaderNormalMapWithParameters(source, parameters, fallback)
+}
+
+// SetORMMap replaces an existing ORM map without reuploading mesh buffers.
+func (s *Scene) SetORMMap(name string, t *Texture) error {
+	id, ok := s.Find(name)
+	if !ok {
+		return fmt.Errorf("nt3d: unknown node %q", name)
+	}
+	n := s.nodes[id]
+	if !t.valid() || !t.data || n.geometry == nil {
+		return fmt.Errorf("nt3d: ORM replacement requires NewORMMap and ORM-mapped geometry")
+	}
+	if len(n.lod) > 0 {
+		anyMapped, changed := false, false
+		for i := range n.lod {
+			lg := n.lod[i].geometry
+			if lg.Material == nil || lg.Material.ORMMap == nil {
+				continue
+			}
+			anyMapped = true
+			if lg.Material.ORMMap == t {
+				continue
+			}
+			g := *lg
+			g.Material = cloneMaterial(g.Material)
+			g.Material.ORMMap = t
+			n.lod[i].geometry = &g
+			changed = true
+		}
+		if !anyMapped {
+			return fmt.Errorf("nt3d: ORM replacement requires NewORMMap and ORM-mapped geometry")
+		}
+		if changed {
+			n.geometry = n.lod[0].geometry
+			s.changed(false, true)
+		}
+		return nil
+	}
+	if n.geometry.Material == nil || n.geometry.Material.ORMMap == nil {
+		return fmt.Errorf("nt3d: ORM replacement requires NewORMMap and ORM-mapped geometry")
+	}
+	if n.geometry.Material.ORMMap == t {
+		return nil
+	}
+	g := *n.geometry
+	g.Material = cloneMaterial(g.Material)
+	g.Material.ORMMap = t
+	n.geometry = &g
+	s.changed(false, true)
+	return nil
+}
+
+// SetEmissiveMap replaces an existing emissive map without reuploading mesh buffers.
+func (s *Scene) SetEmissiveMap(name string, t *Texture) error {
+	id, ok := s.Find(name)
+	if !ok {
+		return fmt.Errorf("nt3d: unknown node %q", name)
+	}
+	n := s.nodes[id]
+	if !t.valid() || t.data || n.geometry == nil {
+		return fmt.Errorf("nt3d: emissive replacement requires a color texture and emissive-mapped geometry")
+	}
+	if len(n.lod) > 0 {
+		anyMapped, changed := false, false
+		for i := range n.lod {
+			lg := n.lod[i].geometry
+			if lg.Material == nil || lg.Material.EmissiveMap == nil {
+				continue
+			}
+			anyMapped = true
+			if lg.Material.EmissiveMap == t {
+				continue
+			}
+			g := *lg
+			g.Material = cloneMaterial(g.Material)
+			g.Material.EmissiveMap = t
+			n.lod[i].geometry = &g
+			changed = true
+		}
+		if !anyMapped {
+			return fmt.Errorf("nt3d: emissive replacement requires a color texture and emissive-mapped geometry")
+		}
+		if changed {
+			n.geometry = n.lod[0].geometry
+			s.changed(false, true)
+		}
+		return nil
+	}
+	if n.geometry.Material == nil || n.geometry.Material.EmissiveMap == nil {
+		return fmt.Errorf("nt3d: emissive replacement requires a color texture and emissive-mapped geometry")
+	}
+	if n.geometry.Material.EmissiveMap == t {
+		return nil
+	}
+	g := *n.geometry
+	g.Material = cloneMaterial(g.Material)
+	g.Material.EmissiveMap = t
+	n.geometry = &g
+	s.changed(false, true)
+	return nil
 }
 
 // SetNormalMap replaces an existing normal map without uploading mesh buffers.

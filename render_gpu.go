@@ -97,7 +97,6 @@ func multisampleState(samples int) gputypes.MultisampleState {
 type gpuShared struct {
 	mu                     sync.Mutex
 	refs                   int
-	texR                   *gpuimage.Renderer
 	shader                 *wgpu.ShaderModule
 	bindLayout             *wgpu.BindGroupLayout
 	shadowLayout           *wgpu.BindGroupLayout
@@ -107,8 +106,14 @@ type gpuShared struct {
 	msaaSets               [2]scenePipelineSet
 	zeros, zeroRun         *wgpu.Buffer
 	shadowPipelines        [4]*wgpu.RenderPipeline
+	materialBindLayout     *wgpu.BindGroupLayout
+	spriteBindLayout       *wgpu.BindGroupLayout
 	textureLayout          *wgpu.PipelineLayout
 	spriteLayout           *wgpu.PipelineLayout
+	procDownShader         *wgpu.ShaderModule
+	procDownGroup          *wgpu.BindGroupLayout
+	procDownLayout         *wgpu.PipelineLayout
+	procDownPipes          [2]*wgpu.RenderPipeline
 	environmentUniform     *wgpu.BindGroupLayout
 	skinLayout             *wgpu.BindGroupLayout
 	skinPipeline           *wgpu.ComputePipeline
@@ -164,8 +169,12 @@ func (s *gpuShared) copyTo(g *gpuRenderer) {
 	g.zeros = s.zeros
 	g.zeroRun = s.zeroRun
 	g.shadowPipelines = s.shadowPipelines
+	g.materialBindLayout = s.materialBindLayout
+	g.spriteBindLayout = s.spriteBindLayout
 	g.textureLayout = s.textureLayout
 	g.spriteLayout = s.spriteLayout
+	g.procDownGroup = s.procDownGroup
+	g.procDownPipes = s.procDownPipes
 	g.environmentUniform = s.environmentUniform
 	g.skinLayout = s.skinLayout
 	g.skinPipeline = s.skinPipeline
@@ -223,6 +232,32 @@ func (s *gpuShared) release() {
 	if s.textureLayout != nil {
 		s.textureLayout.Release()
 		s.textureLayout = nil
+	}
+	if s.spriteBindLayout != nil {
+		s.spriteBindLayout.Release()
+		s.spriteBindLayout = nil
+	}
+	if s.materialBindLayout != nil {
+		s.materialBindLayout.Release()
+		s.materialBindLayout = nil
+	}
+	for i, p := range s.procDownPipes {
+		if p != nil {
+			p.Release()
+			s.procDownPipes[i] = nil
+		}
+	}
+	if s.procDownLayout != nil {
+		s.procDownLayout.Release()
+		s.procDownLayout = nil
+	}
+	if s.procDownGroup != nil {
+		s.procDownGroup.Release()
+		s.procDownGroup = nil
+	}
+	if s.procDownShader != nil {
+		s.procDownShader.Release()
+		s.procDownShader = nil
 	}
 	if s.zeros != nil {
 		s.zeros.Release()
@@ -291,10 +326,6 @@ func (s *gpuShared) release() {
 			s.depthPickLayouts[i] = nil
 		}
 	}
-	if s.texR != nil {
-		_ = s.texR.Close()
-		s.texR = nil
-	}
 }
 
 type gpuRenderer struct {
@@ -320,9 +351,15 @@ type gpuRenderer struct {
 	noShadow, shadowTarget shadowTarget
 	shadowActive           bool
 	shadowPipelines        [4]*wgpu.RenderPipeline
+	materialBindLayout     *wgpu.BindGroupLayout
+	spriteBindLayout       *wgpu.BindGroupLayout
 	textureLayout          *wgpu.PipelineLayout
 	texturePipeline        *wgpu.RenderPipeline
 	cutoutPipeline         *wgpu.RenderPipeline
+	procDownShader         *wgpu.ShaderModule
+	procDownGroup          *wgpu.BindGroupLayout
+	procDownLayout         *wgpu.PipelineLayout
+	procDownPipes          [2]*wgpu.RenderPipeline
 	// Transparent meshes' back faces, then front faces: untextured and textured.
 	blendPipelines [2]*wgpu.RenderPipeline
 	textureBlends  [2]*wgpu.RenderPipeline
@@ -340,6 +377,7 @@ type gpuRenderer struct {
 	zeros, zeroRun  *wgpu.Buffer
 	textures        map[textureKey]*gpuTexture // Image textures, by addressing.
 	procedural      map[proceduralKey]*proceduralTexture
+	materialBinds   map[materialBindKey]*wgpu.BindGroup
 	geometries      map[geometryKey]*gpuGeometry
 	nodes           []*gpuGeometry // By frame geometry index.
 	draws           []gpuDraw      // The frame's draws of geometry.
@@ -408,13 +446,8 @@ func (g *gpuRenderer) setup() (err error) {
 }
 
 func (g *gpuRenderer) setupDevice(dev *wgpu.Device) (err error) {
-	texR, err := gpuimage.NewFromDevice(dev, gpuimage.Options{Label: "nt3d-tex"})
-	if err != nil {
-		return err
-	}
 	g.shared = &gpuShared{
 		refs:         1,
-		texR:         texR,
 		geometries:   make(map[geometryKey]*sharedGeometry),
 		textures:     make(map[textureKey]*gpuTexture),
 		environments: make(map[*Environment]*gpuEnvironmentTexture),
@@ -664,8 +697,12 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	if rig.environmentActive {
 		environmentActive = 1
 	}
+	maxEnvMip := float32(0)
+	if f.Environment != nil {
+		maxEnvMip = float32(len(f.Environment.specularLevels()) - 1)
+	}
 	ub := append(floats(f.Matrix[:]...), floats(float32(f.Width), float32(f.Height), linear, environmentActive, rig.sky[0], rig.sky[1], rig.sky[2], float32(len(rig.lights)),
-		f.Eye.X, f.Eye.Y, f.Eye.Z, perspective, f.Forward.X, f.Forward.Y, f.Forward.Z, 0)...)
+		f.Eye.X, f.Eye.Y, f.Eye.Z, perspective, f.Forward.X, f.Forward.Y, f.Forward.Z, maxEnvMip)...)
 	// Fog's near and far distances (equal when there is none) and color, in
 	// the frame's color space.
 	var fog [8]float32
@@ -1012,7 +1049,7 @@ func (g *gpuRenderer) resolveSortedRuns(f Frame) {
 			style := f.Geometry[d.index].PointStyle
 			if style.Texture != nil {
 				run.pipeline = g.spritePipelines[style.Blend]
-				run.texture = g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].BindGroup()
+				run.texture = g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].spriteBind
 			} else {
 				run.pipeline = g.pointBlends[0][style.Shape]
 			}
@@ -1190,6 +1227,10 @@ func (g *gpuRenderer) releaseResources() {
 		g.environmentTexture = nil
 	}
 	g.environmentSource = nil
+	for mk, b := range g.materialBinds {
+		b.Release()
+		delete(g.materialBinds, mk)
+	}
 	for src, t := range g.procedural {
 		g.releaseProcedural(t)
 		delete(g.procedural, src)
@@ -1240,6 +1281,12 @@ func (g *gpuRenderer) releaseResources() {
 		g.skinLayout = nil
 		g.spriteLayout = nil
 		g.textureLayout = nil
+		g.spriteBindLayout = nil
+		g.materialBindLayout = nil
+		g.procDownPipes = [2]*wgpu.RenderPipeline{}
+		g.procDownLayout = nil
+		g.procDownGroup = nil
+		g.procDownShader = nil
 		g.zeros = nil
 		g.zeroRun = nil
 		g.pointLayout = nil
@@ -1279,6 +1326,32 @@ func (g *gpuRenderer) releaseResources() {
 	if g.textureLayout != nil {
 		g.textureLayout.Release()
 		g.textureLayout = nil
+	}
+	if g.spriteBindLayout != nil {
+		g.spriteBindLayout.Release()
+		g.spriteBindLayout = nil
+	}
+	if g.materialBindLayout != nil {
+		g.materialBindLayout.Release()
+		g.materialBindLayout = nil
+	}
+	for i, p := range g.procDownPipes {
+		if p != nil {
+			p.Release()
+			g.procDownPipes[i] = nil
+		}
+	}
+	if g.procDownLayout != nil {
+		g.procDownLayout.Release()
+		g.procDownLayout = nil
+	}
+	if g.procDownGroup != nil {
+		g.procDownGroup.Release()
+		g.procDownGroup = nil
+	}
+	if g.procDownShader != nil {
+		g.procDownShader.Release()
+		g.procDownShader = nil
 	}
 	if g.zeros != nil {
 		g.zeros.Release()
@@ -1544,18 +1617,8 @@ func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuD
 // The high four vertex bits select a shadow face. Ordinary draws use zero.
 func (g *gpuRenderer) drawTexturedOffset(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, first uint32) {
 	pass.SetBindGroup(0, d.set.binds[7], nil)
-	m := f.Geometry[d.index].Material
-	src := baseMap(m)
-	if t := g.procedural[proceduralKey{src, m.Repeat}]; t != nil {
-		pass.SetBindGroup(2, t.target.BindGroup(), nil)
-	} else {
-		pass.SetBindGroup(2, g.textures[baseKey(f.Geometry[d.index].Material, f.anisotropy())].BindGroup(), nil)
-	}
-	if t := g.procedural[proceduralKey{normalMap(m), m.NormalRepeat}]; t != nil {
-		pass.SetBindGroup(3, t.target.BindGroup(), nil)
-	} else {
-		pass.SetBindGroup(3, g.textures[textureKey{src: normalMap(m), repeat: m.NormalRepeat, aniso: f.anisotropy()}].BindGroup(), nil)
-	}
+	mk := g.materialKey(f.Geometry[d.index].Material, f.anisotropy())
+	pass.SetBindGroup(2, g.materialBinds[mk], nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count, FirstVertex: first})
 }
 

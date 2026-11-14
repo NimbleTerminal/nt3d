@@ -109,6 +109,40 @@ type Material struct {
 	Transparent    bool
 	Specular       float32
 	Shininess      float32
+	// PBR enables single-scatter Cook-Torrance GGX metallic/roughness shading
+	// in place of Lambert/Blinn-Phong. Setting Metallic, Roughness, or ORMMap
+	// above zero also enables PBR automatically; set PBR: true explicitly when
+	// drawing a mirror-smooth dielectric (Metallic: 0, Roughness: 0).
+	PBR bool
+	// Metallic is the conductor weight, 0..1 (0 dielectric, 1 metal). Metals
+	// tint F0 by the surface base color and suppress diffuse reflection.
+	Metallic float32
+	// Roughness is perceptual microfacet roughness, 0..1 (0 mirror-smooth,
+	// 1 matte). When Frame.Environment is set, PBR surfaces sample its
+	// prefiltered roughness mip chain automatically.
+	Roughness float32
+	// IOR is the dielectric index of refraction in [1, 3]; zero defaults to
+	// 1.5 (F0 = 0.04).
+	IOR float32
+	// ORMMap is a linear data texture created with NewORMMap: red is ambient
+	// occlusion, green multiplies Roughness, and blue multiplies Metallic,
+	// matching glTF 2.0's channel layout. Uses Geometry.UV.
+	ORMMap    *Texture
+	ORMRepeat bool
+	// OcclusionStrength scales ORMMap's red-channel ambient occlusion on
+	// indirect lighting, 0..1; zero defaults to 1 when ORMMap is set.
+	OcclusionStrength float32
+	// Emissive adds self-illumination in sRGB color after surface shading.
+	// When EmissiveMap is set and Emissive is zero, white is used.
+	Emissive color.RGBA
+	// EmissiveIntensity scales emissive radiance (>= 0); zero defaults to 1
+	// when Emissive or EmissiveMap is set. Values above 1 produce HDR glow
+	// for PostProcess.Bloom in linear frames.
+	EmissiveIntensity float32
+	// EmissiveMap is an optional sRGB color texture multiplied by Emissive
+	// and EmissiveIntensity, sampled at Geometry.UV.
+	EmissiveMap    *Texture
+	EmissiveRepeat bool
 	// Toon shades in flat bands; see ToonStyle. The zero value is off.
 	Toon ToonStyle
 }

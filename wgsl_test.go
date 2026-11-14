@@ -27,6 +27,7 @@ func TestWGSLShiftsAreParenthesized(t *testing.T) {
 		"ssaoBlur":      ssaoBlurShader,
 		"bloom":         bloomShader,
 		"postResolve":   postResolveShader,
+		"procDown":      procDownShader,
 	}
 	for name, source := range shaders {
 		for _, problem := range wgslShiftMixes(source) {

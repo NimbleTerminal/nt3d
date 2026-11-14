@@ -200,6 +200,9 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		}
 		i := y*f.Width + x
 		if z <= depth[i]+.00001 {
+			if acc == nil && (rgb[0] > 255 || rgb[1] > 255 || rgb[2] > 255) {
+				accumulate()
+			}
 			depth[i] = z
 			off := i * 4
 			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = toPixel(rgb[0]), toPixel(rgb[1]), toPixel(rgb[2])
@@ -278,7 +281,10 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		hull := side < 0
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
 		back := side == backFaces || hull
-		directTexture := textured && !linear && material.Unlit && !material.Tint && !fogged && !blended && !hull
+		pbr := pbrActive(material) && !hull
+		emissive := emissiveActive(material) && !hull
+		emissiveMul := emissiveFactor(material, linear)
+		directTexture := textured && !linear && material.Unlit && !material.Tint && !fogged && !blended && !hull && !emissive
 		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && !material.Unlit
 		var tangent, bitangent nt3dmath.Vec3
 		// A mesh with frames has one at every corner, so any nonzero
@@ -288,15 +294,15 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		if normalMapped && !framed {
 			tangent, bitangent = normalBasis(a, b, c)
 		}
-		reflective := material != nil && material.Reflectivity > 0 && !material.Unlit && f.Environment != nil && !f.EnvironmentBackgroundOnly
-		specular := material != nil && material.Specular > 0 && !material.Unlit
+		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && f.Environment != nil && !f.EnvironmentBackgroundOnly
+		specular := !pbr && material != nil && material.Specular > 0 && !material.Unlit
 		// A triangle with normals is lit; unlit ones have none.
 		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
 		// Whether pixels need the world point, and so perspective weights.
 		toon := material != nil && material.Toon.on() && !material.Unlit
-		located := fogged || lit && (specular || reflective || material != nil && material.Transmission > 0 || rig.points || rig.shadow != nil || toon && material.Toon.Rim > 0)
-		hasNormal := material != nil && material.NormalMap != nil
-		perspective := blended || textured || lit || fogged || hasNormal
+		located := fogged || lit && (pbr || specular || reflective || material != nil && material.Transmission > 0 || rig.points || rig.shadow != nil || toon && material.Toon.Rim > 0)
+		hasMapped := material != nil && (material.NormalMap != nil || material.ORMMap != nil || material.EmissiveMap != nil)
+		perspective := blended || textured || lit || fogged || hasMapped
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
@@ -341,7 +347,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 					sum := q0 + q1 + q2
 					q0, q1, q2 = q0/sum, q1/sum, q2/sum
 				}
-				if hasNormal && !textured {
+				if hasMapped && !textured {
 					for k := range rgb {
 						rgb[k] = q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]
 					}
@@ -396,15 +402,15 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 					}
 					opacity *= tex[3]
 				}
-				if lit || fogged {
+				var p nt3dmath.Vec3
+				if located {
 					// The world point, exact under perspective: distance from
 					// the camera and from point lights is not affine, so it
 					// is found here, when something needs it.
-					var p nt3dmath.Vec3
-					if located {
-						p = a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
-					}
-					if n := a.normal.Scale(q0).Add(b.normal.Scale(q1)).Add(c.normal.Scale(q2)); lit && n.Dot(n) != 0 {
+					p = a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
+				}
+				if lit {
+					if n := a.normal.Scale(q0).Add(b.normal.Scale(q1)).Add(c.normal.Scale(q2)); n.Dot(n) != 0 {
 						n = n.Scale(1 / float32(math.Sqrt(float64(n.Dot(n)))))
 						geometric := n
 						if normalMapped {
@@ -423,38 +429,72 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 							}
 							n = perturbNormal(n, t, bt, sample, material.NormalStrength)
 						}
-						var rim [3]float32
-						if toon {
-							rim = rig.toonLight(&rgb, material.Toon, n, p, geometric, f.viewAt(p))
+						if pbr {
+							orm := [3]float32{1, 1, 1}
+							if material.ORMMap != nil {
+								uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
+								s := material.ORMMap.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.ORMRepeat, aniso)
+								orm = [3]float32{s[0], s[1], s[2]}
+							}
+							base := [3]float32{rgb[0] / 255, rgb[1] / 255, rgb[2] / 255}
+							diffOut, specOut := pbrShade(base, &rig, &f, material, orm, n, p, geometric, f.viewAt(p))
+							rgb = [3]float32{diffOut[0] * 255, diffOut[1] * 255, diffOut[2] * 255}
+							if material.Transmission > 0 && opaqueColor != nil {
+								transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
+							}
+							for k := range rgb {
+								rgb[k] += specOut[k] * 255
+							}
 						} else {
-							rig.lightNormal(&rgb, n, p, geometric)
-						}
-						if material != nil && material.Transmission > 0 && opaqueColor != nil {
-							transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
-						}
-						if reflective {
-							reflectEnvironment(&rgb, f.Environment, material.Reflectivity, f.EnvironmentStrength, n, f.viewAt(p), linear)
-						}
-						if specular {
-							var s [3]float32
+							var rim [3]float32
 							if toon {
-								s = rig.toonHighlight(material, n, p, f.viewAt(p), geometric)
+								rim = rig.toonLight(&rgb, material.Toon, n, p, geometric, f.viewAt(p))
 							} else {
-								s = rig.highlightNormal(material, n, p, f.viewAt(p), geometric)
+								rig.lightNormal(&rgb, n, p, geometric)
 							}
-							for k := range rgb {
-								rgb[k] += s[k] * 255
+							if material != nil && material.Transmission > 0 && opaqueColor != nil {
+								transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
 							}
-						}
-						if toon && material.Toon.Rim > 0 {
-							for k := range rgb {
-								rgb[k] += rim[k] * 255
+							if reflective {
+								reflectEnvironment(&rgb, f.Environment, material.Reflectivity, f.EnvironmentStrength, n, f.viewAt(p), linear)
+							}
+							if specular {
+								var s [3]float32
+								if toon {
+									s = rig.toonHighlight(material, n, p, f.viewAt(p), geometric)
+								} else {
+									s = rig.highlightNormal(material, n, p, f.viewAt(p), geometric)
+								}
+								for k := range rgb {
+									rgb[k] += s[k] * 255
+								}
+							}
+							if toon && material.Toon.Rim > 0 {
+								for k := range rgb {
+									rgb[k] += rim[k] * 255
+								}
 							}
 						}
 					}
-					if fogged {
-						fogRGB(&rgb, f.eyeDistance(p))
+				}
+				if emissive {
+					em := [3]float32{1, 1, 1}
+					if material.EmissiveMap != nil {
+						uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
+						s := material.EmissiveMap.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.EmissiveRepeat, aniso)
+						for k := range em {
+							em[k] = s[k]
+							if !linear {
+								em[k] = float32(encodeSRGB(float64(em[k])))
+							}
+						}
 					}
+					for k := range rgb {
+						rgb[k] += emissiveMul[k] * em[k] * 255
+					}
+				}
+				if fogged {
+					fogRGB(&rgb, f.eyeDistance(p))
 				}
 				if blended {
 					blend(x, y, u*z0+v*z1+t*z2, rgb, opacity)
