@@ -99,6 +99,9 @@ func decodeRadianceHDR(data []byte) (hdrImage, error) {
 				return fmt.Errorf("nt3d: invalid HDR exposure %q", val)
 			}
 			exposure *= v
+			if math.IsInf(exposure, 0) || exposure <= 0 {
+				return fmt.Errorf("nt3d: HDR exposure out of range")
+			}
 		}
 		return nil
 	}
@@ -142,6 +145,13 @@ func decodeRadianceHDR(data []byte) (hdrImage, error) {
 	}
 	if w < 1 || h < 1 || w > 8192 || h > 8192 {
 		return hdrImage{}, fmt.Errorf("nt3d: HDR dimensions must be 1..8192")
+	}
+	minScanline := w * 4
+	if w >= 8 && w <= 0x7fff {
+		minScanline = 4 + 8*((w+126)/127)
+	}
+	if len(data)-pos < h*minScanline {
+		return hdrImage{}, fmt.Errorf("nt3d: truncated HDR scanline data")
 	}
 
 	pix := make([]float32, w*h*3)

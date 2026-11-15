@@ -227,9 +227,11 @@ func TestHDREnvironmentValidationErrors(t *testing.T) {
 		{"not-radiance", []byte("PNG\r\n\n-Y 4 +X 4\n")},
 		{"bad-format", []byte("#?RADIANCE\nFORMAT=32-bit_rle_xyze\n\n-Y 4 +X 4\n")},
 		{"bad-exposure", []byte("#?RADIANCE\nEXPOSURE=-1\n\n-Y 4 +X 4\n")},
+		{"exposure-underflow", []byte("#?RADIANCE\nEXPOSURE=1e-200\nEXPOSURE=1e-200\n\n-Y 4 +X 4\n")},
 		{"missing-blank", []byte("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n")},
 		{"bad-res", []byte("#?RADIANCE\n\n+Z 4 +X 4\n")},
 		{"oversize", []byte("#?RADIANCE\n\n-Y 9000 +X 16\n")},
+		{"truncated-large-dim", []byte("#?RADIANCE\n\n-Y 8192 +X 8192\n\x02\x02\x20\x00")},
 		{"truncated-scanline", []byte("#?RADIANCE\n\n-Y 2 +X 2\n\x00\x00")},
 		{"rle-width-mismatch", []byte("#?RADIANCE\n\n-Y 1 +X 8\n\x02\x02\x00\x09")},
 		{"rle-overrun", []byte("#?RADIANCE\n\n-Y 1 +X 8\n\x02\x02\x00\x08\xff\x80")},
@@ -244,4 +246,38 @@ func TestHDREnvironmentValidationErrors(t *testing.T) {
 	if got := env.pixel(nt3dmath.Vec3{X: 1}); got != (color.RGBA{255, 255, 255, 255}) {
 		t.Fatalf("expected HDR sun LDR fallback to clamp to white, got %v", got)
 	}
+}
+
+func FuzzNewHDREnvironment(f *testing.F) {
+	f.Add(encodeRadianceHDR(8, 4, true, 1.0, "", func(x, y int) [3]float64 {
+		return [3]float64{float64(x) * 0.25, float64(y) * 0.5, 2.0}
+	}))
+	f.Add(encodeRadianceHDR(4, 3, false, 0.5, "+Y 3 -X 4", func(x, y int) [3]float64 {
+		return [3]float64{float64(x + 1), float64(y), 0}
+	}))
+	f.Add([]byte("FORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n\x80\x40\x20\x81"))
+	f.Add([]byte("#?RADIANCE\n\n-Y 1 +X 8\n\x02\x02\x00\x08\x88\x10\x88\x20\x88\x30\x88\x81"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 4096 {
+			return
+		}
+		env, err := NewHDREnvironment(data)
+		if err != nil {
+			return
+		}
+		if env == nil {
+			t.Fatal("nil Environment without error")
+		}
+		for _, dir := range []nt3dmath.Vec3{{X: 1}, {Y: -1}, {Z: 1}, {Z: -1}} {
+			c := env.sample(dir)
+			for i, v := range c {
+				if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) || v < 0 {
+					t.Fatalf("non-finite or negative HDR sample[%d]=%v for %v", i, v, dir)
+				}
+			}
+			if p := env.pixel(dir); p.A != 255 {
+				t.Fatalf("unexpected LDR sky alpha %d", p.A)
+			}
+		}
+	})
 }

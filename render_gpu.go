@@ -649,6 +649,7 @@ func (g *gpuRenderer) BindingLimit() (int, error) {
 	return min(g.deviceLimit, MaxBindingLimit), nil
 }
 
+// Render draws f on the WebGPU backend and reads back the resulting image.
 func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -1492,6 +1493,7 @@ func (g *gpuRenderer) releaseResources() {
 	g.target.release()
 }
 
+// Close releases all WebGPU pipelines, buffers, and textures owned by g.
 func (g *gpuRenderer) Close() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()

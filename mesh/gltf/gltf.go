@@ -210,10 +210,12 @@ type sideFiles struct {
 	left *int64
 }
 
+// Open rejects streaming reads; qmuntal/gltf calls ReadFile for side buffers.
 func (s sideFiles) Open(name string) (fs.File, error) {
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 }
 
+// ReadFile loads a named external glTF buffer or asset within the byte budget.
 func (s sideFiles) ReadFile(name string) ([]byte, error) {
 	if s.open == nil {
 		return nil, fmt.Errorf("side file %q needs Options.Open", name)

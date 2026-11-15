@@ -25,8 +25,10 @@ The library is one module. The demos in `examples/demos` are a second module, so
 | --- | --- |
 | `task ci` | format check, race tests, vet, native builds, and the complete WebAssembly gallery build |
 | `task test-gpu` | the GPU tests, which need a real WebGPU adapter and fail without one |
+| `task fuzz-smoke` | run every decoder, math, and geometry fuzz target briefly on one CPU |
 | `task build-web`, `task serve` | build the browser gallery, and serve it at http://localhost:8768 |
 | `task terrain`, `task fur`, … | run a [demo](../demos/) |
+| `task gogpu` | run the native desktop WebGPU window viewer (`examples/gogpu`) |
 | `task models-generate` | regenerate the sample models the models demo embeds |
 | `task tapes` | record the demos' GIFs and the gallery's posters |
 | `task docs:hugo:serve` | serve this guide while editing it |
