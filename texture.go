@@ -114,9 +114,10 @@ type Material struct {
 	Specular       float32
 	Shininess      float32
 	// PBR enables single-scatter Cook-Torrance GGX metallic/roughness shading
-	// in place of Lambert/Blinn-Phong. Setting Metallic, Roughness, or ORMMap
-	// above zero also enables PBR automatically; set PBR: true explicitly when
-	// drawing a mirror-smooth dielectric (Metallic: 0, Roughness: 0).
+	// in place of Lambert/Blinn-Phong. Setting Metallic, Roughness, ORMMap,
+	// Clearcoat, or SheenColor above zero also enables PBR automatically; set
+	// PBR: true explicitly when drawing a mirror-smooth dielectric (Metallic: 0,
+	// Roughness: 0).
 	PBR bool
 	// Metallic is the conductor weight, 0..1 (0 dielectric, 1 metal). Metals
 	// tint F0 by the surface base color and suppress diffuse reflection.
@@ -128,6 +129,23 @@ type Material struct {
 	// IOR is the dielectric index of refraction in [1, 3]; zero defaults to
 	// 1.5 (F0 = 0.04).
 	IOR float32
+	// Clearcoat adds a dielectric polyurethane/lacquer/water top layer (IOR 1.5,
+	// F0 = 0.04) evaluated along the unperturbed geometric surface normal over
+	// the base shading layer, 0..1 (0 disables). Evaluated in both PBR and
+	// PBR + Toon; setting Clearcoat > 0 on a lit material activates PBR.
+	Clearcoat float32
+	// ClearcoatRoughness is perceptual roughness of the clearcoat layer, 0..1
+	// (0 mirror-smooth coat, 1 rough coat).
+	ClearcoatRoughness float32
+	// SheenColor tints a retroreflective microfiber/cloth grazing lobe in sRGB
+	// color (velvet, satin, felt); zero/black disables sheen and alpha is
+	// ignored. Evaluated in both PBR and PBR + Toon; setting a nonzero RGB
+	// SheenColor on a lit material activates PBR.
+	SheenColor color.RGBA
+	// SheenRoughness is perceptual roughness of the microfiber sheen lobe, 0..1
+	// (low values concentrate sheen near the silhouette; high values broaden it
+	// across the surface).
+	SheenRoughness float32
 	// ORMMap is a linear data texture created with NewORMMap: red is ambient
 	// occlusion, green multiplies Roughness, and blue multiplies Metallic,
 	// matching glTF 2.0's channel layout. Uses Geometry.UV.

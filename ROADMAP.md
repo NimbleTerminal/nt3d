@@ -67,6 +67,24 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Clearcoat & Sheen on `Material` + glTF `KHR_materials_clearcoat` and
+  `KHR_materials_sheen`**: `Material.Clearcoat` and
+  `Material.ClearcoatRoughness` (`0..1`) add an energy-conserving dielectric
+  top layer (`IOR = 1.5`, `F0 = 0.04`) evaluated along the unperturbed
+  geometric surface normal with independent prefiltered GGX environment IBL,
+  direct GGX specular, and quantized cel lacquer highlights in `PBR` + `Toon`,
+  keeping base normal maps (car-paint flakes, wood grain, rain-wet cobblestones)
+  underneath a smooth glossy coat. `Material.SheenColor` and
+  `Material.SheenRoughness` (`0..1`) add an Estevez & Kulla Charlie microfiber
+  grazing/retroreflective lobe with Neubelt visibility, directional-albedo base
+  energy scaling, ambient cloth sheen, and quantized cel cloth bands across
+  both WebGPU and software renderers while preserving `Scene.SetMaterial` GPU
+  mesh buffers and `SharedGeometry` instancing. `nt3d/mesh/gltf` promotes
+  `KHR_materials_clearcoat` and `KHR_materials_sheen` out of
+  `ignoredExtensions` into `supportedExtensions`. Showcased in `lights` (`e`
+  `coat+sheen` preset) and `toon` (rain-slick coated street ribbons and
+  cloth-sheen articulated pennant).
+
 - **Softened toon cast shadows (`ToonStyle.ShadowSoftness`) and crease lines on
   deforming & see-through meshes**: `ToonStyle.ShadowSoftness` (`0..1`) pairs a
   continuous separable tent PCF shadow filter (`1.5..4.0` texels, `sinc²`

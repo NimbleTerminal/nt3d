@@ -215,13 +215,16 @@ func (s *instanceSet) release() {
 }
 
 // Two matrices, outline color/width, two optical parameter vectors, two toon
-// vectors (shade tint + rim, bands + softness), PBR parameters, and emissive.
-const instanceRecordSize = 240
+// vectors (shade tint + rim, bands + softness), PBR parameters, emissive,
+// clearcoat, and sheen.
+const instanceRecordSize = 272
 
 // transformState is what an instance's transform record holds.
 type transformState struct {
 	optics                            [8]float32
 	pbr                               [4]float32
+	coat                              [2]float32
+	sheen                             [4]float32
 	emissive                          [3]float32
 	outline                           OutlineStyle
 	toon                              ToonStyle // Zero unless a lit mesh's material is toon.
@@ -704,6 +707,8 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 		states[k].world = instance(f, i).World
 		states[k].optics = opticalParams(m, f.Geometry[i].PointStyle)
 		states[k].pbr = pbrParams(m)
+		states[k].coat = coatParams(m)
+		states[k].sheen = sheenParams(m, f.Linear)
 		states[k].emissive = emissiveFactor(m, f.Linear)
 		states[k].outline = f.Geometry[i].Outline
 		states[k].unlit = m != nil && m.Unlit
@@ -727,7 +732,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	}
 	data := make([]byte, 0, instanceRecordSize*len(states))
 	for _, st := range states {
-		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.envReflect, st.extension, st.optics, st.toon, st.pbr, st.emissive)...)
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.envReflect, st.extension, st.optics, st.toon, st.pbr, st.emissive, st.coat, st.sheen)...)
 	}
 	s.last = states
 	return dev.Queue().WriteBuffer(s.transform, 0, data)
@@ -740,7 +745,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 // unlit flag, reflection F0, and where the mesh's extension records start (its index
 // count; the shader cannot trust arrayLength, which Metal reports from
 // the allocation, not the binding).
-func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit, envReflect bool, extension uint32, optics [8]float32, toon ToonStyle, pbr [4]float32, emissive [3]float32) []byte {
+func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit, envReflect bool, extension uint32, optics [8]float32, toon ToonStyle, pbr [4]float32, emissive [3]float32, coat [2]float32, sheen [4]float32) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
@@ -769,7 +774,7 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 		envRefl = 1
 	}
 	data = appendFloats(data, shade[0], shade[1], shade[2], toon.Rim, float32(toon.Bands), toon.Softness, envRefl, toon.ShadowSoftness)
-	return appendFloats(data, pbr[0], pbr[1], pbr[2], pbr[3], emissive[0], emissive[1], emissive[2], 0)
+	return appendFloats(data, pbr[0], pbr[1], pbr[2], pbr[3], emissive[0], emissive[1], emissive[2], 0, coat[0], coat[1], 0, 0, sheen[0], sheen[1], sheen[2], sheen[3])
 }
 
 func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {
@@ -780,7 +785,7 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Materi
 	if m != nil && !m.Unlit {
 		reflectivity = m.Reflectivity
 	}
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, m != nil && !m.Unlit && m.EnvironmentReflect, 0, [8]float32{}, toonParams(m), pbrParams(m), emissiveFactor(m, false)))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, m != nil && !m.Unlit && m.EnvironmentReflect, 0, [8]float32{}, toonParams(m), pbrParams(m), emissiveFactor(m, false), coatParams(m), sheenParams(m, false)))
 }
 
 // uploadData uploads a geometry batch's records, to be bound per instance set.

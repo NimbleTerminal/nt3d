@@ -278,6 +278,14 @@ func TestPBRValidation(t *testing.T) {
 		{PBR: true, IOR: float32(math.NaN())},
 		{PBR: true, OcclusionStrength: -0.1},
 		{PBR: true, OcclusionStrength: 1.1},
+		{Clearcoat: -0.05},
+		{Clearcoat: 1.05},
+		{Clearcoat: float32(math.NaN())},
+		{Clearcoat: 0.5, ClearcoatRoughness: -0.1},
+		{Clearcoat: 0.5, ClearcoatRoughness: 1.1},
+		{SheenColor: white, SheenRoughness: -0.01},
+		{SheenColor: white, SheenRoughness: 1.01},
+		{SheenColor: white, SheenRoughness: float32(math.Inf(1))},
 		{EmissiveIntensity: -0.5},
 		{PBR: true, ORMMap: srgb},           // sRGB color texture rejected in ORM slot
 		{Emissive: white, EmissiveMap: orm}, // Linear data texture rejected in EmissiveMap slot
@@ -290,6 +298,15 @@ func TestPBRValidation(t *testing.T) {
 		}
 	}
 
+	s := NewScene()
+	ballID, err := s.SetGeometry("ball", base)
+	check(t, err)
+	for i, m := range badMaterials[:10] {
+		if s.SetMaterial(ballID, m) == nil {
+			t.Fatalf("SetMaterial case %d (%+v): expected validation error", i, m)
+		}
+	}
+
 	noUV := base
 	noUV.UV = nil
 	noUV.Material = &Material{PBR: true, ORMMap: orm}
@@ -299,5 +316,192 @@ func TestPBRValidation(t *testing.T) {
 	noUV.Material = &Material{Emissive: white, EmissiveMap: srgb}
 	if noUV.Validate() == nil {
 		t.Fatal("accepted EmissiveMap without UVs")
+	}
+}
+
+func TestPBRClearcoatGeometricNormalAndIBL(t *testing.T) {
+	// Clearcoat > 0 activates PBR automatically even with PBR: false.
+	if !pbrActive(&Material{Clearcoat: .8}) {
+		t.Fatal("Clearcoat > 0 did not activate PBR")
+	}
+
+	// Tilted normal map deflects the base layer's shading normal away from head-on light,
+	// whereas Clearcoat evaluates along the unperturbed geometric surface normal (+Z).
+	tiltedNormal := testNormalMap(t, color.NRGBA{235, 128, 170, 255})
+	headOn := Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{Z: 1}, Intensity: 1.2}}}
+	black := color.RGBA{0, 0, 0, 255}
+
+	unclear := pbrQuadFrame(&Material{
+		PBR:            true,
+		Roughness:      .08,
+		NormalMap:      tiltedNormal,
+		NormalStrength: 1,
+	}, black)
+	unclear.Lighting = headOn
+
+	coated := pbrQuadFrame(&Material{
+		Roughness:          .85,
+		Clearcoat:          1,
+		ClearcoatRoughness: .08,
+		NormalMap:          tiltedNormal,
+		NormalStrength:     1,
+	}, black)
+	coated.Lighting = headOn
+
+	pUncoated := at(softwareRender(unclear), 40, 40)
+	pCoated := at(softwareRender(coated), 40, 40)
+	if pUncoated.R > 30 || pCoated.R < 160 {
+		t.Fatalf("expected clearcoat to keep crisp highlight on geometric normal over tilted normal map: uncoated=%v coated=%v", pUncoated, pCoated)
+	}
+
+	// Energy conservation: off-specular diffuse on a rough dielectric is attenuated by (1 - cc * Fc).
+	offLight := Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{X: .8, Z: .6}.Normalize(), Intensity: 1}}}
+	matte := pbrQuadFrame(&Material{PBR: true, Roughness: .9}, white)
+	matte.Lighting = offLight
+	matteCoated := pbrQuadFrame(&Material{PBR: true, Roughness: .9, Clearcoat: 1, ClearcoatRoughness: .06}, white)
+	matteCoated.Lighting = offLight
+	if at(softwareRender(matteCoated), 40, 40).R >= at(softwareRender(matte), 40, 40).R {
+		t.Fatal("expected clearcoat Fresnel transmission to attenuate underlying off-specular diffuse")
+	}
+
+	// Clearcoat environment IBL: smooth coat over rough dark base reflects bright environment hotspot.
+	env := testSharpEnvironment(t)
+	s := NewScene()
+	s.SetEnvironment(env)
+	dullBall, err := BuildSphere(Sphere{
+		Radius:   .75,
+		Segments: 40,
+		Rings:    24,
+		Color:    color.RGBA{18, 20, 24, 255},
+		Material: &Material{PBR: true, Roughness: .95},
+	})
+	check(t, err)
+	coatBall := dullBall
+	coatBall.Material = &Material{PBR: true, Roughness: .95, Clearcoat: 1, ClearcoatRoughness: .05}
+	ballID, err := s.SetGeometry("ball", dullBall)
+	check(t, err)
+	cam := DefaultCamera()
+	cam.Alpha, cam.Beta, cam.Distance = 90, 0, 2.2
+	fDull, err := s.Frame(cam, 80, 80)
+	check(t, err)
+	fDull.Lighting = Lighting{}
+
+	revBefore := fDull.Revision
+	check(t, s.SetMaterial(ballID, coatBall.Material))
+	fCoat, err := s.Frame(cam, 80, 80)
+	check(t, err)
+	fCoat.Lighting = Lighting{}
+	if fCoat.Revision != revBefore {
+		t.Fatal("SetMaterial with Clearcoat unexpectedly bumped geometry Revision")
+	}
+
+	var maxDull, maxCoat uint8
+	imgDull, imgCoat := softwareRender(fDull), softwareRender(fCoat)
+	for y := 20; y < 60; y++ {
+		for x := 20; x < 60; x++ {
+			maxDull = max(maxDull, at(imgDull, x, y).R)
+			maxCoat = max(maxCoat, at(imgCoat, x, y).R)
+		}
+	}
+	if maxCoat <= maxDull+15 {
+		t.Fatalf("expected clearcoat IBL reflection peak (%d) above rough base (%d)", maxCoat, maxDull)
+	}
+}
+
+func TestPBRSheenAndToonCoatSheen(t *testing.T) {
+	velvetTint := color.RGBA{245, 110, 210, 255}
+	if !pbrActive(&Material{SheenColor: velvetTint}) {
+		t.Fatal("nonzero SheenColor did not activate PBR")
+	}
+
+	// Grazing velvet sheen: dark rough sphere lit from front stays dark face-on
+	// (N·H ≈ 1 -> Charlie sin²θ ≈ 0) and brightens with velvet tint toward silhouette.
+	buildVelvet := func(sheen color.RGBA, toon ToonStyle) Frame {
+		ball, err := BuildSphere(Sphere{
+			Radius:   .85,
+			Segments: 48,
+			Rings:    32,
+			Color:    color.RGBA{16, 16, 20, 255},
+			Material: &Material{
+				Roughness:      .88,
+				SheenColor:     sheen,
+				SheenRoughness: .35,
+				Toon:           toon,
+			},
+		})
+		check(t, err)
+		s := NewScene()
+		_, err = s.SetGeometry("ball", ball)
+		check(t, err)
+		cam := DefaultCamera()
+		cam.Alpha, cam.Beta, cam.Distance = 0, 0, 2.4
+		f, err := s.Frame(cam, 96, 96)
+		check(t, err)
+		f.Linear = true
+		f.Background = color.RGBA{0, 0, 0, 255}
+		f.Lighting = Lighting{
+			Lights: []Light{{Direction: f.Eye.Normalize(), Intensity: 1.4}},
+		}
+		return f
+	}
+
+	imgNoSheen := softwareRender(buildVelvet(color.RGBA{}, ToonStyle{}))
+	imgSheen := softwareRender(buildVelvet(velvetTint, ToonStyle{}))
+	center := at(imgSheen, 48, 48)
+	// Find brightest grazing pixel near the sphere's horizontal limb.
+	var limbSheen, limbBase color.RGBA
+	for x := 62; x <= 78; x++ {
+		if c := at(imgSheen, x, 48); c.R > limbSheen.R {
+			limbSheen = c
+			limbBase = at(imgNoSheen, x, 48)
+		}
+	}
+	if limbSheen.R <= center.R+40 || limbSheen.R <= limbBase.R+50 || limbSheen.R <= limbSheen.G {
+		t.Fatalf("expected grazing magenta velvet sheen: center=%v limbSheen=%v limbBase=%v", center, limbSheen, limbBase)
+	}
+
+	// PBR + Toon: quantized sheen band near silhouette and quantized clearcoat lacquer highlight.
+	imgToonBase := softwareRender(buildVelvet(color.RGBA{}, ToonStyle{Bands: 3}))
+	imgToonSheen := softwareRender(buildVelvet(velvetTint, ToonStyle{Bands: 3}))
+	var toonLimbBase, toonLimbSheen uint8
+	for x := 62; x <= 78; x++ {
+		toonLimbBase = max(toonLimbBase, at(imgToonBase, x, 48).R)
+		toonLimbSheen = max(toonLimbSheen, at(imgToonSheen, x, 48).R)
+	}
+	if toonLimbSheen <= toonLimbBase+60 {
+		t.Fatalf("expected PBR+Toon sheen band near silhouette: base=%d sheen=%d", toonLimbBase, toonLimbSheen)
+	}
+
+	// PBR + Toon Clearcoat: rough cel-shaded sphere gains crisp secondary lacquer spot at center.
+	buildToonCoat := func(cc float32) color.RGBA {
+		ball, err := BuildSphere(Sphere{
+			Radius:   .85,
+			Segments: 40,
+			Rings:    24,
+			Color:    color.RGBA{180, 40, 40, 255},
+			Material: &Material{
+				PBR:                true,
+				Roughness:          .9,
+				Clearcoat:          cc,
+				ClearcoatRoughness: .1,
+				Toon:               ToonStyle{Bands: 3},
+			},
+		})
+		check(t, err)
+		s := NewScene()
+		_, err = s.SetGeometry("ball", ball)
+		check(t, err)
+		cam := DefaultCamera()
+		cam.Alpha, cam.Beta, cam.Distance = 0, 0, 2.4
+		f, err := s.Frame(cam, 80, 80)
+		check(t, err)
+		f.Linear = true
+		f.Lighting = Lighting{Lights: []Light{{Direction: f.Eye.Normalize(), Intensity: 2.5}}}
+		return at(softwareRender(f), 40, 40)
+	}
+	noCoatPx := buildToonCoat(0)
+	coatPx := buildToonCoat(1)
+	if coatPx.G <= noCoatPx.G+25 || coatPx.B <= noCoatPx.B+25 {
+		t.Fatalf("expected PBR+Toon clearcoat white dielectric highlight over red base: uncoated=%v coated=%v", noCoatPx, coatPx)
 	}
 }

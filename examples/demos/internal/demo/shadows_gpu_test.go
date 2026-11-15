@@ -46,3 +46,44 @@ func TestGPUShadowDemos(t *testing.T) {
 		}
 	}
 }
+
+func TestGPULightsCoatSheenParity(t *testing.T) {
+	gpu := nt3d.NewGPURenderer()
+	defer gpu.Close()
+	sw := nt3d.NewSoftwareRenderer()
+	defer sw.Close()
+
+	d := &demo{scene: nt3d.NewScene()}
+	if err := d.setupLights(); err != nil {
+		t.Fatal(err)
+	}
+	// Step material to "coat+sheen" (index 2).
+	for d.lights.material < len(lightMaterialNames) && lightMaterialNames[d.lights.material] != "coat+sheen" {
+		if err := d.toggleLightShine(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if lightMaterialNames[d.lights.material] != "coat+sheen" {
+		t.Fatal("missing coat+sheen material preset")
+	}
+
+	f, err := d.scene.Frame(nt3d.DefaultCamera(), 96, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Linear = true
+	f.Complete = true
+	d.decorateLights(&f)
+
+	gpuImg, err := gpu.Render(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swImg, err := sw.Render(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mad := demoMeanAbsDiff(gpuImg, swImg); mad > 4.0 {
+		t.Fatalf("lights coat+sheen GPU vs Software mean abs diff %.2f > 4.0", mad)
+	}
+}

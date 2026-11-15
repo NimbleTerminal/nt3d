@@ -135,7 +135,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 <img class="poster" src="../../posters/lights.png" alt="A sphere, torus, column, and cube on a floor lit by eight colored point lights in a ring">
 
-`task lights`. A sphere, a torus, a column, and a cube on a floor of two triangles, under presets of [lighting](../rendering/#how-it-looks): the default key light, a turning sun under a sky-to-ground ambient, three colored lamps orbiting, one lamp at night, and eight at once. It opens on the three lamps. Light is found per pixel, so a lamp's bright spot crosses the floor where no vertex is. `l` changes the preset, `f` the point lights' falloff, `e` turns highlights off, `p` cycles HDR post-processing (`studio`, `bloom + ACES`, `SSAO`, `Reinhard + vignette`), `x` cycles anti-aliasing (`1×`, `4× MSAA`, `2×`/`3×` supersampling), `a` pauses the lamps, and `s` cycles through no shadows, drop shadows, and shadow maps. Shadow maps use the first light, including the point-light presets. Press `b` to lift the shapes: drop shadows stay on the floor at world Z=0, while mapped shadows follow the light.
+`task lights`. A sphere, a torus, a column, and a cube on a floor of two triangles, under presets of [lighting](../rendering/#how-it-looks): the default key light, a turning sun under a sky-to-ground ambient, three colored lamps orbiting, spotlights, HDR/image/SH IBL skies, one lamp at night, and eight at once. It opens on the three lamps. Light is found per pixel, so a lamp's bright spot crosses the floor where no vertex is. `l` changes the preset, `f` the point lights' falloff, `e` cycles materials (`PBR`, `PBR ORM+glow`, `coat+sheen` car paint/varnished wood/velvet/wet asphalt, `shiny`, and `dull`), `p` cycles HDR post-processing (`studio`, `bloom + ACES`, `SSAO`, `Reinhard + vignette`), `x` cycles anti-aliasing (`1×`, `4× MSAA`, `2×`/`3×` supersampling), `a` pauses the lamps, and `s` cycles through no shadows, drop shadows, and shadow maps. Shadow maps use the first light, including the point-light and spotlight presets. Press `b` to lift the shapes: drop shadows stay on the floor at world Z=0, while mapped shadows follow the light.
 
 The first three presets demonstrate [environment skies and diffuse image-based lighting](../environment/): a gradient sky with a key light, the sky alone, and an original generated warm/cool panorama. `l` cycles through them and the direct-light presets. Sky orientation follows the camera in all three renderers. Press `n` to compare the generated relief normal map with smooth surfaces; both GPU and software perturb the lighting, while wireframe keeps the geometric silhouette.
 
@@ -199,13 +199,14 @@ Only `cmd/animate` imports the glTF sample embed package and assigns its `Files`
 
 `task toon` stands Spot the cow and the robot, scaled to 14 m giants, beside a
 refractive and translucent glass transit shelter topped by a skinned articulated
-pennant on a street in a block of Manhattan near Flatiron, [toon shaded](../materials/#toon-shading)
-with outlines and [crease lines](../materials/#crease-lines) under one
-shadow-casting sun. `t` flips between toon and smooth shading, `n` cycles
-two, three, and four bands, `b` toggles the ink across rigid buildings, glass
-mullions, and the deforming pennant, `s` toggles softened street cast shadows
-(`ToonStyle.ShadowSoftness`), and `a` toggles the pennant breeze. `1` / `2` / `3`
-select GPU, software, and wireframe.
+cloth-sheen pennant on a rain-slick clearcoated street in a block of Manhattan
+near Flatiron, [toon shaded](../materials/#toon-shading) with outlines and
+[crease lines](../materials/#crease-lines) under one shadow-casting sun. `t`
+flips between toon and smooth shading, `n` cycles two, three, and four bands,
+`b` toggles the ink across rigid buildings, glass mullions, and the deforming
+pennant, `s` toggles softened street cast shadows (`ToonStyle.ShadowSoftness`),
+and `a` toggles the pennant breeze. `1` / `2` / `3` select GPU, software, and
+wireframe.
 
 The block is `flatiron.obj`, 181 KB: 142 extruded buildings, a ground quad,
 and road centerlines, baked from OpenStreetMap data with

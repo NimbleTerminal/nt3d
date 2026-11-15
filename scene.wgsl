@@ -8,7 +8,7 @@ struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye:
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
-struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, absorption:vec4<f32>, optics:vec4<f32>, toon:vec4<f32>, toonStyle:vec4<f32>, pbr:vec4<f32>, emissive:vec4<f32> };
+struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, absorption:vec4<f32>, optics:vec4<f32>, toon:vec4<f32>, toonStyle:vec4<f32>, pbr:vec4<f32>, emissive:vec4<f32>, coat:vec4<f32>, sheen:vec4<f32> };
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
 // BEGIN_POINT_ONLY
 // Points have records of their own, five words each: position, radius
@@ -228,6 +228,25 @@ fn pbrToonLobe(n:vec3<f32>,p:vec3<f32>,l:Light,a2:f32)->f32 {
  let denom=nh*nh*(a2-1.0)+1.0;
  return a2/max(1e-7,denom*denom)*0.25;
 }
+fn pbrSheenAlbedo(cosTheta:f32,roughness:f32)->f32 {
+ let mu=clamp(cosTheta,0.0,1.0);let om=1.0-mu;
+ return clamp(0.16*roughness*roughness+pbrPow5(om)*(0.35-0.15*roughness)+om*om*0.12*roughness,0.0,1.0);
+}
+fn pbrSheenBRDF(nh:f32,nl:f32,nv:f32,invAlpha:f32)->f32 {
+ let sin2h=max(0.0,1.0-nh*nh);
+ var piD=0.0;
+ if sin2h>1e-6 {piD=0.5*(2.0+invAlpha)*pow(sin2h,0.5*invAlpha);}
+ return piD/max(1e-4,4.0*(nl+nv-nl*nv));
+}
+fn pbrToonSheen(n:vec3<f32>,p:vec3<f32>,l:Light,invAlpha:f32)->f32 {
+ let dir=toward(l,p).xyz;let nl=dot(n,dir);
+ if nl<=0.0 {return 0.0;}
+ let v=viewAt(p);let h=dir+v;
+ if dot(h,h)<=0.0 {return 0.0;}
+ let nh=clamp(dot(n,normalize(h)),0.0,1.0);
+ let nv=clamp(abs(dot(n,v)),1e-4,1.0);
+ return 2.0*nl*pbrSheenBRDF(nh,nl,nv,invAlpha);
+}
 // finish lights a surface, adds each light's specular highlight, and fades
 // into the fog. Fragments without a normal are unlit. A mesh's fragments
 // carry their instance (optics.w, one more than its index; zero otherwise)
@@ -242,9 +261,10 @@ fn finishNormal(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>)->vec3<f32> {return sh
 fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample:vec3<f32>)->vec3<f32> {
  var c=rgb;
  let nx=dpdx(shadeNormal);let ny=dpdy(shadeNormal);
+ let gnx=dpdx(o.normal);let gny=dpdy(o.normal);
  let wx=dpdx(o.world);let wy=dpdy(o.world);
- var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);var pbr=vec4<f32>(0.0);var emissive=vec3<f32>(0.0);var unlit=false;
- if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;pbr=inst.pbr;emissive=inst.emissive.rgb;unlit=inst.normal[0].w>0.5;}
+ var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);var pbr=vec4<f32>(0.0);var coat=vec2<f32>(0.0);var sheen=vec4<f32>(0.0);var emissive=vec3<f32>(0.0);var unlit=false;
+ if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;pbr=inst.pbr;coat=inst.coat.xy;sheen=inst.sheen;emissive=inst.emissive.rgb;unlit=inst.normal[0].w>0.5;}
  if !unlit && dot(o.normal,o.normal)>0.0 {
   let n=normalize(shadeNormal);
   let view=viewAt(o.world);
@@ -266,30 +286,74 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
    if facing<0.0 {rn=-n;facing=-facing;}
    let nv=clamp(facing,1e-4,1.0);
    let reflected=normalize(rn*(2.0*facing)-view);
+   let cc=coat.x;let ccRough=max(0.045,coat.y);
+   let ccAlpha=ccRough*ccRough;let ccA2=ccAlpha*ccAlpha;
+   var ccN=geometric;var ccFacing=dot(geometric,view);var ccSign=1.0;
+   if ccFacing<0.0 {ccN=-geometric;ccFacing=-ccFacing;ccSign=-1.0;}
+   let ccNV=clamp(ccFacing,1e-4,1.0);
+   let ccReflected=normalize(ccN*(2.0*ccFacing)-view);
+   var ccViewScale=1.0;
+   if cc>0.0 {ccViewScale=1.0-cc*(0.04+0.96*pbrPow5(1.0-ccNV));}
+   let sheenCol=sheen.rgb;let sRough=max(0.07,sheen.w);
+   let maxSheen=max(sheenCol.r,max(sheenCol.g,sheenCol.b));
+   var sInvAlpha=0.0;var sheenEnvV=0.0;var sheenViewScale=1.0;
+   if maxSheen>0.0 {
+    sInvAlpha=1.0/(sRough*sRough);
+    sheenEnvV=pbrSheenAlbedo(nv,sRough);
+    sheenViewScale=1.0-maxSheen*sheenEnvV;
+   }
    var diffOut=vec3<f32>(0.0);var specOut=vec3<f32>(0.0);
    if bands>0.5 {
+    let ccNX=normalize((o.normal+gnx)*ccSign);let ccNY=normalize((o.normal+gny)*ccSign);
     var ambient=mix(u.ground.rgb,u.sky.rgb,0.5);
     if u.viewport.w>0.5 {ambient+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
-    var direct=vec3<f32>(0.0);
+    var direct=vec3<f32>(0.0);var directDiff=vec3<f32>(0.0);
     for(var i=0u;i<u32(u.sky.w);i=i+1u) {
-     let l=u.lights[i];let t=toward(l,o.world);let nl=dot(n,t.xyz);
-     if t.w>0.0 && nl>0.0 {
+     let l=u.lights[i];let t=toward(l,o.world);let nl=dot(n,t.xyz);let ccNL=dot(ccN,t.xyz);
+     if t.w>0.0 && (nl>0.0 || (cc>0.0 && ccNL>0.0)) {
       let sh=toonShadowFactor(i,o.world,pX,pY,geometric,t.xyz,shadowSoft);
-      let w=max(0.0001,abs(toonCosine(nX,pX,l)-nl)+abs(toonCosine(nY,pY,l)-nl)+soft);
-      direct+=l.b.rgb*(t.w*toonBand(nl,bands,w)*sh);
-      let h=t.xyz+view;
-      if dot(h,h)>0.0 {
-       let hn=normalize(h);let nh=clamp(dot(n,hn),0.0,1.0);let vh=clamp(dot(view,hn),0.0,1.0);
-       let denom=nh*nh*(a2-1.0)+1.0;
-       let lobe=a2/max(1e-7,denom*denom)*0.25;
-       let sw=max(0.0001,abs(pbrToonLobe(nX,pX,l,a2)-lobe)+abs(pbrToonLobe(nY,pY,l,a2)-lobe)+soft);
-       let spot=toonStep(0.5,sw,lobe)*t.w*sh;
-       let fk=f0+(vec3<f32>(1.0)-f0)*pbrPow5(1.0-vh);
-       specOut+=l.b.rgb*spot*fk;
+      let h=t.xyz+view;let hasH=dot(h,h)>0.0;
+      var hn=vec3<f32>(0.0);var vh=0.0;
+      if hasH {hn=normalize(h);vh=clamp(dot(view,hn),0.0,1.0);}
+      let fvh5=pbrPow5(1.0-vh);
+      let fc=0.04+0.96*fvh5;
+      let ccAtten=select(1.0,1.0-cc*fc,cc>0.0);
+      if nl>0.0 {
+       var sheenScale=sheenViewScale;
+       if maxSheen>0.0 {sheenScale=1.0-maxSheen*max(sheenEnvV,pbrSheenAlbedo(nl,sRough));}
+       let w=max(0.0001,abs(toonCosine(nX,pX,l)-nl)+abs(toonCosine(nY,pY,l)-nl)+soft);
+       let b=t.w*toonBand(nl,bands,w)*sh;
+       direct+=l.b.rgb*b;
+       directDiff+=l.b.rgb*(b*ccAtten*sheenScale);
+       if hasH {
+        let nh=clamp(dot(n,hn),0.0,1.0);
+        let denom=nh*nh*(a2-1.0)+1.0;
+        let lobe=a2/max(1e-7,denom*denom)*0.25;
+        let sw=max(0.0001,abs(pbrToonLobe(nX,pX,l,a2)-lobe)+abs(pbrToonLobe(nY,pY,l,a2)-lobe)+soft);
+        let spot=toonStep(0.5,sw,lobe)*t.w*sh*ccAtten*sheenScale;
+        let fk=f0+(vec3<f32>(1.0)-f0)*fvh5;
+        specOut+=l.b.rgb*spot*fk;
+        if maxSheen>0.0 {
+         let shLobe=2.0*nl*pbrSheenBRDF(nh,nl,nv,sInvAlpha);
+         let shW=max(0.0001,abs(pbrToonSheen(nX,pX,l,sInvAlpha)-shLobe)+abs(pbrToonSheen(nY,pY,l,sInvAlpha)-shLobe)+soft);
+         let shSpot=toonStep(0.5,shW,shLobe)*t.w*sh*ccAtten;
+         specOut+=l.b.rgb*(shSpot*sheenCol);
+        }
+       }
+      }
+      if cc>0.0 && ccNL>0.0 && hasH {
+       let ccNH=clamp(dot(ccN,hn),0.0,1.0);
+       let ccDenom=ccNH*ccNH*(ccA2-1.0)+1.0;
+       let ccLobe=ccA2/max(1e-7,ccDenom*ccDenom)*0.25;
+       let ccSW=max(0.0001,abs(pbrToonLobe(ccNX,pX,l,ccA2)-ccLobe)+abs(pbrToonLobe(ccNY,pY,l,ccA2)-ccLobe)+soft);
+       let ccSpot=toonStep(0.5,ccSW,ccLobe)*t.w*sh*cc*fc;
+       specOut+=l.b.rgb*ccSpot;
       }
      }
     }
-    diffOut=diffColor*(ambient*toon.rgb*ao+direct);
+    let ambShaded=ambient*toon.rgb*(ao*ccViewScale);
+    diffOut=diffColor*(ambShaded*sheenViewScale+directDiff);
+    if maxSheen>0.0 {specOut+=sheenCol*sheenEnvV*ambShaded;}
     if toon.w>0.0 {
      let rimFacing=max(0.0,dot(n,view));
      let rw=max(0.0001,abs(max(0.0,dot(nX,viewAt(pX)))-rimFacing)+abs(max(0.0,dot(nY,viewAt(pY)))-rimFacing)+soft);
@@ -304,7 +368,9 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     }
     let f90=max(vec3<f32>(1.0-roughness),f0);
     let ks=f0+(f90-f0)*pbrPow5(1.0-nv);
-    diffOut=diffColor*(vec3<f32>(1.0)-ks)*indDiff*ao;
+    let baseIndScale=sheenViewScale*ccViewScale;
+    diffOut=diffColor*(vec3<f32>(1.0)-ks)*indDiff*(ao*baseIndScale);
+    if maxSheen>0.0 {specOut+=sheenCol*sheenEnvV*indDiff*(ao*ccViewScale);}
     let brdf=envBRDF(f0,roughness,nv);
     let sAO=pbrSpecularAO(nv,ao,alpha);
     let hemiReflT=reflected.z*0.5+0.5;
@@ -315,27 +381,59 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
      if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
      specEnv+=sky*u.ground.w;
     }
-    specOut+=specEnv*brdf*sAO;
-    let oneMinusA2=1.0-a2;
+    specOut+=specEnv*brdf*(sAO*baseIndScale);
+    if cc>0.0 {
+     let ccBRDF=envBRDF(vec3<f32>(0.04),ccRough,ccNV);
+     let ccSAO=pbrSpecularAO(ccNV,ao,ccAlpha);
+     let ccHemiReflT=ccReflected.z*0.5+0.5;
+     var ccSpecEnv=mix(u.ground.rgb,u.sky.rgb,mix(ccHemiReflT,0.5,ccAlpha));
+     if envRefl {
+      let ccEnvUV=vec2<f32>(atan2(ccReflected.y,ccReflected.x)/6.28318530718+0.5,acos(clamp(ccReflected.z,-1.0,1.0))/3.14159265359);
+      var ccSky=textureSampleLevel(reflectionMap,reflectionSampler,ccEnvUV,ccRough*u.forward.w).rgb;
+      if u.viewport.z<0.5 {ccSky=select(1.055*pow(ccSky,vec3<f32>(1.0/2.4))-0.055,ccSky*12.92,ccSky<=vec3<f32>(0.0031308));}
+      ccSpecEnv+=ccSky*u.ground.w;
+     }
+     specOut+=ccSpecEnv*ccBRDF*(cc*ccSAO);
+    }
+    let oneMinusA2=1.0-a2;let ccOneMinusA2=1.0-ccA2;
     for(var i=0u;i<u32(u.sky.w);i=i+1u) {
-     let l=u.lights[i];let t=toward(l,o.world);let nl=dot(n,t.xyz);
-     if t.w>0.0 && nl>0.0 {
+     let l=u.lights[i];let t=toward(l,o.world);let nl=dot(n,t.xyz);let ccNL=dot(ccN,t.xyz);
+     if t.w>0.0 && (nl>0.0 || (cc>0.0 && ccNL>0.0)) {
       let vis=t.w*lightVisibility(i,o.world,geometric,t.xyz);
       if vis>0.0 {
-       var dTerm=0.0;var vh=0.0;
-       let h=t.xyz+view;
-       if dot(h,h)>0.0 {
-        let hn=normalize(h);let nh=clamp(dot(n,hn),0.0,1.0);vh=clamp(dot(view,hn),0.0,1.0);
-        let denom=nh*nh*(a2-1.0)+1.0;
-        let piD=a2/max(1e-7,denom*denom);
-        let ggxV=nl*sqrt(nv*nv*oneMinusA2+a2);
-        let ggxL=nv*sqrt(nl*nl*oneMinusA2+a2);
-        dTerm=piD*(0.5/max(1e-5,ggxV+ggxL));
+       let h=t.xyz+view;let hasH=dot(h,h)>0.0;
+       var hn=vec3<f32>(0.0);var vh=0.0;
+       if hasH {hn=normalize(h);vh=clamp(dot(view,hn),0.0,1.0);}
+       let fvh5=pbrPow5(1.0-vh);
+       let fc=0.04+0.96*fvh5;
+       let ccAtten=select(1.0,1.0-cc*fc,cc>0.0);
+       if nl>0.0 {
+        var sheenScale=sheenViewScale;
+        if maxSheen>0.0 {sheenScale=1.0-maxSheen*max(sheenEnvV,pbrSheenAlbedo(nl,sRough));}
+        var dTerm=0.0;var shTerm=0.0;
+        if hasH {
+         let nh=clamp(dot(n,hn),0.0,1.0);
+         let denom=nh*nh*(a2-1.0)+1.0;
+         let piD=a2/max(1e-7,denom*denom);
+         let ggxV=nl*sqrt(nv*nv*oneMinusA2+a2);
+         let ggxL=nv*sqrt(nl*nl*oneMinusA2+a2);
+         dTerm=piD*(0.5/max(1e-5,ggxV+ggxL));
+         if maxSheen>0.0 {shTerm=pbrSheenBRDF(nh,nl,nv,sInvAlpha);}
+        }
+        let fk=f0+(vec3<f32>(1.0)-f0)*fvh5;
+        let w=vis*nl*ccAtten;
+        diffOut+=l.b.rgb*(w*sheenScale)*(vec3<f32>(1.0)-fk)*diffColor;
+        specOut+=l.b.rgb*w*(sheenScale*dTerm*fk+shTerm*sheenCol);
        }
-       let fk=f0+(vec3<f32>(1.0)-f0)*pbrPow5(1.0-vh);
-       let w=vis*nl;
-       diffOut+=l.b.rgb*w*(vec3<f32>(1.0)-fk)*diffColor;
-       specOut+=l.b.rgb*(w*dTerm)*fk;
+       if cc>0.0 && ccNL>0.0 && hasH {
+        let ccNH=clamp(dot(ccN,hn),0.0,1.0);
+        let ccDenom=ccNH*ccNH*(ccA2-1.0)+1.0;
+        let ccPiD=ccA2/max(1e-7,ccDenom*ccDenom);
+        let ccGGXV=ccNL*sqrt(ccNV*ccNV*ccOneMinusA2+ccA2);
+        let ccGGXL=ccNV*sqrt(ccNL*ccNL*ccOneMinusA2+ccA2);
+        let ccDTerm=ccPiD*(0.5/max(1e-5,ccGGXV+ccGGXL));
+        specOut+=l.b.rgb*(vis*ccNL*cc*ccDTerm*fc);
+       }
       }
      }
     }

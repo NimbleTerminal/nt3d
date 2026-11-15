@@ -34,11 +34,14 @@ func validateMaterial(m *Material) error {
 	if m.NormalMap != nil && (!m.NormalMap.valid() || !m.NormalMap.data) {
 		return fmt.Errorf("nt3d: normal map requires NewNormalMap and vertex UVs")
 	}
-	if !validFloat(m.Metallic, m.Roughness, m.IOR, m.OcclusionStrength, m.EmissiveIntensity) {
+	if !validFloat(m.Metallic, m.Roughness, m.IOR, m.Clearcoat, m.ClearcoatRoughness, m.SheenRoughness, m.OcclusionStrength, m.EmissiveIntensity) {
 		return fmt.Errorf("nt3d: non-finite PBR or emissive parameter")
 	}
 	if m.Metallic < 0 || m.Metallic > 1 || m.Roughness < 0 || m.Roughness > 1 {
 		return fmt.Errorf("nt3d: metallic and roughness must be 0..1")
+	}
+	if m.Clearcoat < 0 || m.Clearcoat > 1 || m.ClearcoatRoughness < 0 || m.ClearcoatRoughness > 1 || m.SheenRoughness < 0 || m.SheenRoughness > 1 {
+		return fmt.Errorf("nt3d: clearcoat and sheen parameters must be 0..1")
 	}
 	if m.IOR != 0 && (m.IOR < 1 || m.IOR > 3) {
 		return fmt.Errorf("nt3d: IOR must be 0 or 1..3")

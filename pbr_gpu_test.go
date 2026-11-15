@@ -69,6 +69,28 @@ func TestGPUPBRDirectAndMapsParity(t *testing.T) {
 			Roughness: .35,
 			Toon:      ToonStyle{Bands: 3, Softness: .2, Rim: .25},
 		}, color.RGBA{90, 175, 240, 255}},
+		{"clearcoat-over-normalmap", true, &Material{
+			PBR:                true,
+			Metallic:           .7,
+			Roughness:          .45,
+			Clearcoat:          1,
+			ClearcoatRoughness: .08,
+			NormalMap:          normTex,
+			NormalStrength:     .8,
+		}, color.RGBA{190, 30, 42, 255}},
+		{"sheen-velvet", true, &Material{
+			Roughness:      .84,
+			SheenColor:     color.RGBA{245, 165, 255, 255},
+			SheenRoughness: .35,
+		}, color.RGBA{56, 26, 78, 255}},
+		{"pbr-toon-coat-sheen", true, &Material{
+			Roughness:          .78,
+			Clearcoat:          .9,
+			ClearcoatRoughness: .12,
+			SheenColor:         color.RGBA{165, 235, 255, 255},
+			SheenRoughness:     .42,
+			Toon:               ToonStyle{Bands: 3, Softness: .2, Rim: .2},
+		}, color.RGBA{42, 88, 132, 255}},
 	}
 
 	for i, tc := range cases {
@@ -253,5 +275,69 @@ func TestGPUProceduralORMAndHDREmissiveBloom(t *testing.T) {
 	wantTrans := softwareRender(fTrans)
 	if !closeRGB(at(gotTrans, 40, 40), at(wantTrans, 40, 40), 8) {
 		t.Fatalf("PBR transmission parity: GPU=%v SW=%v", at(gotTrans, 40, 40), at(wantTrans, 40, 40))
+	}
+}
+
+func TestGPUClearcoatIBLAndSetMaterialParity(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+
+	env := testSharpEnvironment(t)
+	normTex := testNormalMap(t, color.NRGBA{190, 110, 235, 255})
+	s := NewScene()
+	s.SetEnvironment(env)
+
+	ball, err := BuildSphere(Sphere{
+		Radius:   .8,
+		Segments: 40,
+		Rings:    24,
+		Color:    color.RGBA{34, 48, 86, 255},
+		Material: &Material{
+			PBR:            true,
+			Roughness:      .75,
+			NormalMap:      normTex,
+			NormalStrength: .75,
+		},
+	})
+	check(t, err)
+	ballID, err := s.SetGeometry("ball", ball)
+	check(t, err)
+
+	cam := DefaultCamera()
+	cam.Alpha, cam.Beta, cam.Distance = 90, 0, 2.4
+	f0, err := s.Frame(cam, 96, 96)
+	check(t, err)
+	f0.Linear = true
+	f0.Lighting = Lighting{
+		Lights: []Light{{Direction: nt3dmath.Vec3{X: .5, Y: .8, Z: .4}.Normalize(), Intensity: .8}},
+	}
+	_, err = r.Render(f0)
+	check(t, err)
+	uploadsBefore := r.uploads
+
+	// Live SetMaterial adding Clearcoat + Sheen reuses GPU mesh buffers with zero re-uploads.
+	check(t, s.SetMaterial(ballID, &Material{
+		PBR:                true,
+		Roughness:          .75,
+		Clearcoat:          1,
+		ClearcoatRoughness: .06,
+		SheenColor:         color.RGBA{180, 210, 255, 255},
+		SheenRoughness:     .4,
+		NormalMap:          normTex,
+		NormalStrength:     .75,
+	}))
+	f1, err := s.Frame(cam, 96, 96)
+	check(t, err)
+	f1.Linear = true
+	f1.Lighting = f0.Lighting
+
+	got, err := r.Render(f1)
+	check(t, err)
+	if r.uploads != uploadsBefore {
+		t.Fatalf("SetMaterial clearcoat+sheen triggered %d GPU geometry uploads; want 0", r.uploads-uploadsBefore)
+	}
+	want := softwareRender(f1)
+	if mad := meanAbsDiff(got, want); mad > 3.0 {
+		t.Fatalf("clearcoat+sheen IBL GPU vs Software mean abs diff %.2f exceeds tolerance", mad)
 	}
 }

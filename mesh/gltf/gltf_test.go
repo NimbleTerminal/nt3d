@@ -271,7 +271,7 @@ func TestGLTFPBRAndExtensions(t *testing.T) {
 			material:  gltf.Index(material),
 		}
 	}
-	doc := gltfDoc(quad(0), quad(1), quad(2), quad(3), quad(4))
+	doc := gltfDoc(quad(0), quad(1), quad(2), quad(3), quad(4), quad(5), quad(6))
 	mrImg, err := modeler.WriteImage(doc, "mr", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{10, 64, 192, 255})))
 	check(t, err)
 	occImg, err := modeler.WriteImage(doc, "occ", "image/png", bytes.NewReader(pngTexture(t, color.NRGBA{80, 200, 30, 255})))
@@ -288,6 +288,8 @@ func TestGLTFPBRAndExtensions(t *testing.T) {
 		"KHR_materials_ior",
 		"KHR_materials_transmission",
 		"KHR_materials_volume",
+		"KHR_materials_clearcoat",
+		"KHR_materials_sheen",
 	}
 	doc.ExtensionsUsed = doc.ExtensionsRequired
 	doc.Materials = []*gltf.Material{
@@ -340,6 +342,31 @@ func TestGLTFPBRAndExtensions(t *testing.T) {
 			},
 			OcclusionTexture: &gltf.OcclusionTexture{Index: gltf.Index(1), Strength: gltf.Float(0)},
 		},
+		{
+			Name: "car-paint-velvet",
+			PBRMetallicRoughness: &gltf.PBRMetallicRoughness{
+				MetallicFactor:  gltf.Float(.7),
+				RoughnessFactor: gltf.Float(.4),
+			},
+			Extensions: gltf.Extensions{
+				"KHR_materials_clearcoat": map[string]any{
+					"clearcoatFactor":          .95,
+					"clearcoatRoughnessFactor": .08,
+				},
+				"KHR_materials_sheen": map[string]any{
+					"sheenColorFactor":     []float64{.5, .25, 1},
+					"sheenRoughnessFactor": .35,
+				},
+			},
+		},
+		{
+			Name: "unlit-coat-ignored",
+			Extensions: gltf.Extensions{
+				"KHR_materials_unlit":     map[string]any{},
+				"KHR_materials_clearcoat": map[string]any{"clearcoatFactor": 1.0, "clearcoatRoughnessFactor": .2},
+				"KHR_materials_sheen":     map[string]any{"sheenColorFactor": []float64{1, 1, 1}, "sheenRoughnessFactor": .5},
+			},
+		},
 	}
 	m, err := Decode(glb(t, doc), nil)
 	check(t, err)
@@ -375,6 +402,28 @@ func TestGLTFPBRAndExtensions(t *testing.T) {
 	if thin := byName["thin-glass"]; thin == nil || thin.IOR != 1 || thin.Transmission != .8 || thin.Refraction != 0 || thin.ORMMap != nil {
 		t.Fatalf("thin-glass: %+v", thin)
 	}
+	wantSheen := color.RGBA{srgb8(.5), srgb8(.25), 255, 255}
+	if cp := byName["car-paint-velvet"]; cp == nil || !cp.PBR || cp.Clearcoat != .95 || cp.ClearcoatRoughness != .08 || cp.SheenColor != wantSheen || cp.SheenRoughness != .35 {
+		t.Fatalf("car-paint-velvet: %+v, want sheen %v", cp, wantSheen)
+	}
+	if unlit := byName["unlit-coat-ignored"]; unlit == nil || !unlit.Unlit || unlit.PBR || unlit.Clearcoat != 0 || unlit.SheenColor != (color.RGBA{}) {
+		t.Fatalf("unlit-coat-ignored: %+v", unlit)
+	}
+	// Verify SceneAsset preserves Clearcoat and Sheen materials too.
+	s := nt3d.NewScene()
+	_, err = m.AddTo(s, nt3d.Root, "ext")
+	check(t, err)
+	fAsset, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
+	check(t, err)
+	foundAssetCoatSheen := false
+	for _, g := range fAsset.Geometry {
+		if g.Material != nil && g.Material.Clearcoat == .95 && g.Material.SheenColor == wantSheen {
+			foundAssetCoatSheen = true
+		}
+	}
+	if !foundAssetCoatSheen {
+		t.Fatal("SceneAsset did not preserve Clearcoat and Sheen material fields")
+	}
 
 	// Malformed or out-of-range extension values must be rejected.
 	for _, bad := range []gltf.Extensions{
@@ -383,6 +432,11 @@ func TestGLTFPBRAndExtensions(t *testing.T) {
 		{"KHR_materials_transmission": map[string]any{"transmissionFactor": 1.5}},
 		{"KHR_materials_volume": map[string]any{"attenuationDistance": 0.0}},
 		{"KHR_materials_volume": map[string]any{"attenuationColor": []float64{1, 2}}},
+		{"KHR_materials_clearcoat": map[string]any{"clearcoatFactor": -0.1}},
+		{"KHR_materials_clearcoat": map[string]any{"clearcoatRoughnessFactor": 1.2}},
+		{"KHR_materials_sheen": map[string]any{"sheenColorFactor": []float64{1, 2}}},
+		{"KHR_materials_sheen": map[string]any{"sheenColorFactor": []float64{1.2, 0, 0}}},
+		{"KHR_materials_sheen": map[string]any{"sheenRoughnessFactor": -0.1}},
 	} {
 		badDoc := gltfDoc(quad(0))
 		badDoc.Materials = []*gltf.Material{{Extensions: bad}}

@@ -86,7 +86,9 @@ const GLTF nt3dmesh.Format = "gltf"
 // PBR and a packed linear ORMMap. Emissive factors, emissive maps, and
 // KHR_materials_emissive_strength map to Material.Emissive, EmissiveMap, and
 // EmissiveIntensity; KHR_materials_ior, KHR_materials_transmission, and
-// KHR_materials_volume map to IOR, Transmission, Refraction, and Absorption.
+// KHR_materials_volume map to IOR, Transmission, Refraction, and Absorption;
+// KHR_materials_clearcoat and KHR_materials_sheen map to Clearcoat,
+// ClearcoatRoughness, SheenColor, and SheenRoughness.
 // Normals the file omits are computed flat; triangle strips and fans become
 // triangles, points points, and lines lines.
 //
@@ -151,11 +153,13 @@ var supportedExtensions = []string{
 	"KHR_materials_ior",
 	"KHR_materials_transmission",
 	"KHR_materials_volume",
+	"KHR_materials_clearcoat",
+	"KHR_materials_sheen",
 	"KHR_lights_punctual",
 }
 
 // ignoredExtensions are passed over silently: they refine looks nt3d does not draw.
-var ignoredExtensions = []string{"KHR_materials_specular", "KHR_materials_clearcoat", "KHR_materials_sheen", "KHR_materials_variants"}
+var ignoredExtensions = []string{"KHR_materials_specular", "KHR_materials_variants"}
 
 type gltfDecoder struct {
 	decodedLeft    *int64
@@ -441,6 +445,9 @@ type gltfLook struct {
 	unlit                                               bool
 	pbr                                                 bool
 	metallic, roughness, ior                            float32
+	clearcoat, clearcoatRoughness                       float32
+	sheenColor                                          color.RGBA
+	sheenRoughness                                      float32
 	transmission, refraction                            float32
 	absorption                                          nt3dmath.Vec3
 	plain                                               bool // No material: Options.Color paints it.
@@ -660,6 +667,68 @@ func (d *gltfDecoder) look(index *int) gltfLook {
 					}
 				}
 			}
+		}
+	}
+
+	var ccExt struct {
+		ClearcoatFactor          *float64 `json:"clearcoatFactor"`
+		ClearcoatRoughnessFactor *float64 `json:"clearcoatRoughnessFactor"`
+	}
+	if ok, err := decodeExtension(m.Extensions, "KHR_materials_clearcoat", &ccExt); err != nil {
+		setErr(err)
+	} else if ok {
+		cf, crf := 0.0, 0.0
+		if ccExt.ClearcoatFactor != nil {
+			cf = *ccExt.ClearcoatFactor
+			if !validCoordinate(float32(cf)) || cf < 0 || cf > 1 {
+				setErr(errors.New("nt3dmesh: invalid KHR_materials_clearcoat"))
+			}
+		}
+		if ccExt.ClearcoatRoughnessFactor != nil {
+			crf = *ccExt.ClearcoatRoughnessFactor
+			if !validCoordinate(float32(crf)) || crf < 0 || crf > 1 {
+				setErr(errors.New("nt3dmesh: invalid KHR_materials_clearcoat"))
+			}
+		}
+		if l.err == nil && !l.unlit {
+			l.clearcoat = float32(cf)
+			l.clearcoatRoughness = float32(crf)
+		}
+	}
+
+	var sheenExt struct {
+		SheenColorFactor     []float64 `json:"sheenColorFactor"`
+		SheenRoughnessFactor *float64  `json:"sheenRoughnessFactor"`
+	}
+	if ok, err := decodeExtension(m.Extensions, "KHR_materials_sheen", &sheenExt); err != nil {
+		setErr(err)
+	} else if ok {
+		if sheenExt.SheenColorFactor != nil && len(sheenExt.SheenColorFactor) != 3 {
+			setErr(errors.New("nt3dmesh: KHR_materials_sheen sheenColorFactor needs 3 values"))
+		}
+		var sc [3]float64
+		if len(sheenExt.SheenColorFactor) == 3 {
+			for k := range 3 {
+				v := sheenExt.SheenColorFactor[k]
+				if !validCoordinate(float32(v)) || v < 0 || v > 1 {
+					setErr(errors.New("nt3dmesh: invalid KHR_materials_sheen"))
+				}
+				sc[k] = v
+			}
+		}
+		srf := 0.0
+		if sheenExt.SheenRoughnessFactor != nil {
+			srf = *sheenExt.SheenRoughnessFactor
+			if !validCoordinate(float32(srf)) || srf < 0 || srf > 1 {
+				setErr(errors.New("nt3dmesh: invalid KHR_materials_sheen"))
+			}
+		}
+		if l.err == nil && !l.unlit {
+			r, g, b := srgb8(sc[0]), srgb8(sc[1]), srgb8(sc[2])
+			if r > 0 || g > 0 || b > 0 {
+				l.sheenColor = color.RGBA{r, g, b, 255}
+			}
+			l.sheenRoughness = float32(srf)
 		}
 	}
 	return l
@@ -1122,26 +1191,30 @@ func (b *gltfBuilder) color(i uint32) (color.RGBA, bool) {
 func (b *gltfBuilder) nt3dMaterial() *nt3d.Material {
 	l := b.look
 	m := nt3d.Material{
-		NormalMap:         l.normal,
-		NormalStrength:    l.normalStrength,
-		NormalRepeat:      l.normalRepeat && l.normal != nil,
-		Texture:           l.texture,
-		Repeat:            l.repeat && l.texture != nil,
-		Unlit:             l.unlit,
-		PBR:               l.pbr,
-		Metallic:          l.metallic,
-		Roughness:         l.roughness,
-		IOR:               l.ior,
-		ORMMap:            l.orm,
-		ORMRepeat:         l.ormRepeat && l.orm != nil,
-		OcclusionStrength: l.occlusionStrength,
-		Emissive:          l.emissive,
-		EmissiveIntensity: l.emissiveIntensity,
-		EmissiveMap:       l.emissiveMap,
-		EmissiveRepeat:    l.emissiveRepeat && l.emissiveMap != nil,
-		Transmission:      l.transmission,
-		Refraction:        l.refraction,
-		Absorption:        l.absorption,
+		NormalMap:          l.normal,
+		NormalStrength:     l.normalStrength,
+		NormalRepeat:       l.normalRepeat && l.normal != nil,
+		Texture:            l.texture,
+		Repeat:             l.repeat && l.texture != nil,
+		Unlit:              l.unlit,
+		PBR:                l.pbr,
+		Metallic:           l.metallic,
+		Roughness:          l.roughness,
+		IOR:                l.ior,
+		Clearcoat:          l.clearcoat,
+		ClearcoatRoughness: l.clearcoatRoughness,
+		SheenColor:         l.sheenColor,
+		SheenRoughness:     l.sheenRoughness,
+		ORMMap:             l.orm,
+		ORMRepeat:          l.ormRepeat && l.orm != nil,
+		OcclusionStrength:  l.occlusionStrength,
+		Emissive:           l.emissive,
+		EmissiveIntensity:  l.emissiveIntensity,
+		EmissiveMap:        l.emissiveMap,
+		EmissiveRepeat:     l.emissiveRepeat && l.emissiveMap != nil,
+		Transmission:       l.transmission,
+		Refraction:         l.refraction,
+		Absorption:         l.absorption,
 	}
 	if l.orm == nil {
 		m.OcclusionStrength = 0

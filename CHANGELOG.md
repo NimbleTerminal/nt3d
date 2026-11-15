@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Add `Material.Clearcoat`, `Material.ClearcoatRoughness`,
+  `Material.SheenColor`, and `Material.SheenRoughness` to both smooth PBR and
+  `PBR` + `Toon` across WebGPU and software renderers, and promote
+  `KHR_materials_clearcoat` and `KHR_materials_sheen` into supported glTF 2.0
+  extensions in `nt3d/mesh/gltf` (accepted in `extensionsRequired`). Clearcoat
+  adds an energy-conserving dielectric top coat (`IOR = 1.5`, `F0 = 0.04`)
+  along the unperturbed geometric surface normal with independent prefiltered
+  GGX environment IBL, direct GGX specular, and quantized cel lacquer
+  highlights over normal-mapped or rough bases; Sheen adds an Estevez & Kulla
+  Charlie microfiber grazing/retroreflective lobe with Neubelt visibility,
+  directional-albedo base attenuation, ambient cloth sheen, and quantized cel
+  cloth bands. Showcase `coat+sheen` (`e`) in `lights` and coated rain-slick
+  asphalt plus a cloth-sheen pennant in `toon`.
 - Add `ToonStyle.ShadowSoftness` (`0..1`) with continuous separable tent PCF
   (`sinc²` frequency response across `1.5..4.0` shadow-map texels on
   directional, spot, and point shadow maps) and decoupled cast-shadow band

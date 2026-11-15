@@ -23,13 +23,13 @@ type lightScene struct {
 	preset     int  // Index into lightPresets.
 	post       int  // Index into lightPostPresets.
 	ranged     bool // Point lights fade to nothing at their range, rather than with distance alone.
-	material   int  // 0 PBR, 1 PBR ORM+glow, 2 shiny Blinn-Phong, 3 dull Lambert.
+	material   int  // 0 PBR, 1 PBR ORM+glow, 2 coat+sheen, 3 shiny Blinn-Phong, 4 dull Lambert.
 	t, phase   float64
 	lamps      [nt3d.MaxLights]nt3d.NodeID // A small glowing sphere at each point light.
 	lampColor  [nt3d.MaxLights]color.RGBA  // What each lamp's geometry is colored, to rebuild it only on change.
 }
 
-var lightMaterialNames = [...]string{"PBR", "PBR ORM+glow", "shiny", "dull"}
+var lightMaterialNames = [...]string{"PBR", "PBR ORM+glow", "coat+sheen", "shiny", "dull"}
 
 var lightPostPresets = []struct {
 	name string
@@ -176,13 +176,18 @@ func (d *demo) buildLightShapes() error {
 	// found per pixel, where no vertex is.
 	const s = 3
 	up := nt3dmath.Vec3{Z: 1}
+	floorCol := gray(200)
 	var floorMat *nt3d.Material
-	if d.lights.material <= 1 {
+	switch d.lights.material {
+	case 0, 1:
 		floorMat = &nt3d.Material{PBR: true, Metallic: .08, Roughness: .42}
+	case 2:
+		floorCol = gray(96)
+		floorMat = &nt3d.Material{PBR: true, Roughness: .68, Clearcoat: .92, ClearcoatRoughness: .08}
 	}
 	floor := nt3d.Geometry{Indices: []uint32{0, 1, 2, 0, 2, 3}, Material: floorMat}
 	for _, p := range [][2]float32{{-s, -s}, {s, -s}, {s, s}, {-s, s}} {
-		floor.Vertices = append(floor.Vertices, nt3d.Vertex{Position: nt3dmath.Vec3{X: p[0], Y: p[1]}, Normal: up, Color: gray(200)})
+		floor.Vertices = append(floor.Vertices, nt3d.Vertex{Position: nt3dmath.Vec3{X: p[0], Y: p[1]}, Normal: up, Color: floorCol})
 	}
 	if _, err := d.scene.SetGeometry("floor", floor); err != nil {
 		return err
@@ -212,7 +217,22 @@ func (d *demo) buildLightShapes() error {
 				m.EmissiveMap = inlayEmissiveMap()
 				m.EmissiveRepeat = true
 			}
-		case 2: // Classic Blinn-Phong
+		case 2: // Clearcoat (car paint + varnished wood) & Sheen (velvet + felt)
+			switch shape.name {
+			case "sphere":
+				col = color.RGBA{185, 24, 38, 255}
+				m = &nt3d.Material{PBR: true, Metallic: .75, Roughness: .42, Clearcoat: 1, ClearcoatRoughness: .06}
+			case "torus":
+				col = color.RGBA{72, 34, 96, 255}
+				m = &nt3d.Material{PBR: true, Roughness: .82, SheenColor: color.RGBA{235, 175, 255, 255}, SheenRoughness: .35}
+			case "column":
+				col = color.RGBA{118, 68, 36, 255}
+				m = &nt3d.Material{PBR: true, Roughness: .58, Clearcoat: .88, ClearcoatRoughness: .12}
+			default:
+				col = color.RGBA{28, 86, 62, 255}
+				m = &nt3d.Material{PBR: true, Roughness: .88, SheenColor: color.RGBA{165, 240, 198, 255}, SheenRoughness: .55}
+			}
+		case 3: // Classic Blinn-Phong
 			m = &nt3d.Material{Specular: .5, Shininess: 48}
 		default: // Classic matte Lambert
 			m = &nt3d.Material{}

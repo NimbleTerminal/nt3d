@@ -131,7 +131,9 @@ func paint(g *nt3d.Geometry, c color.RGBA) {
 // roadRibbons turns road centerlines, endpoint pairs, into one mesh of flat
 // quads width wide at height z, each run on by half its width so bends close.
 func roadRibbons(lines []nt3d.Vertex, width, z float32, c color.RGBA) nt3d.Geometry {
-	g := nt3d.Geometry{}
+	g := nt3d.Geometry{
+		Material: &nt3d.Material{Roughness: .65, Clearcoat: .75, ClearcoatRoughness: .14},
+	}
 	up := nt3dmath.Vec3{Z: 1}
 	for i := 0; i+1 < len(lines); i += 2 {
 		a, b := lines[i].Position, lines[i+1].Position
@@ -252,6 +254,11 @@ func buildToonProps(s *nt3d.Scene, here, there nt3dmath.Vec3) (props, bannerJoin
 		return 0, 0, err
 	}
 	var banner nt3d.Geometry
+	banner.Material = &nt3d.Material{
+		Roughness:      .82,
+		SheenColor:     color.RGBA{255, 210, 195, 255},
+		SheenRoughness: .42,
+	}
 	var inf []nt3d.Influence
 	for _, v := range mastLeaf.Vertices {
 		v.Position.X -= .6
