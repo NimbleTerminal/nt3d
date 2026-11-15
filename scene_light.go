@@ -63,6 +63,10 @@ func (s *Scene) NodeLight(id NodeID) (Light, error) {
 // SceneLights resolves up to MaxLights visible light nodes in root's subtree,
 // in hierarchy order.
 func (s *Scene) SceneLights(root NodeID) []Light {
+	return s.sceneLightsRelative(root, [3]float64{})
+}
+
+func (s *Scene) sceneLightsRelative(root NodeID, ref [3]float64) []Light {
 	var out []Light
 	var visit func(NodeID)
 	visit = func(id NodeID) {
@@ -74,7 +78,7 @@ func (s *Scene) SceneLights(root NodeID) []Light {
 			return
 		}
 		if n.light != nil {
-			out = append(out, s.resolveNodeLight(id, n))
+			out = append(out, s.resolveNodeLightRelative(id, n, ref))
 		}
 		for _, c := range n.Children {
 			visit(c)
@@ -91,7 +95,11 @@ func (s *Scene) SceneLights(root NodeID) []Light {
 }
 
 func (s *Scene) resolveNodeLight(id NodeID, n *sceneNode) Light {
-	pose := s.world(id)
+	return s.resolveNodeLightRelative(id, n, [3]float64{})
+}
+
+func (s *Scene) resolveNodeLightRelative(id NodeID, n *sceneNode, ref [3]float64) Light {
+	pose := s.worldRelative(id, ref)
 	out := *n.light
 	out.Position = pose.Point(nt3dmath.Vec3{})
 	switch out.Kind {

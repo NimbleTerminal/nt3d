@@ -32,6 +32,10 @@ type Node struct {
 type sceneNode struct {
 	camera *Camera
 	light  *Light
+	// origin is an optional float64 translation offset added to Local's
+	// translation before parent multiplication, enabling jitter-free geographic
+	// (ENU/UTM) coordinates when rendered relative to Camera.Origin.
+	origin [3]float64
 	// Preserve logical TRS scales across rotation samples, avoiding rounding drift.
 	animationMatrix nt3dmath.Mat4
 	animationScale  nt3dmath.Vec3
@@ -58,6 +62,7 @@ type Scene struct {
 	revision, textureRevision, stateRevision uint64
 	noPickIndex                              bool
 	splatBudget                              int
+	originCount                              int
 }
 
 // NewScene returns an empty scene containing a visible Root node.
@@ -94,7 +99,7 @@ func (s *Scene) Node(id NodeID) (Node, bool) {
 	out.Children = slices.Clone(n.Children)
 	return out, true
 }
-func (s *Scene) world(id NodeID) nt3dmath.Mat4 {
+func (s *Scene) localWorld(id NodeID) nt3dmath.Mat4 {
 	chain := []NodeID{id}
 	for id != Root {
 		id = s.nodes[id].Parent
@@ -105,6 +110,106 @@ func (s *Scene) world(id NodeID) nt3dmath.Mat4 {
 		m = m.Mul(s.nodes[chain[i]].Local)
 	}
 	return m
+}
+
+func (s *Scene) world(id NodeID) nt3dmath.Mat4 {
+	if s.originCount > 0 {
+		return s.worldRelative(id, [3]float64{})
+	}
+	return s.localWorld(id)
+}
+
+func mulMat4d(a, b [16]float64) (m [16]float64) {
+	for c := range 4 {
+		for r := range 4 {
+			m[c*4+r] = a[r]*b[c*4] +
+				a[4+r]*b[c*4+1] +
+				a[8+r]*b[c*4+2] +
+				a[12+r]*b[c*4+3]
+		}
+	}
+	return m
+}
+
+func (s *Scene) world64(id NodeID) [16]float64 {
+	chain := []NodeID{id}
+	for id != Root {
+		id = s.nodes[id].Parent
+		chain = append(chain, id)
+	}
+	m := [16]float64{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
+	for i := len(chain) - 1; i >= 0; i-- {
+		n := s.nodes[chain[i]]
+		var b [16]float64
+		for k := range 16 {
+			b[k] = float64(n.Local[k])
+		}
+		b[12] += n.origin[0]
+		b[13] += n.origin[1]
+		b[14] += n.origin[2]
+		m = mulMat4d(m, b)
+	}
+	return m
+}
+
+func (s *Scene) worldRelative(id NodeID, ref [3]float64) nt3dmath.Mat4 {
+	if s.originCount == 0 && ref == ([3]float64{}) {
+		return s.world(id)
+	}
+	m := s.world64(id)
+	m[12] -= ref[0]
+	m[13] -= ref[1]
+	m[14] -= ref[2]
+	var out nt3dmath.Mat4
+	for k := range 16 {
+		out[k] = float32(m[k])
+	}
+	return out
+}
+
+// SetNodeOrigin sets an optional float64 local translation offset (in meters,
+// e.g. ENU/UTM tile coordinates) added to id's Local transform before float32
+// camera-relative conversion in Scene.Frame.
+func (s *Scene) SetNodeOrigin(id NodeID, origin [3]float64) error {
+	n, ok := s.nodes[id]
+	if !ok {
+		return fmt.Errorf("nt3d: unknown node %d", id)
+	}
+	if !nt3dmath.IsFinite(origin[0]) || !nt3dmath.IsFinite(origin[1]) || !nt3dmath.IsFinite(origin[2]) {
+		return errors.New("nt3d: non-finite node origin")
+	}
+	if n.origin == origin {
+		return nil
+	}
+	wasNonZero := n.origin != ([3]float64{})
+	isNonZero := origin != ([3]float64{})
+	if !wasNonZero && isNonZero {
+		s.originCount++
+	} else if wasNonZero && !isNonZero {
+		s.originCount--
+	}
+	n.origin = origin
+	s.changed(false, false)
+	return nil
+}
+
+// NodeOrigin returns the local float64 origin offset previously set on id.
+func (s *Scene) NodeOrigin(id NodeID) ([3]float64, error) {
+	n, ok := s.nodes[id]
+	if !ok {
+		return [3]float64{}, fmt.Errorf("nt3d: unknown node %d", id)
+	}
+	return n.origin, nil
+}
+
+// NodeWorldPosition returns id's exact float64 world-space position, combining
+// Local transforms and NodeOrigin across all ancestors without float32 loss.
+func (s *Scene) NodeWorldPosition(id NodeID) ([3]float64, bool) {
+	if _, ok := s.nodes[id]; !ok {
+		return [3]float64{}, false
+	}
+	m := s.world64(id)
+	return [3]float64{m[12], m[13], m[14]}, true
 }
 
 // Add creates a visible group with an identity transform. Names are unique and nonempty.
@@ -198,7 +303,7 @@ func (s *Scene) validSubtree(id NodeID) bool {
 	// Root is its own parent, so its walk starts from Identity, not world(Root).
 	start := nt3dmath.Identity()
 	if id != Root {
-		start = s.world(s.nodes[id].Parent)
+		start = s.localWorld(s.nodes[id].Parent)
 	}
 	stack := []visit{{id, start}}
 	for len(stack) > 0 {
@@ -412,6 +517,9 @@ func (s *Scene) Remove(id NodeID) error {
 		at := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
 		node := s.nodes[at]
+		if node.origin != ([3]float64{}) {
+			s.originCount--
+		}
 		queue = append(queue, node.Children...)
 		delete(s.names, node.Name)
 		delete(s.nodes, at)

@@ -110,9 +110,11 @@ type Frame struct {
 	// bloom, exposure, tone mapping, and vignette.
 	PostProcess PostProcess
 	// Eye and Forward are the camera's position and viewing direction, in
-	// world space, and Perspective whether its view converges at Eye. They
-	// serve view-dependent materials (Material.EdgeOn); Scene.Frame sets them.
+	// frame space (relative to Origin), and Perspective whether its view
+	// converges at Eye. Origin is the float64 world offset subtracted by
+	// Scene.Frame when Camera.Origin is nonzero.
 	Eye, Forward nt3dmath.Vec3
+	Origin       [3]float64
 	Perspective  bool
 	// Linear lights, interpolates, blends, and averages colors in linear
 	// light, decoding sRGB colors and textures and encoding the result, as
@@ -175,23 +177,28 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	if err := s.UpdateDeformations(); err != nil {
 		return Frame{}, err
 	}
-	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Environment: s.environment, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Cull: true, Linear: true, SplatBudget: s.splatBudget}
-	if lights := s.SceneLights(Root); len(lights) > 0 {
+	validCam := camera.valid()
+	frameOrigin := validCam.Origin
+	relCam := validCam
+	relCam.Origin = [3]float64{}
+
+	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Environment: s.environment, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Origin: frameOrigin, Cull: true, Linear: true, SplatBudget: s.splatBudget}
+	if lights := s.sceneLightsRelative(Root, frameOrigin); len(lights) > 0 {
 		f.Lighting.Lights = lights
 	}
 	if width < 1 || height < 1 || width > MaxFramePixels || height > MaxFramePixels/width {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)
 	}
-	f.Matrix = camera.Matrix(float32(width) / float32(height))
-	f.Eye, _, _, f.Forward = camera.valid().basis()
-	f.Perspective = camera.valid().Projection == Perspective
+	f.Matrix = relCam.Matrix(float32(width) / float32(height))
+	f.Eye, _, _, f.Forward = relCam.basis()
+	f.Perspective = relCam.Projection == Perspective
 	for _, id := range s.order {
 		n := s.nodes[id]
 		if n.geometry == nil {
 			continue
 		}
 		geom, rev, sg := n.geometry, n.geometryRevision, n.shared
-		world, visible := s.world(id), s.visible(id)
+		world, visible := s.worldRelative(id, frameOrigin), s.visible(id)
 		if len(n.lod) > 0 {
 			lvl, inRange := n.selectLOD(world, f.Eye)
 			geom, rev, sg = lvl.geometry, lvl.geometryRevision, lvl.shared
@@ -206,7 +213,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 		f.Shared = append(f.Shared, shared)
 		if b := geom.Billboard; b != nil {
 			var inDepth bool
-			world, inDepth = billboardWorld(f, camera, world, b)
+			world, inDepth = billboardWorld(f, relCam, world, b)
 			visible = visible && inDepth
 		}
 		f.Instances = append(f.Instances, Instance{id, n.Name, world, visible})
@@ -273,6 +280,8 @@ type softwareRenderer struct {
 // Each returned image is independently owned. Frames must remain immutable
 // throughout Render. Retain the renderer between frames and Close it after use.
 func NewSoftwareRenderer() Renderer { return &softwareRenderer{} }
+
+// Render rasterizes f in software using bounded reusable depth scratch.
 func (r *softwareRenderer) Render(f Frame) (image.Image, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -296,6 +305,8 @@ func (r *softwareRenderer) Render(f Frame) (image.Image, error) {
 	}
 	return softwareRenderScratch(f, depth), nil
 }
+
+// Close releases the renderer's depth scratch and rejects future Render calls.
 func (r *softwareRenderer) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -373,7 +384,7 @@ func validateFrame(f Frame) error {
 			seen[v.Node] = true
 		}
 	}
-	if !validFloat(f.Matrix[:]...) {
+	if !validFloat(f.Matrix[:]...) || !nt3dmath.IsFinite(f.Origin[0]) || !nt3dmath.IsFinite(f.Origin[1]) || !nt3dmath.IsFinite(f.Origin[2]) {
 		return fmt.Errorf("nt3d: non-finite frame")
 	}
 	if !validFloat(f.EnvironmentStrength) || f.EnvironmentStrength < 0 || (f.Environment != nil && (!f.Environment.valid() || !finiteVec(f.Forward))) {

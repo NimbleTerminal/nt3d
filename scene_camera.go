@@ -50,6 +50,16 @@ func (s *Scene) NodeCamera(id NodeID) (Camera, error) {
 	if n == nil || n.camera == nil {
 		return Camera{}, fmt.Errorf("nt3d: node has no camera")
 	}
+	if s.originCount > 0 {
+		pos64, _ := s.NodeWorldPosition(id)
+		pose := s.worldRelative(id, pos64)
+		forward := pose.Direction(nt3dmath.Vec3{Z: -1}).Normalize()
+		c := n.camera.LookAt(nt3dmath.Vec3{}, forward)
+		c.Origin = pos64
+		c.Pose = pose
+		c.AutoRotate = false
+		return c, nil
+	}
 	pose := s.world(id)
 	eye := pose.Point(nt3dmath.Vec3{})
 	forward := pose.Direction(nt3dmath.Vec3{Z: -1}).Normalize()

@@ -31,8 +31,14 @@ func (p Projection) String() string {
 // other. Unless explicitly overridden, clipping planes scale with Distance,
 // so a scene in millimeters or meters draws as well as one in units.
 type Camera struct {
-	// Pose optionally supplies a camera-to-world transform: local -Z is forward,
-	// +Y is up. Zero retains the orbit camera. Scale is ignored.
+	// Origin is an optional float64 world-space reference offset (e.g. ENU/UTM
+	// meters) added to the local Pose or Target/orbit camera position. Scene.Frame
+	// and Scene.Pick subtract Origin in float64 from node Origins and light
+	// positions before converting transforms to float32, preventing precision
+	// jitter at geographic scales.
+	Origin [3]float64
+	// Pose optionally supplies a camera-to-world transform (relative to Origin):
+	// local -Z is forward, +Y is up. Zero retains the orbit camera. Scale is ignored.
 	Pose nt3dmath.Mat4
 	// YFOV is vertical perspective FOV in radians; zero means pi/4.
 	YFOV float64
@@ -102,6 +108,22 @@ func (c Camera) valid() Camera {
 	if !nt3dmath.IsFinite(c.Xmag) || !nt3dmath.IsFinite(c.Ymag) || c.Xmag <= 0 || c.Ymag <= 0 {
 		c.Xmag, c.Ymag = 0, 0
 	}
+	if !nt3dmath.IsFinite(c.Origin[0]) || !nt3dmath.IsFinite(c.Origin[1]) || !nt3dmath.IsFinite(c.Origin[2]) {
+		c.Origin = [3]float64{}
+	}
+	return c
+}
+
+func (c Camera) relativeTo(origin [3]float64) Camera {
+	c = c.valid()
+	if !nt3dmath.IsFinite(origin[0]) || !nt3dmath.IsFinite(origin[1]) || !nt3dmath.IsFinite(origin[2]) {
+		return c
+	}
+	c.Origin = [3]float64{
+		c.Origin[0] - origin[0],
+		c.Origin[1] - origin[1],
+		c.Origin[2] - origin[2],
+	}
 	return c
 }
 
@@ -129,13 +151,16 @@ func (c Camera) basis() (eye, right, up, forward nt3dmath.Vec3) {
 		forward = c.Pose.Direction(nt3dmath.Vec3{Z: -1}).Normalize()
 		right = forward.Cross(c.Pose.Direction(nt3dmath.Vec3{Y: 1})).Normalize()
 		up = right.Cross(forward)
-		return
+	} else {
+		a, b := c.Alpha*math.Pi/180, c.Beta*math.Pi/180
+		eye = c.Target.Add(nt3dmath.Vec3{X: float32(c.Distance * math.Cos(a) * math.Cos(b)), Y: float32(c.Distance * math.Cos(a) * math.Sin(b)), Z: float32(c.Distance * math.Sin(a))})
+		forward = c.Target.Sub(eye).Normalize()
+		right = forward.Cross(nt3dmath.Vec3{Z: 1}).Normalize()
+		up = right.Cross(forward)
 	}
-	a, b := c.Alpha*math.Pi/180, c.Beta*math.Pi/180
-	eye = c.Target.Add(nt3dmath.Vec3{X: float32(c.Distance * math.Cos(a) * math.Cos(b)), Y: float32(c.Distance * math.Cos(a) * math.Sin(b)), Z: float32(c.Distance * math.Sin(a))})
-	forward = c.Target.Sub(eye).Normalize()
-	right = forward.Cross(nt3dmath.Vec3{Z: 1}).Normalize()
-	up = right.Cross(forward)
+	if c.Origin != ([3]float64{}) {
+		eye = eye.Add(nt3dmath.Vec3{X: float32(c.Origin[0]), Y: float32(c.Origin[1]), Z: float32(c.Origin[2])})
+	}
 	return
 }
 
@@ -226,7 +251,9 @@ func (c Camera) Orbit(azimuth, elevation float64) Camera {
 func (c Camera) Zoom(factor float64) Camera {
 	if factor > 0 && nt3dmath.IsFinite(factor) {
 		if c.Pose != (nt3dmath.Mat4{}) {
-			e := c.Target.Add(c.Eye().Sub(c.Target).Scale(float32(factor)))
+			local := c
+			local.Origin = [3]float64{}
+			e := c.Target.Add(local.Eye().Sub(c.Target).Scale(float32(factor)))
 			c.Pose[12], c.Pose[13], c.Pose[14] = e.X, e.Y, e.Z
 		}
 		if c.Xmag > 0 {
@@ -293,6 +320,7 @@ func (c Camera) Fit(b nt3dmath.AABB, aspect float64) Camera {
 	if !nt3dmath.IsFinite(radius) || !validFloat(center.X, center.Y, center.Z) {
 		return c
 	}
+	c.Origin = [3]float64{}
 	c.Pose = nt3dmath.Mat4{}
 	c.Xmag, c.Ymag = 0, 0
 	if c.AspectRatio > 0 {
@@ -320,6 +348,7 @@ func (c Camera) LookAt(eye, target nt3dmath.Vec3) Camera {
 	if !(distance > 0) || !nt3dmath.IsFinite(distance) || !validFloat(target.X, target.Y, target.Z) {
 		return c.valid()
 	}
+	c.Origin = [3]float64{}
 	c.Pose = nt3dmath.Mat4{}
 	c.Target, c.Distance = target, distance
 	c.Alpha = math.Asin(float64(d.Z)/distance) * 180 / math.Pi
@@ -337,6 +366,7 @@ func (c Camera) LookDirection(eye, forward nt3dmath.Vec3) Camera {
 	if !(length > 0) || !nt3dmath.IsFinite(length) || !validFloat(eye.X, eye.Y, eye.Z) {
 		return c
 	}
+	c.Origin = [3]float64{}
 	c.Pose = nt3dmath.Mat4{}
 	c.Alpha = -math.Asin(float64(forward.Z)/length) * 180 / math.Pi
 	c.Beta = math.Atan2(-float64(forward.Y), -float64(forward.X)) * 180 / math.Pi
@@ -351,6 +381,20 @@ func (c Camera) LookDirection(eye, forward nt3dmath.Vec3) Camera {
 func (c Camera) Eye() nt3dmath.Vec3 {
 	eye, _, _, _ := c.basis()
 	return eye
+}
+
+// WorldEye returns the camera's eye position in float64 world coordinates,
+// combining Origin with the local Pose or orbit offset without float32 loss.
+func (c Camera) WorldEye() [3]float64 {
+	c = c.valid()
+	local := c
+	local.Origin = [3]float64{}
+	eye, _, _, _ := local.basis()
+	return [3]float64{
+		c.Origin[0] + float64(eye.X),
+		c.Origin[1] + float64(eye.Y),
+		c.Origin[2] + float64(eye.Z),
+	}
 }
 
 // Forward returns the camera's unit viewing direction in world space.

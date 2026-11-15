@@ -25,12 +25,13 @@ const (
 // space. Datum is the application ID for points, boxes, and arrows; for meshes
 // and lines it is the original triangle or segment index.
 type Hit struct {
-	Node         NodeID
-	Name         string
-	Primitive    Primitive
-	Index, Datum int
-	Position     nt3dmath.Vec3
-	Depth        float32
+	Node          NodeID
+	Name          string
+	Primitive     Primitive
+	Index, Datum  int
+	Position      nt3dmath.Vec3
+	WorldPosition [3]float64
+	Depth         float32
 }
 
 // Pick tests visible instances against a pixel coordinate. Meshes use actual
@@ -45,7 +46,8 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 	if x < 0 || y < 0 || x >= float32(f.Width) || y >= float32(f.Height) || !validFloat(x, y, tolerance) || tolerance < 0 {
 		return nil
 	}
-	ray := camera.RayFromPixel(x, y, f.Width, f.Height)
+	relCam := camera.relativeTo(f.Origin)
+	ray := relCam.RayFromPixel(x, y, f.Width, f.Height)
 	best := float32(math.Inf(1))
 	var hit *Hit
 	drawn := f.drawn(1)
@@ -70,7 +72,21 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 				return
 			}
 			best = z/w + bias
-			hit = &Hit{inst.Node, inst.Name, kind, index, datum, world, z / w}
+			wp := [3]float64{
+				f.Origin[0] + float64(world.X),
+				f.Origin[1] + float64(world.Y),
+				f.Origin[2] + float64(world.Z),
+			}
+			hit = &Hit{
+				Node:          inst.Node,
+				Name:          inst.Name,
+				Primitive:     kind,
+				Index:         index,
+				Datum:         datum,
+				Position:      nt3dmath.Vec3{X: float32(wp[0]), Y: float32(wp[1]), Z: float32(wp[2])},
+				WorldPosition: wp,
+				Depth:         z / w,
+			}
 		}
 		for j, p := range g.Points {
 			cx, cy, cz, cw := f.Matrix.Transform(inst.World.Point(p.Position))
@@ -419,7 +435,8 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 	if x < 0 || y < 0 || x >= float32(f.Width) || y >= float32(f.Height) || !validFloat(x, y, tolerance) || tolerance < 0 {
 		return nil
 	}
-	ray := camera.RayFromPixel(x, y, f.Width, f.Height)
+	relCam := camera.relativeTo(f.Origin)
+	ray := relCam.RayFromPixel(x, y, f.Width, f.Height)
 	best := float32(math.Inf(1))
 	var hit *Hit
 	drawn := f.drawn(1)
@@ -440,7 +457,21 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 				return
 			}
 			best = z/w + bias
-			hit = &Hit{inst.Node, inst.Name, kind, index, datum, world, z / w}
+			wp := [3]float64{
+				f.Origin[0] + float64(world.X),
+				f.Origin[1] + float64(world.Y),
+				f.Origin[2] + float64(world.Z),
+			}
+			hit = &Hit{
+				Node:          inst.Node,
+				Name:          inst.Name,
+				Primitive:     kind,
+				Index:         index,
+				Datum:         datum,
+				Position:      nt3dmath.Vec3{X: float32(wp[0]), Y: float32(wp[1]), Z: float32(wp[2])},
+				WorldPosition: wp,
+				Depth:         z / w,
+			}
 		}
 		for j, p := range g.Points {
 			cx, cy, cz, cw := f.Matrix.Transform(inst.World.Point(p.Position))
