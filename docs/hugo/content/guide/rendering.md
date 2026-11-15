@@ -154,7 +154,7 @@ frame.PostProcess = nt3d.PostProcess{
 
 ## Decorations
 
-`DynamicLines`, `Overlays` (pixel rectangles), and `CellText` (wireframe labels) let a layer built on nt3d, such as a chart, add decorations to a frame without nt3d knowing what they mean. The widget's `WithFrameDecorator` adds them to each frame.
+`DynamicLines` (with optional pixel `DynamicLineWidth`), `Overlays` (pixel rectangles), and `CellText` (wireframe labels) let a layer built on nt3d, such as a chart or `AppendCameraPathOverlay`, add decorations to a frame without nt3d knowing what they mean. The widget's `WithFrameDecorator` adds them to each frame.
 
 ## Building frames by hand
 

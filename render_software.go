@@ -658,8 +658,9 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			}
 		}
 	}
+	dynWidth := lineWidth(f.DynamicLineWidth) * px
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
-		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], px, 0, .00002, put, strokeFog(f.DynamicLines[i].Position, f.DynamicLines[i+1].Position))
+		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], dynWidth, 0, .00002, put, strokeFog(f.DynamicLines[i].Position, f.DynamicLines[i+1].Position))
 	}
 	// Interactive frames sample screen-space marks (points, lines, arrows),
 	// which stay legible thinned. Every triangle is drawn: sampling surfaces

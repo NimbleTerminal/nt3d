@@ -615,9 +615,10 @@ func (g *gpuRenderer) uploadUI(dev *wgpu.Device, f Frame) error {
 }
 
 func (g *gpuRenderer) uploadLines(dev *wgpu.Device, f Frame) error {
+	w := lineWidth(f.DynamicLineWidth)
 	var data []byte
 	for _, v := range f.DynamicLines {
-		data = append(data, floats(v.Position.X, v.Position.Y, v.Position.Z, 1, 0, 0, 0, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, 0)...)
+		data = append(data, floats(v.Position.X, v.Position.Y, v.Position.Z, w, 0, 0, 0, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, 0)...)
 	}
 	return g.uploadDynamic(dev, 5, data)
 }

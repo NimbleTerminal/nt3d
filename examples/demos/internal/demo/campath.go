@@ -541,22 +541,22 @@ func (d *demo) decorateCamPath(f *nt3d.Frame) {
 		return
 	}
 
+	baseOpts := nt3d.CameraPathOverlayOptions{
+		Resolver:   cp.resolver,
+		LineWidth:  3.5,
+		CurveColor: color.RGBA{R: 15, G: 115, B: 235, A: 255},
+	}
 	if !cp.riding {
-		// In Director Orbit view, draw both paths (dim companion + full active frustum & look ray).
+		// In Director Orbit view, draw both paths (companion + full active frustum & look ray).
 		if cp.preset == camPresetSwitcher {
-			nt3d.AppendCameraPathOverlay(f, cp.flythrough, cp.playhead, nt3d.CameraPathOverlayOptions{
-				Resolver: cp.resolver,
-			})
-			nt3d.AppendCameraPathOverlay(f, cp.orbit, cp.playhead, nt3d.CameraPathOverlayOptions{
-				Resolver:     cp.resolver,
-				CurveColor:   color.RGBA{R: 130, G: 235, B: 190, A: 255},
-				FrustumColor: color.RGBA{R: 255, G: 210, B: 75, A: 255},
-			})
+			nt3d.AppendCameraPathOverlay(f, cp.flythrough, cp.playhead, baseOpts)
+			orbitOpts := baseOpts
+			orbitOpts.CurveColor = color.RGBA{R: 20, G: 185, B: 135, A: 255}
+			orbitOpts.FrustumColor = color.RGBA{R: 245, G: 185, B: 30, A: 255}
+			nt3d.AppendCameraPathOverlay(f, cp.orbit, cp.playhead, orbitOpts)
 			return
 		}
-		nt3d.AppendCameraPathOverlay(f, d.activeCamPath(), cp.playhead, nt3d.CameraPathOverlayOptions{
-			Resolver: cp.resolver,
-		})
+		nt3d.AppendCameraPathOverlay(f, d.activeCamPath(), cp.playhead, baseOpts)
 		return
 	}
 
@@ -566,9 +566,7 @@ func (d *demo) decorateCamPath(f *nt3d.Frame) {
 	if cp.preset == camPresetOrbit {
 		companion = cp.flythrough
 	}
-	nt3d.AppendCameraPathOverlay(f, companion, cp.playhead, nt3d.CameraPathOverlayOptions{
-		Resolver: cp.resolver,
-	})
+	nt3d.AppendCameraPathOverlay(f, companion, cp.playhead, baseOpts)
 }
 
 func (d *demo) activeMarkerName() string {

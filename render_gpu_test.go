@@ -107,6 +107,22 @@ func TestGPUAllPrimitivesAndOverlays(t *testing.T) {
 			t.Fatalf("missing GPU batch %d", batch)
 		}
 	}
+
+	// Verify DynamicLineWidth scales GPU stroke coverage just like Geometry.LineWidth.
+	fDyn1 := frame(t, NewScene())
+	fDyn1.DynamicLines = g.Lines
+	fDyn1.DynamicLineWidth = 1
+	imgDyn1, err := r.Render(fDyn1)
+	check(t, err)
+	fDyn5 := fDyn1
+	fDyn5.DynamicLineWidth = 5
+	imgDyn5, err := r.Render(fDyn5)
+	check(t, err)
+	lit1 := fDyn1.Width*fDyn1.Height - coloredPixels(imgDyn1, fDyn1.Background)
+	lit5 := fDyn5.Width*fDyn5.Height - coloredPixels(imgDyn5, fDyn5.Background)
+	if lit1 == 0 || lit5 <= lit1*3 {
+		t.Fatalf("expected GPU DynamicLineWidth=5 (%d px) > 3x DynamicLineWidth=1 (%d px)", lit5, lit1)
+	}
 }
 
 // Deliberately different fallback pixels prove the GPU samples the shader

@@ -148,10 +148,11 @@ dedicated subpackages.
   shadow, and picking transforms, eliminating `float32` vertex and depth jitter
   far from `(0, 0, 0)` with zero overhead when origins are unset.
 - Add `CameraFromState`, `StateFromCamera`, `SceneResolver` (resolving
-  `"node:<name>"` world positions and `"path:<name>"` trajectories), and
-  `AppendCameraPathOverlay` (`CameraPathOverlayOptions` /
-  `DefaultCameraPathOverlayOptions`) for 3D spline polylines, control points,
-  Bézier tangents, marker ticks, target rays, and live camera frustum pyramids.
+  `"node:<name>"` world positions and `"path:<name>"` trajectories),
+  `Frame.DynamicLineWidth`, and `AppendCameraPathOverlay`
+  (`CameraPathOverlayOptions` / `DefaultCameraPathOverlayOptions`) for 3D spline
+  polylines, control points, Bézier tangents, marker ticks, target rays, and
+  live camera frustum pyramids.
 - Add the `campath` demo (`task campath`, browser gallery #20, and
   `examples/gogpu`) showcasing a banked canyon flythrough, a closed orbit with
   focal-length pull, causal camera switching, bidirectional scrubbing, and an

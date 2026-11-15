@@ -72,11 +72,12 @@ type Frame struct {
 	// the same nonzero value hold the same geometry, which renderers may
 	// upload once and draw together. Scene.Frame supplies it for nodes that
 	// show one SharedGeometry.
-	Shared       []uint64
-	Instances    []Instance
-	DynamicLines []Vertex // World-space pairs, depth-tested with a small positive bias.
-	Overlays     []OverlayRect
-	CellText     []CellText
+	Shared           []uint64
+	Instances        []Instance
+	DynamicLines     []Vertex // World-space pairs, depth-tested with a small positive bias.
+	DynamicLineWidth float32  // Render pixels for DynamicLines; zero defaults to 1.
+	Overlays         []OverlayRect
+	CellText         []CellText
 	// Environment supplies a distant sky, diffuse light, and material reflections.
 	// Nil preserves the solid Background. EnvironmentStrength scales the light;
 	// zero means 1. EnvironmentBackgroundOnly disables diffuse light and
@@ -395,6 +396,9 @@ func validateFrame(f Frame) error {
 	}
 	if len(f.DynamicLines)%2 != 0 {
 		return fmt.Errorf("nt3d: incomplete dynamic line")
+	}
+	if !validWidth(f.DynamicLineWidth) {
+		return fmt.Errorf("nt3d: invalid dynamic line width")
 	}
 	for _, v := range f.DynamicLines {
 		if !finiteVec(v.Position) {

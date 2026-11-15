@@ -274,4 +274,40 @@ camera_path:
 	if nonBG < 25 {
 		t.Fatalf("expected visible overlay lines, got only %d non-background pixels", nonBG)
 	}
+
+	// Verify DynamicLineWidth scales stroke coverage cleanly and rejects out-of-range widths.
+	fThin := f
+	fThin.DynamicLineWidth = 1
+	imgThin, err := sw.Render(fThin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fThick := f
+	fThick.DynamicLineWidth = 4
+	imgThick, err := sw.Render(fThick)
+	if err != nil {
+		t.Fatal(err)
+	}
+	countNonBG := func(im interface {
+		At(int, int) color.Color
+	}) int {
+		n := 0
+		for y := range 150 {
+			for x := range 200 {
+				r, g, b, _ := im.At(x, y).RGBA()
+				if r>>8 != 15 || g>>8 != 18 || b>>8 != 24 {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	if thinN, thickN := countNonBG(imgThin), countNonBG(imgThick); thickN <= thinN*2 {
+		t.Fatalf("expected DynamicLineWidth=4 (%d px) to cover >2x DynamicLineWidth=1 (%d px)", thickN, thinN)
+	}
+	fBad := f
+	fBad.DynamicLineWidth = 64
+	if _, err := sw.Render(fBad); err == nil {
+		t.Fatal("expected out-of-range DynamicLineWidth to fail validation")
+	}
 }

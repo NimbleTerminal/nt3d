@@ -150,7 +150,8 @@ func (r *sceneResolver) resolveDepth(ref string, t time.Duration, depth int) (nt
 // DefaultCameraPathOverlayOptions.
 type CameraPathOverlayOptions struct {
 	CurveSamples     int              // Number of polyline samples along the path (default 128).
-	ControlPointSize float64          // Half-extent of control-point 3D cross markers in meters (default 0.22).
+	LineWidth        float32          // Pixel width applied to f.DynamicLineWidth (default 3).
+	ControlPointSize float64          // Half-extent of control-point 3D cross markers in meters (default 0.28).
 	FrustumDepth     float64          // Length of the camera frustum pyramid in meters (default 1.2).
 	LookRayLength    float64          // Length of the look-direction ray in meters (0 uses FocusDist or 2.5*FrustumDepth).
 	Resolver         nt3dcam.Resolver // Optional per-call resolver for evaluating path at t.
@@ -169,13 +170,14 @@ type CameraPathOverlayOptions struct {
 func DefaultCameraPathOverlayOptions() CameraPathOverlayOptions {
 	return CameraPathOverlayOptions{
 		CurveSamples:     128,
-		ControlPointSize: 0.22,
+		LineWidth:        3,
+		ControlPointSize: 0.28,
 		FrustumDepth:     1.2,
-		CurveColor:       color.RGBA{R: 70, G: 200, B: 255, A: 255},
-		ControlColor:     color.RGBA{R: 255, G: 195, B: 55, A: 255},
-		MarkerColor:      color.RGBA{R: 255, G: 105, B: 185, A: 255},
-		FrustumColor:     color.RGBA{R: 255, G: 125, B: 55, A: 255},
-		LookRayColor:     color.RGBA{R: 100, G: 235, B: 125, A: 255},
+		CurveColor:       color.RGBA{R: 35, G: 160, B: 250, A: 255},
+		ControlColor:     color.RGBA{R: 255, G: 180, B: 30, A: 255},
+		MarkerColor:      color.RGBA{R: 235, G: 75, B: 175, A: 255},
+		FrustumColor:     color.RGBA{R: 250, G: 95, B: 30, A: 255},
+		LookRayColor:     color.RGBA{R: 35, G: 205, B: 90, A: 255},
 	}
 }
 
@@ -194,6 +196,9 @@ func AppendCameraPathOverlay(f *Frame, path *nt3dcam.Path, t time.Duration, opts
 		in := opts[0]
 		if in.CurveSamples > 0 {
 			o.CurveSamples = in.CurveSamples
+		}
+		if in.LineWidth > 0 {
+			o.LineWidth = in.LineWidth
 		}
 		if in.ControlPointSize > 0 {
 			o.ControlPointSize = in.ControlPointSize
@@ -225,6 +230,12 @@ func AppendCameraPathOverlay(f *Frame, path *nt3dcam.Path, t time.Duration, opts
 		o.HideControlPts = in.HideControlPts
 		o.HideFrustum = in.HideFrustum
 		o.HideLookRay = in.HideLookRay
+	}
+	if o.LineWidth > 0 && validFloat(o.LineWidth) {
+		clamped := min(float32(32), max(float32(1), o.LineWidth))
+		if clamped > f.DynamicLineWidth {
+			f.DynamicLineWidth = clamped
+		}
 	}
 
 	toFrame := func(p nt3dcam.Vec3d) nt3dmath.Vec3 {
