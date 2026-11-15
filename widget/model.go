@@ -413,7 +413,7 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	}
 	f.Background, f.Fog = m.background, m.fog
 	if m.lightingSet || len(m.scene.SceneLights(nt3d.Root)) == 0 {
-		f.Lighting = m.lighting
+		f.Lighting = lightingRelative(m.lighting, f.Origin)
 	}
 	f.Supersample, f.MSAA, f.OIT, f.PostProcess = m.supersample, m.msaa, m.oit, m.effects
 	if m.decorate != nil {

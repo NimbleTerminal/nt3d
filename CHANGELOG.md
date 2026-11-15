@@ -143,16 +143,17 @@ dedicated subpackages.
   markers, and YAML 1.2 + JSON parsing and round-trip marshaling.
 - Add `Camera.Origin`, `Camera.WorldEye`, `Frame.Origin`, `Scene.SetNodeOrigin`,
   `Scene.NodeOrigin`, `Scene.NodeWorldPosition`, and `Hit.WorldPosition` so
-  scenes and cameras placed at geographic or astronomical `float64` coordinates
-  subtract `Camera.Origin` in `float64` before constructing `float32` render,
-  shadow, and picking transforms, eliminating `float32` vertex and depth jitter
-  far from `(0, 0, 0)` with zero overhead when origins are unset.
+  scenes, `nt3dwidget` viewports, and cameras placed at geographic or
+  astronomical `float64` coordinates subtract `Camera.Origin` in `float64`
+  before constructing `float32` render, shadow, lighting, and picking
+  transforms, eliminating `float32` vertex and depth jitter far from `(0, 0, 0)`
+  with zero overhead when origins are unset.
 - Add `CameraFromState`, `StateFromCamera`, `SceneResolver` (resolving
   `"node:<name>"` world positions and `"path:<name>"` trajectories),
   `Frame.DynamicLineWidth`, and `AppendCameraPathOverlay`
-  (`CameraPathOverlayOptions` / `DefaultCameraPathOverlayOptions`) for 3D spline
-  polylines, control points, Bézier tangents, marker ticks, target rays, and
-  live camera frustum pyramids.
+  (`CameraPathOverlayOptions` / `DefaultCameraPathOverlayOptions`, including
+  configurable pixel `LineWidth`) for 3D spline polylines, control points,
+  Bézier tangents, marker ticks, target rays, and live camera frustum pyramids.
 - Add the `campath` demo (`task campath`, browser gallery #20, and
   `examples/gogpu`) showcasing a banked canyon flythrough, a closed orbit with
   focal-length pull, causal camera switching, bidirectional scrubbing, and an

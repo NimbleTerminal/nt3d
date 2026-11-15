@@ -123,15 +123,38 @@ func (m *Model) resolution() tea.Cmd {
 	return m.pic.SetResolution(factor)
 }
 
+// lightingRelative translates PointLight and SpotLight positions into frame
+// space when origin is nonzero so SetLighting works seamlessly alongside
+// Camera.Origin and Scene.SetNodeOrigin.
+func lightingRelative(l nt3d.Lighting, origin [3]float64) nt3d.Lighting {
+	if origin == ([3]float64{}) || len(l.Lights) == 0 {
+		return l
+	}
+	out := l
+	out.Lights = append([]nt3d.Light(nil), l.Lights...)
+	for i := range out.Lights {
+		if out.Lights[i].Kind == nt3d.PointLight || out.Lights[i].Kind == nt3d.SpotLight {
+			p := out.Lights[i].Position
+			out.Lights[i].Position.X = float32(float64(p.X) - origin[0])
+			out.Lights[i].Position.Y = float32(float64(p.Y) - origin[1])
+			out.Lights[i].Position.Z = float32(float64(p.Z) - origin[2])
+		}
+	}
+	return out
+}
+
 // frame uses the exact encoding target but projects with physical display
 // aspect, which differs from pixel aspect in glyph mode and after rounding.
 func (m *Model) frame() Frame {
 	g := m.pic.RasterGeometry()
-	f, _ := m.scene.Frame(m.camera, max(1, g.Pixels.X), max(1, g.Pixels.Y))
-	f.Matrix = m.camera.Matrix(float32(g.DisplayAspect))
+	cam := m.camera
+	if cam.AspectRatio == 0 && g.DisplayAspect > 0 {
+		cam.AspectRatio = float64(float32(g.DisplayAspect))
+	}
+	f, _ := m.scene.Frame(cam, max(1, g.Pixels.X), max(1, g.Pixels.Y))
 	f.Background, f.Fog = m.background, m.fog
 	if m.lightingSet || len(m.scene.SceneLights(nt3d.Root)) == 0 {
-		f.Lighting = m.lighting
+		f.Lighting = lightingRelative(m.lighting, f.Origin)
 	}
 	f.Supersample, f.MSAA, f.OIT, f.PostProcess = m.supersample, m.msaa, m.oit, m.effects
 	if m.decorate != nil {

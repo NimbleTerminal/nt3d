@@ -404,3 +404,51 @@ func TestAutoRotateFollowsTime(t *testing.T) {
 		t.Fatalf("a long gap turned %v°, want at most a second's 30°", got)
 	}
 }
+
+func TestCameraOriginParityInWidget(t *testing.T) {
+	const ox, oy, oz = 5_839_600.25, -4_507_520.5, 250.75
+	s := nt3d.NewScene()
+	ball, err := nt3d.BuildSphere(nt3d.Sphere{Radius: 0.8, Color: color.RGBA{R: 230, G: 110, B: 40, A: 255}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.SetGeometry("ball", ball)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeOrigin(id, [3]float64{ox, oy, oz}); err != nil {
+		t.Fatal(err)
+	}
+
+	cam := nt3d.DefaultCamera().LookAt(nt3dmath.Vec3{X: 0, Y: -3.4, Z: 0}, nt3dmath.Vec3{})
+	cam.Pose[12], cam.Pose[13], cam.Pose[14] = 0, 0, 0
+	cam.Origin = [3]float64{ox, oy - 3.4, oz}
+
+	r := &recordRenderer{}
+	m := New(s, 40, 20, WithRenderer(r))
+	defer m.Close()
+	m.SetCamera(cam)
+	m.SetLighting(nt3d.Lighting{
+		Lights: []nt3d.Light{{
+			Kind:      nt3d.PointLight,
+			Position:  nt3dmath.Vec3{X: float32(ox), Y: float32(oy - 2), Z: float32(oz + 2)},
+			Intensity: 1.5,
+		}},
+	})
+	m.started = true
+	_ = m.schedule()().(rendered)
+
+	if r.frame.Origin != cam.Origin {
+		t.Fatalf("scheduled frame Origin = %v, want %v", r.frame.Origin, cam.Origin)
+	}
+	// Camera eye in camera-relative frame space must sit near (0, 0, 0), so the
+	// sphere at relative (0, +3.4, 0) projects cleanly onto the screen center.
+	cx, cy, cz, cw := r.frame.Matrix.Transform(r.frame.Instances[0].World.Point(nt3dmath.Vec3{}))
+	if cw <= 0 || math.Abs(float64(cx/cw)) > 1e-4 || math.Abs(float64(cy/cw)) > 1e-4 || cz <= 0 || cz >= cw {
+		t.Fatalf("sphere center did not project to screen center in widget frame: clip=(%g,%g,%g,%g)", cx, cy, cz, cw)
+	}
+	hit := m.Pick(20, 10)
+	if hit == nil || hit.Node != id {
+		t.Fatalf("expected center widget Pick to hit geographic sphere, got %+v", hit)
+	}
+}

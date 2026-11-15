@@ -67,6 +67,25 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Declarative `float64` camera paths (`nt3d/cam`, `nt3d/cam/spec`) and
+  camera-relative world origins**: zero-dependency pure-`float64` packages
+  (`nt3d/cam`, `nt3d/cam/ease`, `nt3d/cam/curve`, `nt3d/cam/frames`, and
+  `nt3d/cam/spec` with JSON Schema `ntcamera.schema.json`) precompile YAML 1.2
+  and JSON `camera_path` v1 rigs into immutable `*nt3dcam.Path` trajectories
+  that evaluate `CameraState` in ~0.2 µs with zero allocations (`Eval`,
+  `EvalWith`, `EvalOverrides`, `Blend`, `Switch`, `FitRect`), supporting
+  centripetal Catmull-Rom, cubic Bézier, clamped/periodic B-splines,
+  Gauss-Legendre arc-length parameterization, `C¹` `Squad` and `Slerp`, Hanson &
+  Ma Bishop parallel-transport tangent steering, causal `look` crossfades,
+  banking `roll`, keyframed `fov` / `focal_mm` / `ortho_scale` / DoF hints, and
+  timeline markers. `Camera.Origin` / `WorldEye`, `Frame.Origin`,
+  `Scene.SetNodeOrigin` / `NodeOrigin` / `NodeWorldPosition`, and
+  `Hit.WorldPosition` subtract `Camera.Origin` in `float64` before `float32`
+  render, shadow, widget, and picking transforms for jitter-free geographic
+  coordinates, paired with `CameraFromState`, `StateFromCamera`,
+  `SceneResolver`, `Frame.DynamicLineWidth`, `AppendCameraPathOverlay`, and the
+  `campath` demo.
+
 - **Clearcoat & Sheen on `Material` + glTF `KHR_materials_clearcoat` and
   `KHR_materials_sheen`**: `Material.Clearcoat` and
   `Material.ClearcoatRoughness` (`0..1`) add an energy-conserving dielectric

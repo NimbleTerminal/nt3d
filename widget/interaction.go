@@ -25,9 +25,8 @@ func (m *Model) Pick(x, y int) *nt3d.Hit {
 		return nil
 	}
 	cw, ch := m.pic.CellPixelSize()
-	f := m.frame()
-	f.Width, f.Height = m.width*cw, m.height*ch
-	f.Matrix = m.camera.Matrix(float32(f.Width) / float32(f.Height))
+	w, h := max(1, m.width*cw), max(1, m.height*ch)
+	f, _ := m.scene.Frame(m.camera, w, h)
 	px, py := (float32(x)+.5)*float32(cw), (float32(y)+.5)*float32(ch)
 	return m.scene.Pick(m.camera, f, px, py, float32(cw)*.6)
 }
