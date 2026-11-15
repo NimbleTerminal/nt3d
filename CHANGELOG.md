@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.10.0 (2026-11-15)
 
 This release upgrades `nt3d`'s shading, lighting, camera, and transparency
 pipeline on both WebGPU and software: Cook-Torrance GGX PBR with Clearcoat and
@@ -159,7 +159,7 @@ dedicated subpackages.
   focal-length pull, causal camera switching, bidirectional scrubbing, and an
   interactive director camera with live 3D frustum and spline overlays.
 
-### Reliability, viewer, and documentation
+### Reliability, dependencies, and documentation
 
 - Add `FuzzNewHDREnvironment` for Radiance `.hdr` decoding with pre-allocation
   scanline bounds checks and `FuzzParse` for `nt3d/cam/spec` YAML/JSON round-trip
@@ -171,6 +171,24 @@ dedicated subpackages.
 - Split the `examples/gogpu` desktop viewer into focused source files,
   consolidate benchmark artifacts under `docs/performance/`, add
   `CODE_OF_CONDUCT.md`, and refresh `README.md` and the Hugo guide.
+- Update Lip Gloss to v2.1.1 across the library and both example modules
+  (`ntpicture v0.2.0`, `ntgpuimage v0.6.0`, `ntcanvas v0.1.4`, and
+  `booba v0.13.0` remain at their latest releases).
+- Retain `wgpu v0.34.5`, `naga v0.20.4`, `gputypes v0.8.2`, and `gogpu v0.54.0`
+  for Metal compatibility: tested `wgpu v0.34.15` with `naga v0.21.12` and
+  `v0.22.1` still fails Metal environment/reflection pipeline creation, and
+  `gogpu v0.54.1` requires that newer GPU stack.
+
+### Validation and known limitations
+
+- Full CI (`task ci`), fuzz smoke (`task fuzz-smoke`), Hugo documentation builds
+  (`task build-site`), and all Apple Metal hardware GPU suites (`task test-gpu`)
+  pass across all library packages and 20 gallery demos.
+- **Linux Vulkan GPU validation remains open** per [ROADMAP.md](ROADMAP.md)
+  (NVIDIA GB10 rendering, particle-sort, clustered-LOD, and `water` device-loss
+  follow-up). `v0.9.0`'s toon cast-shadow stair-stepping and rigid-only crease
+  line limitations are resolved in `v0.10.0` via `ToonStyle.ShadowSoftness` and
+  deforming/see-through crease support.
 
 ----
 
