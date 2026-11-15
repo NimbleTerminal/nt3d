@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nimbleterminal.dev/nt3d/cam/spec/ntcamera.schema.json",
+  "title": "NimbleTerminal Camera Path Specification (v1)",
+  "description": "Declarative 3D camera path specification for NT3D, Nebula, and ntlayout.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["camera_path"],
+      "additionalProperties": false,
+      "properties": {
+        "camera_path": { "$ref": "#/$defs/cameraPath" }
+      }
+    },
+    { "$ref": "#/$defs/cameraPath" }
+  ],
+  "$defs": {
+    "duration": {
+      "description": "Non-negative duration as a Go duration string (e.g. '12s', '500ms', '1m30s') or seconds number.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        {
+          "type": "number",
+          "minimum": 0
+        }
+      ]
+    },
+    "vec3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "quat": {
+      "description": "Quaternion [x, y, z, w].",
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "ease": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "linear",
+            "ease",
+            "ease-in",
+            "ease-out",
+            "ease-in-out",
+            "smoothstep",
+            "smootherstep",
+            "hold"
+          ]
+        },
+        {
+          "description": "CSS cubic-bezier(x1, y1, x2, y2) with x1, x2 in [0, 1].",
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "number" },
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "number" }
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        }
+      ]
+    },
+    "scalarKeyframe": {
+      "type": "object",
+      "required": ["t", "v"],
+      "additionalProperties": false,
+      "properties": {
+        "t": { "$ref": "#/$defs/duration" },
+        "v": { "type": "number" },
+        "ease": { "$ref": "#/$defs/ease" }
+      }
+    },
+    "quatKeyframe": {
+      "type": "object",
+      "required": ["t", "q"],
+      "additionalProperties": false,
+      "properties": {
+        "t": { "$ref": "#/$defs/duration" },
+        "q": { "$ref": "#/$defs/quat" },
+        "ease": { "$ref": "#/$defs/ease" }
+      }
+    },
+    "geoOrigin": {
+      "type": "object",
+      "required": ["lat", "lon"],
+      "additionalProperties": false,
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+        "alt": { "type": "number", "default": 0 }
+      }
+    },
+    "bezierKnot": {
+      "type": "object",
+      "required": ["p"],
+      "additionalProperties": false,
+      "properties": {
+        "p": { "$ref": "#/$defs/vec3" },
+        "in": { "$ref": "#/$defs/vec3" },
+        "out": { "$ref": "#/$defs/vec3" },
+        "tangent_in": { "$ref": "#/$defs/vec3" },
+        "tangent_out": { "$ref": "#/$defs/vec3" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["in", "tangent_in"] },
+          { "required": ["out", "tangent_out"] }
+        ]
+      }
+    },
+    "positionTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interp": {
+          "type": "string",
+          "enum": ["catmull-rom-centripetal", "bezier", "bspline", "linear"],
+          "default": "catmull-rom-centripetal"
+        },
+        "closed": { "type": "boolean", "default": false },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/vec3" }
+        },
+        "knots": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/bezierKnot" }
+        },
+        "samples": {
+          "description": "Reserved for v2 captured GNSS/IMU trajectories.",
+          "type": "array"
+        }
+      },
+      "oneOf": [
+        { "required": ["points"] },
+        { "required": ["knots"] }
+      ]
+    },
+    "timingSegment": {
+      "type": "object",
+      "required": ["to", "over"],
+      "additionalProperties": false,
+      "properties": {
+        "to": { "type": "number", "minimum": 0, "maximum": 1 },
+        "over": { "$ref": "#/$defs/duration" },
+        "ease": { "$ref": "#/$defs/ease" }
+      }
+    },
+    "timingTrack": {
+      "oneOf": [
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/timingSegment" }
+        },
+        {
+          "type": "object",
+          "required": ["segments"],
+          "additionalProperties": false,
+          "properties": {
+            "start": { "type": "number", "minimum": 0, "maximum": 1, "default": 0 },
+            "segments": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/timingSegment" }
+            }
+          }
+        }
+      ]
+    },
+    "targetRef": {
+      "type": "string",
+      "pattern": "^(node|panel|path):.+$"
+    },
+    "lookSegment": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["target", "tangent", "keyframes"]
+        },
+        "from": { "$ref": "#/$defs/duration" },
+        "blend": { "$ref": "#/$defs/duration" },
+        "blend_ease": { "$ref": "#/$defs/ease" },
+        "target": { "$ref": "#/$defs/targetRef" },
+        "point": { "$ref": "#/$defs/vec3" },
+        "fallback": { "$ref": "#/$defs/vec3" },
+        "reverse_with_motion": { "type": "boolean", "default": false },
+        "interp": {
+          "type": "string",
+          "enum": ["squad", "slerp"],
+          "default": "squad"
+        },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/quatKeyframe" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "target" } } },
+          "then": {
+            "oneOf": [
+              { "required": ["target"] },
+              { "required": ["point"] }
+            ]
+          }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "keyframes" } } },
+          "then": { "required": ["keys"] }
+        }
+      ]
+    },
+    "lensTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fov": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/scalarKeyframe" }
+        },
+        "focal_length": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/scalarKeyframe" }
+        },
+        "sensor_height": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 24.0
+        },
+        "focus_dist": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/scalarKeyframe" }
+        },
+        "aperture": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/scalarKeyframe" }
+        },
+        "near": { "type": "number", "minimum": 0 },
+        "far": { "type": "number", "minimum": 0 }
+      },
+      "not": {
+        "required": ["fov", "focal_length"]
+      }
+    },
+    "marker": {
+      "type": "object",
+      "required": ["name", "t"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "t": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "cameraPath": {
+      "type": "object",
+      "required": ["version", "duration", "position"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "const": 1 },
+        "name": { "type": "string" },
+        "frame": {
+          "type": "string",
+          "enum": ["scene", "enu"],
+          "default": "scene"
+        },
+        "origin": { "$ref": "#/$defs/geoOrigin" },
+        "up": { "$ref": "#/$defs/vec3" },
+        "duration": { "$ref": "#/$defs/duration" },
+        "loop": {
+          "type": "string",
+          "enum": ["none", "loop", "pingpong"],
+          "default": "none"
+        },
+        "position": { "$ref": "#/$defs/positionTrack" },
+        "timing": { "$ref": "#/$defs/timingTrack" },
+        "look": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/lookSegment" }
+        },
+        "roll": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scalarKeyframe" }
+        },
+        "lens": { "$ref": "#/$defs/lensTrack" },
+        "markers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/marker" }
+        }
+      },
+      "if": { "properties": { "frame": { "const": "enu" } }, "required": ["frame"] },
+      "then": { "required": ["origin"] }
+    }
+  }
+}
