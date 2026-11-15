@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add glTF `KHR_materials_variants` support (`nt3d/mesh/gltf`, accepted in
+  `extensionsRequired`), per-instance `Material.BaseColor`, and format-independent
+  asset colorway switching (`SceneAsset.Variants`, `AssetNode.VariantMaterials`,
+  `AnimatedInstance.Variants`, `nt3dmesh.Model.Variants`, `Scene.MaterialVariants`,
+  `Scene.MaterialVariant`, and `Scene.SetMaterialVariant`) so multi-colorway
+  props and vehicles switch materials per instantiated subtree while preserving
+  `SharedGeometry` GPU vertex buffers and BVH pick indexes.
 - Add pure-Go, WASM-safe `KHR_mesh_quantization` and `EXT_meshopt_compression`
   support to `nt3d/mesh/gltf` (accepted in `extensionsRequired`):
   `KHR_mesh_quantization` decodes quantized `BYTE`, `UNSIGNED_BYTE`, `SHORT`,

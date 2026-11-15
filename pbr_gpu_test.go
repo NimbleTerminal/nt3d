@@ -341,3 +341,117 @@ func TestGPUClearcoatIBLAndSetMaterialParity(t *testing.T) {
 		t.Fatalf("clearcoat+sheen IBL GPU vs Software mean abs diff %.2f exceeds tolerance", mad)
 	}
 }
+
+func TestGPUBaseColorAndMaterialVariantsParity(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+
+	ball, err := BuildSphere(Sphere{
+		Radius:   .55,
+		Segments: 36,
+		Rings:    20,
+		Color:    white,
+		Material: &Material{PBR: true, Roughness: .35},
+	})
+	check(t, err)
+	sg, err := NewSharedGeometry(ball)
+	check(t, err)
+
+	baseTex := testTexture(t, color.RGBA{225, 225, 225, 255})
+	signMesh, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .7, Y: .2, Z: .35}, Color: white, Material: &Material{PBR: true, Roughness: .4, Texture: baseTex}})
+	check(t, err)
+	signSG, err := NewSharedGeometry(signMesh)
+	check(t, err)
+
+	asset := &SceneAsset{
+		Variants: []string{"Taxi", "Police", "Glass"},
+		Nodes: []AssetNode{
+			{
+				Name:   "Body",
+				Parent: -1,
+				Local:  nt3dmath.Identity(),
+				Shared: sg,
+				VariantMaterials: map[int]*Material{
+					0: {PBR: true, Roughness: .22, Clearcoat: 1, ClearcoatRoughness: .08, BaseColor: color.RGBA{245, 190, 25, 255}},
+					1: {PBR: true, Metallic: .85, Roughness: .28, BaseColor: color.RGBA{45, 95, 220, 255}},
+					2: {PBR: true, Roughness: .15, Transparent: true, BaseColor: color.RGBA{90, 220, 255, 140}},
+				},
+			},
+			{
+				Name:   "Sign",
+				Parent: 0,
+				Local:  nt3dmath.Translation(nt3dmath.Vec3{Z: .85}),
+				Shared: signSG,
+				VariantMaterials: map[int]*Material{
+					0: {PBR: true, Roughness: .4, Texture: baseTex, BaseColor: color.RGBA{255, 120, 30, 255}},
+					1: {PBR: true, Roughness: .4, Texture: baseTex, BaseColor: color.RGBA{60, 170, 255, 255}},
+				},
+			},
+		},
+	}
+
+	s := NewScene()
+	c0, err := asset.Instantiate(s, Root, "c0")
+	check(t, err)
+	c1, err := asset.Instantiate(s, Root, "c1")
+	check(t, err)
+	c2, err := asset.Instantiate(s, Root, "c2")
+	check(t, err)
+	check(t, s.SetTransform(c0.Root, nt3dmath.Translation(nt3dmath.Vec3{X: -1.35})))
+	check(t, s.SetTransform(c2.Root, nt3dmath.Translation(nt3dmath.Vec3{X: 1.35})))
+
+	cam := DefaultCamera()
+	cam.Alpha, cam.Beta, cam.Distance = 90, 12, 4.4
+	lighting := Lighting{
+		Ambient: Ambient{Sky: color.RGBA{95, 110, 135, 255}, Ground: color.RGBA{45, 40, 35, 255}, Intensity: .55},
+		Lights: []Light{
+			{Kind: DirectionalLight, Direction: nt3dmath.Vec3{X: .5, Y: -.8, Z: .7}.Normalize(), Intensity: .95},
+		},
+	}
+
+	f0, err := s.Frame(cam, 144, 96)
+	check(t, err)
+	f0.Linear = true
+	f0.Background = color.RGBA{18, 22, 28, 255}
+	f0.Lighting = lighting
+	_, err = r.Render(f0)
+	check(t, err)
+	uploadsBefore := r.uploads
+
+	// Switch c0 -> Taxi and c1 -> Police: zero GPU vertex buffer re-uploads,
+	// and all 3 Body instances + all 3 Sign instances stay batched (2 instanced draws total)!
+	check(t, s.SetMaterialVariant(c0.Root, "Taxi"))
+	check(t, s.SetMaterialVariant(c1.Root, "Police"))
+	f1, err := s.Frame(cam, 144, 96)
+	check(t, err)
+	f1.Linear = true
+	f1.Background = f0.Background
+	f1.Lighting = lighting
+
+	got1, err := r.Render(f1)
+	check(t, err)
+	if r.uploads != uploadsBefore {
+		t.Fatalf("SetMaterialVariant triggered %d GPU geometry uploads; want 0", r.uploads-uploadsBefore)
+	}
+	if len(r.draws) != 2 {
+		t.Fatalf("expected 2 instanced GPU draw groups (3 bodies + 3 signs), got %d", len(r.draws))
+	}
+	want1 := softwareRender(f1)
+	if mad := meanAbsDiff(got1, want1); mad > 2.5 {
+		t.Fatalf("opaque variants GPU vs Software mean abs diff %.2f exceeds tolerance", mad)
+	}
+
+	// Switch c2 -> Glass (Transparent BaseColor alpha) and verify GPU vs Software parity.
+	check(t, s.SetMaterialVariant(c2.Root, "Glass"))
+	f2, err := s.Frame(cam, 144, 96)
+	check(t, err)
+	f2.Linear = true
+	f2.Background = f0.Background
+	f2.Lighting = lighting
+	got2, err := r.Render(f2)
+	check(t, err)
+	want2 := softwareRender(f2)
+	if mad := meanAbsDiff(got2, want2); mad > 2.5 {
+		t.Fatalf("transparent variant GPU vs Software mean abs diff %.2f exceeds tolerance", mad)
+	}
+}

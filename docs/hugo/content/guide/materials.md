@@ -17,6 +17,7 @@ mat := &nt3d.Material{Texture: tex, Repeat: true, Specular: .4}
 `NewTexture` takes a snapshot of any `image.Image`, up to 8192 pixels a side. Textures are sRGB, as images are, and both renderers filter them in linear light.
 
 - **Repeat.** With `Material.Repeat`, texture coordinates outside 0 to 1 wrap around, and filtering blends across the seams, so a texture made to tile shows none. Otherwise they clamp to the edge. The OBJ, PLY, and 3MF readers set it, since those formats tile by default.
+- **BaseColor.** `Material.BaseColor` multiplies surface albedo (and scales `Transparent` opacity by `BaseColor.A / 255`) from per-instance uniforms without re-encoding mesh vertices or detaching `SharedGeometry`; the zero value leaves vertex and texture colors unchanged.
 - **Tint.** `Material.Tint` multiplies the texture by the vertex colors.
 - **Unlit.** `Material.Unlit` shows colors as they are, ignoring the light.
 
@@ -411,10 +412,18 @@ err := scene.SetMaterial(root, &nt3d.Material{
 Every affected mesh (including all `LOD` tiers and deformed rest meshes) is
 validated before any node is modified, so a missing UV set for a textured or
 normal-mapped material returns an error without partial updates. When
-vertex-baked fields (`Tint`, `Unlit`, `Transparent`, `Cutout`, `Threshold`,
-`EdgeOn`, normal-map tangent presence, and `FlowMap` / `FlowRepeat`) are
-unchanged, existing GPU mesh buffers and `SharedGeometry` instancing stay
-intact—including per-frame parameter updates like `FlowPhase`, `FlowStrength`,
-`Reflectivity`, `Toon`, or render-pass switches like `Transmission`. Changing a
-vertex-baked field re-encodes only the affected mesh (detaching `SharedGeometry`
-into an owned copy on that node).
+vertex-baked fields (`Tint`, `Transparent`, `Cutout`, `Threshold`, `Repeat`,
+`NormalRepeat`, `EdgeOn`, normal-map strength/tangent presence, and `FlowMap` /
+`FlowRepeat`) are unchanged, existing GPU mesh buffers and `SharedGeometry`
+instancing stay intact—including per-instance `BaseColor`, `Unlit`, PBR /
+clearcoat / sheen parameters, `FlowPhase`, `FlowStrength`, `Reflectivity`,
+`Toon`, or render-pass switches like `Transmission`. Changing a vertex-baked
+field re-encodes only the affected mesh (detaching `SharedGeometry` into an
+owned copy on that node).
+
+Assets that bundle named colorways (`SceneAsset.Variants` and per-node
+`AssetNode.VariantMaterials`, populated automatically from glTF
+`KHR_materials_variants`) can also switch per instantiated root via
+`scene.MaterialVariants(root)`, `scene.MaterialVariant(root)`, and
+`scene.SetMaterialVariant(root, name)` (passing `""` to restore each primitive's
+default material, reattaching `SharedGeometry` whenever vertex-compatible).

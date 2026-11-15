@@ -23,14 +23,37 @@ func pbrActive(m *Material) bool {
 	return m != nil && !m.Unlit && (m.PBR || m.Metallic > 0 || m.Roughness > 0 || m.ORMMap != nil || m.Clearcoat > 0 || sheenActive(m))
 }
 
-func coatParams(m *Material) [2]float32 {
-	if m == nil || m.Unlit || m.Clearcoat <= 0 {
-		return [2]float32{}
+func coatParams(m *Material) [4]float32 {
+	var out [4]float32
+	if m != nil && !m.Unlit && m.Clearcoat > 0 {
+		out[0] = max(0, min(1, m.Clearcoat))
+		out[1] = max(minPBRRoughness, min(1, m.ClearcoatRoughness))
 	}
-	return [2]float32{
-		max(0, min(1, m.Clearcoat)),
-		max(minPBRRoughness, min(1, m.ClearcoatRoughness)),
+	if m != nil && m.BaseColor != (color.RGBA{}) {
+		c := m.BaseColor
+		alpha := float32(1)
+		if m.Transparent {
+			alpha = float32(c.A) / 255
+		}
+		out[2] = float32(int(c.R)<<16 | int(c.G)<<8 | int(c.B))
+		out[3] = 1 + alpha
 	}
+	return out
+}
+
+func baseColorFactors(m *Material, linear bool) ([3]float32, float32, bool) {
+	if m == nil || m.BaseColor == (color.RGBA{}) {
+		return [3]float32{1, 1, 1}, 1, false
+	}
+	c := m.BaseColor
+	alpha := float32(1)
+	if m.Transparent {
+		alpha = float32(c.A) / 255
+	}
+	if linear {
+		return [3]float32{srgbDecode[c.R], srgbDecode[c.G], srgbDecode[c.B]}, alpha, true
+	}
+	return [3]float32{float32(c.R) / 255, float32(c.G) / 255, float32(c.B) / 255}, alpha, true
 }
 
 func sheenParams(m *Material, linear bool) [4]float32 {

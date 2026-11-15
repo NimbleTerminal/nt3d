@@ -54,6 +54,12 @@ fn output(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>) -> Out {
  }
  o.color=vec4<f32>(decode(color.rgb),1.0);o.uv=vec2<f32>(0.0);o.point=0.0;return o;
 }
+fn instanceBaseColor(ii:u32)->vec4<f32> {
+ let c=instances[ii].coat;
+ if c.w<0.5 {return vec4<f32>(1.0);}
+ let rgb=u32(c.z);
+ return vec4<f32>(decode(vec3<f32>(f32((rgb>>16u)&255u),f32((rgb>>8u)&255u),f32(rgb&255u))/255.0),c.w-1.0);
+}
 // toward is the unit direction from world point p toward a light (xyz) and
 // how much of its light reaches p (w): all of a directional light's; a
 // point or spot light's fading to nothing at its range, or as 1/(1+d²)
@@ -528,7 +534,7 @@ fn pointOutput(vi:u32,packed:u32)->Out {
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
 // Meshes are drawn instanced: each instance's transform is its own.
-fn meshOutput(vi:u32,ii:u32,side:f32)->Out {let p=items[vi];var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(p.color.rgb,f32(ii)));o.color.a=p.a.w;o.optics.w=f32(ii)+1.0;if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}return o;}
+fn meshOutput(vi:u32,ii:u32,side:f32)->Out {let p=items[vi];let bc=instanceBaseColor(ii);var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(p.color.rgb,f32(ii)));o.color=vec4<f32>(o.color.rgb*bc.rgb,p.a.w*bc.a);o.optics.w=f32(ii)+1.0;if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}return o;}
 @vertex fn vs_mesh(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,1.0);}
 @vertex fn vs_mesh_back(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,-1.0);}
 // Depth-clip the centerline before expanding it in pixel space.
@@ -620,7 +626,7 @@ fn creaseOutput(vi:u32,ii:u32)->Out {
  if s.visible!=0u {
   let atEnd=corner==2u || corner==4u || corner==5u;
   let param=select(s.t0,s.t1,atEnd);
-  let alpha=mix(a.color.x,b.color.x,param);
+  let alpha=mix(a.color.x,b.color.x,param)*instanceBaseColor(ii).a;
   o.uv=mix(uva,uvb,param);
   o.cut=alpha;
   o.color.a=alpha;
@@ -667,7 +673,8 @@ fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
   let d=nt3d_displace(pos,norm,(instances[ii].world*vec4<f32>(pos,1.0)).xyz,uv);
   pos=d.position;norm=d.normal;
  }
- var o=output(pos,norm*side,vec4<f32>(tint,f32(ii)));o.uv=uv;o.optics.w=f32(ii)+1.0;o.cut=p.color.x;o.normalStrength=p.color.w;o.normalUV=o.uv;o.rect.x=select(0.0,1.0,(flags&32u)!=0u);
+ let bc=instanceBaseColor(ii);
+ var o=output(pos,norm*side,vec4<f32>(tint,f32(ii)));o.color=vec4<f32>(o.color.rgb*bc.rgb,o.color.a);o.uv=uv;o.optics.w=f32(ii)+1.0;o.cut=p.color.x*bc.a;o.normalStrength=p.color.w;o.normalUV=o.uv;o.rect.x=select(0.0,1.0,(flags&32u)!=0u);
  // The extension record carries the normal map's coordinates and the
  // vertex's tangent frame: turned by the world matrix (not the normal
  // matrix: tangents turn as positions do), its handedness in w, negated
@@ -838,7 +845,9 @@ struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>,
   if dot(norm,norm)>0.0 {o.normal=normalize((inst.normal*vec4<f32>(norm,0.0)).xyz);}
   var tint=vec3<f32>(1.0);
   if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
-  o.color=srgbDecode3(tint);
+  var linTint=srgbDecode3(tint);
+  if inst.coat.w>=0.5 {let rgb=u32(inst.coat.z);linTint*=srgbDecode3(vec3<f32>(f32((rgb>>16u)&255u),f32((rgb>>8u)&255u),f32(rgb&255u))/255.0);}
+  o.color=linTint;
  }
  return o;
 }

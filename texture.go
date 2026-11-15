@@ -103,16 +103,24 @@ type Material struct {
 	NormalStrength float32
 	NormalRepeat   bool
 	Texture        *Texture
-	Unlit          bool
-	Cutout         bool
-	Threshold      float32
-	Repeat         bool
-	FullSize       bool
-	Tint           bool
-	EdgeOn         bool
-	Transparent    bool
-	Specular       float32
-	Shininess      float32
+	// BaseColor multiplies the surface's base sRGB color (and scales opacity on
+	// Transparent materials by BaseColor.A / 255). The zero value leaves vertex
+	// and texture colors unchanged; pass A: 255 for opaque colors (such as opaque
+	// black color.RGBA{A: 255}) and non-zero RGB (such as color.RGBA{R: 255, G: 255,
+	// B: 255, A: 0}) for zero-opacity Transparent materials. Passed per instance so
+	// Scene.SetMaterial preserves uploaded GPU mesh buffers and SharedGeometry
+	// instancing.
+	BaseColor   color.RGBA
+	Unlit       bool
+	Cutout      bool
+	Threshold   float32
+	Repeat      bool
+	FullSize    bool
+	Tint        bool
+	EdgeOn      bool
+	Transparent bool
+	Specular    float32
+	Shininess   float32
 	// PBR enables single-scatter Cook-Torrance GGX metallic/roughness shading
 	// in place of Lambert/Blinn-Phong. Setting Metallic, Roughness, ORMMap,
 	// Clearcoat, or SheenColor above zero also enables PBR automatically; set

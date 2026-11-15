@@ -4,6 +4,9 @@ package nt3dgltf
 
 import (
 	"fmt"
+	"maps"
+	"slices"
+
 	"github.com/qmuntal/gltf"
 	"github.com/qmuntal/gltf/modeler"
 	"nimbleterminal.dev/nt3d"
@@ -19,6 +22,7 @@ type vertexOrigin struct {
 type cachedMeshPiece struct {
 	shared   *nt3d.SharedGeometry
 	geometry *nt3d.Geometry
+	variants map[int]*nt3d.Material
 }
 
 func matrix32(m mat4) (out nt3dmath.Mat4) {
@@ -31,7 +35,10 @@ func vec(v [3]float32) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v[0], Y: v[1], Z:
 func (d *gltfDecoder) sceneAsset() error {
 	left := d.o.ByteLimit()
 	d.decodedLeft = &left
-	asset := &nt3d.SceneAsset{Nodes: []nt3d.AssetNode{{Name: "Y-up", Parent: -1, Local: matrix32(yUp)}}}
+	asset := &nt3d.SceneAsset{
+		Nodes:    []nt3d.AssetNode{{Name: "Y-up", Parent: -1, Local: matrix32(yUp)}},
+		Variants: slices.Clone(d.variantNames),
+	}
 	ids := map[int]int{}
 	parents := make([]int, len(d.doc.Nodes))
 	for i := range parents {
@@ -177,12 +184,19 @@ func (d *gltfDecoder) sceneAsset() error {
 					temp := *d
 					temp.m = &nt3dmesh.Model{}
 					temp.capture = false
+					temp.assetMode = true
+					temp.primVariants = nil
 					temp.points, temp.lines = 0, 0
 					temp.sources = nil
 					temp.budget = budget{limit: d.o.TriangleLimit()}
-					if err := temp.primitive("", p, mat4(gltf.DefaultMatrix)); err != nil {
+					primName := mesh.Name
+					if primName == "" {
+						primName = n.Name
+					}
+					if err := temp.primitive(primName, p, mat4(gltf.DefaultMatrix)); err != nil {
 						return err
 					}
+					d.m.Warnings = append(d.m.Warnings, temp.m.Warnings...)
 					pieces = make([]cachedMeshPiece, 0, len(temp.m.Objects))
 					for _, obj := range temp.m.Objects {
 						g := obj.Geometry
@@ -196,10 +210,10 @@ func (d *gltfDecoder) sceneAsset() error {
 							if err != nil {
 								return err
 							}
-							pieces = append(pieces, cachedMeshPiece{shared: sg})
+							pieces = append(pieces, cachedMeshPiece{shared: sg, variants: temp.primVariants})
 						} else {
 							gCopy := g
-							pieces = append(pieces, cachedMeshPiece{geometry: &gCopy})
+							pieces = append(pieces, cachedMeshPiece{geometry: &gCopy, variants: temp.primVariants})
 						}
 					}
 					staticPieces[key] = pieces
@@ -218,11 +232,12 @@ func (d *gltfDecoder) sceneAsset() error {
 						}
 						*d.decodedLeft -= instCost
 						an := nt3d.AssetNode{
-							Name:     n.Name,
-							Parent:   ids[ni],
-							Local:    localMat,
-							Shared:   piece.shared,
-							Geometry: piece.geometry,
+							Name:             n.Name,
+							Parent:           ids[ni],
+							Local:            localMat,
+							Shared:           piece.shared,
+							Geometry:         piece.geometry,
+							VariantMaterials: maps.Clone(piece.variants),
 						}
 						meshes[ni] = append(meshes[ni], len(asset.Nodes))
 						asset.Nodes = append(asset.Nodes, an)
@@ -236,12 +251,15 @@ func (d *gltfDecoder) sceneAsset() error {
 			temp := *d
 			temp.m = &nt3dmesh.Model{}
 			temp.capture = n.Skin != nil || len(p.Targets) > 0
+			temp.assetMode = true
+			temp.primVariants = nil
 			temp.points, temp.lines = 0, 0
 			temp.sources = nil
 			temp.budget = budget{limit: d.o.TriangleLimit()}
 			if err := temp.primitive(n.Name, p, mat4(gltf.DefaultMatrix)); err != nil {
 				return err
 			}
+			d.m.Warnings = append(d.m.Warnings, temp.m.Warnings...)
 			var morphs []nt3d.MorphTarget
 			for _, target := range p.Targets {
 				mt := nt3d.MorphTarget{}
@@ -410,7 +428,14 @@ func (d *gltfDecoder) sceneAsset() error {
 						dCopy := *def
 						defCopy = &dCopy
 					}
-					an := nt3d.AssetNode{Name: obj.Name, Parent: ids[ni], Local: localMat, Geometry: &gCopy, Deformation: defCopy}
+					an := nt3d.AssetNode{
+						Name:             obj.Name,
+						Parent:           ids[ni],
+						Local:            localMat,
+						Geometry:         &gCopy,
+						Deformation:      defCopy,
+						VariantMaterials: maps.Clone(temp.primVariants),
+					}
 					meshes[ni] = append(meshes[ni], len(asset.Nodes))
 					asset.Nodes = append(asset.Nodes, an)
 				}

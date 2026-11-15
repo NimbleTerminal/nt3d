@@ -309,7 +309,8 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		pbr := pbrActive(material) && !hull
 		emissive := emissiveActive(material) && !hull
 		emissiveMul := emissiveFactor(material, linear)
-		directTexture := textured && !hasMatShader && !linear && material.Unlit && !material.Tint && !fogged && !blended && !hull && !emissive
+		hasBaseColor := material != nil && material.BaseColor != (color.RGBA{})
+		directTexture := textured && !hasMatShader && !linear && material.Unlit && !material.Tint && !hasBaseColor && !fogged && !blended && !hull && !emissive
 		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && (!material.Unlit || hasMatShader) && !hull
 		var tangent, bitangent nt3dmath.Vec3
 		// A mesh with frames has one at every corner, so any nonzero
@@ -613,13 +614,14 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		}
 		unlit, textured := material != nil && material.Unlit, material != nil && material.Texture != nil
 		hasMatShader := material != nil && material.Shader != nil && !hull
+		baseMul, baseAlpha, hasBaseColor := baseColorFactors(material, linear)
 		for k, i := range index {
 			c, n := vertices[i].Color, vertices[i].Normal
 			if side == backFaces {
 				n = n.Scale(-1) // Lit as seen from behind.
 			}
 			if blended {
-				corners[k].cut = float32(c.A) / 255
+				corners[k].cut = (float32(c.A) / 255) * baseAlpha
 			} else if textured && material.EdgeOn {
 				corners[k].cut = edgeOnCut(material.threshold(), normals.Direction(n), f.viewAt(world.Point(vertices[i].Position)))
 			} else if material != nil {
@@ -644,6 +646,11 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 				corners[k].shade = [3]float32{srgbDecode[c.R] * 255, srgbDecode[c.G] * 255, srgbDecode[c.B] * 255}
 			} else {
 				corners[k].shade = [3]float32{float32(c.R), float32(c.G), float32(c.B)}
+			}
+			if hasBaseColor && !hull {
+				corners[k].shade[0] *= baseMul[0]
+				corners[k].shade[1] *= baseMul[1]
+				corners[k].shade[2] *= baseMul[2]
 			}
 		}
 		if whole {
@@ -909,6 +916,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		m := &local.Matrix
 		ink := color.RGBA{g.Outline.Color.R, g.Outline.Color.G, g.Outline.Color.B, 255}
 		isTrans := transparent(g)
+		_, creaseBaseAlpha, _ := baseColorFactors(g.Material, false)
 		hasTex := g.Material != nil && g.Material.Texture != nil
 		hasMatShader := g.Material != nil && g.Material.Shader != nil
 		isCutout := !isTrans && g.Material != nil && g.Material.Cutout && (hasTex || hasMatShader)
@@ -947,7 +955,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 					put(x, y, z, c)
 					return
 				}
-				alpha := (a.opacity*(1-wt) + b.opacity*wt) * texAlpha
+				alpha := (a.opacity*(1-wt) + b.opacity*wt) * creaseBaseAlpha * texAlpha
 				if hasMatShader {
 					alpha = evalMaterialColor(g.Material.Shader, wp, nt3dmath.Vec3{}, f.viewAt(wp), uv, [4]float32{1, 1, 1, alpha})[3]
 				}

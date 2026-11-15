@@ -67,6 +67,18 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **glTF `KHR_materials_variants`, `Material.BaseColor`, and per-instance
+  `Scene.SetMaterialVariant`**: `Material.BaseColor` packs per-instance sRGB
+  albedo tint and transparent opacity into existing GPU instance uniforms so
+  solid/tinted colorways switch without re-encoding mesh vertices or detaching
+  `SharedGeometry`. `SceneAsset.Variants`, `AssetNode.VariantMaterials`,
+  `nt3dmesh.Model.Variants`, and `Scene.MaterialVariants` / `MaterialVariant` /
+  `SetMaterialVariant` (with `""` reset and automatic `SharedGeometry`
+  reattachment) expose named colorways across independent instances, and
+  `nt3d/mesh/gltf` decodes `KHR_materials_variants` (accepted in
+  `extensionsRequired`) while pre-populating UVs and tangents needed by textured
+  or normal-mapped variants.
+
 - **glTF `KHR_mesh_quantization` and pure-Go `EXT_meshopt_compression`**:
   `nt3d/mesh/gltf` supports `KHR_mesh_quantization` (`BYTE` / `UNSIGNED_BYTE` /
   `SHORT` / `UNSIGNED_SHORT` `POSITION` and `TEXCOORD_n`, normalized `BYTE` /

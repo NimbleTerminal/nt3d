@@ -101,8 +101,10 @@ const GLTF nt3dmesh.Format = "gltf"
 // bufferViews (including OCTAHEDRAL, QUATERNION, and EXPONENTIAL filters);
 // EXT_texture_webp decodes WebP textures (falling back to Texture.Source when
 // an external WebP side file is missing); EXT_mesh_gpu_instancing expands
-// per-instance TRS accessors; and undeformed static triangle meshes in
-// Model.Asset share *nt3d.SharedGeometry across repeated nodes and repeated
+// per-instance TRS accessors; KHR_materials_variants populates Model.Variants
+// and AssetNode.VariantMaterials for per-instance Scene.SetMaterialVariant
+// colorway switching; and undeformed static triangle meshes in Model.Asset
+// share *nt3d.SharedGeometry across repeated nodes and repeated
 // Instantiate calls. Animation, skins and morphs populate Model.Asset; AddTo
 // instantiates its hierarchy and generic clips.
 // Normal maps use authored TANGENT frames, or MikkTSpace-compatible ones
@@ -135,6 +137,9 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if err := d.decodeLights(); err != nil {
 		return nil, err
 	}
+	if err := d.decodeVariants(); err != nil {
+		return nil, err
+	}
 	if err := d.scene(); err != nil {
 		return nil, err
 	}
@@ -163,6 +168,7 @@ var supportedExtensions = []string{
 	"KHR_materials_clearcoat",
 	"KHR_materials_sheen",
 	"KHR_lights_punctual",
+	"KHR_materials_variants",
 	"KHR_mesh_quantization",
 	"EXT_meshopt_compression",
 	"EXT_texture_webp",
@@ -170,12 +176,13 @@ var supportedExtensions = []string{
 }
 
 // ignoredExtensions are passed over silently: they refine looks nt3d does not draw.
-var ignoredExtensions = []string{"KHR_materials_specular", "KHR_materials_variants"}
+var ignoredExtensions = []string{"KHR_materials_specular"}
 
 type gltfDecoder struct {
 	decodedLeft    *int64
 	depth          int
 	capture        bool
+	assetMode      bool
 	sources        [][]vertexOrigin
 	doc            *gltf.Document
 	o              *nt3dmesh.Options
@@ -188,6 +195,8 @@ type gltfDecoder struct {
 	textures       map[int]*nt3d.Texture // By texture index; nil when it failed.
 	nodeInst       map[int]nodeInstances
 	lights         []punctualLight
+	variantNames   []string
+	primVariants   map[int]*nt3d.Material
 	warned         map[string]bool
 	visits         int
 	points         int // Across the model, within maxPoints.
@@ -1070,7 +1079,45 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 	if l.err != nil {
 		return l.err
 	}
-	b := &gltfBuilder{d: d, name: name, look: l, world: world, positions: positions}
+	d.primVariants = nil
+	var varEntries []variantEntry
+	var varLooks []gltfLook
+	isTriangles := p.Mode == gltf.PrimitiveTriangles || p.Mode == gltf.PrimitiveTriangleStrip || p.Mode == gltf.PrimitiveTriangleFan
+	if d.assetMode {
+		varEntries, err = d.primitiveVariants(p)
+		if err != nil {
+			return err
+		}
+		if len(varEntries) > 0 && !isTriangles {
+			d.warn("%s: KHR_materials_variants on points or lines is ignored", name)
+			varEntries = nil
+		}
+		if len(varEntries) > 0 {
+			varLooks = make([]gltfLook, len(varEntries))
+			for k, ve := range varEntries {
+				vl := d.look(&ve.material)
+				if vl.err != nil {
+					return vl.err
+				}
+				varLooks[k] = vl
+			}
+		}
+	}
+	anyNormal := l.normal != nil
+	for k := range varLooks {
+		if varLooks[k].normal != nil {
+			anyNormal = true
+		}
+	}
+	b := &gltfBuilder{
+		d:            d,
+		name:         name,
+		look:         l,
+		world:        world,
+		positions:    positions,
+		useBaseColor: len(varEntries) > 0,
+		anyNormal:    anyNormal,
+	}
 	if a, ok, err := attr(gltf.NORMAL); err != nil {
 		return err
 	} else if ok {
@@ -1092,7 +1139,7 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 			b.colors = nil
 		}
 	}
-	if l.normal != nil {
+	if b.anyNormal {
 		if a, ok, err := attr(gltf.TANGENT); err != nil {
 			return err
 		} else if ok {
@@ -1182,6 +1229,80 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 			b.normalUV = normalUV
 		}
 	}
+	for k := range varLooks {
+		vl := &varLooks[k]
+		if vl.double != b.look.double {
+			d.warn("%s: variant material changes doubleSided; sharing default faces", name)
+		}
+		if vl.texture != nil {
+			uv, err := readUV(vl.mapping)
+			if err != nil {
+				return err
+			}
+			if uv == nil {
+				vl.texture = nil
+			} else if b.uv == nil {
+				b.uv = uv
+			} else if !slices.Equal(b.uv, uv) {
+				d.warn("%s: variant texture uses distinct UVs; sharing base UVs", name)
+			}
+		}
+		if vl.orm != nil {
+			ormUV, err := readUV(vl.ormMapping)
+			if err != nil {
+				return err
+			}
+			if ormUV == nil {
+				vl.orm = nil
+			} else if b.uv == nil {
+				b.uv = ormUV
+			} else if !slices.Equal(b.uv, ormUV) {
+				d.warn("%s: variant ORM texture uses distinct UVs; sharing base UVs", name)
+			}
+		}
+		if vl.emissiveMap != nil {
+			emUV, err := readUV(vl.emissiveMapping)
+			if err != nil {
+				return err
+			}
+			if emUV == nil {
+				vl.emissiveMap = nil
+			} else if b.uv == nil {
+				b.uv = emUV
+			} else if !slices.Equal(b.uv, emUV) {
+				d.warn("%s: variant emissive texture uses distinct UVs; sharing base UVs", name)
+			}
+		}
+		if vl.normal != nil {
+			normalUV, err := readUV(vl.normalMapping)
+			if err != nil {
+				return err
+			}
+			if normalUV == nil {
+				vl.normal = nil
+			} else if b.uv == nil {
+				b.uv = normalUV
+			} else if !slices.Equal(b.uv, normalUV) {
+				if b.normalUV == nil {
+					b.normalUV = normalUV
+				} else if !slices.Equal(b.normalUV, normalUV) {
+					d.warn("%s: variant normal texture uses distinct UVs; sharing normal UVs", name)
+				}
+			}
+		}
+	}
+	b.anyNormal = b.look.normal != nil
+	for k := range varLooks {
+		if varLooks[k].normal != nil {
+			b.anyNormal = true
+		}
+	}
+	if len(varEntries) > 0 {
+		d.primVariants = make(map[int]*nt3d.Material, len(varEntries))
+		for k, ve := range varEntries {
+			d.primVariants[ve.variant] = d.lookMaterial(varLooks[k], b.colors != nil, true)
+		}
+	}
 	switch p.Mode {
 	case gltf.PrimitiveTriangles, gltf.PrimitiveTriangleStrip, gltf.PrimitiveTriangleFan:
 		return b.triangles(gltfTriangles(p.Mode, indices))
@@ -1231,16 +1352,18 @@ func lineSegments(mode gltf.PrimitiveMode, v []uint32) []uint32 {
 
 // gltfBuilder turns one primitive's vertices into objects.
 type gltfBuilder struct {
-	d         *gltfDecoder
-	name      string
-	look      gltfLook
-	world     mat4
-	positions [][3]float32
-	normals   [][3]float32
-	colors    [][4]uint16
-	uv        [][2]float32
-	normalUV  [][2]float32
-	tangents  []nt3d.Tangent // Authored, per source vertex, in the primitive's space.
+	d            *gltfDecoder
+	name         string
+	look         gltfLook
+	world        mat4
+	positions    [][3]float32
+	normals      [][3]float32
+	colors       [][4]uint16
+	uv           [][2]float32
+	normalUV     [][2]float32
+	tangents     []nt3d.Tangent // Authored, per source vertex, in the primitive's space.
+	useBaseColor bool
+	anyNormal    bool
 	// Generated frames, per corner of the triangle list, placed by world
 	// for a front face, and which of its source vertex's distinct frames
 	// each corner has: corners that differ split the vertex.
@@ -1260,8 +1383,21 @@ type remapKey struct {
 }
 
 // color is a vertex's sRGB color and alpha: the base color factor times the
-// vertex color, both linear.
+// vertex color, both linear (or un-factored vertex color when BaseColor is
+// carried per material for KHR_materials_variants).
 func (b *gltfBuilder) color(i uint32) (color.RGBA, bool) {
+	if b.useBaseColor {
+		if b.colors == nil {
+			return color.RGBA{255, 255, 255, 255}, false
+		}
+		c := b.colors[i]
+		return color.RGBA{
+			srgb8(float64(c[0]) / 65535),
+			srgb8(float64(c[1]) / 65535),
+			srgb8(float64(c[2]) / 65535),
+			uint8(max(0, min(1, float64(c[3])/65535))*255 + .5),
+		}, false
+	}
 	f := b.look.factor
 	if b.colors != nil {
 		c := b.colors[i]
@@ -1277,7 +1413,10 @@ func (b *gltfBuilder) color(i uint32) (color.RGBA, bool) {
 
 // nt3dMaterial is the primitive's nt3d material, or nil when plain will do.
 func (b *gltfBuilder) nt3dMaterial() *nt3d.Material {
-	l := b.look
+	return b.d.lookMaterial(b.look, b.colors != nil, b.useBaseColor)
+}
+
+func (d *gltfDecoder) lookMaterial(l gltfLook, hasColors, useBaseColor bool) *nt3d.Material {
 	m := nt3d.Material{
 		NormalMap:          l.normal,
 		NormalStrength:     l.normalStrength,
@@ -1310,14 +1449,70 @@ func (b *gltfBuilder) nt3dMaterial() *nt3d.Material {
 	switch l.alpha {
 	case gltf.AlphaMask:
 		if l.texture != nil {
-			m.Cutout, m.Threshold = true, float32(max(.001, min(1, l.cutoff)))
+			cut := l.cutoff
+			if useBaseColor && l.factor[3] < 1 {
+				if l.factor[3] <= 0 {
+					cut = 1
+				} else {
+					cut = min(1, l.cutoff/l.factor[3])
+				}
+			}
+			m.Cutout, m.Threshold = true, float32(max(.001, min(1, cut)))
+		} else if useBaseColor && !hasColors && l.factor[3] < l.cutoff {
+			m.Transparent = true
+			m.BaseColor = color.RGBA{R: 255, G: 255, B: 255, A: 0}
 		}
 	case gltf.AlphaBlend:
 		m.Transparent = true
 	}
-	if l.texture != nil {
+	if useBaseColor {
+		if !m.Transparent {
+			if l.plain {
+				if !hasColors {
+					bc := d.o.FaceColor()
+					bc.A = 255
+					if bc != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+						m.BaseColor = bc
+					}
+				}
+			} else {
+				bc := color.RGBA{R: srgb8(l.factor[0]), G: srgb8(l.factor[1]), B: srgb8(l.factor[2]), A: 255}
+				if bc != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+					m.BaseColor = bc
+				}
+			}
+		} else if m.BaseColor == (color.RGBA{}) {
+			if l.plain {
+				if !hasColors {
+					bc := d.o.FaceColor()
+					if bc == (color.RGBA{}) {
+						bc = color.RGBA{R: 255, G: 255, B: 255, A: 0}
+					}
+					if bc != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+						m.BaseColor = bc
+					}
+				}
+			} else {
+				bc := color.RGBA{
+					R: srgb8(l.factor[0]),
+					G: srgb8(l.factor[1]),
+					B: srgb8(l.factor[2]),
+					A: uint8(max(0, min(1, l.factor[3]))*255 + .5),
+				}
+				if bc == (color.RGBA{}) {
+					bc = color.RGBA{R: 255, G: 255, B: 255, A: 0}
+				}
+				if bc != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+					m.BaseColor = bc
+				}
+			}
+		}
+		if l.texture != nil {
+			m.Tint = hasColors
+		}
+	} else if l.texture != nil {
 		// The texture replaces vertex colors unless they tint it.
-		m.Tint = b.colors != nil || l.factor[0] != 1 || l.factor[1] != 1 || l.factor[2] != 1
+		m.Tint = hasColors || l.factor[0] != 1 || l.factor[1] != 1 || l.factor[2] != 1
 	}
 	if m == (nt3d.Material{}) {
 		return nil
@@ -1347,7 +1542,7 @@ func (b *gltfBuilder) triangles(v []uint32) error {
 	b.material = b.nt3dMaterial()
 	first := len(b.d.m.Objects)
 	mirror := b.world.det() < 0 // Mirroring turns faces inside out; turn them back.
-	if b.look.normal != nil && b.tangents == nil {
+	if b.anyNormal && b.tangents == nil {
 		b.generateTangents(v, mirror)
 	}
 	for _, back := range []bool{false, true} {
@@ -1359,7 +1554,7 @@ func (b *gltfBuilder) triangles(v []uint32) error {
 			if mirror != back {
 				tri[1], tri[2] = tri[2], tri[1]
 			}
-			if b.look.alpha == gltf.AlphaMask && b.look.texture == nil {
+			if !b.useBaseColor && b.look.alpha == gltf.AlphaMask && b.look.texture == nil {
 				// No texture to cut: a face shows if its corners average
 				// past the cutoff.
 				a := 0.0
@@ -1457,7 +1652,7 @@ func (b *gltfBuilder) generateTangents(v []uint32, mirror bool) {
 // primitive's triangle list.
 func (b *gltfBuilder) face(tri [3]uint32, at [3]int, back bool) error {
 	limit := pieceTriangles()
-	if b.look.normal != nil {
+	if b.anyNormal {
 		// Tangents or independent normal UVs take an extension record.
 		limit = min(limit, nt3d.MeshTriangleLimit()/2)
 	}

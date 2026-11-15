@@ -155,3 +155,221 @@ func TestSetMaterialOnDeformedMesh(t *testing.T) {
 		t.Fatal("deformed mesh did not receive normal map and generated tangents")
 	}
 }
+
+func TestMaterialBaseColorSoftwareShading(t *testing.T) {
+	cam := DefaultCamera()
+	cam.Alpha, cam.Beta, cam.Distance = 90, 0, 2.2
+
+	// 1. Untextured PBR surface with BaseColor matches vertex-baked color in both linear and sRGB frames.
+	tint := color.RGBA{230, 175, 30, 255}
+	for _, linear := range []bool{false, true} {
+		sBaked := NewScene()
+		bBaked, err := BuildSphere(Sphere{Radius: .8, Segments: 28, Rings: 18, Color: tint, Material: &Material{PBR: true, Roughness: .35}})
+		check(t, err)
+		_, err = sBaked.SetGeometry("ball", bBaked)
+		check(t, err)
+		fBaked, err := sBaked.Frame(cam, 64, 64)
+		check(t, err)
+		fBaked.Linear = linear
+
+		sInst := NewScene()
+		bInst, err := BuildSphere(Sphere{Radius: .8, Segments: 28, Rings: 18, Color: white, Material: &Material{PBR: true, Roughness: .35, BaseColor: tint}})
+		check(t, err)
+		_, err = sInst.SetGeometry("ball", bInst)
+		check(t, err)
+		fInst, err := sInst.Frame(cam, 64, 64)
+		check(t, err)
+		fInst.Linear = linear
+
+		imgBaked := softwareRender(fBaked)
+		imgInst := softwareRender(fInst)
+		cBaked := at(imgBaked, 32, 32)
+		cInst := at(imgInst, 32, 32)
+		if !closeRGB(cBaked, cInst, 2) {
+			t.Fatalf("linear=%v BaseColor %v != vertex color %v", linear, cInst, cBaked)
+		}
+	}
+
+	// 2. Unlit textured mesh (which uses directTexture when BaseColor is zero) tints cleanly when BaseColor is set.
+	tex := testTexture(t, color.RGBA{200, 200, 200, 255})
+	sTex := NewScene()
+	q := quad(1.2, 0, white, &Material{Unlit: true, Texture: tex, BaseColor: color.RGBA{255, 64, 32, 255}}, false)
+	q.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	_, err := sTex.SetGeometry("quad", q)
+	check(t, err)
+	topCam := DefaultCamera()
+	topCam.Alpha, topCam.Beta, topCam.Distance = 90, 89.9, 2.0
+	fTex, err := sTex.Frame(topCam, 48, 48)
+	check(t, err)
+	px := at(softwareRender(fTex), 24, 24)
+	if px.R < 180 || px.G > 70 || px.B > 40 {
+		t.Fatalf("expected red-orange tinted unlit texture, got %v", px)
+	}
+
+	// 3. Transparent BaseColor scales opacity, including zero-alpha invisible colorways.
+	sTrans := NewScene()
+	qt := quad(1.2, 0, white, &Material{Unlit: true, Transparent: true, BaseColor: color.RGBA{255, 255, 255, 0}}, false)
+	qID, err := sTrans.SetGeometry("glass", qt)
+	check(t, err)
+	fZero, err := sTrans.Frame(topCam, 48, 48)
+	check(t, err)
+	fZero.Background = color.RGBA{20, 40, 80, 255}
+	if got := at(softwareRender(fZero), 24, 24); !closeRGB(got, fZero.Background, 1) {
+		t.Fatalf("zero-alpha BaseColor changed background: got %v, want %v", got, fZero.Background)
+	}
+	check(t, sTrans.SetMaterial(qID, &Material{Unlit: true, Transparent: true, BaseColor: color.RGBA{220, 40, 40, 128}}))
+	fHalf, err := sTrans.Frame(topCam, 48, 48)
+	check(t, err)
+	fHalf.Background = color.RGBA{20, 40, 80, 255}
+	gotHalf := at(softwareRender(fHalf), 24, 24)
+	if gotHalf.R <= fHalf.Background.R+60 || gotHalf.B >= fHalf.Background.B {
+		t.Fatalf("half-alpha BaseColor did not blend over background: got %v", gotHalf)
+	}
+}
+
+func TestSceneAssetMaterialVariants(t *testing.T) {
+	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{PBR: true, Roughness: .5}})
+	check(t, err)
+	bodySG, err := NewSharedGeometry(cube)
+	check(t, err)
+	trimSG, err := NewSharedGeometry(cube)
+	check(t, err)
+
+	taxiMat := &Material{PBR: true, Roughness: .2, Clearcoat: 1, BaseColor: color.RGBA{245, 195, 20, 255}}
+	policeMat := &Material{PBR: true, Roughness: .3, BaseColor: color.RGBA{30, 60, 160, 255}}
+	lightbarMat := &Material{PBR: true, Emissive: color.RGBA{40, 120, 255, 255}, EmissiveIntensity: 2}
+	glassMat := &Material{PBR: true, Roughness: .1, Transparent: true, BaseColor: color.RGBA{120, 210, 255, 128}}
+
+	asset := &SceneAsset{
+		Variants: []string{"Taxi", "Police", "Glass"},
+		Nodes: []AssetNode{
+			{
+				Name:   "Body",
+				Parent: -1,
+				Local:  nt3dmath.Identity(),
+				Shared: bodySG,
+				VariantMaterials: map[int]*Material{
+					0: taxiMat,
+					1: policeMat,
+					2: glassMat,
+				},
+			},
+			{
+				Name:   "Lightbar",
+				Parent: 0,
+				Local:  nt3dmath.Translation(nt3dmath.Vec3{Z: .75}),
+				Shared: trimSG,
+				VariantMaterials: map[int]*Material{
+					1: lightbarMat, // Only Police overrides Lightbar; Taxi & Glass revert to default.
+				},
+			},
+		},
+	}
+
+	s := NewScene()
+	carA, err := asset.Instantiate(s, Root, "carA")
+	check(t, err)
+	carB, err := asset.Instantiate(s, Root, "carB")
+	check(t, err)
+	carC, err := asset.Instantiate(s, Root, "carC")
+	check(t, err)
+
+	gotVars := s.MaterialVariants(carA.Root)
+	if len(gotVars) != 3 || gotVars[0] != "Taxi" || gotVars[1] != "Police" || gotVars[2] != "Glass" {
+		t.Fatalf("unexpected MaterialVariants: %v", gotVars)
+	}
+	gotVars[0] = "Mutated"
+	if s.MaterialVariants(carA.Root)[0] != "Taxi" {
+		t.Fatal("MaterialVariants was not cloned")
+	}
+	if s.MaterialVariant(carA.Root) != "" {
+		t.Fatalf("expected default active variant \"\", got %q", s.MaterialVariant(carA.Root))
+	}
+
+	check(t, s.SetMaterialVariant(carA.Root, "Taxi"))
+	check(t, s.SetMaterialVariant(carB.Root, "Police"))
+	if s.MaterialVariant(carA.Root) != "Taxi" || s.MaterialVariant(carB.Root) != "Police" || s.MaterialVariant(carC.Root) != "" {
+		t.Fatal("active variant mismatch across independent instances")
+	}
+
+	f := frame(t, s)
+	var sharedBodyID uint64
+	for idx, inst := range f.Instances {
+		switch inst.Name {
+		case "carA/0:Body":
+			if f.Geometry[idx].Material.BaseColor != taxiMat.BaseColor || f.Shared[idx] == 0 {
+				t.Fatalf("carA body expected shared Taxi material, got mat=%+v shared=%d", f.Geometry[idx].Material, f.Shared[idx])
+			}
+			sharedBodyID = f.Shared[idx]
+		case "carB/0:Body":
+			if f.Geometry[idx].Material.BaseColor != policeMat.BaseColor || f.Shared[idx] != sharedBodyID {
+				t.Fatalf("carB body did not share geometry with carA: shared=%d want=%d", f.Shared[idx], sharedBodyID)
+			}
+		case "carC/0:Body":
+			if f.Geometry[idx].Material.BaseColor != (color.RGBA{}) || f.Shared[idx] != sharedBodyID {
+				t.Fatalf("carC body did not remain default shared: mat=%+v shared=%d", f.Geometry[idx].Material, f.Shared[idx])
+			}
+		case "carB/1:Lightbar":
+			if f.Geometry[idx].Material.Emissive != lightbarMat.Emissive {
+				t.Fatalf("carB lightbar did not activate on Police: %+v", f.Geometry[idx].Material)
+			}
+		}
+	}
+
+	// Switching carB from Police -> Taxi resets unmapped Lightbar back to default material!
+	check(t, s.SetMaterialVariant(carB.Root, "Taxi"))
+	f2 := frame(t, s)
+	for idx, inst := range f2.Instances {
+		if inst.Name == "carB/1:Lightbar" && f2.Geometry[idx].Material.Emissive != (color.RGBA{}) {
+			t.Fatalf("unmapped Lightbar did not reset to default on Taxi: %+v", f2.Geometry[idx].Material)
+		}
+	}
+
+	// Switching carA to Glass (Transparent) detaches carA's Body cleanly, then switching back to "" rejoins SharedGeometry!
+	check(t, s.SetMaterialVariant(carA.Root, "Glass"))
+	fGlass := frame(t, s)
+	for idx, inst := range fGlass.Instances {
+		if inst.Name == "carA/0:Body" && (!fGlass.Geometry[idx].Material.Transparent || fGlass.Shared[idx] != 0) {
+			t.Fatal("expected transparent variant to detach SharedGeometry")
+		}
+	}
+	check(t, s.SetMaterialVariant(carA.Root, ""))
+	fReset := frame(t, s)
+	for idx, inst := range fReset.Instances {
+		if inst.Name == "carA/0:Body" && (fReset.Shared[idx] != sharedBodyID || fReset.Geometry[idx].Material.BaseColor != (color.RGBA{})) {
+			t.Fatalf("reset to default did not reattach SharedGeometry: shared=%d want=%d", fReset.Shared[idx], sharedBodyID)
+		}
+	}
+
+	// Unknown variant or unknown node fails atomically.
+	check(t, s.SetMaterialVariant(carA.Root, "Taxi"))
+	if s.SetMaterialVariant(carA.Root, "NoSuchVariant") == nil {
+		t.Fatal("accepted unknown variant name")
+	}
+	if s.MaterialVariant(carA.Root) != "Taxi" {
+		t.Fatal("failed SetMaterialVariant altered active variant")
+	}
+	if s.SetMaterialVariant(NodeID(999999), "Taxi") == nil {
+		t.Fatal("accepted unknown root node")
+	}
+
+	// Remove cleans up variant state.
+	check(t, s.Remove(carA.Root))
+	if s.MaterialVariants(carA.Root) != nil || s.MaterialVariant(carA.Root) != "" {
+		t.Fatal("Remove did not clean up variant state")
+	}
+
+	// Validation errors on malformed SceneAssets.
+	if _, err := (&SceneAsset{Variants: []string{""}}).Instantiate(s, Root, "badEmpty"); err == nil {
+		t.Fatal("accepted empty variant name")
+	}
+	if _, err := (&SceneAsset{Variants: []string{"A", "A"}}).Instantiate(s, Root, "badDup"); err == nil {
+		t.Fatal("accepted duplicate variant name")
+	}
+	if _, err := (&SceneAsset{
+		Variants: []string{"A"},
+		Nodes:    []AssetNode{{Name: "n", Parent: -1, Local: nt3dmath.Identity(), Shared: bodySG, VariantMaterials: map[int]*Material{1: taxiMat}}},
+	}).Instantiate(s, Root, "badIdx"); err == nil {
+		t.Fatal("accepted out-of-range variant index")
+	}
+}

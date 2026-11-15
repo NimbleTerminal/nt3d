@@ -58,6 +58,7 @@ type sceneNode struct {
 type Scene struct {
 	environment                              *Environment
 	clips                                    map[NodeID][]AnimationClip
+	variants                                 map[NodeID]*variantInstance
 	nodes                                    map[NodeID]*sceneNode
 	names                                    map[string]NodeID
 	order                                    []NodeID
@@ -539,6 +540,7 @@ func (s *Scene) Remove(id NodeID) error {
 		delete(s.names, node.Name)
 		delete(s.nodes, at)
 		delete(s.clips, at)
+		delete(s.variants, at)
 	}
 	s.order = slices.DeleteFunc(s.order, func(v NodeID) bool { return s.nodes[v] == nil })
 	s.changed(true, true)

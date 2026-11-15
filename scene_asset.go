@@ -5,6 +5,7 @@ package nt3d
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
@@ -23,25 +24,56 @@ type AssetNode struct {
 	Geometry    *Geometry
 	Shared      *SharedGeometry
 	Deformation *Deformation
+	// VariantMaterials optionally maps indices into SceneAsset.Variants to
+	// alternate materials for this triangle mesh node. Unmapped variants (or
+	// resetting with SetMaterialVariant(root, "")) restore the node's default
+	// material from Shared or Geometry.
+	VariantMaterials map[int]*Material
 }
 
 // SceneAsset is a format-independent scene template. Instantiate remaps all
-// joints and track targets so multiple copies animate independently.
+// joints, track targets, and material variants so multiple copies animate and
+// switch colorways independently.
 type SceneAsset struct {
-	Nodes []AssetNode
-	Clips []AnimationClip
+	Nodes    []AssetNode
+	Clips    []AnimationClip
+	Variants []string
 }
 
-// AnimatedInstance holds the root group, remapped node IDs, and remapped
-// animation clips created by SceneAsset.Instantiate.
+// AnimatedInstance holds the root group, remapped node IDs, remapped animation
+// clips, and material variant names created by SceneAsset.Instantiate.
 type AnimatedInstance struct {
-	Root  NodeID
-	Nodes []NodeID
-	Clips []AnimationClip
+	Root     NodeID
+	Nodes    []NodeID
+	Clips    []AnimationClip
+	Variants []string
+}
+
+type variantBinding struct {
+	node          NodeID
+	defaultShared *SharedGeometry
+	defaultMat    *Material
+	variants      map[int]*Material
+}
+
+type variantInstance struct {
+	names    []string
+	active   string
+	bindings []variantBinding
 }
 
 // Instantiate adds a copy of the asset's hierarchy under parent with a root group named name.
 func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *AnimatedInstance, err error) {
+	seenVariants := make(map[string]bool, len(a.Variants))
+	for _, v := range a.Variants {
+		if v == "" {
+			return nil, errors.New("nt3d: asset material variant name cannot be empty")
+		}
+		if seenVariants[v] {
+			return nil, fmt.Errorf("nt3d: duplicate asset material variant %q", v)
+		}
+		seenVariants[v] = true
+	}
 	root, err := s.Add(parent, name)
 	if err != nil {
 		return nil, err
@@ -51,7 +83,8 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 			_ = s.Remove(root)
 		}
 	}()
-	out = &AnimatedInstance{Root: root}
+	out = &AnimatedInstance{Root: root, Variants: slices.Clone(a.Variants)}
+	var bindings []variantBinding
 	for i, n := range a.Nodes {
 		p := root
 		if n.Parent >= i || n.Parent < -1 {
@@ -92,6 +125,39 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 			if e = s.SetNodeGeometry(id, *n.Geometry); e != nil {
 				return nil, e
 			}
+		}
+		if len(n.VariantMaterials) > 0 {
+			var baseGeom Geometry
+			var defaultMat *Material
+			switch {
+			case n.Shared != nil:
+				baseGeom = n.Shared.geometry
+				defaultMat = cloneMaterial(n.Shared.geometry.Material)
+			case n.Geometry != nil && len(n.Geometry.Indices) > 0:
+				baseGeom = *n.Geometry
+				defaultMat = cloneMaterial(n.Geometry.Material)
+			default:
+				return nil, errors.New("nt3d: material variants require an indexed triangle mesh node")
+			}
+			vmap := make(map[int]*Material, len(n.VariantMaterials))
+			for vi, vm := range n.VariantMaterials {
+				if vi < 0 || vi >= len(a.Variants) {
+					return nil, fmt.Errorf("nt3d: invalid asset material variant index %d", vi)
+				}
+				if e := validateMaterial(vm); e != nil {
+					return nil, e
+				}
+				if e := validateMaterialForMesh(baseGeom, vm); e != nil {
+					return nil, e
+				}
+				vmap[vi] = cloneMaterial(vm)
+			}
+			bindings = append(bindings, variantBinding{
+				node:          id,
+				defaultShared: n.Shared,
+				defaultMat:    defaultMat,
+				variants:      vmap,
+			})
 		}
 	}
 	remap := func(id NodeID) (NodeID, error) {
@@ -138,6 +204,15 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 		s.clips = map[NodeID][]AnimationClip{}
 	}
 	s.clips[root] = out.Clips
+	if len(out.Variants) > 0 {
+		if s.variants == nil {
+			s.variants = map[NodeID]*variantInstance{}
+		}
+		s.variants[root] = &variantInstance{
+			names:    slices.Clone(out.Variants),
+			bindings: bindings,
+		}
+	}
 	return out, nil
 }
 
@@ -145,4 +220,75 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 // Treat the returned tracks as read-only; NewAnimation makes a private copy.
 func (s *Scene) AnimationClips(root NodeID) []AnimationClip {
 	return append([]AnimationClip(nil), s.clips[root]...)
+}
+
+// MaterialVariants returns the named material variants bound to an instantiated
+// subtree (such as glTF KHR_materials_variants), or nil when it defines none.
+func (s *Scene) MaterialVariants(root NodeID) []string {
+	vi := s.variants[root]
+	if vi == nil {
+		return nil
+	}
+	return slices.Clone(vi.names)
+}
+
+// MaterialVariant returns the active material variant name on root, or "" when
+// root uses its default materials or defines no variants.
+func (s *Scene) MaterialVariant(root NodeID) string {
+	vi := s.variants[root]
+	if vi == nil {
+		return ""
+	}
+	return vi.active
+}
+
+// SetMaterialVariant applies a named material variant across an instantiated
+// subtree root, or restores its authored default materials when variant is "".
+// Primitives that do not map the chosen variant revert to their own default
+// material, and nodes backed by SharedGeometry preserve (or rejoin) their
+// shared GPU mesh buffer and BVH pick index whenever vertex-compatible.
+func (s *Scene) SetMaterialVariant(root NodeID, variant string) error {
+	if s.nodes[root] == nil {
+		return fmt.Errorf("nt3d: unknown material variant root %d", root)
+	}
+	vi := s.variants[root]
+	if vi == nil {
+		if variant == "" {
+			return nil
+		}
+		return fmt.Errorf("nt3d: unknown material variant %q", variant)
+	}
+	idx := -1
+	if variant != "" {
+		idx = slices.Index(vi.names, variant)
+		if idx < 0 {
+			return fmt.Errorf("nt3d: unknown material variant %q", variant)
+		}
+	}
+	for _, b := range vi.bindings {
+		n := s.nodes[b.node]
+		if n == nil {
+			continue
+		}
+		target := b.defaultMat
+		if idx >= 0 {
+			if vm, ok := b.variants[idx]; ok {
+				target = vm
+			}
+		}
+		if b.defaultShared != nil && n.shared == nil && n.deformation == nil && len(n.lod) == 0 {
+			cand := b.defaultShared.geometry
+			cand.Material = cloneMaterial(target)
+			if vertexMaterialEqual(b.defaultShared.geometry, cand) {
+				if err := s.SetNodeShared(b.node, b.defaultShared); err != nil {
+					return err
+				}
+			}
+		}
+		if err := s.SetMaterial(b.node, target); err != nil {
+			return err
+		}
+	}
+	vi.active = variant
+	return nil
 }

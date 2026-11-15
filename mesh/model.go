@@ -470,9 +470,18 @@ func (m *Model) Geometry() (nt3d.Geometry, error) {
 	return nt3d.MergeGeometry(gs...)
 }
 
+// Variants returns the named material variants declared by m.Asset, or nil.
+func (m *Model) Variants() []string {
+	if m == nil || m.Asset == nil || len(m.Asset.Variants) == 0 {
+		return nil
+	}
+	return append([]string(nil), m.Asset.Variants...)
+}
+
 // AddTo adds a group node named name under parent, with one child node per
 // object, named name/0, name/1, and so on. Models with Asset instead instantiate
-// its hierarchy and bind its generic clips (Scene.AnimationClips).
+// its hierarchy and bind its generic clips (Scene.AnimationClips) and material
+// variants (Scene.MaterialVariants / Scene.SetMaterialVariant).
 // On failure nothing is added.
 func (m *Model) AddTo(s *nt3d.Scene, parent nt3d.NodeID, name string) (nt3d.NodeID, error) {
 	if m.Asset != nil {

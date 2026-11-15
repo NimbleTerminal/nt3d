@@ -60,7 +60,7 @@ for i, at := range places {
 
 A shared mesh is stored once, indexed for picking once, and uploaded to the GPU once, and the GPU draws all of its visible nodes in one instanced call. In a test of 2,500 spheres, the first frame took 43 ms instead of 189 ms, and each later frame 5.5 ms instead of 13.6 ms.
 
-Shared geometry can't change, and holds only triangles; points, boxes, lines, and arrows belong to each node. Nodes given different textures with `SetTexture` are drawn in separate batches, and transparent nodes are still drawn one by one so they blend in the right order. `SetNodeShared(id, sg)` shares by ID, and frames list shared geometry in `Frame.Shared`. Subtree appearance setters—`SetMaterial`, `SetDisplacement`, `SetMaterialShader`, `SetOutline`, and `SetToon`—preserve `SharedGeometry` instancing and uploaded GPU mesh buffers across matching instances.
+Shared geometry can't change, and holds only triangles; points, boxes, lines, and arrows belong to each node. Nodes given different textures with `SetTexture` are drawn in separate batches, and transparent nodes are still drawn one by one so they blend in the right order. `SetNodeShared(id, sg)` shares by ID, and frames list shared geometry in `Frame.Shared`. Subtree appearance setters—`SetMaterial` (including per-instance `Material.BaseColor`), `SetMaterialVariant`, `SetDisplacement`, `SetMaterialShader`, `SetOutline`, and `SetToon`—preserve `SharedGeometry` instancing and uploaded GPU mesh buffers across matching instances.
 
 The [forest demo](../demos/#forest) grows thousands of trees from three shared meshes, and switches them to copies so you can compare.
 

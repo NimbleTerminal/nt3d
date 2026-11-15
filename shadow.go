@@ -160,7 +160,8 @@ func buildShadowFace(f *Frame, drawn []bool, view shadowView) *shadowMap {
 					if material.Texture != nil && !material.Tint {
 						vc.R, vc.G, vc.B = 255, 255, 255
 					}
-					c.shade = [3]float32{srgbDecode[vc.R], srgbDecode[vc.G], srgbDecode[vc.B]}
+					bm, _, _ := baseColorFactors(material, true)
+					c.shade = [3]float32{srgbDecode[vc.R] * bm[0], srgbDecode[vc.G] * bm[1], srgbDecode[vc.B] * bm[2]}
 				}
 			}
 			var storage [4]clipCorner
