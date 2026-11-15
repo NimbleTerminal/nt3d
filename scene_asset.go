@@ -2,11 +2,18 @@
 
 package nt3d
 
-import "fmt"
-import nt3dmath "nimbleterminal.dev/nt3d/math"
+import (
+	"errors"
+	"fmt"
+
+	nt3dmath "nimbleterminal.dev/nt3d/math"
+)
 
 // AssetNode is a reusable hierarchy node. Parent is -1 for a root, otherwise
 // an earlier node index. Skeleton and clip NodeIDs are one-based node indices.
+// Geometry and Shared are mutually exclusive; Shared attaches a SharedGeometry
+// via Scene.SetNodeShared so repeated nodes and repeated Instantiate calls
+// share one GPU mesh upload, instanced draw batch, and BVH pick index.
 type AssetNode struct {
 	Camera      *Camera
 	Light       *Light
@@ -14,6 +21,7 @@ type AssetNode struct {
 	Parent      int
 	Local       nt3dmath.Mat4
 	Geometry    *Geometry
+	Shared      *SharedGeometry
 	Deformation *Deformation
 }
 
@@ -70,7 +78,17 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 				return nil, e
 			}
 		}
-		if n.Geometry != nil {
+		if n.Shared != nil && n.Geometry != nil {
+			return nil, errors.New("nt3d: asset node cannot set both Geometry and Shared")
+		}
+		if n.Shared != nil && n.Deformation != nil {
+			return nil, errors.New("nt3d: shared asset node cannot deform")
+		}
+		if n.Shared != nil {
+			if e = s.SetNodeShared(id, n.Shared); e != nil {
+				return nil, e
+			}
+		} else if n.Geometry != nil {
 			if e = s.SetNodeGeometry(id, *n.Geometry); e != nil {
 				return nil, e
 			}

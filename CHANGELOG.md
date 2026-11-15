@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Add `AssetNode.Shared` (`*SharedGeometry`) and `SharedGeometry.Geometry` so
+  `SceneAsset.Instantiate` attaches shared triangle meshes via
+  `Scene.SetNodeShared`. Update `nt3d/mesh/gltf` to deduplicate undeformed
+  static triangle primitives in `Model.Asset` into cached `*SharedGeometry`
+  handles (including cached reflected handles for static mirrored nodes),
+  sharing one GPU upload, instanced draw batch, and BVH pick index both across
+  repeated mesh nodes in a `.glb` and across repeated `Model.AddTo` /
+  `SceneAsset.Instantiate` placements in a scene.
+- Add `EXT_texture_webp` and `EXT_mesh_gpu_instancing` support to
+  `nt3d/mesh/gltf` (accepted in `extensionsRequired`): `nt3d/mesh/gltf` now
+  registers WebP decoding directly, prefers `EXT_texture_webp` sources with
+  graceful fallback to `Texture.Source` when an external WebP side file is
+  missing, and expands per-instance `TRANSLATION`, `ROTATION` (`FLOAT` and
+  normalized `BYTE` / `SHORT` quaternions), and `SCALE` accessors in both
+  `Model.Objects` and `Model.Asset` within triangle, visit, and byte budgets.
 - Add `Scene.SetLODBias` / `LODBias` for `O(1)` scene-wide distance scaling
   across `Scene.SetLOD` tiers (including finite hide-beyond cutoffs) without
   rebuilding node geometries or invalidating GPU/BVH caches, `Scene.SetLODHysteresis` /

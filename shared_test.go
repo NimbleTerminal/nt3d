@@ -152,3 +152,51 @@ func TestSharedGeometryPicking(t *testing.T) {
 		t.Fatal("shared index kept after turning indexing off")
 	}
 }
+
+func TestSceneAssetSharedGeometry(t *testing.T) {
+	ball, err := BuildSphere(Sphere{Radius: .2, Segments: 16, Rings: 8, Color: color.RGBA{90, 170, 240, 255}})
+	check(t, err)
+	sg, err := NewSharedGeometry(ball)
+	check(t, err)
+
+	detached := sg.Geometry()
+	detached.Vertices[0].Position.X = 42
+	if sg.Geometry().Vertices[0].Position.X == 42 {
+		t.Fatal("SharedGeometry.Geometry leaked internal slice")
+	}
+
+	s := NewScene()
+	badBoth := &SceneAsset{Nodes: []AssetNode{{Name: "both", Parent: -1, Local: nt3dmath.Identity(), Geometry: &ball, Shared: sg}}}
+	if _, err := badBoth.Instantiate(s, Root, "bad-both"); err == nil {
+		t.Fatal("accepted AssetNode with both Geometry and Shared")
+	}
+	if _, ok := s.Find("bad-both"); ok {
+		t.Fatal("failed Instantiate leaked root node")
+	}
+
+	badDef := &SceneAsset{Nodes: []AssetNode{{Name: "def", Parent: -1, Local: nt3dmath.Identity(), Shared: sg, Deformation: &Deformation{}}}}
+	if _, err := badDef.Instantiate(s, Root, "bad-def"); err == nil {
+		t.Fatal("accepted Shared AssetNode with Deformation")
+	}
+	if _, ok := s.Find("bad-def"); ok {
+		t.Fatal("failed Instantiate leaked root node")
+	}
+
+	asset := &SceneAsset{
+		Nodes: []AssetNode{
+			{Name: "root", Parent: -1, Local: nt3dmath.Identity()},
+			{Name: "lamp-a", Parent: 0, Local: nt3dmath.Translation(nt3dmath.Vec3{X: -.3}), Shared: sg},
+			{Name: "lamp-b", Parent: 0, Local: nt3dmath.Translation(nt3dmath.Vec3{X: .3}), Shared: sg},
+		},
+	}
+	for i := range 4 {
+		inst, err := asset.Instantiate(s, Root, fmt.Sprintf("block-%d", i))
+		check(t, err)
+		check(t, s.SetTransform(inst.Root, nt3dmath.Translation(nt3dmath.Vec3{Y: float32(i) * .5})))
+	}
+	f := frame(t, s)
+	stats := f.Stats()
+	if stats.DrawnInstances != 8 || stats.Batches != 1 {
+		t.Fatalf("expected 8 shared instances in 1 batch, got %+v", stats)
+	}
+}

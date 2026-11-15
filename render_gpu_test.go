@@ -1097,3 +1097,64 @@ func TestGPUOutlinedCutoutMatchesSoftware(t *testing.T) {
 		t.Fatalf("GPU and software differ in %d pixels", n)
 	}
 }
+
+func TestGPUSceneAssetSharedGeometryAndOriginInstancing(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+
+	prop, err := BuildSphere(Sphere{Radius: .22, Segments: 18, Rings: 10, Color: color.RGBA{220, 140, 50, 255}})
+	check(t, err)
+	sg, err := NewSharedGeometry(prop)
+	check(t, err)
+	asset := &SceneAsset{
+		Nodes: []AssetNode{
+			{Name: "prop-root", Parent: -1, Local: nt3dmath.Identity()},
+			{Name: "body", Parent: 0, Local: nt3dmath.Identity(), Shared: sg},
+		},
+	}
+
+	cityOrigin := [3]float64{583960.25, 4507523.5, 42.0}
+	build := func(useShared bool) Frame {
+		s := NewScene()
+		for i := range 9 {
+			gx := float64(i%3-1) * 0.65
+			gy := float64(i/3-1) * 0.65
+			if useShared {
+				inst, err := asset.Instantiate(s, Root, fmt.Sprintf("prop-%d", i))
+				check(t, err)
+				check(t, s.SetNodeOrigin(inst.Root, [3]float64{cityOrigin[0] + gx, cityOrigin[1] + gy, cityOrigin[2]}))
+			} else {
+				id, err := s.SetGeometry(fmt.Sprintf("copy-%d", i), prop)
+				check(t, err)
+				check(t, s.SetNodeOrigin(id, [3]float64{cityOrigin[0] + gx, cityOrigin[1] + gy, cityOrigin[2]}))
+			}
+		}
+		cam := DefaultCamera()
+		cam.Origin = cityOrigin
+		cam.Projection, cam.Distance = Perspective, 3.2
+		f, err := s.Frame(cam, 128, 96)
+		check(t, err)
+		return f
+	}
+
+	fShared := build(true)
+	if stats := fShared.Stats(); stats.DrawnInstances != 9 || stats.Batches != 1 {
+		t.Fatalf("expected 9 shared instances in 1 batch, got %+v", stats)
+	}
+	gpuSharedImg, err := r.Render(fShared)
+	check(t, err)
+	if len(r.draws) != 1 || r.draws[0].count != 9 || r.uploads != 1 {
+		t.Fatalf("GPU shared asset draws=%+v uploads=%d, want count=9 and 1 upload", r.draws, r.uploads)
+	}
+	sharedBytes := append([]byte(nil), gpuSharedImg.(*image.NRGBA).Pix...)
+
+	fCopies := build(false)
+	gpuCopiesImg, err := r.Render(fCopies)
+	check(t, err)
+	if !bytes.Equal(sharedBytes, gpuCopiesImg.(*image.NRGBA).Pix) {
+		t.Fatal("GPU SceneAsset SharedGeometry render differs from individual copies")
+	}
+	if n := changed(gpuSharedImg, softwareRender(fShared), 0, 2); n > fShared.Width*fShared.Height/100 {
+		t.Fatalf("GPU and software differ in %d pixels", n)
+	}
+}

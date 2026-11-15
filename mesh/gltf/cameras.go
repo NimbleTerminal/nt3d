@@ -76,6 +76,7 @@ func staticReflections(asset *nt3d.SceneAsset) error {
 	parity := make([]bool, len(asset.Nodes))
 	reflection := nt3dmath.Identity()
 	reflection[0] = -1
+	var reflected map[*nt3d.SharedGeometry]*nt3d.SharedGeometry
 	for i := range asset.Nodes {
 		n := &asset.Nodes[i]
 		if n.Parent >= 0 && parity[n.Parent] {
@@ -85,7 +86,27 @@ func staticReflections(asset *nt3d.SceneAsset) error {
 			parity[i] = true
 			n.Local = n.Local.Mul(reflection)
 		}
-		if parity[i] && n.Geometry != nil {
+		if !parity[i] {
+			continue
+		}
+		if n.Shared != nil {
+			if reflected == nil {
+				reflected = map[*nt3d.SharedGeometry]*nt3d.SharedGeometry{}
+			}
+			sg, ok := reflected[n.Shared]
+			if !ok {
+				g, err := nt3d.TransformGeometry(n.Shared.Geometry(), reflection)
+				if err != nil {
+					return err
+				}
+				sg, err = nt3d.NewSharedGeometry(g)
+				if err != nil {
+					return err
+				}
+				reflected[n.Shared] = sg
+			}
+			n.Shared = sg
+		} else if n.Geometry != nil {
 			g, err := nt3d.TransformGeometry(*n.Geometry, reflection)
 			if err != nil {
 				return err

@@ -110,10 +110,23 @@ func TestTextureTransformAndIndependentNormalUV(t *testing.T) {
 	if math.Abs(float64(g.UV[0].U)-1.7) > 1e-6 || math.Abs(float64(g.UV[0].V)-.8) > 1e-6 {
 		t.Fatal("wrong transform order or UV override", g.UV)
 	}
+	checkedAssetUV := false
 	for _, node := range m.Asset.Nodes {
-		if node.Geometry != nil && node.Geometry.UV[0] != g.UV[0] {
-			t.Fatal("asset and flattened UVs disagree")
+		if node.Geometry != nil {
+			checkedAssetUV = true
+			if node.Geometry.UV[0] != g.UV[0] {
+				t.Fatal("asset and flattened UVs disagree")
+			}
 		}
+		if node.Shared != nil {
+			checkedAssetUV = true
+			if node.Shared.Geometry().UV[0] != g.UV[0] {
+				t.Fatal("shared asset and flattened UVs disagree")
+			}
+		}
+	}
+	if !checkedAssetUV {
+		t.Fatal("expected mesh geometry or shared geometry in Asset")
 	}
 	base.Extensions["KHR_texture_transform"] = map[string]any{"scale": []float64{1}}
 	if _, err := Decode(glb(t, doc), nil); err == nil {

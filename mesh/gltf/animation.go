@@ -16,6 +16,11 @@ type vertexOrigin struct {
 	back  bool
 }
 
+type cachedMeshPiece struct {
+	shared   *nt3d.SharedGeometry
+	geometry *nt3d.Geometry
+}
+
 func matrix32(m mat4) (out nt3dmath.Mat4) {
 	for i, v := range m {
 		out[i] = float32(v)
@@ -33,6 +38,9 @@ func (d *gltfDecoder) sceneAsset() error {
 		parents[i] = -1
 	}
 	for i, n := range d.doc.Nodes {
+		if n == nil {
+			return fmt.Errorf("nt3dmesh: nil glTF node")
+		}
 		for _, c := range n.Children {
 			if c < 0 || c >= len(parents) || parents[c] != -1 {
 				return fmt.Errorf("nt3dmesh: invalid scene hierarchy")
@@ -130,12 +138,98 @@ func (d *gltfDecoder) sceneAsset() error {
 		}
 	}
 	meshes := map[int][]int{}
+	staticPieces := map[[2]int][]cachedMeshPiece{}
 	for ni, n := range d.doc.Nodes {
-		if n.Mesh == nil || !selected[ni] {
+		if !selected[ni] {
+			continue
+		}
+		insts, instanced, err := d.nodeInstances(ni)
+		if err != nil {
+			return err
+		}
+		if n.Mesh == nil {
+			continue
+		}
+		if *n.Mesh < 0 || *n.Mesh >= len(d.doc.Meshes) || d.doc.Meshes[*n.Mesh] == nil {
+			return fmt.Errorf("nt3dmesh: glTF node %d names mesh %d of %d", ni, *n.Mesh, len(d.doc.Meshes))
+		}
+		var instLocals []nt3dmath.Mat4
+		if instanced {
+			instLocals = make([]nt3dmath.Mat4, len(insts))
+			for k, inst := range insts {
+				instLocals[k] = matrix32(inst)
+			}
+		} else {
+			instLocals = []nt3dmath.Mat4{nt3dmath.Identity()}
+		}
+		if len(instLocals) == 0 {
 			continue
 		}
 		mesh := d.doc.Meshes[*n.Mesh]
-		for _, p := range mesh.Primitives {
+		for pi, p := range mesh.Primitives {
+			if p == nil {
+				return fmt.Errorf("nt3dmesh: nil glTF primitive")
+			}
+			if n.Skin == nil && len(p.Targets) == 0 {
+				key := [2]int{*n.Mesh, pi}
+				pieces, cached := staticPieces[key]
+				if !cached {
+					temp := *d
+					temp.m = &nt3dmesh.Model{}
+					temp.capture = false
+					temp.points, temp.lines = 0, 0
+					temp.sources = nil
+					temp.budget = budget{limit: d.o.TriangleLimit()}
+					if err := temp.primitive("", p, mat4(gltf.DefaultMatrix)); err != nil {
+						return err
+					}
+					pieces = make([]cachedMeshPiece, 0, len(temp.m.Objects))
+					for _, obj := range temp.m.Objects {
+						g := obj.Geometry
+						cost := int64(len(g.Vertices)+len(g.Points)+len(g.Lines)) * 64
+						if cost > *d.decodedLeft {
+							return nt3dmesh.ErrTooLarge
+						}
+						*d.decodedLeft -= cost
+						if len(g.Vertices) > 0 && len(g.Indices) > 0 && len(g.Points)+len(g.Boxes)+len(g.Lines)+len(g.Arrows) == 0 {
+							sg, err := nt3d.NewSharedGeometry(g)
+							if err != nil {
+								return err
+							}
+							pieces = append(pieces, cachedMeshPiece{shared: sg})
+						} else {
+							gCopy := g
+							pieces = append(pieces, cachedMeshPiece{geometry: &gCopy})
+						}
+					}
+					staticPieces[key] = pieces
+				}
+				for _, localMat := range instLocals {
+					for _, piece := range pieces {
+						if len(asset.Nodes) >= maxVisits {
+							return nt3dmesh.ErrTooLarge
+						}
+						instCost := int64(128)
+						if piece.geometry != nil {
+							instCost += int64(len(piece.geometry.Vertices)+len(piece.geometry.Points)+len(piece.geometry.Lines)) * 64
+						}
+						if instCost > *d.decodedLeft {
+							return nt3dmesh.ErrTooLarge
+						}
+						*d.decodedLeft -= instCost
+						an := nt3d.AssetNode{
+							Name:     n.Name,
+							Parent:   ids[ni],
+							Local:    localMat,
+							Shared:   piece.shared,
+							Geometry: piece.geometry,
+						}
+						meshes[ni] = append(meshes[ni], len(asset.Nodes))
+						asset.Nodes = append(asset.Nodes, an)
+					}
+				}
+				continue
+			}
 			if (n.Skin != nil || len(p.Targets) > 0) && p.Mode != gltf.PrimitiveTriangles && p.Mode != gltf.PrimitiveTriangleStrip && p.Mode != gltf.PrimitiveTriangleFan {
 				return fmt.Errorf("nt3dmesh: deformation requires triangle primitives")
 			}
@@ -192,7 +286,7 @@ func (d *gltfDecoder) sceneAsset() error {
 			var sk *nt3d.Skeleton
 			var influences []nt3d.Influence
 			if n.Skin != nil {
-				if *n.Skin < 0 || *n.Skin >= len(d.doc.Skins) {
+				if *n.Skin < 0 || *n.Skin >= len(d.doc.Skins) || d.doc.Skins[*n.Skin] == nil {
 					return fmt.Errorf("nt3dmesh: missing skin")
 				}
 				skin := d.doc.Skins[*n.Skin]
@@ -260,14 +354,9 @@ func (d *gltfDecoder) sceneAsset() error {
 			}
 			for oi, obj := range temp.m.Objects {
 				g := obj.Geometry
-				cost := int64(len(g.Vertices)) * (64 + int64(len(morphs))*24)
-				if cost > *d.decodedLeft {
-					return nt3dmesh.ErrTooLarge
-				}
-				*d.decodedLeft -= cost
-				an := nt3d.AssetNode{Name: obj.Name, Parent: ids[ni], Local: nt3dmath.Identity(), Geometry: &g}
+				var def *nt3d.Deformation
 				if len(morphs) > 0 || sk != nil {
-					def := &nt3d.Deformation{Weights: w, Skeleton: sk}
+					def = &nt3d.Deformation{Weights: w, Skeleton: sk}
 					origins := temp.sources[oi]
 					for _, mt := range morphs {
 						out := nt3d.MorphTarget{}
@@ -305,10 +394,26 @@ func (d *gltfDecoder) sceneAsset() error {
 							def.Influences = append(def.Influences, influences[o.index])
 						}
 					}
-					an.Deformation = def
 				}
-				meshes[ni] = append(meshes[ni], len(asset.Nodes))
-				asset.Nodes = append(asset.Nodes, an)
+				for _, localMat := range instLocals {
+					if len(asset.Nodes) >= maxVisits {
+						return nt3dmesh.ErrTooLarge
+					}
+					cost := int64(len(g.Vertices)) * (64 + int64(len(morphs))*24)
+					if cost > *d.decodedLeft {
+						return nt3dmesh.ErrTooLarge
+					}
+					*d.decodedLeft -= cost
+					gCopy := g
+					var defCopy *nt3d.Deformation
+					if def != nil {
+						dCopy := *def
+						defCopy = &dCopy
+					}
+					an := nt3d.AssetNode{Name: obj.Name, Parent: ids[ni], Local: localMat, Geometry: &gCopy, Deformation: defCopy}
+					meshes[ni] = append(meshes[ni], len(asset.Nodes))
+					asset.Nodes = append(asset.Nodes, an)
+				}
 			}
 		}
 	}

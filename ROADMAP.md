@@ -67,6 +67,19 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **glTF `EXT_texture_webp`, `EXT_mesh_gpu_instancing`, and `SceneAsset`
+  `SharedGeometry` deduplication**: `AssetNode.Shared` (`*SharedGeometry`) and
+  `SharedGeometry.Geometry` let `SceneAsset.Instantiate` bind shared triangle
+  meshes via `Scene.SetNodeShared`, and `nt3d/mesh/gltf` caches undeformed
+  static triangle primitives in `Model.Asset` (plus reflected handles for static
+  mirrored nodes) so multi-node kitbash `.glb` packs and repeated `Model.AddTo`
+  placements across geographic scenes share one GPU upload, instanced draw
+  batch, and BVH pick index. `nt3d/mesh/gltf` also registers WebP decoding
+  directly and supports `EXT_texture_webp` (with fallback to `Texture.Source`
+  when an external WebP side file is absent) and `EXT_mesh_gpu_instancing`
+  (`TRANSLATION`, `FLOAT` / normalized `BYTE` / normalized `SHORT` `ROTATION`,
+  and `SCALE` accessors) in `extensionsRequired`.
+
 - **`Scene.SetLOD` bias, hysteresis, and per-tier `FrameStats`**:
   `Scene.SetLODBias` / `LODBias` scales every `LODLevel.MaxDistance` (including
   finite final hide-beyond cutoffs) in `O(1)` via FMA-free `float64`→`float32`

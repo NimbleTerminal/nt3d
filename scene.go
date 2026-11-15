@@ -435,6 +435,9 @@ func NewSharedGeometry(g Geometry) (*SharedGeometry, error) {
 // Bounds is the geometry's local bounds.
 func (sg *SharedGeometry) Bounds() nt3dmath.AABB { return sg.geometry.Bounds }
 
+// Geometry returns a detached copy of the shared triangle mesh.
+func (sg *SharedGeometry) Geometry() Geometry { return cloneGeometry(sg.geometry) }
+
 // SetShared makes a named node show shared geometry, creating the node
 // under Root if there is none, as SetGeometry does.
 func (s *Scene) SetShared(name string, sg *SharedGeometry) (NodeID, error) {

@@ -26,6 +26,7 @@ import (
 
 	"github.com/qmuntal/gltf"
 	"github.com/qmuntal/gltf/modeler"
+	_ "golang.org/x/image/webp" // EXT_texture_webp and WebP textures.
 
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
@@ -94,8 +95,12 @@ const GLTF nt3dmesh.Format = "gltf"
 //
 // Buffers and images outside a .glb are read through Options.Open, within
 // Options.MaxBytes. Files that require an extension nt3d cannot honor, such
-// as Draco or meshopt compression, are refused. Animation, skins and morphs
-// populate Model.Asset; AddTo instantiates its hierarchy and generic clips.
+// as Draco or meshopt compression, are refused. EXT_texture_webp decodes WebP
+// textures (falling back to Texture.Source when an external WebP side file is
+// missing), EXT_mesh_gpu_instancing expands per-instance TRS accessors, and
+// undeformed static triangle meshes in Model.Asset share *nt3d.SharedGeometry
+// across repeated nodes and repeated Instantiate calls. Animation, skins and
+// morphs populate Model.Asset; AddTo instantiates its hierarchy and generic clips.
 // Normal maps use authored TANGENT frames, or MikkTSpace-compatible ones
 // generated per corner (nt3d.GenerateCornerTangents), splitting vertices
 // whose corners differ.
@@ -123,6 +128,9 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 		}
 	}
 	if err := d.extensions(); err != nil {
+		return nil, err
+	}
+	if err := d.validateTextures(); err != nil {
 		return nil, err
 	}
 	if err := d.decodeLights(); err != nil {
@@ -156,6 +164,8 @@ var supportedExtensions = []string{
 	"KHR_materials_clearcoat",
 	"KHR_materials_sheen",
 	"KHR_lights_punctual",
+	"EXT_texture_webp",
+	"EXT_mesh_gpu_instancing",
 }
 
 // ignoredExtensions are passed over silently: they refine looks nt3d does not draw.
@@ -175,6 +185,7 @@ type gltfDecoder struct {
 	normalTextures map[int]*nt3d.Texture
 	ormTextures    map[[2]int]*nt3d.Texture
 	textures       map[int]*nt3d.Texture // By texture index; nil when it failed.
+	nodeInst       map[int]nodeInstances
 	lights         []punctualLight
 	warned         map[string]bool
 	visits         int
@@ -299,7 +310,10 @@ func local(n *gltf.Node) mat4 {
 	if m := n.MatrixOrDefault(); m != gltf.DefaultMatrix {
 		return mat4(m)
 	}
-	t, q, s := n.TranslationOrDefault(), n.RotationOrDefault(), n.ScaleOrDefault()
+	return trsMat4(n.TranslationOrDefault(), n.RotationOrDefault(), n.ScaleOrDefault())
+}
+
+func trsMat4(t [3]float64, q [4]float64, s [3]float64) mat4 {
 	x, y, z, w := q[0], q[1], q[2], q[3]
 	if l := math.Sqrt(x*x + y*y + z*z + w*w); l > 0 {
 		x, y, z, w = x/l, y/l, z/l, w/l
@@ -362,7 +376,7 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 	if d.depth > 1024 {
 		return fmt.Errorf("%w: glTF hierarchy exceeds 1024 levels", nt3dmesh.ErrTooLarge)
 	}
-	if i < 0 || i >= len(d.doc.Nodes) {
+	if i < 0 || i >= len(d.doc.Nodes) || d.doc.Nodes[i] == nil {
 		return fmt.Errorf("nt3dmesh: glTF names node %d of %d", i, len(d.doc.Nodes))
 	}
 	if onPath[i] {
@@ -376,8 +390,12 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 	if !world.finite() {
 		return fmt.Errorf("nt3dmesh: glTF node %d has a non-finite transform", i)
 	}
+	insts, instanced, err := d.nodeInstances(i)
+	if err != nil {
+		return err
+	}
 	if n.Mesh != nil {
-		if *n.Mesh < 0 || *n.Mesh >= len(d.doc.Meshes) {
+		if *n.Mesh < 0 || *n.Mesh >= len(d.doc.Meshes) || d.doc.Meshes[*n.Mesh] == nil {
 			return fmt.Errorf("nt3dmesh: glTF node %d names mesh %d of %d", i, *n.Mesh, len(d.doc.Meshes))
 		}
 		mesh := d.doc.Meshes[*n.Mesh]
@@ -388,9 +406,26 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 		if name == "" {
 			name = fmt.Sprintf("mesh %d", *n.Mesh)
 		}
-		for _, p := range mesh.Primitives {
-			if err := d.primitive(name, p, world); err != nil {
-				return err
+		if instanced {
+			if d.visits += len(insts); d.visits > maxVisits {
+				return fmt.Errorf("nt3dmesh: glTF scene reaches more than %d nodes", maxVisits)
+			}
+			for _, inst := range insts {
+				instWorld := world.mul(inst)
+				if !instWorld.finite() {
+					return fmt.Errorf("nt3dmesh: glTF node %d has a non-finite instance transform", i)
+				}
+				for _, p := range mesh.Primitives {
+					if err := d.primitive(name, p, instWorld); err != nil {
+						return err
+					}
+				}
+			}
+		} else {
+			for _, p := range mesh.Primitives {
+				if err := d.primitive(name, p, world); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -864,20 +899,71 @@ func (d *gltfDecoder) ormTexture(mrIdx, occIdx int) (*nt3d.Texture, bool) {
 	return t, repeat
 }
 
+func (d *gltfDecoder) validateTextures() error {
+	for i, tex := range d.doc.Textures {
+		if tex == nil {
+			continue
+		}
+		var webpExt struct {
+			Source *int `json:"source"`
+		}
+		ok, err := decodeExtension(tex.Extensions, "EXT_texture_webp", &webpExt)
+		if err != nil {
+			return err
+		}
+		if ok && (webpExt.Source == nil || *webpExt.Source < 0 || *webpExt.Source >= len(d.doc.Images) || d.doc.Images[*webpExt.Source] == nil) {
+			return fmt.Errorf("nt3dmesh: texture %d has invalid EXT_texture_webp source", i)
+		}
+	}
+	return nil
+}
+
 func (d *gltfDecoder) loadImage(index int) (image.Image, error) {
 	if d.images != nil {
 		if img, ok := d.images[index]; ok {
 			return img, nil
 		}
 	}
-	if index < 0 || index >= len(d.doc.Textures) {
+	if index < 0 || index >= len(d.doc.Textures) || d.doc.Textures[index] == nil {
 		return nil, errors.New("does not exist")
 	}
-	src := d.doc.Textures[index].Source
-	if src == nil || *src < 0 || *src >= len(d.doc.Images) {
+	tex := d.doc.Textures[index]
+	var webpExt struct {
+		Source *int `json:"source"`
+	}
+	hasWebP, err := decodeExtension(tex.Extensions, "EXT_texture_webp", &webpExt)
+	if err != nil {
+		return nil, err
+	}
+	var img image.Image
+	if hasWebP && webpExt.Source != nil {
+		img, err = d.loadImageSource(*webpExt.Source)
+		if err != nil && tex.Source != nil && *tex.Source != *webpExt.Source {
+			if fallback, ferr := d.loadImageSource(*tex.Source); ferr == nil {
+				img, err = fallback, nil
+			}
+		}
+	} else {
+		if tex.Source == nil {
+			return nil, errors.New("has no image nt3d can read")
+		}
+		img, err = d.loadImageSource(*tex.Source)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if d.images == nil {
+		d.images = map[int]image.Image{}
+	}
+	d.images[index] = img
+	return img, nil
+}
+
+func (d *gltfDecoder) loadImageSource(src int) (image.Image, error) {
+	if src < 0 || src >= len(d.doc.Images) || d.doc.Images[src] == nil {
 		return nil, errors.New("has no image nt3d can read")
 	}
-	im := d.doc.Images[*src]
+	im := d.doc.Images[src]
 	var data []byte
 	var err error
 	switch {
@@ -909,10 +995,6 @@ func (d *gltfDecoder) loadImage(index int) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	if d.images == nil {
-		d.images = map[int]image.Image{}
-	}
-	d.images[index] = img
 	return img, nil
 }
 
