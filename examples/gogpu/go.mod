@@ -5,14 +5,14 @@ go 1.26.8
 require (
 	github.com/gogpu/gogpu v0.54.0
 	github.com/gogpu/gpucontext v0.32.0
-	nimbleterminal.dev/nt3d v0.8.1
+	nimbleterminal.dev/nt3d v0.9.0
 	nimbleterminal.dev/nt3d/examples/demos v0.0.0
 )
 
 require (
 	charm.land/bubbles/v2 v2.2.1 // indirect
 	charm.land/bubbletea/v2 v2.1.1 // indirect
-	charm.land/lipgloss/v2 v2.1.0 // indirect
+	charm.land/lipgloss/v2 v2.1.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20261023060817-a45b7c86333f // indirect
 	github.com/charmbracelet/x/ansi v0.11.9 // indirect

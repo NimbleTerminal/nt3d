@@ -9,12 +9,12 @@ require (
 	github.com/qmuntal/gltf v0.29.0
 	github.com/spf13/pflag v1.1.0
 	nimbleterminal.dev/booba v0.13.0
-	nimbleterminal.dev/nt3d v0.8.1
+	nimbleterminal.dev/nt3d v0.9.0
 	nimbleterminal.dev/ntpicture v0.2.0
 )
 
 require (
-	charm.land/lipgloss/v2 v2.1.0 // indirect
+	charm.land/lipgloss/v2 v2.1.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20261023060817-a45b7c86333f // indirect
 	github.com/charmbracelet/x/ansi v0.11.9 // indirect
