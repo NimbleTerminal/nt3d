@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add pure-Go, WASM-safe `KHR_mesh_quantization` and `EXT_meshopt_compression`
+  support to `nt3d/mesh/gltf` (accepted in `extensionsRequired`):
+  `KHR_mesh_quantization` decodes quantized `BYTE`, `UNSIGNED_BYTE`, `SHORT`,
+  and `UNSIGNED_SHORT` `POSITION` and `TEXCOORD_n` accessors, normalized `BYTE` /
+  `SHORT` `NORMAL` and `TANGENT` frames, and quantized morph target deltas
+  (`POSITION`, `NORMAL`, `TANGENT`); `EXT_meshopt_compression` decompresses
+  `ATTRIBUTES`, `TRIANGLES`, and `INDICES` `bufferView` streams with
+  `OCTAHEDRAL`, `QUATERNION`, and `EXPONENTIAL` filters and dummy `fallback`
+  buffers within `Options.MaxBytes` (plus normalized integer `rotation` and
+  `weights` animation sampler outputs).
 - Add `AssetNode.Shared` (`*SharedGeometry`) and `SharedGeometry.Geometry` so
   `SceneAsset.Instantiate` attaches shared triangle meshes via
   `Scene.SetNodeShared`. Update `nt3d/mesh/gltf` to deduplicate undeformed

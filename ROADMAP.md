@@ -67,6 +67,16 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **glTF `KHR_mesh_quantization` and pure-Go `EXT_meshopt_compression`**:
+  `nt3d/mesh/gltf` supports `KHR_mesh_quantization` (`BYTE` / `UNSIGNED_BYTE` /
+  `SHORT` / `UNSIGNED_SHORT` `POSITION` and `TEXCOORD_n`, normalized `BYTE` /
+  `SHORT` `NORMAL` and `TANGENT`, and quantized morph `POSITION` / `NORMAL` /
+  `TANGENT` deltas) and a zero-CGo, WASM-safe `EXT_meshopt_compression`
+  byte-stream decoder (`ATTRIBUTES`, `TRIANGLES`, and `INDICES` modes with
+  `OCTAHEDRAL`, `QUATERNION`, and `EXPONENTIAL` post-filters, dummy `fallback`
+  buffers, and normalized integer `rotation` / `weights` animation tracks),
+  bounded by `Options.MaxBytes` and accepted in `extensionsRequired`.
+
 - **glTF `EXT_texture_webp`, `EXT_mesh_gpu_instancing`, and `SceneAsset`
   `SharedGeometry` deduplication**: `AssetNode.Shared` (`*SharedGeometry`) and
   `SharedGeometry.Geometry` let `SceneAsset.Instantiate` bind shared triangle

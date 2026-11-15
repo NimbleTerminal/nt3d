@@ -95,12 +95,16 @@ const GLTF nt3dmesh.Format = "gltf"
 //
 // Buffers and images outside a .glb are read through Options.Open, within
 // Options.MaxBytes. Files that require an extension nt3d cannot honor, such
-// as Draco or meshopt compression, are refused. EXT_texture_webp decodes WebP
-// textures (falling back to Texture.Source when an external WebP side file is
-// missing), EXT_mesh_gpu_instancing expands per-instance TRS accessors, and
-// undeformed static triangle meshes in Model.Asset share *nt3d.SharedGeometry
-// across repeated nodes and repeated Instantiate calls. Animation, skins and
-// morphs populate Model.Asset; AddTo instantiates its hierarchy and generic clips.
+// as Draco compression, are refused. KHR_mesh_quantization decodes quantized
+// integer positions, normals, tangents, texture coordinates, and morph deltas;
+// EXT_meshopt_compression decompresses ATTRIBUTES, TRIANGLES, and INDICES
+// bufferViews (including OCTAHEDRAL, QUATERNION, and EXPONENTIAL filters);
+// EXT_texture_webp decodes WebP textures (falling back to Texture.Source when
+// an external WebP side file is missing); EXT_mesh_gpu_instancing expands
+// per-instance TRS accessors; and undeformed static triangle meshes in
+// Model.Asset share *nt3d.SharedGeometry across repeated nodes and repeated
+// Instantiate calls. Animation, skins and morphs populate Model.Asset; AddTo
+// instantiates its hierarchy and generic clips.
 // Normal maps use authored TANGENT frames, or MikkTSpace-compatible ones
 // generated per corner (nt3d.GenerateCornerTangents), splitting vertices
 // whose corners differ.
@@ -116,18 +120,13 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 		d.files.open = o.Open
 	}
 	d.doc = new(gltf.Document)
-	if err := gltf.NewDecoderFS(bytes.NewReader(data), d.files).Decode(d.doc); err != nil {
-		if errors.Is(err, nt3dmesh.ErrTooLarge) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("nt3dmesh: glTF: %w", err)
-	}
-	for i, b := range d.doc.Buffers {
-		if len(b.Data) < b.ByteLength {
-			return nil, fmt.Errorf("nt3dmesh: glTF buffer %d is missing or short", i)
-		}
+	if err := d.decodeContainer(data); err != nil {
+		return nil, err
 	}
 	if err := d.extensions(); err != nil {
+		return nil, err
+	}
+	if err := d.decompressBuffers(); err != nil {
 		return nil, err
 	}
 	if err := d.validateTextures(); err != nil {
@@ -164,6 +163,8 @@ var supportedExtensions = []string{
 	"KHR_materials_clearcoat",
 	"KHR_materials_sheen",
 	"KHR_lights_punctual",
+	"KHR_mesh_quantization",
+	"EXT_meshopt_compression",
 	"EXT_texture_webp",
 	"EXT_mesh_gpu_instancing",
 }
@@ -445,6 +446,9 @@ func (d *gltfDecoder) accessor(index int, what string) (*gltf.Accessor, error) {
 		return nil, fmt.Errorf("nt3dmesh: glTF %s names accessor %d of %d", what, index, len(d.doc.Accessors))
 	}
 	a := d.doc.Accessors[index]
+	if a == nil {
+		return nil, fmt.Errorf("nt3dmesh: nil glTF %s accessor %d", what, index)
+	}
 	if a.Count < 0 || a.Count > 3*d.budget.limit+3 {
 		return nil, fmt.Errorf("%w: glTF %s has %d elements", nt3dmesh.ErrTooManyTriangles, what, a.Count)
 	}
@@ -1038,7 +1042,7 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 		d.warn("a primitive of %s has no positions", name)
 		return nil
 	}
-	positions, err := modeler.ReadPosition(d.doc, position, nil)
+	positions, err := d.readPositions(position)
 	if err != nil {
 		return fmt.Errorf("nt3dmesh: glTF %s positions: %w", name, err)
 	}
@@ -1070,7 +1074,7 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 	if a, ok, err := attr(gltf.NORMAL); err != nil {
 		return err
 	} else if ok {
-		if b.normals, err = modeler.ReadNormal(d.doc, a, nil); err != nil || len(b.normals) != len(positions) {
+		if b.normals, err = d.readNormals(a); err != nil || len(b.normals) != len(positions) {
 			d.warn("%s: unreadable normals are computed", name)
 			b.normals = nil
 		}
@@ -1092,7 +1096,7 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 		if a, ok, err := attr(gltf.TANGENT); err != nil {
 			return err
 		} else if ok {
-			tangents, err := modeler.ReadTangent(d.doc, a, nil)
+			tangents, err := d.readTangents(a)
 			if err != nil || len(tangents) != len(positions) {
 				d.warn("%s: unreadable tangents are generated", name)
 			} else {
@@ -1118,7 +1122,7 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 			d.warn("%s: texture has no TEXCOORD_%d", name, mapping.coord)
 			return nil, nil
 		}
-		uv, err := modeler.ReadTextureCoord(d.doc, a, nil)
+		uv, err := d.readTexCoords(a)
 		if err != nil || len(uv) != len(positions) {
 			return nil, fmt.Errorf("nt3dmesh: invalid texture coordinates")
 		}
