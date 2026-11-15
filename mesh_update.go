@@ -140,7 +140,8 @@ func (s *Scene) UpdateNodeVertices(id NodeID, first int, vertices []Vertex, boun
 		}
 	}
 	s.changed(false, false)
-	g.Bounds = bounds
+	g.restBounds = bounds
+	g.Bounds = padGeometryBounds(bounds, len(g.Vertices) > 0, g.Displacement.MaxDisplacement())
 	g.meshUpdate = &meshUpdate{revision: s.stateRevision}
 	g.meshCert = newMeshCertificate(&g, old.splitOutlines())
 	n.geometry, n.pickIndex = &g, nil
@@ -183,7 +184,8 @@ func (s *Scene) SetNodeVerticesWithTangents(id NodeID, vertices []Vertex, tangen
 		g.Tangents = slices.Clone(tangents)
 	}
 	s.changed(false, false)
-	g.Bounds = bounds
+	g.restBounds = bounds
+	g.Bounds = padGeometryBounds(bounds, len(g.Vertices) > 0, g.Displacement.MaxDisplacement())
 	g.meshUpdate = &meshUpdate{revision: s.stateRevision}
 	g.meshCert = newMeshCertificate(&g, old.splitOutlines())
 	n.geometry, n.pickIndex = &g, nil

@@ -25,8 +25,19 @@ func NewNormalMap(src image.Image) (*Texture, error) {
 	return t, nil
 }
 
+func hasShaderHook(g Geometry) bool {
+	return g.Displacement != nil || (g.Material != nil && g.Material.Shader != nil)
+}
+
+func materialOrZero(m *Material) Material {
+	if m == nil {
+		return Material{}
+	}
+	return *m
+}
+
 func mapped(g Geometry) bool {
-	return textured(g) || g.Material != nil && (g.Material.NormalMap != nil || g.Material.ORMMap != nil || g.Material.EmissiveMap != nil)
+	return textured(g) || hasShaderHook(g) || g.Material != nil && (g.Material.NormalMap != nil || g.Material.ORMMap != nil || g.Material.EmissiveMap != nil)
 }
 
 var whiteMap = func() *Texture {

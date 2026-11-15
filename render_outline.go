@@ -23,7 +23,7 @@ func (g *gpuRenderer) prepareOutlines(dev *wgpu.Device, f Frame) error {
 			continue
 		}
 		var kinds []int
-		if !f.OIT || !transparent(geom) {
+		if (!f.OIT || !transparent(geom)) && !hasShaderHook(*geom) {
 			kinds = append(kinds, outlinePipelineKind(geom))
 		}
 		if creased(geom) {
@@ -177,7 +177,7 @@ func outlinePipelineKind(g *Geometry) int {
 		if transparent(g) {
 			return 4
 		}
-		if g.Material.Cutout {
+		if g.Material != nil && g.Material.Cutout {
 			return 3
 		}
 		return 2
@@ -193,11 +193,19 @@ func (g *gpuRenderer) drawOutline(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 	if geom.Outline.Width == 0 || len(geom.Indices) == 0 {
 		return
 	}
-	g.setScenePipeline(pass, g.outlinePipelines[outlinePipelineKind(geom)])
+	kind := outlinePipelineKind(geom)
 	if mapped(*geom) {
+		if d.geom.batches[7].count == 0 {
+			return
+		}
+		g.setHookOrScenePipeline(pass, geom, g.outlinePipelines[kind], hookOutlinePipeKind(kind))
 		g.drawTextured(pass, f, d)
 		return
 	}
+	if d.geom.batches[1].count == 0 {
+		return
+	}
+	g.setScenePipeline(pass, g.outlinePipelines[kind])
 	pass.SetBindGroup(0, d.set.binds[1], nil)
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[1].count, InstanceCount: d.count})
 }

@@ -19,23 +19,6 @@ Nothing queued; the sections below are the open work.
   `clod`, and demo GPU suites separately (`task test-gpu` stops at the first
   failing package). Ordinary Linux CI and the Metal GPU suites pass.
 
-- [ ] **Shader hooks with Go fallbacks (vertex displacement, material color)**:
-  extend the `NewShaderTexture` / `NewShaderNormalMap` pattern (WGSL source
-  plus a software fallback) to two more places, keeping GPU, software and WASM
-  in parity. (1) *Vertex displacement*: a geometry carries a displacement
-  function of (rest position, time, small parameter block). WGSL runs on the
-  GPU path; a Go `func` runs in software and tests. Gerstner waves, boat wakes,
-  foliage sway and flags then animate without per-frame CPU vertex rewrites
-  and re-uploads. (2) *Material color function*: WGSL plus a Go fallback,
-  evaluated per fragment (or per software sample) from position, normal, view,
-  time and parameters, for stylized water bands, foam, ink or heat-shimmer
-  looks beyond the built-in material knobs. Both stay data-shaped (a named
-  function plus parameters, not arbitrary scene code), and each ships with a
-  parity test that renders GPU and software and compares. Motivation: a
-  downstream game's per-episode "looks as data", large-area water with
-  wakes, and city-wide foliage; until this lands it uses CPU `WaveSurface`
-  rings plus shader normal maps.
-
 - [ ] **Clustered LOD follow-ups**: draw points straight from `nt3dclod.GPU`'s
   item and indirect buffers; hierarchical levels that draw an interior node
   as one aggregate (a preprocessing tool's job); per-frame rebuilds cheap
@@ -89,6 +72,25 @@ Nothing queued; the sections below are the open work.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **Data-driven shader hooks (`VertexDisplacement` and `MaterialShader`)**:
+  `Geometry.Displacement` (`NewVertexDisplacement`,
+  `NewVertexDisplacementWithParameters`, `WithParameters`, `WithMaxDisplacement`,
+  `Scene.SetDisplacement`) and `Material.Shader` (`NewMaterialShader`,
+  `NewMaterialShaderWithParameters`, `WithParameters`, `Scene.SetMaterialShader`)
+  pair immutable WGSL (`fn nt3dDisplace` / `fn nt3dMaterial` plus `Time` and up
+  to `MaxShaderParameters = 16` `vec4` uniforms) with pure-Go fallbacks
+  (`VertexDisplaceFunc` / `MaterialColorFunc`). WebGPU compiles lazily cached
+  per-hook shader programs shared across `GPUSession.NewView`, recycles uniform
+  buffers via `WriteBuffer` without mesh re-uploads, preserves `SharedGeometry`
+  instancing, pads culling/shadow/picking bounds from rest bounds by
+  `MaxDisplacement` without drifting `DropShadow`, and keeps software rendering,
+  directional/point/spot shadow maps (including procedural `Cutout` shadows),
+  silhouette outlines, wireframe, and `Scene.Pick` / `GPUSession.Pick` in parity.
+  `MaterialShader` evaluates in linear light with unclamped HDR output (`> 1.0`
+  feeding `Bloom` and tone mapping) and procedural alpha feeding `Cutout`,
+  alpha blending, and `Frame.OIT`. Showcased in `procedural` / `terrain` (`w`
+  toggles live wave displacement + crest material shader hooks).
 
 - **In-place fixed-topology mesh updates, `Material.EnvironmentReflect`, and
   subtree `Scene.SetMaterial`**: `Scene.SetNodeVertices`,

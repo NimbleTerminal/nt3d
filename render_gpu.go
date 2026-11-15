@@ -28,7 +28,7 @@ var sceneShader string
 // Go declared ahead of it: maxLights sizes its lights, and maxPointPixels
 // clamps points in world units.
 func sceneShaderSource() string {
-	return fmt.Sprintf("const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\n", MaxLights, MaxPointPixels) + nt3dsh.WGSL() + sceneShader
+	return fmt.Sprintf("const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\n", MaxLights, MaxPointPixels) + nt3dsh.WGSL() + defaultHookPreamble + sceneShader
 }
 
 // uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
@@ -110,6 +110,9 @@ type gpuShared struct {
 	spriteBindLayout       *wgpu.BindGroupLayout
 	textureLayout          *wgpu.PipelineLayout
 	spriteLayout           *wgpu.PipelineLayout
+	hookBindLayout         *wgpu.BindGroupLayout
+	hookLayout             *wgpu.PipelineLayout
+	hookPrograms           map[hookProgramKey]*gpuHookProgram
 	procDownShader         *wgpu.ShaderModule
 	procDownGroup          *wgpu.BindGroupLayout
 	procDownLayout         *wgpu.PipelineLayout
@@ -174,6 +177,8 @@ func (s *gpuShared) copyTo(g *gpuRenderer) {
 	g.spriteBindLayout = s.spriteBindLayout
 	g.textureLayout = s.textureLayout
 	g.spriteLayout = s.spriteLayout
+	g.hookBindLayout = s.hookBindLayout
+	g.hookLayout = s.hookLayout
 	g.procDownGroup = s.procDownGroup
 	g.procDownPipes = s.procDownPipes
 	g.environmentUniform = s.environmentUniform
@@ -226,6 +231,18 @@ func (s *gpuShared) release() {
 		if l != nil {
 			l.Release()
 		}
+	}
+	for pk, prog := range s.hookPrograms {
+		prog.release()
+		delete(s.hookPrograms, pk)
+	}
+	if s.hookLayout != nil {
+		s.hookLayout.Release()
+		s.hookLayout = nil
+	}
+	if s.hookBindLayout != nil {
+		s.hookBindLayout.Release()
+		s.hookBindLayout = nil
 	}
 	if s.spriteLayout != nil {
 		s.spriteLayout.Release()
@@ -356,6 +373,10 @@ type gpuRenderer struct {
 	materialBindLayout     *wgpu.BindGroupLayout
 	spriteBindLayout       *wgpu.BindGroupLayout
 	textureLayout          *wgpu.PipelineLayout
+	hookBindLayout         *wgpu.BindGroupLayout
+	hookLayout             *wgpu.PipelineLayout
+	hookPrograms           map[hookProgramKey]*gpuHookProgram
+	hookBinds              map[hookUniformKey]*gpuHookBind
 	texturePipeline        *wgpu.RenderPipeline
 	cutoutPipeline         *wgpu.RenderPipeline
 	procDownShader         *wgpu.ShaderModule
@@ -820,6 +841,9 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	if err = g.prepareGeometry(dev, f, drawn); err != nil {
 		return err
 	}
+	if err = g.prepareHooks(dev, f, drawn); err != nil {
+		return err
+	}
 	if err = g.prepareCreases(dev, f); err != nil {
 		return err
 	}
@@ -932,18 +956,20 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder
 					}
 					transmitted := false
 					for _, d := range g.draws {
-						if !transmitting(&f.Geometry[d.index]) {
+						geom := &f.Geometry[d.index]
+						if !transmitting(geom) {
 							continue
 						}
 						transmitted = true
-						if b := d.geom.batches[1]; b.count > 0 {
+						if mapped(*geom) {
+							if d.geom.batches[7].count > 0 {
+								g.setHookOrScenePipeline(pass, geom, g.texturePipeline, hookPipeOpaque)
+								g.drawTextured(pass, f, d)
+							}
+						} else if b := d.geom.batches[1]; b.count > 0 {
 							g.setScenePipeline(pass, g.pipelines[1])
 							pass.SetBindGroup(0, d.set.binds[1], nil)
 							pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
-						}
-						if d.geom.batches[7].count > 0 {
-							g.setScenePipeline(pass, g.texturePipeline)
-							g.drawTextured(pass, f, d)
 						}
 					}
 					if transmitted {
@@ -994,13 +1020,14 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder
 			}
 			if i == 2 {
 				for _, d := range g.draws {
-					if transparent(&f.Geometry[d.index]) || transmitting(&f.Geometry[d.index]) || d.geom.batches[7].count == 0 {
+					geom := &f.Geometry[d.index]
+					if !mapped(*geom) || transparent(geom) || transmitting(geom) || d.geom.batches[7].count == 0 {
 						continue
 					}
-					if f.Geometry[d.index].Material.Cutout {
-						g.setScenePipeline(pass, g.cutoutPipeline)
+					if geom.Material != nil && geom.Material.Cutout {
+						g.setHookOrScenePipeline(pass, geom, g.cutoutPipeline, hookPipeCutout)
 					} else {
-						g.setScenePipeline(pass, g.texturePipeline)
+						g.setHookOrScenePipeline(pass, geom, g.texturePipeline, hookPipeOpaque)
 					}
 					g.drawTextured(pass, f, d)
 				}
@@ -1015,7 +1042,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder
 			for _, d := range g.draws {
 				b := d.geom.batches[i]
 				switch {
-				case b.count == 0 || i == 1 && (transparent(&f.Geometry[d.index]) || transmitting(&f.Geometry[d.index])) || i == 0 && blendedPoints(&f.Geometry[d.index]):
+				case b.count == 0 || i == 1 && (mapped(f.Geometry[d.index]) || transparent(&f.Geometry[d.index]) || transmitting(&f.Geometry[d.index])) || i == 0 && blendedPoints(&f.Geometry[d.index]):
 				case i == 0 && f.Geometry[d.index].PointStyle.Texture != nil:
 					g.drawSprite(pass, f, d)
 				case i == 1:
@@ -1038,14 +1065,19 @@ func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 	if transparent(geom) {
 		g.drawOutline(pass, f, d)
 		for side := range 2 {
-			if b := d.geom.batches[1]; b.count > 0 {
+			if mapped(*geom) {
+				if d.geom.batches[7].count > 0 {
+					kind := hookPipeBlendBack
+					if side == 1 {
+						kind = hookPipeBlendFront
+					}
+					g.setHookOrScenePipeline(pass, geom, g.textureBlends[side], kind)
+					g.drawTextured(pass, f, d)
+				}
+			} else if b := d.geom.batches[1]; b.count > 0 {
 				g.setScenePipeline(pass, g.blendPipelines[side])
 				pass.SetBindGroup(0, d.set.binds[1], nil)
 				pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
-			}
-			if d.geom.batches[7].count > 0 {
-				g.setScenePipeline(pass, g.textureBlends[side])
-				g.drawTextured(pass, f, d)
 			}
 		}
 	}
@@ -1260,6 +1292,10 @@ func (g *gpuRenderer) releaseResources() {
 		g.environmentTexture = nil
 	}
 	g.environmentSource = nil
+	for uk, hb := range g.hookBinds {
+		hb.release()
+		delete(g.hookBinds, uk)
+	}
 	for mk, b := range g.materialBinds {
 		b.Release()
 		delete(g.materialBinds, mk)
@@ -1315,6 +1351,9 @@ func (g *gpuRenderer) releaseResources() {
 		g.skinLayout = nil
 		g.spriteLayout = nil
 		g.textureLayout = nil
+		g.hookLayout = nil
+		g.hookBindLayout = nil
+		g.hookPrograms = nil
 		g.spriteBindLayout = nil
 		g.materialBindLayout = nil
 		g.procDownPipes = [2]*wgpu.RenderPipeline{}
@@ -1353,6 +1392,18 @@ func (g *gpuRenderer) releaseResources() {
 		g.skinLayout = nil
 	}
 	g.sort.release()
+	for pk, prog := range g.hookPrograms {
+		prog.release()
+		delete(g.hookPrograms, pk)
+	}
+	if g.hookLayout != nil {
+		g.hookLayout.Release()
+		g.hookLayout = nil
+	}
+	if g.hookBindLayout != nil {
+		g.hookBindLayout.Release()
+		g.hookBindLayout = nil
+	}
 	if g.spriteLayout != nil {
 		g.spriteLayout.Release()
 		g.spriteLayout = nil
@@ -1650,9 +1701,13 @@ func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuD
 
 // The high four vertex bits select a shadow face. Ordinary draws use zero.
 func (g *gpuRenderer) drawTexturedOffset(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, first uint32) {
+	geom := &f.Geometry[d.index]
 	pass.SetBindGroup(0, d.set.binds[7], nil)
-	mk := g.materialKey(f.Geometry[d.index].Material, f.anisotropy())
+	mk := g.materialKey(geom.Material, f.anisotropy())
 	pass.SetBindGroup(2, g.materialBinds[mk], nil)
+	if bind := g.hookBindFor(geom); bind != nil {
+		pass.SetBindGroup(3, bind, nil)
+	}
 	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count, FirstVertex: first})
 }
 

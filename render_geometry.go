@@ -38,6 +38,7 @@ type manualSignature struct {
 	nArrows  int
 	material Material
 	hasMat   bool
+	hasHook  bool
 	style    PointStyle
 	drop     DropShadow
 }
@@ -56,11 +57,13 @@ func manualSig(geom Geometry) manualSignature {
 		nLines:   len(geom.Lines),
 		arrows:   unsafe.SliceData(geom.Arrows),
 		nArrows:  len(geom.Arrows),
+		hasHook:  hasShaderHook(geom),
 		style:    geom.PointStyle,
 		drop:     geom.DropShadow,
 	}
 	if geom.Material != nil {
 		sig.material = *geom.Material
+		sig.material.Shader = nil
 		sig.hasMat = true
 	}
 	return sig
@@ -270,6 +273,8 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		normal       textureKey
 		orm          textureKey
 		emissive     textureKey
+		displacement *VertexDisplacement
+		shader       *MaterialShader
 		transmitting bool
 	}
 	type group struct {
@@ -381,6 +386,36 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			node.meshRevision = node.shared.meshRevision
 			node.skin = node.shared.skin
 		}
+		if len(geom.Indices) > 0 {
+			slot := 1
+			if mapped(geom) {
+				slot = 7
+			}
+			if node.batches[slot].buffer == nil && node.shared != nil && g.shared != nil {
+				g.shared.mu.Lock()
+				node.batches[slot] = node.shared.batches[slot]
+				g.shared.mu.Unlock()
+			}
+			if node.batches[slot].buffer == nil {
+				data, _ := appendMeshRecords(nil, nil, geom)
+				if err := g.uploadData(dev, &node.batches[slot], data, 48); err != nil {
+					return err
+				}
+				if slot == 7 && extended(geom) {
+					node.batches[7].count = uint32(len(geom.Indices))
+				}
+				if node.shared != nil && g.shared != nil {
+					g.shared.mu.Lock()
+					if node.shared.batches[slot].buffer == nil {
+						node.shared.batches[slot] = node.batches[slot]
+					} else {
+						releaseBatch(node.batches[slot])
+						node.batches[slot] = node.shared.batches[slot]
+					}
+					g.shared.mu.Unlock()
+				}
+			}
+		}
 		if geom.Clusters == nil && node.order.buffer != nil {
 			// A point update dropped the clusters the order was uploaded for.
 			releaseBatch(node.order)
@@ -441,6 +476,22 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			if err := dev.Queue().WriteBuffer(node.batches[slot].buffer, 0, g.meshScratch); err != nil {
 				return err
 			}
+			if slot == 7 && node.batches[1].buffer != nil {
+				unmapped := geom
+				unmapped.Material = nil
+				unmapped.Displacement = nil
+				g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, unmapped)
+				if err := dev.Queue().WriteBuffer(node.batches[1].buffer, 0, g.meshScratch); err != nil {
+					return err
+				}
+			} else if slot == 1 && node.batches[7].buffer != nil && !extended(geom) {
+				mappedGeom := geom
+				mappedGeom.Displacement = &VertexDisplacement{}
+				g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, mappedGeom)
+				if err := dev.Queue().WriteBuffer(node.batches[7].buffer, 0, g.meshScratch); err != nil {
+					return err
+				}
+			}
 			if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() && node.batches[8].buffer != nil {
 				if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, dropShadowData(&geom)); err != nil {
 					return err
@@ -461,13 +512,24 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			groups = append(groups, &group{keys[i], []int{i}, true})
 			continue
 		}
-		k := groupKey{geometry: keys[i], outline: geom.Outline, transmitting: transmitting(&geom)}
+		var matShader *MaterialShader
+		if geom.Material != nil {
+			matShader = geom.Material.Shader
+		}
+		k := groupKey{
+			geometry:     keys[i],
+			outline:      geom.Outline,
+			displacement: geom.Displacement,
+			shader:       matShader,
+			transmitting: transmitting(&geom),
+		}
 		if mapped(geom) {
+			m := materialOrZero(geom.Material)
 			aniso := f.anisotropy()
 			k.base = baseKey(geom.Material, aniso)
-			k.normal = textureKey{src: normalMap(geom.Material), repeat: geom.Material.NormalRepeat, aniso: aniso}
-			k.orm = textureKey{src: ormMap(geom.Material), repeat: geom.Material.ORMRepeat, aniso: aniso}
-			k.emissive = textureKey{src: emissiveMap(geom.Material), repeat: geom.Material.EmissiveRepeat, aniso: aniso}
+			k.normal = textureKey{src: normalMap(&m), repeat: m.NormalRepeat, aniso: aniso}
+			k.orm = textureKey{src: ormMap(&m), repeat: m.ORMRepeat, aniso: aniso}
+			k.emissive = textureKey{src: emissiveMap(&m), repeat: m.EmissiveRepeat, aniso: aniso}
 		}
 		if grp := byKey[k]; grp != nil {
 			grp.members = append(grp.members, i)
@@ -516,6 +578,18 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 	s := node.sets[node.used]
 	node.used++
 	if s.capacity >= n {
+		size := uint64(s.capacity) * instanceRecordSize
+		for kind, b := range node.batches {
+			if b.buffer == nil || kind == 0 || s.binds[kind] != nil {
+				continue
+			}
+			entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: s.transform, Size: size}}
+			bind, err := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: entries})
+			if err != nil {
+				return nil, err
+			}
+			s.binds[kind] = bind
+		}
 		return s, nil
 	}
 	// The set is empty until its buffer and every bind group exist: one
@@ -770,7 +844,7 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []U
 			// tangent frames, and bits 6..23 carry any smooth outline normal),
 			// and, for a tint, the vertex color as a 24-bit integer, which a
 			// float holds exactly.
-			m, flags, cut := geom.Material, int(outlineCode)<<6, geom.Material.threshold()
+			m, flags, cut := materialOrZero(geom.Material), int(outlineCode)<<6, geom.Material.threshold()
 			if m.NormalRepeat {
 				flags |= 32
 			}
@@ -797,7 +871,10 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []U
 			if m.NormalMap != nil {
 				strength = m.NormalStrength
 			}
-			uv := geom.UV[index]
+			var uv UV
+			if int(index) < len(geom.UV) {
+				uv = geom.UV[index]
+			}
 			dst = appendFloats(dst, v.Position.X, v.Position.Y, v.Position.Z, uv.U, v.Normal.X, v.Normal.Y, v.Normal.Z, uv.V, cut, float32(flags), rgb, strength)
 		} else {
 			dst = appendFloats(dst, v.Position.X, v.Position.Y, v.Position.Z, opacity, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, float32(outlineCode))
@@ -1018,7 +1095,8 @@ func shLayout(g *Geometry) (labelsAt, paletteAt int) {
 }
 
 func dropShadowData(g *Geometry) []byte {
-	a, b := g.Bounds.Min, g.Bounds.Max
+	bounds := dropShadowBounds(g)
+	a, b := bounds.Min, bounds.Max
 	fixed := float32(0)
 	if g.DropShadow.FixedFloor {
 		fixed = 1

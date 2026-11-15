@@ -110,7 +110,7 @@ func (d *demo) sceneKeys() (string, keys) {
 	case d.dynamic != nil:
 		return "dynamic", keys{[]key.Binding{bind("a", "a", "pause"), bind("m", "m", "deform"), bind("b", "b", "add"), bind("x", "x", "remove"), bind("v", "v", "visibility")}}
 	}
-	return "terrain", keys{[]key.Binding{bind("a", "a", "animate"), bind("p", "p", "procedural"), bind("t", "t", "texture"), bind("f", "f", "flat"), bind("l", "l", "lighting"), bind("n", "n", "turn"), bind("v", "v", "visibility")}}
+	return "terrain", keys{[]key.Binding{bind("a", "a", "animate"), bind("p", "p", "procedural"), bind("w", "w", "hooks"), bind("t", "t", "texture"), bind("f", "f", "flat"), bind("l", "l", "lighting"), bind("n", "n", "turn"), bind("v", "v", "visibility")}}
 }
 
 // withActions wraps the demo so the browser page can show its keys as touch

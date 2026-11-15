@@ -66,13 +66,15 @@ type DropShadow struct {
 // Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
 // Scene setters copy geometry; frame consumers must treat snapshots as read-only.
 type Geometry struct {
-	pointUpdate *pointUpdate
-	meshUpdate  *meshUpdate
-	meshCert    meshCertificate
-	stored      *storedGeometry
-	posed       *posedGeometry
-	retainKeys  []geometryKey
-	Billboard   *Billboard // Optional camera-facing transform, resolved by Scene.Frame.
+	pointUpdate  *pointUpdate
+	meshUpdate   *meshUpdate
+	meshCert     meshCertificate
+	stored       *storedGeometry
+	posed        *posedGeometry
+	retainKeys   []geometryKey
+	restBounds   nt3dmath.AABB
+	Billboard    *Billboard          // Optional camera-facing transform, resolved by Scene.Frame.
+	Displacement *VertexDisplacement // Optional vertex displacement shader + Go fallback for indexed triangles.
 
 	// WireGrid optionally describes a row-major rectangular vertex lattice (NX, NY).
 	// Wireframe draws viewport-adaptive rows/columns instead of triangle edges.
@@ -230,6 +232,9 @@ func validateClusterBounds(s *nt3dclod.Set, n int) error {
 func validateGeometry(g Geometry) error { return validateGeometryCert(g, false) }
 
 func validateGeometryCert(g Geometry, certifiedMesh bool) error {
+	if g.Displacement != nil && !g.Displacement.valid() {
+		return fmt.Errorf("nt3d: invalid vertex displacement")
+	}
 	if err := g.Outline.validate(); err != nil {
 		return err
 	}
@@ -285,6 +290,9 @@ func validateGeometryCert(g Geometry, certifiedMesh bool) error {
 		return fmt.Errorf("nt3d: invalid texture or missing UVs")
 	}
 	if m := g.Material; m != nil {
+		if m.Shader != nil && !m.Shader.valid() {
+			return fmt.Errorf("nt3d: invalid material shader")
+		}
 		if !validFloat(m.Transmission, m.Refraction, m.Absorption.X, m.Absorption.Y, m.Absorption.Z) || m.Transmission < 0 || m.Transmission > 1 || m.Refraction < 0 || m.Refraction > 1 || m.Absorption.X < 0 || m.Absorption.Y < 0 || m.Absorption.Z < 0 {
 			return fmt.Errorf("nt3d: invalid transmission, refraction, or absorption")
 		}

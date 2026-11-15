@@ -56,11 +56,12 @@ func newWireDepth(f Frame, cols, rows int) *wireDepth {
 			continue // Edge-on geometry depends on a view wireframe does not draw.
 		}
 		inst := instance(f, gi)
+		verts := displacedVertices(&g, inst.World)
 		m := f.Matrix.Mul(inst.World)
 		inverse, _ := inst.World.InverseAffine()
 		normals := inverse.Transpose()
 		for i := 0; i+2 < len(g.Indices); i += 3 {
-			d.triangle(gi, &m, &normals, g.Vertices[g.Indices[i]].Position, g.Vertices[g.Indices[i+1]].Position, g.Vertices[g.Indices[i+2]].Position)
+			d.triangle(gi, &m, &normals, verts[g.Indices[i]].Position, verts[g.Indices[i+1]].Position, verts[g.Indices[i+2]].Position)
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)

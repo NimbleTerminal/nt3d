@@ -10,6 +10,7 @@ struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(1) var<storage, read> items: array<Item>;
 struct Instance { world:mat4x4<f32>, normal:mat4x4<f32>, outline:vec4<f32>, absorption:vec4<f32>, optics:vec4<f32>, toon:vec4<f32>, toonStyle:vec4<f32>, pbr:vec4<f32>, emissive:vec4<f32> };
 @group(0) @binding(2) var<storage,read> instances:array<Instance>;
+// BEGIN_POINT_ONLY
 // Points have records of their own, five words each: position, radius
 // (negative in world units), and color as RGBA8. Alpha points are drawn in
 // sort order, farthest first; the order of others is a placeholder.
@@ -20,6 +21,7 @@ struct PointRecord { x:f32, y:f32, z:f32, radius:f32, color:u32 };
 // order, which holds every alpha geometry's points by slice and slot.
 struct Run { start:u32, count:u32, pad:vec2<u32> };
 @group(0) @binding(6) var<uniform> run:Run;
+// END_POINT_ONLY
 // decode turns sRGB-encoded color into linear light, when the frame works in
 // linear light (viewport.z); the resolve pass encodes the result.
 fn decode(c:vec3<f32>)->vec3<f32> {
@@ -184,9 +186,9 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
  var c=rgb;
  let nx=dpdx(shadeNormal);let ny=dpdy(shadeNormal);
  let wx=dpdx(o.world);let wy=dpdy(o.world);
- var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);var pbr=vec4<f32>(0.0);var emissive=vec3<f32>(0.0);
- if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;pbr=inst.pbr;emissive=inst.emissive.rgb;}
- if dot(o.normal,o.normal)>0.0 {
+ var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);var pbr=vec4<f32>(0.0);var emissive=vec3<f32>(0.0);var unlit=false;
+ if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;pbr=inst.pbr;emissive=inst.emissive.rgb;unlit=inst.normal[0].w>0.5;}
+ if !unlit && dot(o.normal,o.normal)>0.0 {
   let n=normalize(shadeNormal);
   let view=viewAt(o.world);
   // The normal and position a pixel over, for the toon band edges.
@@ -336,6 +338,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
  c=mix(c,u.fogColor.rgb,fogAmount(o.world));
  return c;
 }
+// BEGIN_POINT_ONLY
 // A point is a quad about its center, of its radius on screen: a pixel
 // radius as it is, a world radius by the projection's vertical scale at the
 // point's depth (the matrix's clip-y row over w), clamped to half a pixel
@@ -360,6 +363,7 @@ fn pointOutput(vi:u32,packed:u32)->Out {
 }
 @vertex fn vs_point(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,ii);}
 @vertex fn vs_point_sorted(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return pointOutput(vi,order[run.start+ii]);}
+// END_POINT_ONLY
 // Mesh records carry opacity in a.w: one, unless the mesh is transparent.
 // Transparent meshes also draw their back faces, lit as seen from behind.
 // Meshes are drawn instanced: each instance's transform is its own.
@@ -473,7 +477,13 @@ fn softness(o:Out)->f32 {let s=max(0.0,1.0-dot(o.uv,o.uv));return s*s;}
 fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  let p=items[vi];let flags=u32(p.color.y);var tint=vec3<f32>(1.0);
  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
- var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(tint,f32(ii)));o.uv=vec2<f32>(p.a.w,p.b.w);o.optics.w=f32(ii)+1.0;o.cut=p.color.x;o.normalStrength=p.color.w;o.normalUV=o.uv;o.rect.x=select(0.0,1.0,(flags&32u)!=0u);
+ let uv=vec2<f32>(p.a.w,p.b.w);
+ var pos=p.a.xyz;var norm=p.b.xyz;
+ if nt3dHasDisplace {
+  let d=nt3d_displace(pos,norm,(instances[ii].world*vec4<f32>(pos,1.0)).xyz,uv);
+  pos=d.position;norm=d.normal;
+ }
+ var o=output(pos,norm*side,vec4<f32>(tint,f32(ii)));o.uv=uv;o.optics.w=f32(ii)+1.0;o.cut=p.color.x;o.normalStrength=p.color.w;o.normalUV=o.uv;o.rect.x=select(0.0,1.0,(flags&32u)!=0u);
  // The extension record carries the normal map's coordinates and the
  // vertex's tangent frame: turned by the world matrix (not the normal
  // matrix: tangents turn as positions do), its handedness in w, negated
@@ -481,17 +491,18 @@ fn mapOutput(vi:u32,ii:u32,side:f32)->Out {
  o.rect=vec4<f32>(o.rect.x,instances[ii].optics.zw,o.rect.w);
  o.tangent=vec4<f32>(0.0);o.flowFrame.x=select(0.0,1.0,(flags&16u)!=0u);
  if (flags&8u)!=0u {let e=items[u32(instances[ii].normal[1].w)+vi];o.normalUV=e.a.xy;o.flowFrame=vec3<f32>(o.flowFrame.x,e.a.zw);o.tangent=vec4<f32>((instances[ii].world*vec4<f32>(e.b.xyz,0.0)).xyz,e.b.w*side);}
- if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}
+ if instances[ii].normal[0].w>0.5 && !nt3dHasMaterial && !nt3dHasDisplace {o.normal=vec3<f32>(0.0);}
+ if instances[ii].normal[0].w>0.5 {o.spec=vec2<f32>(0.0);}
  // Image textures repeat through their samplers; procedural ones (flagged in
  // the instance record) are drawn each frame, clamped, and wrapped by hand.
  o.repeat=select(0.0,1.0,(flags&1u)!=0u && instances[ii].normal[3].z>0.5);
  // A procedural cutout samples full size: its device chain averages alpha.
  o.full=select(0.0,1.0,instances[ii].normal[3].z>0.5);
  // Edge-on cutouts fade out as the surface turns to face the viewer.
- if (flags&2u)!=0u && dot(p.b.xyz,p.b.xyz)>0.0 {
+ if (flags&2u)!=0u && dot(norm,norm)>0.0 {
   let inst=instances[ii];
-  let world=(inst.world*vec4<f32>(p.a.xyz,1.0)).xyz;
-  let n=normalize((inst.normal*vec4<f32>(p.b.xyz,0.0)).xyz);
+  let world=(inst.world*vec4<f32>(pos,1.0)).xyz;
+  let n=normalize((inst.normal*vec4<f32>(norm*side,0.0)).xyz);
   var view=-u.forward.xyz;
   if u.eye.w>0.5 {view=normalize(u.eye.xyz-world);}
   if dot(view,view)>0.0 {o.cut=mix(p.color.x,1.01,smoothstep(0.15,0.5,abs(dot(n,normalize(view)))));}
@@ -565,21 +576,41 @@ fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec
  if dot(result,result)<1e-12 {return o.normal;}
  return normalize(result);
 }
+fn srgbDecode3(c:vec3<f32>)->vec3<f32> {
+ let v=max(c,vec3<f32>(0.0));
+ return select(pow((v+0.055)/1.055,vec3<f32>(2.4)),v/12.92,v<=vec3<f32>(0.04045));
+}
+fn workingToLinear(c:vec3<f32>)->vec3<f32> {
+ if u.viewport.z>0.5 {return c;}
+ return srgbDecode3(c);
+}
+fn evalMaterialHook(o:Out,n:vec3<f32>,workRGB:vec3<f32>,alpha:f32)->vec4<f32> {
+ var unitN=vec3<f32>(0.0);
+ if dot(n,n)>0.0 {unitN=normalize(n);}
+ let m=nt3d_material(o.world,unitN,viewAt(o.world),o.uv,vec4<f32>(workingToLinear(workRGB),alpha));
+ return vec4<f32>(mapColor(m.rgb),m.a);
+}
 @fragment fn fs_texture(o:Out)->@location(0) vec4<f32> {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
+ let t=sampleMap(o.uv,gx,gy,o.repeat);
+ var base=mapColor(t.rgb)*o.color.rgb;
+ if nt3dHasMaterial {base=evalMaterialHook(o,n,base,t.a).rgb;}
  let orm=sampleORM(o.uv,gx,gy);
  let em=mapColor(sampleEmissive(o.uv,gx,gy));
- return vec4<f32>(shadeSurface(o,mapColor(sampleMap(o.uv,gx,gy,o.repeat).rgb)*o.color.rgb,n,orm,em),1.0);
+ return vec4<f32>(shadeSurface(o,base,n,orm,em),1.0);
 }
 // Transparent materials blend by the texture's alpha times the vertex's.
 @fragment fn fs_blend_texture(o:Out)->@location(0) vec4<f32> {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
  let t=sampleMap(o.uv,gx,gy,o.repeat);
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
+ var base=mapColor(t.rgb)*o.color.rgb;
+ var alpha=t.a*o.cut;
+ if nt3dHasMaterial {let m=evalMaterialHook(o,n,base,alpha);base=m.rgb;alpha=m.a;}
  let orm=sampleORM(o.uv,gx,gy);
  let em=mapColor(sampleEmissive(o.uv,gx,gy));
- return vec4<f32>(shadeSurface(o,mapColor(t.rgb)*o.color.rgb,n,orm,em),t.a*o.cut);
+ return vec4<f32>(shadeSurface(o,base,n,orm,em),alpha);
 }
 // Cutout materials skip texels under their threshold; what remains is
 // opaque. An image cutout is uploaded with its coverage-preserving chain,
@@ -590,14 +621,17 @@ fn surfaceNormal(o:Out,gx:vec2<f32>,gy:vec2<f32>,px:vec3<f32>,py:vec3<f32>)->vec
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
  let k=1.0-o.full;
  let t=sampleMap(o.uv,gx*k,gy*k,o.repeat);
- if t.a<o.cut {discard;}
+ var base=mapColor(t.rgb)*o.color.rgb;
+ var alpha=t.a;
+ if nt3dHasMaterial {let m=evalMaterialHook(o,n,base,alpha);base=m.rgb;alpha=m.a;}
+ if alpha<o.cut {discard;}
  let orm=sampleORM(o.uv,gx,gy);
  let em=mapColor(sampleEmissive(o.uv,gx,gy));
- return vec4<f32>(shadeSurface(o,mapColor(t.rgb)*o.color.rgb,n,orm,em),1.0);
+ return vec4<f32>(shadeSurface(o,base,n,orm,em),1.0);
 }
 
 @vertex fn vs_box(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return boxOutput(vi,ii);}
-struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>, @location(1) cut:f32, @location(2) @interpolate(flat) repeat:f32 };
+struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>, @location(1) cut:f32, @location(2) @interpolate(flat) repeat:f32, @location(3) world:vec3<f32>, @location(4) normal:vec3<f32>, @location(5) color:vec3<f32> };
 @vertex fn vs_shadow_mesh(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->ShadowOut {
  var o:ShadowOut;o.clip=u.pointShadows[vi>>28u]*instances[ii].world*vec4<f32>(items[vi&0x0fffffffu].a.xyz,1.0);return o;
 }
@@ -605,11 +639,34 @@ struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>,
  let b=boxOutput(vi&0x0fffffffu,ii);var o:ShadowOut;o.clip=u.pointShadows[vi>>28u]*vec4<f32>(b.world,1.0);return o;
 }
 @vertex fn vs_shadow_texture(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->ShadowOut {
- let p=items[vi&0x0fffffffu];var o:ShadowOut;o.clip=u.pointShadows[vi>>28u]*instances[ii].world*vec4<f32>(p.a.xyz,1.0);
- o.uv=vec2<f32>(p.a.w,p.b.w);o.cut=p.color.x;
- o.repeat=select(0.0,1.0,(u32(p.color.y)&1u)!=0u && instances[ii].normal[3].z>0.5);return o;
+ let p=items[vi&0x0fffffffu];let inst=instances[ii];let uv=vec2<f32>(p.a.w,p.b.w);
+ var pos=p.a.xyz;var norm=p.b.xyz;
+ if nt3dHasDisplace {
+  let d=nt3d_displace(pos,norm,(inst.world*vec4<f32>(pos,1.0)).xyz,uv);
+  pos=d.position;norm=d.normal;
+ }
+ let world=(inst.world*vec4<f32>(pos,1.0)).xyz;
+ var o:ShadowOut;o.clip=u.pointShadows[vi>>28u]*vec4<f32>(world,1.0);
+ o.uv=uv;o.cut=p.color.x;o.world=world;
+ let flags=u32(p.color.y);
+ o.repeat=select(0.0,1.0,(flags&1u)!=0u && inst.normal[3].z>0.5);
+ if nt3dHasMaterial {
+  if dot(norm,norm)>0.0 {o.normal=normalize((inst.normal*vec4<f32>(norm,0.0)).xyz);}
+  var tint=vec3<f32>(1.0);
+  if (flags&4u)!=0u {let c=u32(p.color.z);tint=vec3<f32>(f32((c>>16u)&255u),f32((c>>8u)&255u),f32(c&255u))/255.0;}
+  o.color=srgbDecode3(tint);
+ }
+ return o;
 }
-@fragment fn fs_shadow_cutout(o:ShadowOut) {if sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat).a<o.cut {discard;}}
+@fragment fn fs_shadow_cutout(o:ShadowOut) {
+ let t=sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat);
+ var a=t.a;
+ if nt3dHasMaterial {
+  var n=vec3<f32>(0.0);if dot(o.normal,o.normal)>0.0 {n=normalize(o.normal);}
+  a=nt3d_material(o.world,n,viewAt(o.world),o.uv,vec4<f32>(t.rgb*o.color,t.a)).a;
+ }
+ if a<o.cut {discard;}
+}
 
 // Drop bounds are local; transform every corner before fitting the world disc.
 @vertex fn vs_drop(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
@@ -652,9 +709,12 @@ fn unpackOutlineNormal(code:u32)->vec3<f32> {
 }
 fn outlineOutput(input:Out,vi:u32,ii:u32,code:u32)->Out {
  var o=input; let inst=instances[ii];
- var localN=items[vi].b.xyz;
- if code!=0u {localN=unpackOutlineNormal(code);}
- let n=(inst.normal*vec4<f32>(localN,0.0)).xyz;
+ var n=o.normal;
+ if !nt3dHasDisplace {
+  var localN=items[vi].b.xyz;
+  if code!=0u {localN=unpackOutlineNormal(code);}
+  n=(inst.normal*vec4<f32>(localN,0.0)).xyz;
+ }
  let d=u.matrix*vec4<f32>(n,0.0);
  let direction=(d.xy*o.clip.w-o.clip.xy*d.w)*u.viewport.xy;
  var width=inst.outline.w;
@@ -673,14 +733,18 @@ fn outlineOutput(input:Out,vi:u32,ii:u32,code:u32)->Out {
 @vertex fn vs_outline(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return outlineOutput(meshOutput(vi,ii,1.0),vi,ii,u32(items[vi].color.w));}
 @vertex fn vs_outline_map(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return outlineOutput(mapOutput(vi,ii,1.0),vi,ii,u32(items[vi].color.y)>>6u);}
 @fragment fn fs_outline_cutout(o:Out)->@location(0) vec4<f32> {
- if sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat).a<o.cut {discard;}
+ var a=sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat).a;
+ if nt3dHasMaterial {a=evalMaterialHook(o,vec3<f32>(0.0),vec3<f32>(1.0),a).a;}
+ if a<o.cut {discard;}
  return vec4<f32>(finish(o,o.color.rgb),1.0);
 }
 @fragment fn fs_outline_blend(o:Out)->@location(0) vec4<f32> {
- let alpha=sampleMap(o.uv,dpdx(o.uv),dpdy(o.uv),o.repeat).a*o.cut;
+ var alpha=sampleMap(o.uv,dpdx(o.uv),dpdy(o.uv),o.repeat).a*o.cut;
+ if nt3dHasMaterial {alpha=evalMaterialHook(o,vec3<f32>(0.0),vec3<f32>(1.0),alpha).a;}
  return vec4<f32>(finish(o,o.color.rgb),alpha);
 }
 
+// BEGIN_POINT_ONLY
 // Sprite atlas cells sample level zero and clamp to texel centers, so bilinear
 // filtering cannot leak neighboring frames into a sprite.
 fn spriteOutput(vi:u32,packed:u32)->Out {
@@ -805,6 +869,7 @@ fn gaussianSHColor(index:u32,world:vec3<f32>)->vec3<f32> {
  }
  return decode(max(rgb,vec3<f32>(0.0)));
 }
+// END_POINT_ONLY
 
 // Immutable opaque color and depth. Depth is refreshed after transmission for
 // particles. Texture loads keep this portable to unfilterable HDR targets.
@@ -883,11 +948,15 @@ fn oitPack(rgb:vec3<f32>,rawAlpha:f32,z:f32)->OITOut {
  let gx=dpdx(o.uv);let gy=dpdy(o.uv);
  let t=sampleMap(o.uv,gx,gy,o.repeat);
  let n=surfaceNormal(o,dpdx(o.normalUV),dpdy(o.normalUV),dpdx(o.world),dpdy(o.world));
+ var base=mapColor(t.rgb)*o.color.rgb;
+ var alpha=t.a*o.cut;
+ if nt3dHasMaterial {let m=evalMaterialHook(o,n,base,alpha);base=m.rgb;alpha=m.a;}
  let orm=sampleORM(o.uv,gx,gy);
  let em=mapColor(sampleEmissive(o.uv,gx,gy));
- return oitPack(shadeSurface(o,mapColor(t.rgb)*o.color.rgb,n,orm,em),t.a*o.cut,o.clip.z);
+ return oitPack(shadeSurface(o,base,n,orm,em),alpha,o.clip.z);
 }
 @fragment fn fs_oit_outline_blend(o:Out)->OITOut {
- let alpha=sampleMap(o.uv,dpdx(o.uv),dpdy(o.uv),o.repeat).a*o.cut;
+ var alpha=sampleMap(o.uv,dpdx(o.uv),dpdy(o.uv),o.repeat).a*o.cut;
+ if nt3dHasMaterial {alpha=evalMaterialHook(o,vec3<f32>(0.0),vec3<f32>(1.0),alpha).a;}
  return oitPack(finish(o,o.color.rgb),alpha,o.clip.z);
 }

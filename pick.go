@@ -98,8 +98,9 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 				set(TrianglePrimitive, tri, tri, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 			}
 		} else if len(g.Indices) >= 3 && rayHitsMeshBounds(localRay, g.Bounds) {
+			verts := displacedVertices(&g, inst.World)
 			for j := 0; j+2 < len(g.Indices); j += 3 {
-				a, b, c := g.Vertices[g.Indices[j]].Position, g.Vertices[g.Indices[j+1]].Position, g.Vertices[g.Indices[j+2]].Position
+				a, b, c := verts[g.Indices[j]].Position, verts[g.Indices[j+1]].Position, verts[g.Indices[j+2]].Position
 				if t, u, w, ok := rayTriangle(localRay, a, b, c); ok && !cutAt(&g, j/3, u, w) {
 					set(TrianglePrimitive, j/3, j/3, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 				}
@@ -268,7 +269,7 @@ type bvhSlot struct {
 // frames that do not show the node's current geometry are never indexed.
 func (s *Scene) pickIndex(f Frame, i int) *meshBVH {
 	g := &f.Geometry[i]
-	if s == nil || s.noPickIndex || len(g.Indices)/3 < bvhLinear || len(f.GeometryRevisions) != len(f.Geometry) {
+	if s == nil || s.noPickIndex || g.Displacement != nil || len(g.Indices)/3 < bvhLinear || len(f.GeometryRevisions) != len(f.Geometry) {
 		return nil
 	}
 	n := s.nodes[instance(f, i).Node]
@@ -304,7 +305,7 @@ func (s *Scene) WarmPickIndices() <-chan struct{} {
 	var waits []<-chan struct{}
 	seen := make(map[*bvhSlot]bool)
 	warm := func(g *Geometry, slot **bvhSlot) {
-		if len(g.Indices)/3 < bvhLinear || edgeOn(*g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
+		if g.Displacement != nil || len(g.Indices)/3 < bvhLinear || edgeOn(*g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			return
 		}
 		if *slot == nil {
@@ -399,7 +400,7 @@ func (s *Scene) hasUnindexedLargeMesh(f Frame) bool {
 		if !drawn[i] || len(g.Indices)/3 < bvhLinear || edgeOn(g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue
 		}
-		if s == nil {
+		if s == nil || g.Displacement != nil {
 			return true
 		}
 		n := s.nodes[instance(f, i).Node]
@@ -467,6 +468,7 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 				set(TrianglePrimitive, tri, tri, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 			}
 		} else if len(g.Indices) >= 3 && rayHitsMeshBounds(localRay, g.Bounds) {
+			verts := displacedVertices(&g, inst.World)
 			matchedGPU := false
 			if gpuOK && len(g.Indices)/3 >= bvhLinear && !transparent(&g) {
 				localHit := inv.Point(gpuWorld)
@@ -482,7 +484,7 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 						localHit.Z >= g.Bounds.Min.Z-eps && localHit.Z <= g.Bounds.Max.Z+eps) {
 					prevBest := best
 					for j := 0; j+2 < len(g.Indices); j += 3 {
-						a, b, c := g.Vertices[g.Indices[j]].Position, g.Vertices[g.Indices[j+1]].Position, g.Vertices[g.Indices[j+2]].Position
+						a, b, c := verts[g.Indices[j]].Position, verts[g.Indices[j+1]].Position, verts[g.Indices[j+2]].Position
 						if max(a.X, max(b.X, c.X)) < minX || min(a.X, min(b.X, c.X)) > maxX ||
 							max(a.Y, max(b.Y, c.Y)) < minY || min(a.Y, min(b.Y, c.Y)) > maxY ||
 							max(a.Z, max(b.Z, c.Z)) < minZ || min(a.Z, min(b.Z, c.Z)) > maxZ {
@@ -499,7 +501,7 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 			}
 			if !matchedGPU {
 				for j := 0; j+2 < len(g.Indices); j += 3 {
-					a, b, c := g.Vertices[g.Indices[j]].Position, g.Vertices[g.Indices[j+1]].Position, g.Vertices[g.Indices[j+2]].Position
+					a, b, c := verts[g.Indices[j]].Position, verts[g.Indices[j+1]].Position, verts[g.Indices[j+2]].Position
 					if t, u, w, ok := rayTriangle(localRay, a, b, c); ok && !cutAt(&g, j/3, u, w) {
 						set(TrianglePrimitive, j/3, j/3, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 					}

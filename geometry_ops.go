@@ -140,12 +140,16 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 			if mesh != nil && mesh.Outline != g.Outline {
 				return Geometry{}, errors.New("nt3d: cannot merge meshes with different outline styles")
 			}
+			if mesh != nil && mesh.Displacement != g.Displacement {
+				return Geometry{}, errors.New("nt3d: cannot merge meshes with different vertex displacements")
+			}
 			if mesh != nil && !sameMaterial(mesh.Material, g.Material) {
 				return Geometry{}, errors.New("nt3d: cannot merge meshes with different materials")
 			}
 			if mesh == nil {
 				mesh = g
 				out.Outline = g.Outline
+				out.Displacement = g.Displacement
 			}
 			uv = uv && len(g.UV) == len(g.Vertices)
 			tangents = tangents && len(g.Tangents) == len(g.Vertices)

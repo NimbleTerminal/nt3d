@@ -367,13 +367,13 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 	for _, geom := range f.Geometry {
 		var keys []textureKey
 		if mapped(geom) && len(geom.Indices) > 0 {
-			m := geom.Material
+			m := materialOrZero(geom.Material)
 			needTextured = true
 			keys = append(keys,
-				baseKey(m, aniso),
-				textureKey{src: normalMap(m), repeat: m.NormalRepeat, aniso: aniso},
-				textureKey{src: ormMap(m), repeat: m.ORMRepeat, aniso: aniso},
-				textureKey{src: emissiveMap(m), repeat: m.EmissiveRepeat, aniso: aniso},
+				baseKey(geom.Material, aniso),
+				textureKey{src: normalMap(&m), repeat: m.NormalRepeat, aniso: aniso},
+				textureKey{src: ormMap(&m), repeat: m.ORMRepeat, aniso: aniso},
+				textureKey{src: emissiveMap(&m), repeat: m.EmissiveRepeat, aniso: aniso},
 			)
 		}
 		if geom.PointStyle.Texture != nil && len(geom.Points) > 0 {

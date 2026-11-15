@@ -150,6 +150,7 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 		if skin.sourceRevision != p.sourceRevision {
 			source := p.source
 			source.Material = geom.Material
+			source.Displacement = geom.Displacement
 			data := geometryData(source)[slot][:records*48]
 			if err := dev.Queue().WriteBuffer(skin.source, 0, data); err != nil {
 				return err

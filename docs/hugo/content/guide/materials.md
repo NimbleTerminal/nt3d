@@ -123,6 +123,65 @@ Each frame, the GPU first draws the texture, then the scene that samples it, on 
 
 The [procedural demo](../demos/#procedural-plasma) paints terrain with an animated plasma shader; [procedural.go](https://github.com/NimbleTerminal/nt3d/blob/main/examples/demos/internal/demo/procedural.go) has the shader and its matching CPU fallback.
 
+## Vertex displacement and material shader hooks
+
+Beyond 2D shader textures, indexed triangle meshes can customize per-vertex displacement (`Geometry.Displacement`) and per-fragment linear surface color (`Material.Shader`) directly in the scene shader while keeping GPU, software, wireframe, shadows, and picking in parity via pure-Go fallbacks. Both hook types carry `Time` (`float32`, in seconds) and up to `MaxShaderParameters` (`16`) `[4]float32` uniform vectors, and `WithParameters` advances them each frame without recompiling WGSL or re-uploading mesh buffers.
+
+### Vertex displacement
+
+`NewVertexDisplacement` / `NewVertexDisplacementWithParameters` define `fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput` in WGSL alongside a `VertexDisplaceFunc` Go fallback and a conservative local-space `maxDisplacement` bound:
+
+```go
+const waveWGSL = `
+fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput {
+    let amp = nt3dDisplaceParam(0u).x;
+    let freq = nt3dDisplaceParam(0u).y;
+    let phase = in.world.x * freq + in.time * 2.0;
+    let dz = amp * sin(phase);
+    let n = normalize(vec3<f32>(-amp * freq * cos(phase), 0.0, 1.0));
+    return NT3DVertexOutput(in.position + vec3<f32>(0.0, 0.0, dz), n);
+}
+`
+
+disp, err := nt3d.NewVertexDisplacementWithParameters(
+    waveWGSL, 0.4, 0, [][4]float32{{0.35, 2.5, 0, 0}},
+    func(in nt3d.VertexDisplaceInput) nt3d.VertexDisplaceOutput {
+        amp, freq := in.Params[0][0], in.Params[0][1]
+        ph := float64(in.World.X*freq + in.Time*2)
+        dz := amp * float32(math.Sin(ph))
+        n := (nt3dmath.Vec3{X: -amp * freq * float32(math.Cos(ph)), Z: 1}).Normalize()
+        return nt3d.VertexDisplaceOutput{
+            Position: in.Position.Add(nt3dmath.Vec3{Z: dz}),
+            Normal:   n,
+        }
+    },
+)
+scene.SetDisplacement(root, disp)
+```
+
+In WGSL, `NT3DVertexInput` supplies `(position, normal, world, uv, time)` and `nt3dDisplaceParam(i)` reads `vec4<f32>` parameter `i` (`0..15`). Because `in.world` carries each instance's world-space rest position, instanced `SharedGeometry` (such as foliage sway across thousands of shared trees) stays batched in a single draw call while varying smoothly across world space. `maxDisplacement` pads frustum-culling, shadow, and picking AABBs relative to rest bounds without accumulating drift or shifting `DropShadow` discs. Software rendering, CPU/GPU shadow maps, silhouette outlines, wireframe, and `Scene.Pick` / `GPUSession.Pick` all evaluate the displaced surface.
+
+### Material color shader
+
+`NewMaterialShader` / `NewMaterialShaderWithParameters` define `fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32>` in WGSL alongside a `MaterialColorFunc` Go fallback:
+
+```go
+const bandWGSL = `
+fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
+    let speed = nt3dMaterialParam(0u).x;
+    let band = 0.5 + 0.5 * sin(in.world.z * 12.0 - in.time * speed);
+    let rim = pow(clamp(1.0 - max(0.0, dot(in.normal, in.view)), 0.0, 1.0), 2.0);
+    let rgb = mix(in.color.rgb, vec3<f32>(0.85, 0.95, 1.15), clamp(band * 0.4 + rim * 0.4, 0.0, 1.0));
+    return vec4<f32>(rgb, in.color.a);
+}
+`
+
+matShader, err := nt3d.NewMaterialShaderWithParameters(bandWGSL, 0, [][4]float32{{3.0}}, fallbackFn)
+scene.SetMaterialShader(root, matShader)
+```
+
+`NT3DMaterialInput` / `MaterialColorInput` supply `(world, normal, view, uv, color, time)` in **linear light** after vertex color/tint, base-color `Texture` sampling, and `NormalMap` perturbation, and before scene lighting (unless `Material.Unlit` is true), emissive, and fog. Returned RGB values remain unclamped above `1.0` so custom shaders can drive HDR `Bloom` and tone mapping directly, while returned alpha (`0..1`) feeds `Cutout` testing (including perforated directional/point/spot shadow maps and cutout outlines), alpha blending, and Weighted Blended OIT (`Frame.OIT`). Press `w` in the [procedural demo](../demos/#procedural-plasma) to toggle both hooks live.
+
 ## Outlines
 
 ![Sphere, cuboid, and torus without outlines above and with three-pixel outlines below](../../images/outlines.png)

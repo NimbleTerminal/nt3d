@@ -16,7 +16,7 @@ import (
 // rigid triangle mesh with a crease angle. Transparent, cutout, transmitting,
 // and deformed meshes draw only their hull.
 func creased(g *Geometry) bool {
-	if g.Outline.Width <= 0 || g.Outline.Crease <= 0 || len(g.Indices) == 0 || g.posed != nil {
+	if g.Outline.Width <= 0 || g.Outline.Crease <= 0 || len(g.Indices) == 0 || g.posed != nil || g.Displacement != nil {
 		return false
 	}
 	return !transparent(g) && !transmitting(g) && (g.Material == nil || !g.Material.Cutout)

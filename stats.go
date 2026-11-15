@@ -56,10 +56,12 @@ func (f Frame) Stats() FrameStats {
 		return FrameStats{}
 	}
 	type batchKey struct {
-		geometry geometryKey
-		outline  OutlineStyle
-		texture  *Texture
-		normal   *Texture
+		geometry     geometryKey
+		outline      OutlineStyle
+		texture      *Texture
+		normal       *Texture
+		displacement *VertexDisplacement
+		shader       *MaterialShader
 	}
 	drawn := f.drawn(1)
 	stats := FrameStats{
@@ -97,7 +99,10 @@ func (f Frame) Stats() FrameStats {
 		if batches == nil {
 			batches = make(map[batchKey]struct{})
 		}
-		k := batchKey{geometry: frameGeometryKey(f, i), outline: geom.Outline}
+		k := batchKey{geometry: frameGeometryKey(f, i), outline: geom.Outline, displacement: geom.Displacement}
+		if geom.Material != nil {
+			k.shader = geom.Material.Shader
+		}
 		if mapped(*geom) {
 			k.texture = baseMap(geom.Material)
 			k.normal = normalMap(geom.Material)

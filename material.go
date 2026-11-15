@@ -10,6 +10,9 @@ func validateMaterial(m *Material) error {
 	if m == nil {
 		return nil
 	}
+	if m.Shader != nil && !m.Shader.valid() {
+		return fmt.Errorf("nt3d: invalid material shader")
+	}
 	if m.Texture != nil && (!m.Texture.valid() || m.Texture.data) {
 		return fmt.Errorf("nt3d: invalid texture or missing UVs")
 	}
@@ -140,7 +143,7 @@ func vertexMaterialEqual(old, next Geometry) bool {
 	if extended(old) != extended(next) || (len(old.Tangents) > 0) != (len(next.Tangents) > 0) {
 		return false
 	}
-	om, nm := old.Material, next.Material
+	om, nm := materialOrZero(old.Material), materialOrZero(next.Material)
 	if om.NormalRepeat != nm.NormalRepeat || om.Repeat != nm.Repeat {
 		return false
 	}
@@ -150,7 +153,7 @@ func vertexMaterialEqual(old, next Geometry) bool {
 	if (om.Tint || om.Texture == nil) != (nm.Tint || nm.Texture == nil) {
 		return false
 	}
-	if !transparent(&next) && om.threshold() != nm.threshold() {
+	if !transparent(&next) && old.Material.threshold() != next.Material.threshold() {
 		return false
 	}
 	oldStrength, newStrength := float32(0), float32(0)

@@ -72,6 +72,7 @@ func wireRender(f Frame, cols, rows int) string {
 			continue
 		}
 		inst := instance(f, gi)
+		g.Vertices = displacedVertices(&g, inst.World)
 		// Project local coordinates through the node's transform.
 		local, cells := f, cellFrame
 		local.Matrix = f.Matrix.Mul(inst.World)

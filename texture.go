@@ -149,6 +149,9 @@ type Material struct {
 	EmissiveRepeat bool
 	// Toon shades in flat bands; see ToonStyle. The zero value is off.
 	Toon ToonStyle
+	// Shader optionally customizes per-fragment linear-light RGBA surface color
+	// via a WGSL shader on WebGPU and a pure-Go fallback in software rendering.
+	Shader *MaterialShader
 }
 
 // transparent reports whether a geometry's triangles are blended.

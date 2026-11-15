@@ -36,6 +36,9 @@ type demo struct {
 	textures          [2]*nt3d.Texture
 	style             int
 	procedural        bool
+	hooks             bool
+	waveDisp          *nt3d.VertexDisplacement
+	matShader         *nt3d.MaterialShader
 	flat, lit, hidden bool
 	angle             float64
 	status            string
@@ -130,13 +133,60 @@ func phaseTick() tea.Cmd {
 	return tea.Tick(time.Second/30, func(t time.Time) tea.Msg { return phaseMsg(t) })
 }
 
-func (d *demo) updatePlasma() error {
-	tex, err := plasmaTexture(d.phase + float64(d.style)*2)
+func (d *demo) applyTerrainHooks() error {
+	id, ok := d.scene.Find("terrain")
+	if !ok {
+		return nil
+	}
+	if !d.hooks {
+		if err := d.scene.SetDisplacement(id, nil); err != nil {
+			return err
+		}
+		return d.scene.SetMaterialShader(id, nil)
+	}
+	var err error
+	d.waveDisp, err = proceduralWaveDisplacement(d.waveDisp, float32(d.animationTime), d.style)
 	if err != nil {
 		return err
 	}
-	d.textures[d.style] = tex
-	return d.scene.SetTexture("terrain", tex)
+	d.matShader, err = proceduralMaterialShader(d.matShader, float32(d.animationTime), d.style)
+	if err != nil {
+		return err
+	}
+	if err := d.scene.SetDisplacement(id, d.waveDisp); err != nil {
+		return err
+	}
+	return d.scene.SetMaterialShader(id, d.matShader)
+}
+
+func (d *demo) updateTerrainStatus() {
+	switch {
+	case d.procedural && d.hooks:
+		d.status = "procedural plasma + shader hooks · w hooks · a pause · t shifts phase"
+	case d.procedural:
+		d.status = "procedural plasma · w hooks · a pause · t shifts phase"
+	case d.hooks:
+		d.status = "image texture + shader hooks · w hooks"
+	default:
+		d.status = "image texture"
+	}
+}
+
+func (d *demo) updatePlasma() error {
+	if d.procedural {
+		tex, err := plasmaTexture(d.phase + float64(d.style)*2)
+		if err != nil {
+			return err
+		}
+		d.textures[d.style] = tex
+		if err := d.scene.SetTexture("terrain", tex); err != nil {
+			return err
+		}
+	}
+	if d.hooks {
+		return d.applyTerrainHooks()
+	}
+	return nil
 }
 
 func (d *demo) terrain() error {
@@ -154,6 +204,9 @@ func (d *demo) terrain() error {
 		return err
 	}
 	if err := d.scene.Reparent(id, d.group); err != nil {
+		return err
+	}
+	if err := d.applyTerrainHooks(); err != nil {
 		return err
 	}
 	return d.terrainLabels(id)
@@ -203,7 +256,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, phaseTick()
 		}
-		if !d.animate || (!d.procedural && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil) {
+		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil) {
 			return d, phaseTick()
 		}
 		d.animationTime += elapsed
@@ -303,6 +356,14 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			d.adjustSplatBudget(v.String())
 		case "w":
+			if d.terrainScene() {
+				d.hooks = !d.hooks
+				err = d.applyTerrainHooks()
+				if err == nil {
+					d.updateTerrainStatus()
+				}
+				break
+			}
 			if !d.showsSplats() || !d.meshes.hasSH {
 				return d, nil
 			}
@@ -443,8 +504,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, nil
 			}
 			d.style = 1 - d.style
-			if d.procedural {
-				err = d.updatePlasma()
+			if d.procedural || d.hooks {
+				if !d.procedural {
+					err = d.scene.SetTexture("terrain", d.textures[d.style])
+				}
+				if err == nil {
+					err = d.updatePlasma()
+				}
 			} else {
 				err = d.scene.SetTexture("terrain", d.textures[d.style])
 			}
@@ -671,8 +737,10 @@ func (d *demo) View() tea.View {
 		status = d.view.Err().Error()
 	}
 	title := "nt3d terrain"
-	if d.procedural {
-		title = "nt3d procedural plasma"
+	if d.procedural || d.hooks {
+		if d.procedural {
+			title = "nt3d procedural plasma"
+		}
 		if d.animate {
 			status += " · animating"
 		} else {
@@ -764,7 +832,7 @@ func (d *demo) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
-	v.Content = d.zones.Scan(title + " · a animate · p procedural · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.rendering() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
+	v.Content = d.zones.Scan(title + " · a animate · p procedural · w hooks · t texture · f flat · l lighting · n parent rotation · v visibility · 1/2/3 backend · q quit\n" + v.Content + "\n" + d.rendering() + " · drag orbit · shift pan · wheel zoom · r rotate · o projection · g glyph · " + status)
 	v.AltScreen = true
 	return v
 }
@@ -930,6 +998,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		}
 	default:
 		d.procedural = *procedural
+		if d.procedural {
+			d.hooks = true
+			d.lit = true
+		}
 		if err = d.loadTextures(); err != nil {
 			return err
 		}
@@ -1091,10 +1163,6 @@ func (d *demo) loadTextures() error {
 			return err
 		}
 	}
-	if d.procedural {
-		d.status = "procedural plasma · a pause · t shifts phase"
-	} else {
-		d.status = "image texture"
-	}
+	d.updateTerrainStatus()
 	return nil
 }

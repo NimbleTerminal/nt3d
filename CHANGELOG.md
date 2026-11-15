@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Add data-driven shader hooks with pure-Go fallbacks for vertex displacement
+  and per-fragment material color: `VertexDisplacement` (`NewVertexDisplacement`,
+  `NewVertexDisplacementWithParameters`, `WithParameters`, `WithMaxDisplacement`,
+  `Geometry.Displacement`, `Scene.SetDisplacement`) and `MaterialShader`
+  (`NewMaterialShader`, `NewMaterialShaderWithParameters`, `WithParameters`,
+  `Material.Shader`, `Scene.SetMaterialShader`, `MaxShaderParameters = 16`).
+  WebGPU compiles lazily cached hook pipelines shared across
+  `GPUSession.NewView` and updates `[16][4]float32` uniform blocks via
+  `WriteBuffer` without mesh buffer re-uploads while preserving `SharedGeometry`
+  instancing; software rendering, directional/point/spot shadow maps (including
+  procedural `Cutout` shadows), silhouette outlines, wireframe, and `Scene.Pick`
+  / `GPUSession.Pick` evaluate the Go fallbacks in parity. Wire live wave
+  displacement and crest material shader hooks (`w`) into the `procedural` and
+  `terrain` demos.
 - Add `Scene.SetNodeVertices`, `Scene.UpdateNodeVertices`,
   `Scene.SetNodeVerticesWithTangents`, and `(*nt3dwater.WaveTile).Apply` for
   in-place fixed-topology mesh updates that preserve indices, UVs, and

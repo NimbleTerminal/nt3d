@@ -142,9 +142,11 @@ func (g *gpuRenderer) prepareOIT(dev *wgpu.Device, f Frame, drawn []bool) error 
 			continue
 		}
 		if mapped(*geom) {
-			needTex = true
-			if geom.Outline.Width != 0 && len(geom.Indices) > 0 {
-				needOutline[1] = true
+			if !hasShaderHook(*geom) {
+				needTex = true
+				if geom.Outline.Width != 0 && len(geom.Indices) > 0 {
+					needOutline[1] = true
+				}
 			}
 		} else {
 			needMesh = true
@@ -331,22 +333,25 @@ func (g *gpuRenderer) encodeOITPass(f Frame, encoder *wgpu.CommandEncoder, depth
 		}
 		if geom.Outline.Width != 0 && len(geom.Indices) > 0 {
 			if mapped(*geom) {
-				g.setScenePipeline(pass, outlinePipes[1])
-				g.drawTextured(pass, f, d)
+				if d.geom.batches[7].count > 0 {
+					g.setHookOrScenePipeline(pass, geom, outlinePipes[1], hookPipeOITOutline)
+					g.drawTextured(pass, f, d)
+				}
 			} else if d.geom.batches[1].count > 0 {
 				g.setScenePipeline(pass, outlinePipes[0])
 				pass.SetBindGroup(0, d.set.binds[1], nil)
 				pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[1].count, InstanceCount: d.count})
 			}
 		}
-		if b := d.geom.batches[1]; b.count > 0 {
+		if mapped(*geom) {
+			if d.geom.batches[7].count > 0 {
+				g.setHookOrScenePipeline(pass, geom, texPipe, hookPipeOIT)
+				g.drawTextured(pass, f, d)
+			}
+		} else if b := d.geom.batches[1]; b.count > 0 {
 			g.setScenePipeline(pass, meshPipe)
 			pass.SetBindGroup(0, d.set.binds[1], nil)
 			pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
-		}
-		if d.geom.batches[7].count > 0 {
-			g.setScenePipeline(pass, texPipe)
-			g.drawTextured(pass, f, d)
 		}
 	}
 	return pass.End()

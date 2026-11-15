@@ -136,24 +136,43 @@ func buildShadowFace(f *Frame, drawn []bool, view shadowView) *shadowMap {
 			continue
 		}
 		world := instance(*f, gi).World
+		var normals nt3dmath.Mat4
+		if g.Material != nil && g.Material.Cutout && g.Material.Shader != nil {
+			inv, _ := world.InverseAffine()
+			normals = inv.Transpose()
+		}
 		tri := func(vertices []Vertex, indices [3]uint32, uv []UV, material *Material) {
+			shaderCut := material != nil && material.Cutout && material.Shader != nil
 			var corners [3]clipCorner
 			for k, i := range indices {
 				c := &corners[k]
-				c.x, c.y, c.z, c.w = m.matrix.Transform(world.Point(vertices[i].Position))
+				wp := world.Point(vertices[i].Position)
+				c.x, c.y, c.z, c.w = m.matrix.Transform(wp)
 				if len(uv) > 0 {
 					c.uv = uv[i]
+				}
+				if shaderCut {
+					c.world = wp
+					if dir := normals.Direction(vertices[i].Normal); dir.Dot(dir) != 0 {
+						c.normal = dir.Normalize()
+					}
+					vc := vertices[i].Color
+					if material.Texture != nil && !material.Tint {
+						vc.R, vc.G, vc.B = 255, 255, 255
+					}
+					c.shade = [3]float32{srgbDecode[vc.R], srgbDecode[vc.G], srgbDecode[vc.B]}
 				}
 			}
 			var storage [4]clipCorner
 			polygon := clipNear(corners, &storage)
 			for k := 1; k+1 < len(polygon); k++ {
-				rasterShadowTriangle(m, [3]clipCorner{polygon[0], polygon[k], polygon[k+1]}, material)
+				rasterShadowTriangle(f, m, [3]clipCorner{polygon[0], polygon[k], polygon[k+1]}, material)
 			}
 		}
 		if !transparent(&g) && !transmitting(&g) {
+			verts := displacedVertices(&g, world)
 			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material)
+				tri(verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.Material)
 			}
 		}
 		for _, box := range g.Boxes {
@@ -217,12 +236,23 @@ func (m *shadowMap) visibilityFace(pos, n, l nt3dmath.Vec3, clampEdge bool) floa
 	return lit / 9
 }
 
+func dropShadowBounds(g *Geometry) nt3dmath.AABB {
+	if !g.Bounds.IsValid() {
+		return g.Bounds
+	}
+	if g.restBounds.IsValid() {
+		return g.restBounds
+	}
+	return g.Bounds
+}
+
 // dropDisc derives a geometry instance's drop shadow from its world bounds.
 func dropDisc(g *Geometry, world nt3dmath.Mat4) (center nt3dmath.Vec3, radius, strength float32, ok bool) {
-	if g.DropShadow.Strength <= 0 || !g.Bounds.IsValid() {
+	bounds := dropShadowBounds(g)
+	if g.DropShadow.Strength <= 0 || !bounds.IsValid() {
 		return
 	}
-	b := g.Bounds.Transformed(world)
+	b := bounds.Transformed(world)
 	center = nt3dmath.Vec3{X: (b.Min.X + b.Max.X) * .5, Y: (b.Min.Y + b.Max.Y) * .5, Z: b.Min.Z}
 	if g.DropShadow.FixedFloor {
 		center.Z = g.DropShadow.FloorZ
@@ -386,7 +416,7 @@ func fitShadows(f *Frame, drawn []bool, size int) []shadowView {
 	return views
 }
 
-func rasterShadowTriangle(m *shadowMap, corners [3]clipCorner, material *Material) {
+func rasterShadowTriangle(f *Frame, m *shadowMap, corners [3]clipCorner, material *Material) {
 	var x, y, z [3]float32
 	for k, c := range corners {
 		if c.w <= 0 {
@@ -417,12 +447,31 @@ func rasterShadowTriangle(m *shadowMap, corners [3]clipCorner, material *Materia
 			if d < 0 || d > 1 {
 				continue
 			}
-			if material != nil && material.Cutout && material.Texture != nil {
-				a, b, c = a/corners[0].w, b/corners[1].w, c/corners[2].w
-				sum := a + b + c
-				a, b, c = a/sum, b/sum, c/sum
+			if material != nil && material.Cutout && (material.Texture != nil || material.Shader != nil) {
+				qa, qb, qc := a/corners[0].w, b/corners[1].w, c/corners[2].w
+				sum := qa + qb + qc
+				qa, qb, qc = qa/sum, qb/sum, qc/sum
 				u, v, w := corners[0].uv, corners[1].uv, corners[2].uv
-				if material.Texture.sampleLinear(UV{a*u.U + b*v.U + c*w.U, a*u.V + b*v.V + c*w.V}, material.Repeat, 0, false)[3] < material.threshold() {
+				uv := UV{qa*u.U + qb*v.U + qc*w.U, qa*u.V + qb*v.V + qc*w.V}
+				tex := [4]float32{1, 1, 1, 1}
+				if material.Texture != nil {
+					tex = material.Texture.sampleLinear(uv, material.Repeat, 0, false)
+				}
+				alpha := tex[3]
+				if material.Shader != nil {
+					p := corners[0].world.Scale(qa).Add(corners[1].world.Scale(qb)).Add(corners[2].world.Scale(qc))
+					n := corners[0].normal.Scale(qa).Add(corners[1].normal.Scale(qb)).Add(corners[2].normal.Scale(qc))
+					if n.Dot(n) != 0 {
+						n = n.Normalize()
+					}
+					var base [4]float32
+					base[3] = alpha
+					for k := range 3 {
+						base[k] = tex[k] * (qa*corners[0].shade[k] + qb*corners[1].shade[k] + qc*corners[2].shade[k])
+					}
+					alpha = evalMaterialColor(material.Shader, p, n, f.viewAt(p), uv, base)[3]
+				}
+				if alpha < material.threshold() {
 					continue
 				}
 			}

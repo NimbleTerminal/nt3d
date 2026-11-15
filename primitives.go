@@ -43,7 +43,7 @@ func lerpRGBA(a, b color.RGBA, t float64) color.RGBA {
 	return color.RGBA{mix(a.R, b.R), mix(a.G, b.G), mix(a.B, b.B), mix(a.A, b.A)}
 }
 func cloneGeometry(g Geometry) Geometry {
-	g.pointUpdate, g.meshUpdate, g.meshCert, g.stored, g.retainKeys = nil, nil, meshCertificate{}, nil, nil
+	g.pointUpdate, g.meshUpdate, g.meshCert, g.stored, g.retainKeys, g.restBounds = nil, nil, meshCertificate{}, nil, nil, nt3dmath.AABB{}
 	g.Points = slices.Clone(g.Points)
 	g.GaussianSH = slices.Clone(g.GaussianSH)
 	g.GaussianSHLabels = slices.Clone(g.GaussianSHLabels)
@@ -67,25 +67,41 @@ func cloneGeometry(g Geometry) Geometry {
 func (g Geometry) Validate() error { return validateGeometry(g) }
 
 // GeometryBounds computes bounds from primitives; caller-supplied bounds are not trusted.
-func GeometryBounds(g Geometry) (b nt3dmath.AABB) {
+// When g.Displacement is set on a mesh with vertices, the vertex AABB is padded
+// conservatively by ±g.Displacement.MaxDisplacement().
+func GeometryBounds(g Geometry) nt3dmath.AABB {
+	padded, _ := geometryBoundsPair(g)
+	return padded
+}
+
+func geometryBoundsPair(g Geometry) (padded, rest nt3dmath.AABB) {
 	for _, p := range g.Points {
-		b.Include(p.Position)
+		rest.Include(p.Position)
 	}
+	var mesh nt3dmath.AABB
 	for _, v := range g.Vertices {
-		b.Include(v.Position)
+		mesh.Include(v.Position)
 	}
 	for _, v := range g.Lines {
-		b.Include(v.Position)
+		rest.Include(v.Position)
 	}
 	for _, a := range g.Arrows {
-		b.Include(a.Start)
-		b.Include(a.End)
+		rest.Include(a.Start)
+		rest.Include(a.End)
 	}
 	for _, v := range g.Boxes {
-		b.Include(v.Min)
-		b.Include(v.Min.Add(v.Size))
+		rest.Include(v.Min)
+		rest.Include(v.Min.Add(v.Size))
 	}
-	return
+	padded = rest
+	if mesh.IsValid() {
+		rest.Include(mesh.Min)
+		rest.Include(mesh.Max)
+		meshPadded := padGeometryBounds(mesh, true, g.Displacement.MaxDisplacement())
+		padded.Include(meshPadded.Min)
+		padded.Include(meshPadded.Max)
+	}
+	return padded, rest
 }
 
 // Clip returns geometry clipped to a local-space box. It may share unchanged

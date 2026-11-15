@@ -298,18 +298,19 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 	// it shows the side drawn: front faces, or for transparent geometry's
 	// first pass, back faces. A transparent material's corners carry their
 	// opacity in cut.
-	raster := func(a, b, c *clipCorner, material *Material, side int) {
+	raster := func(a, b, c *clipCorner, material *Material, side int, isMapped bool) {
 		textured := material != nil && material.Texture != nil
-		cutout := textured && material.Cutout
-		fullSize := textured && material.FullSize && material.Texture.shader == ""
 		hull := side < 0
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
+		hasMatShader := material != nil && material.Shader != nil && (!hull || material.Cutout || blended)
+		cutout := material != nil && material.Cutout && (textured || hasMatShader)
+		fullSize := textured && material.FullSize && material.Texture.shader == ""
 		back := side == backFaces || hull
 		pbr := pbrActive(material) && !hull
 		emissive := emissiveActive(material) && !hull
 		emissiveMul := emissiveFactor(material, linear)
-		directTexture := textured && !linear && material.Unlit && !material.Tint && !fogged && !blended && !hull && !emissive
-		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && !material.Unlit
+		directTexture := textured && !hasMatShader && !linear && material.Unlit && !material.Tint && !fogged && !blended && !hull && !emissive
+		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && (!material.Unlit || hasMatShader) && !hull
 		var tangent, bitangent nt3dmath.Vec3
 		// A mesh with frames has one at every corner, so any nonzero
 		// handedness (lerped at a cut edge, they can cancel at one corner
@@ -320,13 +321,13 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		}
 		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && f.Environment != nil && (!f.EnvironmentBackgroundOnly || material.EnvironmentReflect)
 		specular := !pbr && material != nil && material.Specular > 0 && !material.Unlit
-		// A triangle with normals is lit; unlit ones have none.
-		lit := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
+		hasNormals := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
+		lit := hasNormals && (material == nil || !material.Unlit) && !hull
 		// Whether pixels need the world point, and so perspective weights.
 		toon := material != nil && material.Toon.on() && !material.Unlit
-		located := fogged || lit && (pbr || specular || reflective || material != nil && material.Transmission > 0 || rig.points || rig.shadow != nil || toon && material.Toon.Rim > 0)
-		hasMapped := material != nil && (material.NormalMap != nil || material.ORMMap != nil || material.EmissiveMap != nil)
-		perspective := blended || textured || lit || fogged || hasMapped
+		located := fogged || hasMatShader || lit && (pbr || specular || reflective || material != nil && material.Transmission > 0 || rig.points || rig.shadow != nil || toon && material.Toon.Rim > 0)
+		hasMapped := isMapped
+		perspective := blended || textured || lit || fogged || hasMapped || hasMatShader
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
 		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
 		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
@@ -380,6 +381,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 				if blended {
 					opacity = q0*a.cut + q1*b.cut + q2*c.cut
 				}
+				var texAlpha float32 = 1
 				if textured {
 					uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
 					// Textures sample the mip level for how far their texels
@@ -402,7 +404,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 					default:
 						tex = material.Texture.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.Repeat, aniso)
 					}
-					if cutout && tex[3] < q0*a.cut+q1*b.cut+q2*c.cut {
+					if cutout && !hasMatShader && tex[3] < q0*a.cut+q1*b.cut+q2*c.cut {
 						continue // Cut out: neither color nor depth.
 					}
 					// Even an authored white tint can interpolate a fraction away
@@ -424,6 +426,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 					if !hull {
 						rgb = [3]float32{work(tex[0]) * tint(0), work(tex[1]) * tint(1), work(tex[2]) * tint(2)}
 					}
+					texAlpha = tex[3]
 					opacity *= tex[3]
 				}
 				var p nt3dmath.Vec3
@@ -433,10 +436,12 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 					// is found here, when something needs it.
 					p = a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
 				}
-				if lit {
+				var shadeN, geometric nt3dmath.Vec3
+				hasShadeN := false
+				if lit || (hasMatShader && !hull && hasNormals) {
 					if n := a.normal.Scale(q0).Add(b.normal.Scale(q1)).Add(c.normal.Scale(q2)); n.Dot(n) != 0 {
 						n = n.Scale(1 / float32(math.Sqrt(float64(n.Dot(n)))))
-						geometric := n
+						geometric = n
 						if normalMapped {
 							uv := UV{q0*a.normalUV.U + q1*b.normalUV.U + q2*c.normalUV.U, q0*a.normalUV.V + q1*b.normalUV.V + q2*c.normalUV.V}
 							flow := UV{q0*a.flow.U + q1*b.flow.U + q2*c.flow.U, q0*a.flow.V + q1*b.flow.V + q2*c.flow.V}
@@ -453,6 +458,46 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 							}
 							n = perturbNormal(n, t, bt, sample, material.NormalStrength)
 						}
+						shadeN = n
+						hasShadeN = true
+					}
+				}
+				if hasMatShader {
+					uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
+					baseA := texAlpha
+					if blended {
+						baseA = opacity
+					}
+					base := [4]float32{1, 1, 1, baseA}
+					if !hull {
+						for k := range 3 {
+							v := rgb[k] / 255
+							if !linear {
+								v = float32(decodeSRGB(float64(min(1, max(0, v)))))
+							}
+							base[k] = v
+						}
+					}
+					matOut := evalMaterialColor(material.Shader, p, shadeN, f.viewAt(p), uv, base)
+					if cutout && matOut[3] < q0*a.cut+q1*b.cut+q2*c.cut {
+						continue
+					}
+					if blended {
+						opacity = matOut[3]
+					}
+					if !hull {
+						for k := range 3 {
+							if linear {
+								rgb[k] = matOut[k] * 255
+							} else {
+								rgb[k] = float32(encodeSRGB(float64(min(1, matOut[k])))) * 255
+							}
+						}
+					}
+				}
+				if lit && hasShadeN {
+					n := shadeN
+					{
 						if pbr {
 							orm := [3]float32{1, 1, 1}
 							if material.ORMMap != nil {
@@ -533,7 +578,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 	// crosses the near plane is cut there, as the GPU does, not discarded.
 	// side chooses the faces drawn, and how: opaque front faces, or a
 	// transparent geometry's back or front faces.
-	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv, normalUV []UV, tangents []Tangent, material *Material, side int, outline OutlineStyle) {
+	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv, normalUV []UV, tangents []Tangent, material *Material, side int, outline OutlineStyle, isMapped bool) {
 		hull := side < 0
 		back := side == backFaces || hull
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
@@ -567,6 +612,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			return
 		}
 		unlit, textured := material != nil && material.Unlit, material != nil && material.Texture != nil
+		hasMatShader := material != nil && material.Shader != nil && !hull
 		for k, i := range index {
 			c, n := vertices[i].Color, vertices[i].Normal
 			if side == backFaces {
@@ -579,7 +625,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			} else if material != nil {
 				corners[k].cut = material.threshold()
 			}
-			if unlit || hull {
+			if (unlit && !hasMatShader) || hull {
 				n = nt3dmath.Vec3{}
 			}
 			corners[k].world = world.Point(vertices[i].Position)
@@ -601,14 +647,14 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			}
 		}
 		if whole {
-			raster(&corners[0], &corners[1], &corners[2], material, side)
+			raster(&corners[0], &corners[1], &corners[2], material, side, isMapped)
 			return
 		}
 		var storage [4]clipCorner
 		polygon := clipNear(corners, &storage)
 		for k := 1; k+1 < len(polygon); k++ {
 			if polygon[0].w > 0 && polygon[k].w > 0 && polygon[k+1].w > 0 {
-				raster(&polygon[0], &polygon[k], &polygon[k+1], material, side)
+				raster(&polygon[0], &polygon[k], &polygon[k+1], material, side, isMapped)
 			}
 		}
 	}
@@ -778,14 +824,16 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			drawPointsUnsorted(&f.Geometry[gi], inst, &local.Matrix)
 		}
 		if !transparent(&f.Geometry[gi]) && !transmitting(&f.Geometry[gi]) {
+			verts := displacedVertices(&g, inst.World)
+			isMapped := mapped(g)
 			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&local.Matrix, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{})
+				tri(&local.Matrix, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
 			}
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, nil, opaqueFaces, OutlineStyle{})
+				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, nil, opaqueFaces, OutlineStyle{}, false)
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
@@ -815,9 +863,10 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		if g.Material != nil {
 			material = *g.Material
 			material.Unlit = true
+			material.Shader = nil
 		}
-		verts := g.Vertices
-		if g.posed == nil {
+		verts := displacedVertices(g, inst.World)
+		if g.posed == nil && g.Displacement == nil {
 			if codes := outlineNormals(verts); codes != nil {
 				verts = slices.Clone(verts)
 				for i, code := range codes {
@@ -827,8 +876,9 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 				}
 			}
 		}
+		isMapped := mapped(*g)
 		for i := 0; i+2 < len(g.Indices); i += 3 {
-			tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, &material, side, g.Outline)
+			tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, &material, side, g.Outline, isMapped)
 		}
 	}
 	for gi := range f.Geometry {
@@ -952,11 +1002,13 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 				continue
 			}
 			inst := instance(f, gi)
+			verts := displacedVertices(g, inst.World)
+			isMapped := mapped(*g)
 			m := f.Matrix.Mul(inst.World)
 			inv, _ := inst.World.InverseAffine()
 			normals := inv.Transpose()
 			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{})
+				tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
 			}
 		}
 	}
@@ -975,12 +1027,14 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			}
 			drawOutline(gi, outlineTransparent)
 			inst := instance(f, gi)
+			verts := displacedVertices(g, inst.World)
+			isMapped := mapped(*g)
 			m := f.Matrix.Mul(inst.World)
 			inverse, _ := inst.World.InverseAffine()
 			normals := inverse.Transpose()
 			for _, side := range []int{backFaces, frontFaces} {
 				for i := 0; i+2 < len(g.Indices); i += 3 {
-					tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{})
+					tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
 				}
 			}
 		}
@@ -1061,11 +1115,13 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			m := f.Matrix.Mul(inst.World)
 			if transparent(g) {
 				drawOutline(gi, outlineTransparent)
+				verts := displacedVertices(g, inst.World)
+				isMapped := mapped(*g)
 				inverse, _ := inst.World.InverseAffine()
 				normals := inverse.Transpose()
 				for _, side := range []int{backFaces, frontFaces} {
 					for i := 0; i+2 < len(g.Indices); i += 3 {
-						tri(&m, &inst.World, &normals, g.Vertices, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{})
+						tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
 					}
 				}
 			}

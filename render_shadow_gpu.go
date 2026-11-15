@@ -166,20 +166,21 @@ func (g *gpuRenderer) drawShadowFace(f Frame, encoder *wgpu.CommandEncoder, face
 	for _, d := range g.draws {
 		geom := &f.Geometry[d.index]
 		if !transparent(geom) && !transmitting(geom) {
-			if b := d.geom.batches[1]; b.count > 0 {
+			if mapped(*geom) {
+				if d.geom.batches[7].count > 0 {
+					if geom.Material != nil && geom.Material.Cutout {
+						hasCutout = true
+					} else {
+						pass.SetPipeline(g.hookOrShadowPipeline(geom, g.shadowPipelines[2], 0))
+						pass.SetBindGroup(1, g.noShadow.bind, nil)
+						g.drawTexturedOffset(pass, f, d, uint32(face)<<28)
+					}
+				}
+			} else if b := d.geom.batches[1]; b.count > 0 {
 				pass.SetPipeline(g.shadowPipelines[0])
 				pass.SetBindGroup(1, g.noShadow.bind, nil)
 				pass.SetBindGroup(0, d.set.binds[1], nil)
 				pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count, FirstVertex: uint32(face) << 28})
-			}
-			if d.geom.batches[7].count > 0 {
-				if geom.Material.Cutout {
-					hasCutout = true
-				} else {
-					pass.SetPipeline(g.shadowPipelines[2])
-					pass.SetBindGroup(1, g.noShadow.bind, nil)
-					g.drawTexturedOffset(pass, f, d, uint32(face)<<28)
-				}
 			}
 		}
 		if b := d.geom.batches[2]; b.count > 0 {
@@ -200,11 +201,11 @@ func (g *gpuRenderer) drawShadowFace(f Frame, encoder *wgpu.CommandEncoder, face
 	if err != nil {
 		return err
 	}
-	pass.SetPipeline(g.shadowPipelines[3])
-	pass.SetBindGroup(1, g.noShadow.bind, nil)
 	for _, d := range g.draws {
 		geom := &f.Geometry[d.index]
-		if !transparent(geom) && d.geom.batches[7].count > 0 && geom.Material.Cutout {
+		if !transparent(geom) && !transmitting(geom) && mapped(*geom) && d.geom.batches[7].count > 0 && geom.Material != nil && geom.Material.Cutout {
+			pass.SetPipeline(g.hookOrShadowPipeline(geom, g.shadowPipelines[3], 1))
+			pass.SetBindGroup(1, g.noShadow.bind, nil)
 			g.drawTexturedOffset(pass, f, d, uint32(face)<<28)
 		}
 	}

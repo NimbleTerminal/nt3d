@@ -163,6 +163,10 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		err = d.setupAABB()
 	default:
 		d.procedural = proceduralDefault
+		if d.procedural {
+			d.hooks = true
+			d.lit = true
+		}
 		if err = d.loadTextures(); err == nil {
 			if err = d.terrain(); err == nil {
 				var marker nt3d.NodeID
@@ -595,15 +599,17 @@ func (r *Runner) HeaderAndStatus() (header, status string) {
 	default:
 		title := "nt3d terrain"
 		st := d.status
-		if d.procedural {
-			title = "nt3d procedural plasma"
+		if d.procedural || d.hooks {
+			if d.procedural {
+				title = "nt3d procedural plasma"
+			}
 			if d.animate {
 				st += " · animating"
 			} else {
 				st += " · paused"
 			}
 		}
-		raw = title + " · a animate · p procedural · t texture · f flat · l lighting · n parent rotation · v visibility\n" + sentinel + "\n" + d.rendering() + " · " + st
+		raw = title + " · a animate · p procedural · w hooks · t texture · f flat · l lighting · n parent rotation · v visibility\n" + sentinel + "\n" + d.rendering() + " · " + st
 	}
 
 	parts := strings.SplitN(raw, "\n"+sentinel+"\n", 2)
