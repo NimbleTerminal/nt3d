@@ -193,6 +193,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	f.Matrix = relCam.Matrix(float32(width) / float32(height))
 	f.Eye, _, _, f.Forward = relCam.basis()
 	f.Perspective = relCam.Projection == Perspective
+	lodBias, lodBand, lodEpoch := s.lodBiasValue(), s.lodHysteresis, s.lodEpochValue()
 	for _, id := range s.order {
 		n := s.nodes[id]
 		if n.geometry == nil {
@@ -201,7 +202,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 		geom, rev, sg := n.geometry, n.geometryRevision, n.shared
 		world, visible := s.worldRelative(id, frameOrigin), s.visible(id)
 		if len(n.lod) > 0 {
-			lvl, inRange := n.selectLOD(world, f.Eye)
+			lvl, inRange := n.selectLOD(world, f.Eye, lodBias, lodBand, lodEpoch, visible)
 			geom, rev, sg = lvl.geometry, lvl.geometryRevision, lvl.shared
 			visible = visible && inRange
 		}

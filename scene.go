@@ -47,6 +47,8 @@ type sceneNode struct {
 	pickIndex        *bvhSlot // Built for picking on demand, for this geometry.
 	lod              []lodLevel
 	lodBounds        nt3dmath.AABB
+	lodEpoch         uint64
+	lodTier          int
 	noPickIndex      bool // SetNodePickIndexing turned indexing off here.
 }
 
@@ -60,6 +62,8 @@ type Scene struct {
 	names                                    map[string]NodeID
 	order                                    []NodeID
 	revision, textureRevision, stateRevision uint64
+	lodBiasEpoch                             uint64
+	lodBias, lodHysteresis                   float32
 	noPickIndex                              bool
 	splatBudget                              int
 	originCount                              int
@@ -67,7 +71,7 @@ type Scene struct {
 
 // NewScene returns an empty scene containing a visible Root node.
 func NewScene() *Scene {
-	s := &Scene{nodes: make(map[NodeID]*sceneNode), names: make(map[string]NodeID)}
+	s := &Scene{nodes: make(map[NodeID]*sceneNode), names: make(map[string]NodeID), lodBias: 1, lodBiasEpoch: 1}
 	s.nodes[Root] = &sceneNode{Node: Node{ID: Root, Local: nt3dmath.Identity(), World: nt3dmath.Identity(), Visible: true}}
 	s.changed(true, false)
 	return s
@@ -330,6 +334,14 @@ func (s *Scene) SetVisible(id NodeID, visible bool) error {
 	}
 	if n.Visible != visible {
 		n.Visible = visible
+		stack := []NodeID{id}
+		for len(stack) > 0 {
+			at := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			node := s.nodes[at]
+			node.lodEpoch = 0
+			stack = append(stack, node.Children...)
+		}
 		s.changed(false, false)
 	}
 	return nil
@@ -371,7 +383,7 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	if err != nil {
 		return err
 	}
-	n.deformation, n.lod, n.lodBounds = nil, nil, nt3dmath.AABB{}
+	n.deformation, n.lod, n.lodBounds, n.lodEpoch, n.lodTier = nil, nil, nt3dmath.AABB{}, 0, 0
 	n.geometry, n.shared, n.pickIndex = &g, nil, nil
 	s.changed(true, true)
 	n.geometryRevision = s.revision
@@ -448,7 +460,7 @@ func (s *Scene) SetNodeShared(id NodeID, sg *SharedGeometry) error {
 	if sg == nil {
 		return errors.New("nt3d: nil shared geometry")
 	}
-	n.deformation, n.lod, n.lodBounds = nil, nil, nt3dmath.AABB{}
+	n.deformation, n.lod, n.lodBounds, n.lodEpoch, n.lodTier = nil, nil, nt3dmath.AABB{}, 0, 0
 	n.geometry, n.shared, n.pickIndex = &sg.geometry, sg, nil
 	s.changed(true, true)
 	n.geometryRevision = sg.id // The same for every node that shows it.

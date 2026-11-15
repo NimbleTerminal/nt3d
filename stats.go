@@ -26,6 +26,10 @@ type FrameStats struct {
 	// Points is the total point and Gaussian splat count selected for drawing across
 	// DrawnInstances, honoring Frame.SplatBudget on clustered alpha-blended clouds.
 	Points int
+	// LODTierInstances counts DrawnInstances selected from Scene.SetLOD nodes by
+	// 0-based tier index; tiers 7 and coarser are folded into index 7. Non-LOD
+	// instances do not contribute to these counts.
+	LODTierInstances [8]int
 }
 
 func hasPrimitives(g *Geometry) bool {
@@ -83,6 +87,10 @@ func (f Frame) Stats() FrameStats {
 			continue
 		}
 		stats.DrawnInstances++
+		if geom.lodTierPlusOne > 0 {
+			tier := min(geom.lodTierPlusOne-1, len(stats.LODTierInstances)-1)
+			stats.LODTierInstances[tier]++
+		}
 		stats.Triangles += geometryTriangles(geom)
 		stats.Lines += len(geom.Lines)/2 + len(geom.Arrows)
 		if len(geom.Points) > 0 {

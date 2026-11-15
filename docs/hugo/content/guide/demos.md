@@ -129,7 +129,7 @@ task terrain -- --procedural --render-mode software --snapshot /tmp/plasma-softw
 
 <img class="poster" src="../../posters/forest.png" alt="A forest of pines and round trees on green hills, fading into fog">
 
-`task forest`. Thousands of trees from three [shared meshes](../scenes/#sharing-geometry), each uploaded once and drawn in one instanced call, swaying in the wind. By default each tree steps through three [level-of-detail](../scenes/#level-of-detail) tiers (`MaxDistance: 0` on the coarsest tier so zoomed-out trees stay visible), with live batch, frustum-drawn tree, and triangle counts from `Frame.Stats()`; `l` cycles `LOD on`, `LOD tint` (color-coded near/mid/far rings), and `LOD off`, `i` switches to separate copies, `n` changes how many trees grow, `a` stills the wind, `d` fades them into fog, and `s` cycles through no shadows, drop shadows, and shadow maps.
+`task forest`. Thousands of trees from three [shared meshes](../scenes/#sharing-geometry), each uploaded once and drawn in one instanced call, swaying in the wind. By default each tree steps through three [level-of-detail](../scenes/#level-of-detail) tiers (`MaxDistance: 0` on the coarsest tier so zoomed-out trees stay visible), with live batch, frustum-drawn tree, per-tier `LODTierInstances`, and triangle counts from `Frame.Stats()`; `l` cycles `LOD on`, `LOD tint` (color-coded near/mid/far rings), and `LOD off`, `[` and `]` step `Scene.SetLODBias` (`×0.9` / `×1.1`), `b` toggles a 5% `Scene.SetLODHysteresis` deadband, `i` switches to separate copies, `n` changes how many trees grow, `a` stills the wind, `d` fades them into fog, and `s` cycles through no shadows, drop shadows, and shadow maps.
 
 ## Lights
 

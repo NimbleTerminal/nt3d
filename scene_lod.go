@@ -17,7 +17,8 @@ import (
 // outline style without mutating Shared.
 //
 // MaxDistance is the maximum world-space distance from Camera.Eye to the
-// node's world-space reference bounds at which this tier is drawn. Every
+// node's world-space reference bounds at which this tier is drawn, scaled by
+// Scene.LODBias and stabilized across frames by Scene.LODHysteresis. Every
 // non-final level requires a finite positive MaxDistance, strictly increasing
 // across levels. On the final level, zero or +Inf makes it an unbounded
 // fallback; a finite positive MaxDistance hides the node beyond that distance.
@@ -96,6 +97,7 @@ func (s *Scene) SetLOD(id NodeID, levels []LODLevel) error {
 			retainKeys[i] = geometryKey{shared: built[i].shared.id}
 		}
 		built[i].geometry.retainKeys = retainKeys
+		built[i].geometry.lodTierPlusOne = i + 1
 		if b := built[i].geometry.Bounds; b.IsValid() {
 			lodBounds.Include(b.Min)
 			lodBounds.Include(b.Max)
@@ -104,9 +106,73 @@ func (s *Scene) SetLOD(id NodeID, levels []LODLevel) error {
 		}
 	}
 	n.deformation = nil
-	n.lod, n.lodBounds = built, lodBounds
+	n.lod, n.lodBounds, n.lodEpoch, n.lodTier = built, lodBounds, 0, 0
 	n.geometry, n.shared, n.geometryRevision, n.pickIndex = built[0].geometry, built[0].shared, built[0].geometryRevision, nil
 	s.changed(true, true)
+	return nil
+}
+
+func (s *Scene) lodBiasValue() float32 {
+	if s.lodBias == 0 {
+		return 1
+	}
+	return s.lodBias
+}
+
+func (s *Scene) lodEpochValue() uint64 {
+	if s.lodBiasEpoch == 0 {
+		return 1
+	}
+	return s.lodBiasEpoch
+}
+
+// LODBias returns the scene-wide multiplier applied to every LODLevel.MaxDistance
+// during Scene.Frame (1 by default).
+func (s *Scene) LODBias() float32 { return s.lodBiasValue() }
+
+// SetLODBias sets the scene-wide multiplier applied to every LODLevel.MaxDistance
+// (including finite final hide-beyond cutoffs) on subsequent Scene.Frame calls.
+//
+// f must be finite and > 0 (default 1); invalid values return an error and leave
+// the bias unchanged. Setting the bias runs in O(1) without rebuilding node
+// geometries or invalidating GPU/BVH caches, and resets per-node LOD hysteresis
+// when the bias changes so frame-budget steps take effect immediately.
+func (s *Scene) SetLODBias(f float32) error {
+	if !nt3dmath.IsFinite(float64(f)) || f <= 0 {
+		return fmt.Errorf("nt3d: invalid LOD bias %v", f)
+	}
+	if f == s.lodBiasValue() {
+		return nil
+	}
+	if s.lodBiasEpoch == 0 {
+		s.lodBiasEpoch = 1
+	}
+	s.lodBias = f
+	s.lodBiasEpoch++
+	s.changed(false, false)
+	return nil
+}
+
+// LODHysteresis returns the fractional deadband in [0, 0.5] used to suppress
+// tier popping across Scene.SetLOD boundaries (0 by default).
+func (s *Scene) LODHysteresis() float32 { return s.lodHysteresis }
+
+// SetLODHysteresis sets the fractional deadband in [0, 0.5] applied around each
+// effective LODLevel.MaxDistance boundary D (including finite hide-beyond
+// cutoffs): moving to a coarser tier requires distance > D*(1+band), and moving
+// to a finer tier requires distance < D*(1-band).
+//
+// Zero (the default) disables hysteresis. First frames, SetLOD, re-showing a
+// hidden node via SetVisible, and SetLODBias changes select without hysteresis.
+// Invalid values return an error and leave the hysteresis band unchanged.
+func (s *Scene) SetLODHysteresis(band float32) error {
+	if !nt3dmath.IsFinite(float64(band)) || band < 0 || band > 0.5 {
+		return fmt.Errorf("nt3d: invalid LOD hysteresis %v", band)
+	}
+	if s.lodHysteresis != band {
+		s.lodHysteresis = band
+		s.changed(false, false)
+	}
 	return nil
 }
 
@@ -129,7 +195,30 @@ func aabbDistance(b nt3dmath.AABB, p nt3dmath.Vec3) float32 {
 	return float32(math.Sqrt(float64(dx)*float64(dx) + float64(dy)*float64(dy) + float64(dz)*float64(dz)))
 }
 
-func (n *sceneNode) selectLOD(world nt3dmath.Mat4, eye nt3dmath.Vec3) (*lodLevel, bool) {
+func effectiveLODDistance(maxDist, bias float32) float32 {
+	if bias == 1 || math.IsInf(float64(maxDist), 1) {
+		return maxDist
+	}
+	return float32(float64(maxDist) * float64(bias))
+}
+
+func hysteresisUpper(d, band float32) float32 {
+	if band == 0 || math.IsInf(float64(d), 1) {
+		return d
+	}
+	scale := float64(1.0 + float64(band))
+	return float32(float64(d) * scale)
+}
+
+func hysteresisLower(d, band float32) float32 {
+	if band == 0 || math.IsInf(float64(d), 1) {
+		return d
+	}
+	scale := float64(1.0 - float64(band))
+	return float32(float64(d) * scale)
+}
+
+func (n *sceneNode) selectLOD(world nt3dmath.Mat4, eye nt3dmath.Vec3, bias, band float32, epoch uint64, visible bool) (*lodLevel, bool) {
 	var dist float32
 	if box := n.lodBounds.Transformed(world); box.IsValid() {
 		dist = aabbDistance(box, eye)
@@ -137,10 +226,36 @@ func (n *sceneNode) selectLOD(world nt3dmath.Mat4, eye nt3dmath.Vec3) (*lodLevel
 		d := world.Point(nt3dmath.Vec3{}).Sub(eye)
 		dist = float32(math.Sqrt(float64(d.X)*float64(d.X) + float64(d.Y)*float64(d.Y) + float64(d.Z)*float64(d.Z)))
 	}
-	for i := range n.lod {
-		if dist <= n.lod[i].maxDistance {
-			return &n.lod[i], true
+	state := len(n.lod)
+	if visible && band > 0 && n.lodEpoch == epoch {
+		cur := n.lodTier
+		movedCoarser := false
+		for cur < len(n.lod) && dist > hysteresisUpper(effectiveLODDistance(n.lod[cur].maxDistance, bias), band) {
+			cur++
+			movedCoarser = true
 		}
+		if !movedCoarser {
+			for cur > 0 && dist < hysteresisLower(effectiveLODDistance(n.lod[cur-1].maxDistance, bias), band) {
+				cur--
+			}
+		}
+		state = cur
+	} else {
+		for i := range n.lod {
+			if dist <= effectiveLODDistance(n.lod[i].maxDistance, bias) {
+				state = i
+				break
+			}
+		}
+	}
+	if visible {
+		n.lodTier = state
+		n.lodEpoch = epoch
+	} else {
+		n.lodEpoch = 0
+	}
+	if state < len(n.lod) {
+		return &n.lod[state], true
 	}
 	return &n.lod[len(n.lod)-1], false
 }

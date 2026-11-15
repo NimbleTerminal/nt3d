@@ -437,6 +437,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.fog = !d.fog
 			return d, d.view.Refresh()
 		case "b", "x":
+			if d.forest != nil {
+				if v.String() == "b" {
+					err = d.toggleForestLODHysteresis()
+				}
+				break
+			}
 			if d.camPath != nil {
 				if v.String() == "b" {
 					d.camPath.overlay = !d.camPath.overlay
@@ -591,6 +597,14 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, nil
 			}
 		case "[", "]":
+			if d.forest != nil {
+				factor := 1.1
+				if v.String() == "[" {
+					factor = 0.9
+				}
+				err = d.stepForestLODBias(factor)
+				break
+			}
 			if d.camPath != nil {
 				step := 1
 				if v.String() == "[" {

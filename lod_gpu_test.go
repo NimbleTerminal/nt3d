@@ -383,3 +383,101 @@ func TestGPUSessionLODDualViewports(t *testing.T) {
 		t.Fatalf("total GPU uploads across dual LOD views = %d, want 2", total)
 	}
 }
+
+func TestGPUSceneLODBiasHysteresisAndPathAgreement(t *testing.T) {
+	gpu := &gpuRenderer{}
+	defer gpu.Close()
+	sw := NewSoftwareRenderer()
+	defer sw.Close()
+
+	makeScene := func() *Scene {
+		s := NewScene()
+		nearMesh, err := BuildSphere(Sphere{Radius: .8, Segments: 20, Rings: 10, Color: color.RGBA{225, 60, 55, 255}})
+		check(t, err)
+		midMesh, err := BuildSphere(Sphere{Radius: .8, Segments: 10, Rings: 6, Color: color.RGBA{55, 195, 85, 255}})
+		check(t, err)
+		farMesh, err := BuildSphere(Sphere{Radius: .8, Segments: 6, Rings: 4, Color: color.RGBA{65, 95, 225, 255}})
+		check(t, err)
+		sgNear, err := NewSharedGeometry(nearMesh)
+		check(t, err)
+		sgMid, err := NewSharedGeometry(midMesh)
+		check(t, err)
+		sgFar, err := NewSharedGeometry(farMesh)
+		check(t, err)
+
+		for i, pos := range []nt3dmath.Vec3{
+			{X: -2, Y: 0},
+			{X: 0, Y: 2},
+			{X: 2.5, Y: -1.5},
+			{X: -1.5, Y: -3.5},
+		} {
+			id, err := s.Add(Root, "tile"+itoaTest(i))
+			check(t, err)
+			check(t, s.SetTransform(id, nt3dmath.Translation(pos)))
+			check(t, s.SetLOD(id, []LODLevel{
+				{MaxDistance: 10, Shared: sgNear},
+				{MaxDistance: 20, Shared: sgMid},
+				{MaxDistance: 36, Shared: sgFar},
+			}))
+		}
+		check(t, s.SetLODHysteresis(0.1))
+		return s
+	}
+
+	// Independent GPU and software scene instances replayed through the exact same
+	// sequence of camera path poses and bias steps must agree on every frame's tiers and pixels.
+	gpuScene := makeScene()
+	swScene := makeScene()
+
+	type stepSpec struct {
+		bias float32 // nonzero applies SetLODBias on both scenes
+		eye  nt3dmath.Vec3
+	}
+	steps := []stepSpec{
+		{eye: nt3dmath.Vec3{X: 8, Y: -4, Z: 3}},
+		{eye: nt3dmath.Vec3{X: 11.2, Y: -4, Z: 3}}, // inside outward hysteresis band
+		{eye: nt3dmath.Vec3{X: 15, Y: -5, Z: 4}},   // crosses into mid tier
+		{eye: nt3dmath.Vec3{X: 11.2, Y: -4, Z: 3}}, // inside inward hysteresis band (stays mid)
+		{bias: 0.7, eye: nt3dmath.Vec3{X: 15, Y: -5, Z: 4}},
+		{bias: 1.5, eye: nt3dmath.Vec3{X: 15, Y: -5, Z: 4}},
+		{eye: nt3dmath.Vec3{X: 48, Y: -10, Z: 8}}, // crosses final cutoff with bias 1.5 (36*1.5=54 -> still visible or partially culled)
+		{bias: 0.5, eye: nt3dmath.Vec3{X: 25, Y: -5, Z: 4}},
+	}
+
+	var uploadsAfterWarm uint64
+	for idx, st := range steps {
+		if st.bias > 0 {
+			check(t, gpuScene.SetLODBias(st.bias))
+			check(t, swScene.SetLODBias(st.bias))
+		}
+		cam := DefaultCamera()
+		cam.Projection = Perspective
+		cam = cam.LookAt(st.eye, nt3dmath.Vec3{})
+
+		fg, err := gpuScene.Frame(cam, 80, 64)
+		check(t, err)
+		fs, err := swScene.Frame(cam, 80, 64)
+		check(t, err)
+
+		sg := fg.Stats()
+		ss := fs.Stats()
+		if sg != ss {
+			t.Fatalf("step %d: GPU scene stats %+v != software scene stats %+v", idx, sg, ss)
+		}
+
+		gpuImg, err := gpu.Render(fg)
+		check(t, err)
+		swImg, err := sw.Render(fs)
+		check(t, err)
+		if off := lodOff(gpuImg, swImg); off > 24 {
+			t.Fatalf("step %d: GPU/software image mismatch (%d pixels differ)", idx, off)
+		}
+		if gpu.uploads > 3 {
+			t.Fatalf("step %d: GPU uploaded %d meshes across 3 shared tiers (bias change must not re-upload)", idx, gpu.uploads)
+		}
+		uploadsAfterWarm = gpu.uploads
+	}
+	if uploadsAfterWarm != 3 {
+		t.Fatalf("expected all 3 shared LOD tiers uploaded once total, got %d", uploadsAfterWarm)
+	}
+}

@@ -67,6 +67,19 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **`Scene.SetLOD` bias, hysteresis, and per-tier `FrameStats`**:
+  `Scene.SetLODBias` / `LODBias` scales every `LODLevel.MaxDistance` (including
+  finite final hide-beyond cutoffs) in `O(1)` via FMA-free `float64`→`float32`
+  threshold scaling without touching node geometries or GPU/BVH caches, while
+  bumping a scene bias epoch so budget steps take effect immediately.
+  `Scene.SetLODHysteresis` / `LODHysteresis` (`[0, 0.5]`) remembers each visible
+  LOD node's selected state across `Scene.Frame` calls, requiring `> D*(1+band)`
+  to step coarser (or hide) and `< D*(1-band)` to step finer (or re-show),
+  resetting on first frames, `SetLOD`, `SetVisible`, and bias changes.
+  `FrameStats.LODTierInstances` (`[8]int`, folding `7+` into index `7`) reports
+  drawn LOD instances per tier, showcased in `forest` (`[` / `]` bias `×0.9` /
+  `×1.1`, `b` 5% hysteresis band).
+
 - **Declarative `float64` camera paths (`nt3d/cam`, `nt3d/cam/spec`) and
   camera-relative world origins**: zero-dependency pure-`float64` packages
   (`nt3d/cam`, `nt3d/cam/ease`, `nt3d/cam/curve`, `nt3d/cam/frames`, and

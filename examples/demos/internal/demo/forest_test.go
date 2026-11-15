@@ -153,23 +153,60 @@ func TestForestLODKeyAndStatus(t *testing.T) {
 
 	settle(t, d.view, d.view.Init())
 	lodOnStatus := d.forestView("")
-	if !strings.Contains(lodOnStatus, "LOD on") {
-		t.Fatalf("expected LOD on in status: %s", lodOnStatus)
+	if !strings.Contains(lodOnStatus, "LOD on") || !strings.Contains(lodOnStatus, "bias 1.00x") || !strings.Contains(lodOnStatus, "band 0%") || !strings.Contains(lodOnStatus, "(tiers ") {
+		t.Fatalf("expected LOD on, bias, band, and tiers in status: %s", lodOnStatus)
+	}
+	if sum := d.forest.tiers[0] + d.forest.tiers[1] + d.forest.tiers[2]; sum != d.forest.drawn {
+		t.Fatalf("tier sum %d (%v) != drawn trees %d", sum, d.forest.tiers, d.forest.drawn)
 	}
 	lodTris := d.forest.triangles
+	nearAt1x := d.forest.tiers[0]
 
-	_, cmd := d.Update(tea.KeyPressMsg{Code: 'l'})
+	// Step bias down (×0.9) and toggle 5% hysteresis band.
+	_, cmd := d.Update(tea.KeyPressMsg{Code: '['})
+	settle(t, d.view, cmd)
+	if !strings.Contains(d.forestView(""), "bias 0.90x") {
+		t.Fatalf("expected bias 0.90x after '[': %s", d.forestView(""))
+	}
+	if d.forest.tiers[0] > nearAt1x || d.forest.triangles > lodTris {
+		t.Fatalf("bias 0.90x did not shed detail: near %d -> %d, tris %d -> %d", nearAt1x, d.forest.tiers[0], lodTris, d.forest.triangles)
+	}
+
+	_, cmd = d.Update(tea.KeyPressMsg{Code: ']'})
+	settle(t, d.view, cmd)
+	_, cmd = d.Update(tea.KeyPressMsg{Code: ']'})
+	settle(t, d.view, cmd)
+	if d.forest.tiers[0] < nearAt1x {
+		t.Fatalf("stepping bias up with ']' did not restore/increase near tier: %d < %d", d.forest.tiers[0], nearAt1x)
+	}
+
+	_, cmd = d.Update(tea.KeyPressMsg{Code: 'b'})
+	settle(t, d.view, cmd)
+	if !strings.Contains(d.forestView(""), "band 5%") || d.scene.LODHysteresis() != 0.05 {
+		t.Fatalf("expected band 5%% after 'b': %s", d.forestView(""))
+	}
+	_, cmd = d.Update(tea.KeyPressMsg{Code: 'b'})
+	settle(t, d.view, cmd)
+	if !strings.Contains(d.forestView(""), "band 0%") || d.scene.LODHysteresis() != 0 {
+		t.Fatalf("expected band 0%% after second 'b': %s", d.forestView(""))
+	}
+
+	// Reset bias to 1.0 before comparing LOD tint and LOD off.
+	if err := d.scene.SetLODBias(1); err != nil {
+		t.Fatal(err)
+	}
+	_, cmd = d.Update(tea.KeyPressMsg{Code: 'l'})
 	settle(t, d.view, cmd)
 	lodTintStatus := d.forestView("")
-	if !strings.Contains(lodTintStatus, "LOD tint") {
-		t.Fatalf("expected LOD tint in status: %s", lodTintStatus)
+	if !strings.Contains(lodTintStatus, "LOD tint") || !strings.Contains(lodTintStatus, "(tiers ") {
+		t.Fatalf("expected LOD tint and tiers in status: %s", lodTintStatus)
 	}
 
 	_, cmd = d.Update(tea.KeyPressMsg{Code: 'l'})
 	settle(t, d.view, cmd)
 	lodOffStatus := d.forestView("")
-	if !strings.Contains(lodOffStatus, "LOD off") {
-		t.Fatalf("expected LOD off in status: %s", lodOffStatus)
+	if !strings.Contains(lodOffStatus, "LOD off") || strings.Contains(lodOffStatus, "(tiers ") {
+		t.Fatalf("expected LOD off without tiers in status: %s", lodOffStatus)
 	}
 	if d.forest.triangles <= lodTris {
 		t.Fatalf("expected LOD off triangles (%d) > LOD on (%d)", d.forest.triangles, lodTris)

@@ -198,3 +198,74 @@ func TestFrameStatsInvalidFramesReturnZero(t *testing.T) {
 		t.Fatal("mismatched Instances should report zero FrameStats")
 	}
 }
+
+func TestFrameStatsLODTierInstances(t *testing.T) {
+	s := NewScene()
+	pt := Geometry{Points: []Point{{Radius: 2, Color: color.RGBA{255, 255, 255, 255}}}}
+
+	// Non-LOD geometry should not contribute to LODTierInstances.
+	if _, err := s.SetGeometry("ground", pt); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a 10-tier chain (boundaries 10, 20, ..., 90, 100) so tiers 0..6 map directly
+	// and tiers 7, 8, 9 fold into LODTierInstances[7], while >100 is distance-culled.
+	tenLevels := make([]LODLevel, 10)
+	for i := range tenLevels {
+		tenLevels[i] = LODLevel{MaxDistance: float32((i + 1) * 10), Geometry: pt}
+	}
+
+	// Place nodes along +X while camera sits at origin looking down +X:
+	// distances 5 (tier 0), 15 (tier 1), 25 (tier 2), 65 (tier 6), 75 (tier 7),
+	// 85 (tier 8 -> folds to 7), 95 (tier 9 -> folds to 7), and 120 (culled > 100).
+	xs := []float32{5, 15, 25, 65, 75, 85, 95, 120}
+	var firstID NodeID
+	for i, x := range xs {
+		id, err := s.Add(Root, "lod"+itoaTest(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			firstID = id
+		}
+		if err := s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: x})); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetLOD(id, tenLevels); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cam := DefaultCamera()
+	cam.Projection = Perspective
+	cam = cam.LookAt(nt3dmath.Vec3{}, nt3dmath.Vec3{X: 50})
+	f, err := s.Frame(cam, 80, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Cull = false
+
+	st := f.Stats()
+	wantTiers := [8]int{1, 1, 1, 0, 0, 0, 1, 3}
+	if st.LODTierInstances != wantTiers {
+		t.Fatalf("LODTierInstances = %v, want %v", st.LODTierInstances, wantTiers)
+	}
+	// 1 non-LOD ground + 7 in-range LOD nodes = 8 drawn instances.
+	if st.DrawnInstances != 8 {
+		t.Fatalf("DrawnInstances = %d, want 8", st.DrawnInstances)
+	}
+
+	// Replacing an LOD node with plain SetNodeGeometry removes it from LODTierInstances.
+	if err := s.SetNodeGeometry(firstID, pt); err != nil {
+		t.Fatal(err)
+	}
+	f2, err := s.Frame(cam, 80, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2.Cull = false
+	wantTiers[0] = 0
+	if got := f2.Stats().LODTierInstances; got != wantTiers {
+		t.Fatalf("after SetNodeGeometry LODTierInstances = %v, want %v", got, wantTiers)
+	}
+}

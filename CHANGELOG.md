@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Add `Scene.SetLODBias` / `LODBias` for `O(1)` scene-wide distance scaling
+  across `Scene.SetLOD` tiers (including finite hide-beyond cutoffs) without
+  rebuilding node geometries or invalidating GPU/BVH caches, `Scene.SetLODHysteresis` /
+  `LODHysteresis` (`[0, 0.5]`) for deterministic per-node deadband anti-popping
+  across WebGPU and software renderers (resetting on first frame, `SetLOD`,
+  `SetVisible` re-show, and bias steps), and `FrameStats.LODTierInstances` (`[8]int`,
+  folding tiers `>= 7` into index `7`).
+- Extend the `forest` demo (`[` / `]` to step bias by `×0.9` / `×1.1`, `b` to
+  toggle a 5% hysteresis band) with live bias, band, and per-tier drawn tree
+  counts in its HUD.
+
+----
+
 ## v0.10.0 (2026-11-15)
 
 This release upgrades `nt3d`'s shading, lighting, camera, and transparency

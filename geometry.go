@@ -66,15 +66,16 @@ type DropShadow struct {
 // Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
 // Scene setters copy geometry; frame consumers must treat snapshots as read-only.
 type Geometry struct {
-	pointUpdate  *pointUpdate
-	meshUpdate   *meshUpdate
-	meshCert     meshCertificate
-	stored       *storedGeometry
-	posed        *posedGeometry
-	retainKeys   []geometryKey
-	restBounds   nt3dmath.AABB
-	Billboard    *Billboard          // Optional camera-facing transform, resolved by Scene.Frame.
-	Displacement *VertexDisplacement // Optional vertex displacement shader + Go fallback for indexed triangles.
+	pointUpdate    *pointUpdate
+	meshUpdate     *meshUpdate
+	meshCert       meshCertificate
+	stored         *storedGeometry
+	posed          *posedGeometry
+	retainKeys     []geometryKey
+	lodTierPlusOne int
+	restBounds     nt3dmath.AABB
+	Billboard      *Billboard          // Optional camera-facing transform, resolved by Scene.Frame.
+	Displacement   *VertexDisplacement // Optional vertex displacement shader + Go fallback for indexed triangles.
 
 	// WireGrid optionally describes a row-major rectangular vertex lattice (NX, NY).
 	// Wireframe draws viewport-adaptive rows/columns instead of triangle edges.

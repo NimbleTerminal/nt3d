@@ -144,7 +144,7 @@ frame.PostProcess = nt3d.PostProcess{
 
 **Clipping.** Geometry reaching behind the camera is cut at the near plane, on every renderer, so it stays drawn up close.
 
-**Culling and frame statistics.** `Scene.Frame` sets `Frame.Cull = true`, which skips any geometry whose `Bounds` (widened for pixel-sized outlines, lines, points, and arrows) fall wholly outside the six clip planes. `frame.Stats()` returns a `FrameStats` summary (`Instances`, `VisibleInstances`, `DrawnInstances`, `Batches`, `Triangles`, `Lines`, `Points`) computed with the exact visibility, frustum-culling, shared-batching, and splat-budget rules the renderers use.
+**Culling and frame statistics.** `Scene.Frame` sets `Frame.Cull = true`, which skips any geometry whose `Bounds` (widened for pixel-sized outlines, lines, points, and arrows) fall wholly outside the six clip planes. `frame.Stats()` returns a `FrameStats` summary (`Instances`, `VisibleInstances`, `DrawnInstances`, `Batches`, `Triangles`, `Lines`, `Points`, and per-tier `LODTierInstances` for `Scene.SetLOD` nodes) computed with the exact visibility, frustum-culling, shared-batching, and splat-budget rules the renderers use.
 
 ## Limits
 

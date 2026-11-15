@@ -23,8 +23,11 @@ var forestCounts = []int{500, 2000, 8000}
 // down to coarser meshes; the coarsest tier uses MaxDistance 0 so trees stay
 // visible at any zoom-out distance instead of clipping off the island.
 const (
-	forestNear = 7
-	forestMid  = 15
+	forestNear     = 7
+	forestMid      = 15
+	forestMinBias  = 0.05
+	forestMaxBias  = 20
+	forestHystBand = 0.05
 )
 
 type forestLODMode uint8
@@ -59,6 +62,7 @@ type forestScene struct {
 	drawn     int
 	batches   int
 	triangles int
+	tiers     [3]int
 }
 
 type forestVariant struct {
@@ -347,8 +351,21 @@ func (d *demo) cycleForestLOD() error {
 	return nil
 }
 
-// captureForest tallies the frustum-drawn trees, draw batches, and active
-// triangles emitted in f via Frame.Stats.
+func (d *demo) stepForestLODBias(factor float64) error {
+	next := float32(float64(d.scene.LODBias()) * factor)
+	next = max(forestMinBias, min(forestMaxBias, next))
+	return d.scene.SetLODBias(next)
+}
+
+func (d *demo) toggleForestLODHysteresis() error {
+	if d.scene.LODHysteresis() > 0 {
+		return d.scene.SetLODHysteresis(0)
+	}
+	return d.scene.SetLODHysteresis(forestHystBand)
+}
+
+// captureForest tallies the frustum-drawn trees, draw batches, per-tier LOD
+// counts, and active triangles emitted in f via Frame.Stats.
 func (d *demo) captureForest(f *nt3d.Frame) {
 	fs := d.forest
 	st := f.Stats()
@@ -365,6 +382,7 @@ func (d *demo) captureForest(f *nt3d.Frame) {
 			break
 		}
 	}
+	fs.tiers = [3]int{st.LODTierInstances[0], st.LODTierInstances[1], st.LODTierInstances[2]}
 	fs.drawn, fs.batches, fs.triangles, fs.have = drawn, batches, triangles, true
 }
 
@@ -398,6 +416,11 @@ func (d *demo) forestView(content string) string {
 	if fs.copies {
 		mode = "copies"
 	}
+	lodSummary := fs.lod.String()
+	if fs.lod != forestLODOff {
+		bandPct := int(math.Round(float64(d.scene.LODHysteresis()) * 100))
+		lodSummary = fmt.Sprintf("%s · bias %.2fx · band %d%%", lodSummary, d.scene.LODBias(), bandPct)
+	}
 	fullTriangles := 0
 	for _, t := range fs.trees {
 		fullTriangles += len(fs.kinds[t.kind].plain.geometry.Indices) / 3
@@ -406,10 +429,14 @@ func (d *demo) forestView(content string) string {
 	if fs.copies {
 		batches = len(fs.trees)
 	}
+	tierSummary := ""
 	if fs.have {
 		drawn, batches, activeTriangles = fs.drawn, fs.batches, fs.triangles
+		if fs.lod != forestLODOff {
+			tierSummary = fmt.Sprintf(" (tiers %s/%s/%s)", commas(fs.tiers[0]), commas(fs.tiers[1]), commas(fs.tiers[2]))
+		}
 	}
-	return fmt.Sprintf("nt3d forest · l LOD · i instancing · n trees · s shadows · a wind · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %s batches · %s / %s trees, %s / %s triangles · drag orbit · wheel zoom · r rotate · %s",
-		content, d.rendering(), mode+" · "+fs.lod.String()+" · "+fs.shadows.String(),
-		commas(batches), commas(drawn), commas(len(fs.trees)), commas(activeTriangles), commas(fullTriangles), d.status)
+	return fmt.Sprintf("nt3d forest · l LOD · [/] bias · b band · i instancing · n trees · s shadows · a wind · d fog · 1/2/3 backend · q quit\n%s\n%s · %s · %s batches · %s / %s trees%s, %s / %s triangles · drag orbit · wheel zoom · r rotate · %s",
+		content, d.rendering(), mode+" · "+lodSummary+" · "+fs.shadows.String(),
+		commas(batches), commas(drawn), commas(len(fs.trees)), tierSummary, commas(activeTriangles), commas(fullTriangles), d.status)
 }
