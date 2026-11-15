@@ -887,28 +887,80 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 		}
 	}
 
-	// Crease lines are a pass of their own, after the hulls: strokes in the
-	// outline's color and width along the edges inside a silhouette, depth
-	// tested as lines are. Every edge is drawn; none are sampled away.
-	for gi := range f.Geometry {
+	// Crease lines are strokes in the outline's color and width along the
+	// sharp edges inside a silhouette, depth tested as lines are. Opaque and
+	// cutout creases draw here; transmissive creases draw after transmissive
+	// surfaces write front-face depth; transparent creases blend with their
+	// mesh in OIT or sorted slice order.
+	drawCrease := func(gi int) {
 		g := &f.Geometry[gi]
 		if !drawn[gi] || !creased(g) {
-			continue
+			return
 		}
 		inst := instance(f, gi)
+		verts := displacedVertices(g, inst.World)
+		segments := cachedCreaseSegments(g, verts)
+		if len(segments) == 0 {
+			return
+		}
 		local := f
 		local.Matrix = f.Matrix.Mul(inst.World)
 		m := &local.Matrix
 		ink := color.RGBA{g.Outline.Color.R, g.Outline.Color.G, g.Outline.Color.B, 255}
-		edges := cachedCreaseEdges(g)
-		for i := 0; i+1 < len(edges); i += 2 {
-			a, b := edges[i], edges[i+1]
+		isTrans := transparent(g)
+		hasTex := g.Material != nil && g.Material.Texture != nil
+		hasMatShader := g.Material != nil && g.Material.Shader != nil
+		isCutout := !isTrans && g.Material != nil && g.Material.Cutout && (hasTex || hasMatShader)
+		inkWork := [3]float32{fromPixel(ink.R), fromPixel(ink.G), fromPixel(ink.B)}
+		for i := 0; i+1 < len(segments); i += 2 {
+			a, b := segments[i], segments[i+1]
 			width := g.Outline.Width * px
 			if g.Outline.Units == WorldUnits {
-				mid := a.Add(b).Scale(.5)
+				mid := a.pos.Add(b.pos).Scale(.5)
 				width = f.outlineWidth(g.Outline, m[3]*mid.X+m[7]*mid.Y+m[11]*mid.Z+m[15], px)
 			}
-			rasterStroke(local, Vertex{Position: a, Color: ink}, Vertex{Position: b, Color: ink}, width, 0, lineBias, put, strokeFog(inst.World.Point(a), inst.World.Point(b)))
+			wa, wb := inst.World.Point(a.pos), inst.World.Point(b.pos)
+			if !isTrans && !isCutout {
+				rasterStroke(local, Vertex{Position: a.pos, Color: ink}, Vertex{Position: b.pos, Color: ink}, width, 0, lineBias, put, strokeFog(wa, wb))
+				continue
+			}
+			rasterCreaseStroke(local, a.pos, b.pos, width, lineBias, func(x, y int, z, wt float32) {
+				uv := UV{a.uv.U*(1-wt) + b.uv.U*wt, a.uv.V*(1-wt) + b.uv.V*wt}
+				wp := wa.Add(wb.Sub(wa).Scale(wt))
+				texAlpha := float32(1)
+				if hasTex {
+					texAlpha = g.Material.Texture.sampleLinear(uv, g.Material.Repeat, 0, false)[3]
+				}
+				if isCutout {
+					alpha := texAlpha
+					if hasMatShader {
+						alpha = evalMaterialColor(g.Material.Shader, wp, nt3dmath.Vec3{}, f.viewAt(wp), uv, [4]float32{1, 1, 1, alpha})[3]
+					}
+					if alpha < g.Material.threshold() {
+						return
+					}
+					c := ink
+					if fogged {
+						c = fogColor(c, f.eyeDistance(wp))
+					}
+					put(x, y, z, c)
+					return
+				}
+				alpha := (a.opacity*(1-wt) + b.opacity*wt) * texAlpha
+				if hasMatShader {
+					alpha = evalMaterialColor(g.Material.Shader, wp, nt3dmath.Vec3{}, f.viewAt(wp), uv, [4]float32{1, 1, 1, alpha})[3]
+				}
+				rgb := inkWork
+				if fogged {
+					fogRGB(&rgb, f.eyeDistance(wp))
+				}
+				blend(x, y, z, rgb, alpha)
+			})
+		}
+	}
+	for gi := range f.Geometry {
+		if !transparent(&f.Geometry[gi]) && !transmitting(&f.Geometry[gi]) {
+			drawCrease(gi)
 		}
 	}
 
@@ -1011,6 +1063,11 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 				tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
 			}
 		}
+		for gi := range f.Geometry {
+			if transmitting(&f.Geometry[gi]) {
+				drawCrease(gi)
+			}
+		}
 	}
 	if hasOITWork(f, drawn) {
 		accumulate()
@@ -1037,6 +1094,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 					tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
 				}
 			}
+			drawCrease(gi)
 		}
 		oitMode = false
 		for i, rev := range oitReveal {
@@ -1123,6 +1181,9 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 					for i := 0; i+2 < len(g.Indices); i += 3 {
 						tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
 					}
+				}
+				if !f.OIT {
+					drawCrease(gi)
 				}
 			}
 			if blendedPoints(g) && g.PointStyle.Blend == AdditiveBlend {

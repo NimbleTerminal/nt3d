@@ -28,7 +28,7 @@ func TestSceneActions(t *testing.T) {
 }
 
 func TestShadowActions(t *testing.T) {
-	for _, d := range []*demo{{lights: &lightScene{}}, {forest: &forestScene{}}} {
+	for _, d := range []*demo{{lights: &lightScene{}}, {forest: &forestScene{}}, {toon: &toonScene{}}} {
 		context, k := d.sceneKeys()
 		found := false
 		for _, binding := range k.scene {

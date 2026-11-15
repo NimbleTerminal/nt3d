@@ -9,11 +9,13 @@ import (
 
 // ToonStyle quantizes a material's direct light into flat bands, for a cel
 // (toon) look. Bands is the number of tones from shade to fully lit, 2 to 8;
-// zero disables it. Each light's cosine, times its cast shadow, snaps to the
-// nearest of Bands even levels, so cast shadows get the same hard edge; a
-// point light's distance falloff stays smooth. Softness, 0 to 1, widens the
-// blend between two bands as a fraction of one band; at zero the edge is
-// about a pixel.
+// zero disables it. Each light's cosine snaps to the nearest of Bands even
+// levels, and cast shadows step cleanly from lit to shadowed; a point light's
+// distance falloff stays smooth. Softness, 0 to 1, widens the blend between
+// N·L cel bands as a fraction of one band; at zero the edge is about a pixel.
+// ShadowSoftness, 0 to 1, widens both the shadow-map filter footprint and the
+// cast-shadow band transition across shadow penumbras without softening curved
+// surfaces' N·L cel bands; at zero cast shadows keep a crisp cel edge.
 //
 // A toon surface takes flat ambient light, the midpoint of the sky and
 // ground colors (and an environment's constant term), tinted by Shade: the
@@ -25,10 +27,11 @@ import (
 // Unlit materials ignore it. It applies to indexed triangles, as Material
 // does; Scene.SetToon changes it on geometry already in a scene.
 type ToonStyle struct {
-	Bands    int
-	Softness float32
-	Shade    color.RGBA
-	Rim      float32
+	Bands          int
+	Softness       float32
+	ShadowSoftness float32
+	Shade          color.RGBA
+	Rim            float32
 }
 
 func (t ToonStyle) on() bool { return t.Bands > 0 }
@@ -37,8 +40,8 @@ func (t ToonStyle) validate() error {
 	if t.Bands != 0 && (t.Bands < 2 || t.Bands > 8) {
 		return fmt.Errorf("nt3d: toon bands must be 0 or 2..8")
 	}
-	if !validFloat(t.Softness, t.Rim) || t.Softness < 0 || t.Softness > 1 || t.Rim < 0 || t.Rim > 1 {
-		return fmt.Errorf("nt3d: toon softness and rim must be 0..1")
+	if !validFloat(t.Softness, t.ShadowSoftness, t.Rim) || t.Softness < 0 || t.Softness > 1 || t.ShadowSoftness < 0 || t.ShadowSoftness > 1 || t.Rim < 0 || t.Rim > 1 {
+		return fmt.Errorf("nt3d: toon softness, shadow softness, and rim must be 0..1")
 	}
 	return nil
 }
@@ -72,6 +75,13 @@ func toonBand(x float32, bands int, w float32) float32 {
 // screen derivatives, so a small constant stands in for the GPU's pixel.
 func toonEdge(softness float32, bands int) float32 {
 	return .01 + softness/float32(bands)
+}
+
+// toonShadowEdge is the software renderer's cast-shadow transition width
+// around visibility 0.5: crisp (.01) when ShadowSoftness is zero, widening up
+// to the full visibility range at 1.
+func toonShadowEdge(shadowSoftness float32) float32 {
+	return max(.01, shadowSoftness)
 }
 
 // toonRim is where the rim highlight starts, as one minus the cosine between

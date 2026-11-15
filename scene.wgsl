@@ -106,6 +106,63 @@ fn shadowVisibility(p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
 fn lightVisibility(i:u32,p:vec3<f32>,n:vec3<f32>,l:vec3<f32>)->f32 {
  if f32(i)==u.shadowParams.x {return shadowVisibility(p,n,l);}return 1.0;
 }
+fn shadowTexelXY(matrix:mat4x4<f32>,pos:vec3<f32>,size:f32)->vec3<f32> {
+ let clip=matrix*vec4<f32>(pos,1.0);
+ if clip.w<=0.0 {return vec3<f32>(-1.0);}
+ let q=clip.xyz/clip.w;
+ return vec3<f32>((q.x*0.5+0.5)*size,(0.5-q.y*0.5)*size,1.0);
+}
+fn shadowVisibilityToon(p:vec3<f32>,pX:vec3<f32>,pY:vec3<f32>,n:vec3<f32>,l:vec3<f32>,shadowSoft:f32)->vec2<f32> {
+ let radius=1.5+2.5*shadowSoft;
+ var face=0u;var offset=n*(radius*u.shadowParams.z);var matrix=u.shadow;
+ let light=u.lights[u32(u.shadowParams.x)];let point=light.a.w>0.5;let spot=light.a.w<-0.5;
+ if point {
+  let d=abs(p-light.a.xyz);let texel=2.0*max(d.x,max(d.y,d.z))/u.shadowParams.w;
+  offset=n*(radius*texel);face=pointShadowFace(p+offset-light.a.xyz);matrix=u.pointShadows[face];
+ } else if spot {
+  let w0=(u.shadow*vec4<f32>(p,1.0)).w;
+  if w0<=0.0 {return vec2<f32>(1.0,0.01);}
+  offset=n*(radius*w0*u.shadowParams.z);
+ }
+ let pos=p+offset;
+ let clip=matrix*vec4<f32>(pos,1.0);
+ if clip.w<=0.0 {return vec2<f32>(1.0,0.01);}
+ let q=clip.xyz/clip.w;
+ var xy=vec2<f32>(q.x*0.5+0.5,0.5-q.y*0.5)*u.shadowParams.w;
+ if point {xy=clamp(xy,vec2<f32>(0.0),vec2<f32>(u.shadowParams.w-0.001));}
+ if any(xy<vec2<f32>(0.0)) || any(xy>=vec2<f32>(u.shadowParams.w)) || q.z<0.0 || q.z>1.0 {return vec2<f32>(1.0,0.01);}
+ var pixelStep=0.01;
+ let cX=shadowTexelXY(matrix,pX+offset,u.shadowParams.w);
+ let cY=shadowTexelXY(matrix,pY+offset,u.shadowParams.w);
+ if cX.z>0.0 && cY.z>0.0 {pixelStep=clamp((length(cX.xy-xy)+length(cY.xy-xy))/(2.0*radius),0.0001,1.0);}
+ let size=i32(u.shadowParams.w);
+ var bias=u.shadowParams.y*(1.0+2.0*(1.0-max(0.0,dot(n,l))))*(radius/1.5);
+ if point || spot {bias*=max(1.0-q.z,0.000001);}
+ let lo=vec2<i32>(floor(xy-vec2<f32>(radius-0.5)));
+ let hi=vec2<i32>(floor(xy+vec2<f32>(radius-0.5)));
+ var lit=0.0;var total=0.0;
+ for(var iy=lo.y;iy<=hi.y;iy=iy+1) {
+  let wy=max(0.0,radius-abs(f32(iy)+0.5-xy.y));
+  if wy>0.0 {
+   let sy=clamp(iy,0,size-1);
+   for(var ix=lo.x;ix<=hi.x;ix=ix+1) {
+    let wx=max(0.0,radius-abs(f32(ix)+0.5-xy.x));
+    if wx>0.0 {
+     let wt=wx*wy;total+=wt;
+     let sx=clamp(ix,0,size-1);
+     if textureLoad(shadowMap,vec2<i32>(sx,sy),i32(face),0)>=q.z-bias {lit+=wt;}
+    }
+   }
+  }
+ }
+ if total<=0.0 {return vec2<f32>(1.0,pixelStep);}
+ return vec2<f32>(lit/total,pixelStep);
+}
+fn toonShadowFactor(i:u32,p:vec3<f32>,pX:vec3<f32>,pY:vec3<f32>,n:vec3<f32>,l:vec3<f32>,shadowSoft:f32)->f32 {
+ if f32(i)!=u.shadowParams.x {return 1.0;}
+ let sv=shadowVisibilityToon(p,pX,pY,n,l,shadowSoft);
+ return toonStep(0.5,clamp(max(sv.y,shadowSoft),0.0001,1.0),sv.x);
+}
 // illuminate is the light reaching a surface with unit normal n at p:
 // ambient, from ground to sky as n turns up, and each light's diffuse.
 fn illuminate(n:vec3<f32>,p:vec3<f32>,geometric:vec3<f32>)->vec3<f32> {
@@ -194,7 +251,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
   // The normal and position a pixel over, for the toon band edges.
   let nX=normalize(shadeNormal+nx);let nY=normalize(shadeNormal+ny);
   let pX=o.world+wx;let pY=o.world+wy;
-  let bands=style.x;let soft=style.y/max(bands,1.0);
+  let bands=style.x;let soft=style.y/max(bands,1.0);let shadowSoft=style.w;
   let envRefl=u.viewport.w>0.5 || (u.viewport.w>0.1 && style.z>0.5);
   if pbr.z>=0.5 {
    let roughness=clamp(pbr.y*orm.y,0.045,1.0);
@@ -217,16 +274,16 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     for(var i=0u;i<u32(u.sky.w);i=i+1u) {
      let l=u.lights[i];let t=toward(l,o.world);let nl=dot(n,t.xyz);
      if t.w>0.0 && nl>0.0 {
-      let vis=lightVisibility(i,o.world,geometric,t.xyz);
+      let sh=toonShadowFactor(i,o.world,pX,pY,geometric,t.xyz,shadowSoft);
       let w=max(0.0001,abs(toonCosine(nX,pX,l)-nl)+abs(toonCosine(nY,pY,l)-nl)+soft);
-      direct+=l.b.rgb*(t.w*toonBand(nl*vis,bands,w));
+      direct+=l.b.rgb*(t.w*toonBand(nl,bands,w)*sh);
       let h=t.xyz+view;
       if dot(h,h)>0.0 {
        let hn=normalize(h);let nh=clamp(dot(n,hn),0.0,1.0);let vh=clamp(dot(view,hn),0.0,1.0);
        let denom=nh*nh*(a2-1.0)+1.0;
        let lobe=a2/max(1e-7,denom*denom)*0.25;
        let sw=max(0.0001,abs(pbrToonLobe(nX,pX,l,a2)-lobe)+abs(pbrToonLobe(nY,pY,l,a2)-lobe)+soft);
-       let spot=toonStep(0.5,sw,lobe)*t.w*vis;
+       let spot=toonStep(0.5,sw,lobe)*t.w*sh;
        let fk=f0+(vec3<f32>(1.0)-f0)*pbrPow5(1.0-vh);
        specOut+=l.b.rgb*spot*fk;
       }
@@ -294,8 +351,9 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     for(var i=0u;i<u32(u.sky.w);i=i+1u) {
      let l=u.lights[i];let t=toward(l,o.world);let s=dot(n,t.xyz);
      if t.w>0.0 && s>0.0 {
+      let sh=toonShadowFactor(i,o.world,pX,pY,geometric,t.xyz,shadowSoft);
       let w=max(0.0001,abs(toonCosine(nX,pX,l)-s)+abs(toonCosine(nY,pY,l)-s)+soft);
-      direct+=l.b.rgb*(t.w*toonBand(s*lightVisibility(i,o.world,geometric,t.xyz),bands,w));
+      direct+=l.b.rgb*(t.w*toonBand(s,bands,w)*sh);
      }
     }
     c*=ambient*toon.rgb+direct;
@@ -314,16 +372,21 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     c=mix(c,sky*u.ground.w,fresnel);
    }
    if o.spec.x>0.0 {
+    let specGeom=normalize(o.normal);
     for(var i=0u;i<u32(u.sky.w);i=i+1u) {
      let l=u.lights[i];let t=toward(l,o.world);let h=t.xyz+view;
      if t.w>0.0 && dot(n,t.xyz)>0.0 && dot(h,h)>0.0 {
       let hn=normalize(h);let nh=max(0.0,dot(n,hn));
       var lobe=pow(nh,o.spec.y);
+      var vis=1.0;
       if bands>0.5 {
        let w=max(0.0001,abs(toonLobe(nX,pX,l,o.spec.y)-lobe)+abs(toonLobe(nY,pY,l,o.spec.y)-lobe)+soft);
        lobe=toonStep(0.5,w,lobe);
+       vis=toonShadowFactor(i,o.world,pX,pY,specGeom,t.xyz,shadowSoft);
+      } else {
+       vis=lightVisibility(i,o.world,specGeom,t.xyz);
       }
-      c+=l.b.rgb*(lightVisibility(i,o.world,normalize(o.normal),t.xyz)*t.w*o.spec.x*lobe);
+      c+=l.b.rgb*(vis*t.w*o.spec.x*lobe);
      }
     }
    }
@@ -434,17 +497,40 @@ fn lineOutput(vi:u32,ii:u32,bias:f32)->Out {
 // Crease lines are a mesh's sharp edges, endpoint pairs in its own space,
 // drawn once for each of its instances: six vertices a segment, in the
 // instance's outline color and width (negative in world units, as the hull's).
-@vertex fn vs_crease(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
- let s=vi/6u;let a=items[s*2u];let b=items[s*2u+1u];let inst=instances[ii];let index=f32(ii);
- let ca=clipPosition(a.a.xyz,index);let cb=clipPosition(b.a.xyz,index);
+// Endpoints carry UV in (a.w, b.w), threshold or vertex opacity in color.x,
+// and flags in color.y (1 repeat, 2 per-instance displacement).
+fn creaseOutput(vi:u32,ii:u32)->Out {
+ let seg=vi/6u;let corner=vi%6u;
+ let a=items[seg*2u];let b=items[seg*2u+1u];
+ let inst=instances[ii];let index=f32(ii);
+ let flags=u32(a.color.y);
+ let uva=vec2<f32>(a.a.w,a.b.w);let uvb=vec2<f32>(b.a.w,b.b.w);
+ var pa=a.a.xyz;var pb=b.a.xyz;
+ if nt3dHasDisplace && (flags&2u)!=0u {
+  pa=nt3d_displace(pa,a.b.xyz,(inst.world*vec4<f32>(pa,1.0)).xyz,uva).position;
+  pb=nt3d_displace(pb,b.b.xyz,(inst.world*vec4<f32>(pb,1.0)).xyz,uvb).position;
+ }
+ let ca=clipPosition(pa,index);let cb=clipPosition(pb,index);
+ let s=clipStroke(ca,cb);
  var width=inst.outline.w;
  if width<0.0 {
   let row=vec3<f32>(u.matrix[0][1],u.matrix[1][1],u.matrix[2][1]);
   width=clamp(-width*length(row)*u.viewport.y*0.5/max(0.5*(ca.w+cb.w),0.00001),0.0,32.0);
  }
  let ink=vec4<f32>(inst.outline.rgb,1.0);
- return strokeOutput(vi%6u,ca,cb,ink,ink,width,0.0,-0.00001,worldPosition(a.a.xyz,index),worldPosition(b.a.xyz,index));
+ var o=strokeOutput(corner,ca,cb,ink,ink,width,0.0,-0.00001,worldPosition(pa,index),worldPosition(pb,index));
+ if s.visible!=0u {
+  let atEnd=corner==2u || corner==4u || corner==5u;
+  let param=select(s.t0,s.t1,atEnd);
+  let alpha=mix(a.color.x,b.color.x,param);
+  o.uv=mix(uva,uvb,param);
+  o.cut=alpha;
+  o.color.a=alpha;
+  o.repeat=select(0.0,1.0,(flags&1u)!=0u && inst.normal[3].z>0.5);
+ }
+ return o;
 }
+@vertex fn vs_crease(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return creaseOutput(vi,ii);}
 @vertex fn vs_arrow(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
  let a=items[ii];return strokeOutput(vi,clipPosition(a.a.xyz,a.color.w),clipPosition(a.b.xyz,a.color.w),a.color,a.color,a.a.w,a.b.w,0.0,worldPosition(a.a.xyz,a.color.w),worldPosition(a.b.xyz,a.color.w));
 }

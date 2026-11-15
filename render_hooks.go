@@ -116,8 +116,12 @@ const (
 	hookPipeOutlineOpaque
 	hookPipeOutlineCutout
 	hookPipeOutlineBlend
+	hookPipeCreaseOpaque
+	hookPipeCreaseCutout
+	hookPipeCreaseBlend
 	hookPipeOIT
 	hookPipeOITOutline
+	hookPipeOITCrease
 )
 
 func hookOutlinePipeKind(outlineKind int) hookPipelineKind {
@@ -131,20 +135,34 @@ func hookOutlinePipeKind(outlineKind int) hookPipelineKind {
 	}
 }
 
+func hookCreasePipeKind(creaseKind int) hookPipelineKind {
+	switch creaseKind {
+	case creaseCutoutPipeline:
+		return hookPipeCreaseCutout
+	case creaseBlendPipeline, creaseBlendMapPipeline:
+		return hookPipeCreaseBlend
+	default:
+		return hookPipeCreaseOpaque
+	}
+}
+
 type gpuHookSampleSet struct {
 	opaque     *wgpu.RenderPipeline
 	cutout     *wgpu.RenderPipeline
 	blends     [2]*wgpu.RenderPipeline
 	outlines   [3]*wgpu.RenderPipeline
+	creases    [3]*wgpu.RenderPipeline
 	oit        *wgpu.RenderPipeline
 	oitOutline *wgpu.RenderPipeline
+	oitCrease  *wgpu.RenderPipeline
 }
 
 func (s *gpuHookSampleSet) release() {
 	for _, p := range []*wgpu.RenderPipeline{
 		s.opaque, s.cutout, s.blends[0], s.blends[1],
 		s.outlines[0], s.outlines[1], s.outlines[2],
-		s.oit, s.oitOutline,
+		s.creases[0], s.creases[1], s.creases[2],
+		s.oit, s.oitOutline, s.oitCrease,
 	} {
 		if p != nil {
 			p.Release()
@@ -492,6 +510,34 @@ func (g *gpuRenderer) ensureHookPipeline(dev *wgpu.Device, prog *gpuHookProgram,
 		if s.outlines[2] == nil {
 			s.outlines[2], err = blendPipelineMS(dev, g.hookLayout, prog.shader, "vs_outline_map", "fs_outline_blend", 0, ms)
 		}
+	case hookPipeCreaseOpaque:
+		if s.creases[0] == nil {
+			s.creases[0], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+				Label:        "hook crease lines",
+				Layout:       g.hookLayout,
+				Vertex:       wgpu.VertexState{Module: prog.shader, EntryPoint: "vs_crease"},
+				Primitive:    gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
+				DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual},
+				Multisample:  ms,
+				Fragment:     &wgpu.FragmentState{Module: prog.shader, EntryPoint: "fs_main", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}},
+			})
+		}
+	case hookPipeCreaseCutout:
+		if s.creases[1] == nil {
+			s.creases[1], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+				Label:        "hook crease cutout",
+				Layout:       g.hookLayout,
+				Vertex:       wgpu.VertexState{Module: prog.shader, EntryPoint: "vs_crease"},
+				Primitive:    gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
+				DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual},
+				Multisample:  ms,
+				Fragment:     &wgpu.FragmentState{Module: prog.shader, EntryPoint: "fs_outline_cutout", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}},
+			})
+		}
+	case hookPipeCreaseBlend:
+		if s.creases[2] == nil {
+			s.creases[2], err = blendPipelineMS(dev, g.hookLayout, prog.shader, "vs_crease", "fs_outline_blend", 2, ms)
+		}
 	case hookPipeOIT:
 		if s.oit == nil {
 			s.oit, err = createOITPipeline(dev, g.hookLayout, prog.shader, "vs_texture", "fs_oit_texture", gputypes.CullModeNone, ms)
@@ -499,6 +545,10 @@ func (g *gpuRenderer) ensureHookPipeline(dev *wgpu.Device, prog *gpuHookProgram,
 	case hookPipeOITOutline:
 		if s.oitOutline == nil {
 			s.oitOutline, err = createOITPipeline(dev, g.hookLayout, prog.shader, "vs_outline_map", "fs_oit_outline_blend", gputypes.CullModeFront, ms)
+		}
+	case hookPipeOITCrease:
+		if s.oitCrease == nil {
+			s.oitCrease, err = createOITPipeline(dev, g.hookLayout, prog.shader, "vs_crease", "fs_oit_outline_blend", gputypes.CullModeNone, ms)
 		}
 	}
 	return err
@@ -594,6 +644,11 @@ func (g *gpuRenderer) prepareHooks(dev *wgpu.Device, f Frame, drawn []bool) erro
 					if err := g.ensureHookPipeline(dev, prog, hookPipeOITOutline); err != nil {
 						return err
 					}
+					if creased(geom) {
+						if err := g.ensureHookPipeline(dev, prog, hookPipeOITCrease); err != nil {
+							return err
+						}
+					}
 				}
 			} else {
 				if err := g.ensureHookPipeline(dev, prog, hookPipeBlendBack); err != nil {
@@ -605,6 +660,11 @@ func (g *gpuRenderer) prepareHooks(dev *wgpu.Device, f Frame, drawn []bool) erro
 				if geom.Outline.Width != 0 {
 					if err := g.ensureHookPipeline(dev, prog, hookPipeOutlineBlend); err != nil {
 						return err
+					}
+					if creased(geom) {
+						if err := g.ensureHookPipeline(dev, prog, hookPipeCreaseBlend); err != nil {
+							return err
+						}
 					}
 				}
 			}
@@ -627,6 +687,11 @@ func (g *gpuRenderer) prepareHooks(dev *wgpu.Device, f Frame, drawn []bool) erro
 			if geom.Outline.Width != 0 {
 				if err := g.ensureHookPipeline(dev, prog, hookOutlinePipeKind(outlinePipelineKind(geom))); err != nil {
 					return err
+				}
+				if creased(geom) {
+					if err := g.ensureHookPipeline(dev, prog, hookCreasePipeKind(creasePipelineKind(geom))); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -714,10 +779,18 @@ func (g *gpuRenderer) hookPipelineFor(geom *Geometry, kind hookPipelineKind) *wg
 		return s.outlines[1]
 	case hookPipeOutlineBlend:
 		return s.outlines[2]
+	case hookPipeCreaseOpaque:
+		return s.creases[0]
+	case hookPipeCreaseCutout:
+		return s.creases[1]
+	case hookPipeCreaseBlend:
+		return s.creases[2]
 	case hookPipeOIT:
 		return s.oit
 	case hookPipeOITOutline:
 		return s.oitOutline
+	case hookPipeOITCrease:
+		return s.oitCrease
 	default:
 		return nil
 	}

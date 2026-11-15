@@ -70,7 +70,7 @@ func TestGPUToonOffIsUnchanged(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
 	plain := toonGPU(t, r, toonSphere(t, &Material{Specular: .4}, 96))
-	off := toonGPU(t, r, toonSphere(t, &Material{Specular: .4, Toon: ToonStyle{Softness: .5, Rim: .5, Shade: color.RGBA{0, 0, 255, 255}}}, 96))
+	off := toonGPU(t, r, toonSphere(t, &Material{Specular: .4, Toon: ToonStyle{Softness: .5, ShadowSoftness: .7, Rim: .5, Shade: color.RGBA{0, 0, 255, 255}}}, 96))
 	if !bytes.Equal(plain.Pix, off.Pix) {
 		t.Fatal("a toon style without bands changed the GPU frame")
 	}
@@ -196,5 +196,61 @@ func TestGPUToonFlatFloorEdgeIsAntialiased(t *testing.T) {
 	}
 	if rows < 10 || blended*5 < rows*2 {
 		t.Fatalf("only %d of %d rows blend across the band edge", blended, rows)
+	}
+}
+
+func TestGPUToonShadowSoftnessMatchesSoftware(t *testing.T) {
+	for _, pbr := range []bool{false, true} {
+		crispF := toonStreetShadowFrame(t, pbr, 0, DirectionalLight)
+		softF := toonStreetShadowFrame(t, pbr, .75, DirectionalLight)
+		crispGPU := creaseGPUOnce(t, crispF)
+		softGPU := creaseGPUOnce(t, softF)
+		softSW := softwareRender(softF)
+		cs, cl, cBetween, _, cMaxStep, cRev := shadowProfileStats(crispF, crispGPU)
+		ss, sl, sBetween, sDistinct, sMaxStep, sRev := shadowProfileStats(softF, softGPU)
+		if !closeRGB(cs, ss, 4) || !closeRGB(cl, sl, 4) || int(cl.R) < int(cs.R)+40 {
+			t.Fatalf("GPU pbr=%v endpoints changed or flat: crisp %v->%v, soft %v->%v", pbr, cs, cl, ss, sl)
+		}
+		if cRev != 0 || sRev != 0 {
+			t.Fatalf("GPU pbr=%v non-monotonic shadow reversals: crisp=%d soft=%d", pbr, cRev, sRev)
+		}
+		if sBetween < cBetween+6 || sDistinct < 8 || sMaxStep < 4 || sMaxStep >= cMaxStep-20 {
+			t.Fatalf("GPU pbr=%v soft shadow did not widen penumbra: crisp(between=%d, maxStep=%d) soft(between=%d, distinct=%d, maxStep=%d)",
+				pbr, cBetween, cMaxStep, sBetween, sDistinct, sMaxStep)
+		}
+		if mad := hookImgMeanAbsDiff(softGPU, softSW); mad > 3.5 {
+			t.Fatalf("GPU pbr=%v soft toon shadow MAD vs software = %.3f", pbr, mad)
+		}
+	}
+
+	for _, kind := range []LightKind{SpotLight, PointLight} {
+		crispF := toonStreetShadowFrame(t, false, 0, kind)
+		softF := toonStreetShadowFrame(t, false, .75, kind)
+		_, _, _, _, cMaxStep, _ := shadowProfileStats(crispF, creaseGPUOnce(t, crispF))
+		softGPU := creaseGPUOnce(t, softF)
+		cs, cl, _, sDistinct, sMaxStep, sRev := shadowProfileStats(softF, softGPU)
+		if int(cl.R) < int(cs.R)+30 || sRev != 0 || sDistinct < 8 || sMaxStep >= cMaxStep-20 {
+			t.Fatalf("GPU kind=%v shadow softness failed: shadow=%v lit=%v crispMaxStep=%d softMaxStep=%d distinct=%d rev=%d",
+				kind, cs, cl, cMaxStep, sMaxStep, sDistinct, sRev)
+		}
+		if mad := hookImgMeanAbsDiff(softGPU, softwareRender(softF)); mad > 3.5 {
+			t.Fatalf("GPU kind=%v soft toon shadow MAD vs software = %.3f", kind, mad)
+		}
+	}
+
+	r := &gpuRenderer{}
+	defer r.Close()
+	sunShadows := toonSun
+	sunShadows.Lights = []Light{{Direction: toonSun.Lights[0].Direction, Intensity: toonSun.Lights[0].Intensity, Shadows: true}}
+	crispSphere := toonSphere(t, &Material{Toon: ToonStyle{Bands: 3, ShadowSoftness: 0}}, 200)
+	softSphere := toonSphere(t, &Material{Toon: ToonStyle{Bands: 3, ShadowSoftness: 1}}, 200)
+	crispSphere.Lighting, softSphere.Lighting = sunShadows, sunShadows
+	crispSphereGPU := toonGPU(t, r, crispSphere)
+	softSphereGPU := toonGPU(t, r, softSphere)
+	if tones := flatTones(softSphereGPU, 3, toonSky); len(tones) != 3 {
+		t.Fatalf("GPU sunlit sphere with ShadowSoftness=1 has %d flat tones, want 3: %v", len(tones), tones)
+	}
+	if !bytes.Equal(crispSphereGPU.Pix, softSphereGPU.Pix) {
+		t.Fatal("ShadowSoftness changed a GPU sunlit curved sphere's cel bands")
 	}
 }

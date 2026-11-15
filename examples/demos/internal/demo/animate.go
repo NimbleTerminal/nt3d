@@ -228,7 +228,7 @@ func (d *demo) decorateAnimate(f *nt3d.Frame) {
 	f.Lighting.Lights[0].Shadows = true
 }
 
-var animatedOutline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}}
+var animatedOutline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}, Crease: 35}
 
 func (d *demo) toggleAnimatedOutlines() error {
 	state := d.animatedSamples

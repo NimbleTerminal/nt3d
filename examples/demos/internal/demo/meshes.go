@@ -455,7 +455,7 @@ func (d *demo) rebuildMeshes() error {
 			g.PointStyle.SHDCOnly = d.meshes.dcOnly
 		}
 		if d.meshes.outlined {
-			g.Outline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}}
+			g.Outline = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}, Crease: 35}
 		}
 		switch d.meshes.normals {
 		case 1:

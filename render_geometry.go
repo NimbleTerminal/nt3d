@@ -98,16 +98,32 @@ type gpuGeometry struct {
 	sets          []*instanceSet
 	used          int // Sets drawn from this frame.
 	shared        *sharedGeometry
-	// creases are the mesh's crease edges, by the bits of each crease angle
-	// its instances have asked for: nodes that share the mesh may differ.
-	// They live as long as the uploaded mesh; SetOutline does not replace it.
-	creases map[uint32]*gpuCrease
+	// creases are the mesh's crease edges, by angle, cutout/opacity mode, and
+	// shader flags: nodes that share the mesh may differ. They live as long as
+	// the uploaded mesh; SetOutline does not replace it.
+	creases map[creaseUploadKey]*gpuCrease
 }
 
-// gpuCrease is a mesh's crease edges at one angle: two line records a segment.
+type creaseUploadKey struct {
+	angleBits uint32
+	cutBits   uint32
+	flags     uint32
+}
+
+type creaseDisplaceState struct {
+	active bool
+	ptr    *VertexDisplacement
+	world  nt3dmath.Mat4
+}
+
+// gpuCrease is a mesh's crease edges for one creaseUploadKey: two endpoint
+// records a segment, updated in place when posed or CPU-displaced vertices move.
 type gpuCrease struct {
-	batch gpuBatch
-	used  uint64 // The crease frame a draw last used it in.
+	batch        gpuBatch
+	capacity     uint64
+	used         uint64 // The crease frame a draw last used it in.
+	poseRevision uint64
+	displace     creaseDisplaceState
 }
 
 func (n *gpuGeometry) clearCreases() {
@@ -275,6 +291,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		emissive     textureKey
 		displacement *VertexDisplacement
 		shader       *MaterialShader
+		cutoff       float32
 		transmitting bool
 	}
 	type group struct {
@@ -513,14 +530,19 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			continue
 		}
 		var matShader *MaterialShader
+		var cutoff float32
 		if geom.Material != nil {
 			matShader = geom.Material.Shader
+			if geom.Material.Cutout {
+				cutoff = geom.Material.threshold()
+			}
 		}
 		k := groupKey{
 			geometry:     keys[i],
 			outline:      geom.Outline,
 			displacement: geom.Displacement,
 			shader:       matShader,
+			cutoff:       cutoff,
 			transmitting: transmitting(&geom),
 		}
 		if mapped(geom) {
@@ -746,7 +768,7 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 	if envReflect {
 		envRefl = 1
 	}
-	data = appendFloats(data, shade[0], shade[1], shade[2], toon.Rim, float32(toon.Bands), toon.Softness, envRefl, 0)
+	data = appendFloats(data, shade[0], shade[1], shade[2], toon.Rim, float32(toon.Bands), toon.Softness, envRefl, toon.ShadowSoftness)
 	return appendFloats(data, pbr[0], pbr[1], pbr[2], pbr[3], emissive[0], emissive[1], emissive[2], 0)
 }
 

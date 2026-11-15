@@ -305,6 +305,7 @@ func (r *lightRig) highlightNormal(m *Material, n, p, view, geometric nt3dmath.V
 // is returned, as highlight's light is, in light units for the caller to add.
 func (r *lightRig) toonLight(rgb *[3]float32, t ToonStyle, n, p, geometric, view nt3dmath.Vec3) (rimLight [3]float32) {
 	w := toonEdge(t.Softness, t.Bands)
+	sw := toonShadowEdge(t.ShadowSoftness)
 	var direct [3]float32
 	for i := range r.lights {
 		l := &r.lights[i]
@@ -313,10 +314,11 @@ func (r *lightRig) toonLight(rgb *[3]float32, t ToonStyle, n, p, geometric, view
 		if fade == 0 || s <= 0 {
 			continue
 		}
+		sh := float32(1)
 		if i == r.shadowLight && r.shadow != nil {
-			s *= r.shadow.visibility(p, geometric, dir)
+			sh = toonStep(.5, sw, r.shadow.visibilityToon(p, geometric, dir, t.ShadowSoftness))
 		}
-		b := toonBand(s, t.Bands, w) * fade
+		b := toonBand(s, t.Bands, w) * sh * fade
 		for k := range direct {
 			direct[k] += l.color[k] * b
 		}
@@ -341,6 +343,7 @@ func (r *lightRig) toonLight(rgb *[3]float32, t ToonStyle, n, p, geometric, view
 // specular lobe becomes a flat spot.
 func (r *lightRig) toonHighlight(m *Material, n, p, view, geometric nt3dmath.Vec3) [3]float32 {
 	w := toonEdge(m.Toon.Softness, m.Toon.Bands)
+	sw := toonShadowEdge(m.Toon.ShadowSoftness)
 	var c [3]float32
 	for i := range r.lights {
 		l := &r.lights[i]
@@ -355,7 +358,7 @@ func (r *lightRig) toonHighlight(m *Material, n, p, view, geometric nt3dmath.Vec
 		lobe := float32(math.Pow(float64(max(0, n.Dot(h.Normalize()))), float64(m.shininess())))
 		s := m.Specular * toonStep(toonSpot, w, lobe) * fade
 		if i == r.shadowLight && r.shadow != nil {
-			s *= r.shadow.visibility(p, geometric, dir)
+			s *= toonStep(.5, sw, r.shadow.visibilityToon(p, geometric, dir, m.Toon.ShadowSoftness))
 		}
 		for k := range c {
 			c[k] += l.color[k] * s

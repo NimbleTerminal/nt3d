@@ -26,9 +26,11 @@ import (
 // outline's width and color along every edge where the mesh's two faces turn
 // by more than that angle, along open borders, and along edges three or more
 // faces share: the edges inside a silhouette that the hull cannot show, such
-// as a box's near corner. Faces are joined by vertex position. Only opaque,
-// rigid meshes draw them: transparent, cutout, transmissive, skinned, and
-// morphed meshes keep the hull alone.
+// as a box's near corner. Faces are joined by vertex position. Skinned,
+// morphed, and vertex-displaced meshes extract creases from their deformed
+// positions; cutout meshes alpha-test their crease lines, transmissive meshes
+// draw them over refracted front faces, and transparent meshes retain their
+// vertex and texture opacity.
 type OutlineStyle struct {
 	Width  float32
 	Color  color.RGBA

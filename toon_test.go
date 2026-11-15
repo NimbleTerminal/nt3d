@@ -50,12 +50,22 @@ func TestToonBand(t *testing.T) {
 
 func TestToonValidation(t *testing.T) {
 	for _, bands := range []int{0, 2, 8} {
-		if err := (ToonStyle{Bands: bands}).validate(); err != nil {
+		if err := (ToonStyle{Bands: bands, ShadowSoftness: .5}).validate(); err != nil {
 			t.Fatalf("bands %d: %v", bands, err)
 		}
 	}
+	for _, ss := range []float32{0, .5, 1} {
+		if err := (ToonStyle{Bands: 3, ShadowSoftness: ss}).validate(); err != nil {
+			t.Fatalf("shadow softness %v: %v", ss, err)
+		}
+	}
 	nan := float32(math.NaN())
-	for _, bad := range []ToonStyle{{Bands: 1}, {Bands: 9}, {Bands: -1}, {Bands: 2, Softness: nan}, {Bands: 2, Softness: -.1}, {Bands: 2, Softness: 1.1}, {Bands: 2, Rim: nan}, {Bands: 2, Rim: -.1}, {Bands: 2, Rim: 1.1}} {
+	for _, bad := range []ToonStyle{
+		{Bands: 1}, {Bands: 9}, {Bands: -1},
+		{Bands: 2, Softness: nan}, {Bands: 2, Softness: -.1}, {Bands: 2, Softness: 1.1},
+		{Bands: 2, ShadowSoftness: nan}, {Bands: 2, ShadowSoftness: -.1}, {Bands: 2, ShadowSoftness: 1.1},
+		{Bands: 2, Rim: nan}, {Bands: 2, Rim: -.1}, {Bands: 2, Rim: 1.1},
+	} {
 		if bad.validate() == nil {
 			t.Fatalf("accepted %+v", bad)
 		}
@@ -185,9 +195,151 @@ func TestToonSphereHasFlatTones(t *testing.T) {
 
 func TestToonZeroBandsIsUnchanged(t *testing.T) {
 	plain := softwareRender(toonSphere(t, &Material{Specular: .4}, 96)).(*image.RGBA)
-	off := softwareRender(toonSphere(t, &Material{Specular: .4, Toon: ToonStyle{Softness: .5, Rim: .5, Shade: color.RGBA{0, 0, 255, 255}}}, 96)).(*image.RGBA)
+	off := softwareRender(toonSphere(t, &Material{Specular: .4, Toon: ToonStyle{Softness: .5, ShadowSoftness: .7, Rim: .5, Shade: color.RGBA{0, 0, 255, 255}}}, 96)).(*image.RGBA)
 	if !bytes.Equal(plain.Pix, off.Pix) {
 		t.Fatal("a toon style without bands changed the frame")
+	}
+}
+
+// toonStreetShadowFrame builds a street-scale floor (so shadow-map texels span
+// several screen pixels) with a rotated awning casting a diagonal shadow edge
+// between x = -1.35 and x = 0.15 on z = -1.
+func toonStreetShadowFrame(t *testing.T, pbr bool, shadowSoftness float32, kind LightKind) Frame {
+	t.Helper()
+	mat := &Material{
+		PBR:       pbr,
+		Roughness: .8,
+		Toon:      ToonStyle{Bands: 3, ShadowSoftness: shadowSoftness, Shade: color.RGBA{120, 140, 190, 255}},
+	}
+	s := NewScene()
+	_, err := s.SetGeometry("street", quad(28, -1, white, mat, false))
+	check(t, err)
+	caster, err := s.SetGeometry("awning", quad(.65, 0, white, nil, false))
+	check(t, err)
+	check(t, s.SetTransform(caster, nt3dmath.Translation(nt3dmath.Vec3{Z: .3}).Mul(nt3dmath.RotationZ(27*math.Pi/180))))
+	cam := DefaultCamera()
+	cam.Projection = Perspective
+	cam.Alpha = 89
+	cam.Target = nt3dmath.Vec3{X: -.6, Z: -1}
+	cam.Distance = 2.4
+	f, err := s.Frame(cam, 240, 240)
+	check(t, err)
+	f.Complete = true
+	var light Light
+	switch kind {
+	case SpotLight:
+		light = Light{
+			Kind:      SpotLight,
+			Position:  nt3dmath.Vec3{X: 22, Z: 22},
+			Direction: nt3dmath.Vec3{X: -1, Z: -1},
+			Range:     80,
+			InnerCone: .55,
+			OuterCone: .95,
+			Intensity: .85,
+			Shadows:   true,
+		}
+	case PointLight:
+		light = Light{
+			Kind:      PointLight,
+			Position:  nt3dmath.Vec3{X: 22, Z: 22},
+			Range:     80,
+			Intensity: .85,
+			Shadows:   true,
+		}
+	default:
+		light = Light{
+			Kind:      DirectionalLight,
+			Direction: nt3dmath.Vec3{X: 1, Z: 1},
+			Intensity: .7,
+			Shadows:   true,
+		}
+	}
+	f.Lighting = Lighting{
+		Ambient: Ambient{Sky: white, Ground: white, Intensity: .25},
+		Lights:  []Light{light},
+	}
+	f.Background = toonSky
+	return f
+}
+
+func shadowProfileStats(f Frame, img image.Image) (shadow, lit color.RGBA, between, distinct, maxStep, reversals int) {
+	x0, sy := pixel(f, nt3dmath.Vec3{X: -1.35, Z: -1})
+	x1, _ := pixel(f, nt3dmath.Vec3{X: .15, Z: -1})
+	stepX := 1
+	if x1 < x0 {
+		stepX = -1
+	}
+	shadow, lit = at(img, x0, sy), at(img, x1, sy)
+	seen := map[color.RGBA]bool{}
+	prev := int(shadow.R)
+	for x := x0 + stepX; ; x += stepX {
+		c := at(img, x, sy)
+		if c != shadow && c != lit {
+			between++
+			seen[c] = true
+		}
+		cur := int(c.R)
+		step := cur - prev
+		if step < 0 {
+			if -step > 2 {
+				reversals++
+			}
+			step = -step
+		}
+		if step > maxStep {
+			maxStep = step
+		}
+		prev = cur
+		if x == x1 {
+			break
+		}
+	}
+	return shadow, lit, between, len(seen), maxStep, reversals
+}
+
+func TestToonShadowSoftnessSmoothsStreetWithoutBlurringCelBands(t *testing.T) {
+	for _, pbr := range []bool{false, true} {
+		crispF := toonStreetShadowFrame(t, pbr, 0, DirectionalLight)
+		softF := toonStreetShadowFrame(t, pbr, .75, DirectionalLight)
+		crispImg, softImg := softwareRender(crispF), softwareRender(softF)
+		cs, cl, cBetween, _, cMaxStep, cRev := shadowProfileStats(crispF, crispImg)
+		ss, sl, sBetween, sDistinct, sMaxStep, sRev := shadowProfileStats(softF, softImg)
+		if cs != ss || cl != sl || int(cl.R) < int(cs.R)+40 {
+			t.Fatalf("pbr=%v endpoints changed or flat: crisp %v->%v, soft %v->%v", pbr, cs, cl, ss, sl)
+		}
+		if cRev != 0 || sRev != 0 {
+			t.Fatalf("pbr=%v non-monotonic shadow reversals: crisp=%d soft=%d", pbr, cRev, sRev)
+		}
+		if sBetween < cBetween+8 || sDistinct < 8 || sMaxStep*3 >= cMaxStep {
+			t.Fatalf("pbr=%v soft shadow did not widen penumbra: crisp(between=%d, maxStep=%d) soft(between=%d, distinct=%d, maxStep=%d)",
+				pbr, cBetween, cMaxStep, sBetween, sDistinct, sMaxStep)
+		}
+	}
+
+	for _, kind := range []LightKind{SpotLight, PointLight} {
+		crispF := toonStreetShadowFrame(t, false, 0, kind)
+		softF := toonStreetShadowFrame(t, false, .75, kind)
+		_, _, _, _, cMaxStep, _ := shadowProfileStats(crispF, softwareRender(crispF))
+		cs, cl, _, sDistinct, sMaxStep, sRev := shadowProfileStats(softF, softwareRender(softF))
+		if int(cl.R) < int(cs.R)+30 || sRev != 0 || sDistinct < 8 || sMaxStep >= cMaxStep-30 {
+			t.Fatalf("kind=%v shadow softness failed: shadow=%v lit=%v crispMaxStep=%d softMaxStep=%d distinct=%d rev=%d",
+				kind, cs, cl, cMaxStep, sMaxStep, sDistinct, sRev)
+		}
+	}
+
+	// Curved characters in sunlight keep razor-crisp cel bands even at maximum ShadowSoftness.
+	sunShadows := toonSun
+	sunShadows.Lights = []Light{{Direction: toonSun.Lights[0].Direction, Intensity: toonSun.Lights[0].Intensity, Shadows: true}}
+	crispSphere := toonSphere(t, &Material{Toon: ToonStyle{Bands: 3, ShadowSoftness: 0}}, 200)
+	softSphere := toonSphere(t, &Material{Toon: ToonStyle{Bands: 3, ShadowSoftness: 1}}, 200)
+	crispSphere.Lighting, softSphere.Lighting = sunShadows, sunShadows
+	crispSphereImg := softwareRender(crispSphere).(*image.RGBA)
+	softSphereImg := softwareRender(softSphere).(*image.RGBA)
+	if tones := flatTones(softSphereImg, 3, toonSky); len(tones) != 3 {
+		t.Fatalf("sunlit sphere with ShadowSoftness=1 has %d flat tones, want 3: %v", len(tones), tones)
+	}
+	if !bytes.Equal(crispSphereImg.Pix, softSphereImg.Pix) {
+		t.Fatal("ShadowSoftness changed a sunlit curved sphere's cel bands")
 	}
 }
 

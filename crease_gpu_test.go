@@ -240,3 +240,174 @@ func TestGPUCreaseAnglesBounded(t *testing.T) {
 		}
 	}
 }
+
+func TestGPUCreaseSeeThroughMatchesSoftware(t *testing.T) {
+	for name, f := range map[string]Frame{
+		"texture cutout": creaseCutoutTextureScene(t),
+		"shader cutout":  creaseCutoutShaderScene(t),
+	} {
+		gpu, sw := creaseGPUOnce(t, f), softwareRender(f)
+		kept := nt3dmath.Vec3{X: -.3, Y: .6}
+		discarded := nt3dmath.Vec3{X: .3, Y: .6}
+		if !inked(f, gpu, kept) {
+			t.Fatalf("%s: GPU opaque border at %v is not inked", name, kept)
+		}
+		if inked(f, gpu, discarded) {
+			t.Fatalf("%s: GPU discarded border at %v drew ink", name, discarded)
+		}
+		if mad := hookImgMeanAbsDiff(gpu, sw); mad > 2.5 {
+			t.Fatalf("%s: GPU vs software MAD = %.3f", name, mad)
+		}
+	}
+
+	tf, glassIdx := creaseTransmissiveScene(t)
+	tgpu, tsw := creaseGPUOnce(t, tf), softwareRender(tf)
+	for _, mid := range cornerEdges(tf, glassIdx, false) {
+		if !inked(tf, tgpu, mid) {
+			t.Fatalf("GPU transmissive near edge at %v has no ink", mid)
+		}
+	}
+	for _, mid := range cornerEdges(tf, glassIdx, true) {
+		if inked(tf, tgpu, mid) {
+			t.Fatalf("GPU transmissive far edge at %v leaked through front glass depth", mid)
+		}
+	}
+	if mad := hookImgMeanAbsDiff(tgpu, tsw); mad > 4.5 {
+		t.Fatalf("transmissive crease GPU vs software MAD = %.3f", mad)
+	}
+
+	for _, oit := range []bool{false, true} {
+		for _, msaa := range []bool{false, true} {
+			with := creaseTransparentScene(t, creaseStyle, 150)
+			without := creaseTransparentScene(t, OutlineStyle{Width: 2, Color: outlineInk}, 150)
+			with.OIT, without.OIT = oit, oit
+			with.MSAA, without.MSAA = msaa, msaa
+			gpuWith, gpuWithout := creaseGPUOnce(t, with), creaseGPUOnce(t, without)
+			for _, mid := range cornerEdges(with, 0, false) {
+				if !inkBlendedNear(with, gpuWith, gpuWithout, mid) {
+					t.Fatalf("GPU transparent cube (OIT=%v, MSAA=%v) did not blend crease ink at %v", oit, msaa, mid)
+				}
+			}
+			if !msaa {
+				swWith := softwareRender(with)
+				if mad := hookImgMeanAbsDiff(gpuWith, swWith); mad > 4.0 {
+					t.Fatalf("transparent crease (OIT=%v) GPU vs software MAD = %.3f", oit, mad)
+				}
+			}
+		}
+		zero := creaseTransparentScene(t, creaseStyle, 0)
+		zeroPlain := creaseTransparentScene(t, OutlineStyle{}, 0)
+		zero.OIT, zeroPlain.OIT = oit, oit
+		if !bytes.Equal(creaseGPUOnce(t, zero).Pix, creaseGPUOnce(t, zeroPlain).Pix) {
+			t.Fatalf("GPU zero-alpha mesh (OIT=%v) drew visible crease ink", oit)
+		}
+	}
+}
+
+func TestGPUCreaseDeformingMatchesSoftware(t *testing.T) {
+	skinR := &gpuRenderer{}
+	defer skinR.Close()
+	skinS, joint := creaseSkinnedScene(t)
+	f0 := creaseFrame(t, skinS)
+	gpu0 := creaseGPU(t, skinR, f0)
+	if !inked(f0, gpu0, nt3dmath.Vec3{Y: .2}) {
+		t.Fatal("GPU skinned hinge fold has no crease at rest")
+	}
+	var f1 Frame
+	var gpu1 *image.RGBA
+	for step := 1; step <= 11; step++ {
+		check(t, skinS.SetTransform(joint, nt3dmath.Translation(nt3dmath.Vec3{X: float32(step) * .05})))
+		f1 = creaseFrame(t, skinS)
+		gpu1 = creaseGPU(t, skinR, f1)
+	}
+	if inked(f1, gpu1, nt3dmath.Vec3{Y: .2}) || !inked(f1, gpu1, nt3dmath.Vec3{X: .55, Y: .2}) {
+		t.Fatal("GPU skinned hinge crease did not follow the joint transform")
+	}
+	for _, node := range skinR.geometries {
+		if len(node.creases) > maxCreaseAngles {
+			t.Fatalf("skinned mesh accumulated %d GPU crease buffers", len(node.creases))
+		}
+	}
+	if mad := hookImgMeanAbsDiff(gpu1, softwareRender(f1)); mad > 2.5 {
+		t.Fatalf("skinned crease GPU vs software MAD = %.3f", mad)
+	}
+
+	morphR := &gpuRenderer{}
+	defer morphR.Close()
+	morphS, morphID := creaseMorphScene(t)
+	flatF := creaseFrame(t, morphS)
+	flatGPU := creaseGPU(t, morphR, flatF)
+	if inked(flatF, flatGPU, nt3dmath.Vec3{Y: .2}) || !inked(flatF, flatGPU, nt3dmath.Vec3{X: -.4, Y: .2}) {
+		t.Fatal("GPU flat morph hinge should ink its border but not its 5-degree fold")
+	}
+	check(t, morphS.SetMorphWeights(morphID, []float32{1}))
+	bentF := creaseFrame(t, morphS)
+	bentGPU := creaseGPU(t, morphR, bentF)
+	if !inked(bentF, bentGPU, nt3dmath.Vec3{Y: .2}) {
+		t.Fatal("GPU bent morph hinge did not gain a fold crease line")
+	}
+	if mad := hookImgMeanAbsDiff(bentGPU, softwareRender(bentF)); mad > 2.5 {
+		t.Fatalf("morph crease GPU vs software MAD = %.3f", mad)
+	}
+
+	// Single-instance vertex displacement re-evaluates crease topology per frame.
+	dispR := &gpuRenderer{}
+	defer dispR.Close()
+	dispS := NewScene()
+	dg := hinge(5)
+	for i := range dg.Vertices {
+		dg.Vertices[i].Position = dg.Vertices[i].Position.Scale(.4)
+		dg.Vertices[i].Color = creaseGray
+	}
+	dg.Outline = creaseStyle
+	dg.Displacement = creaseFoldDisplacement(t, 0)
+	dispID, err := dispS.SetGeometry("disp", dg)
+	check(t, err)
+	df0 := creaseFrame(t, dispS)
+	if inked(df0, creaseGPU(t, dispR, df0), nt3dmath.Vec3{Y: .2}) {
+		t.Fatal("GPU unfolded displaced hinge drew a fold crease")
+	}
+	dg.Displacement = creaseFoldDisplacement(t, .6)
+	check(t, dispS.SetNodeGeometry(dispID, dg))
+	df1 := creaseFrame(t, dispS)
+	dgpu1 := creaseGPU(t, dispR, df1)
+	if !inked(df1, dgpu1, nt3dmath.Vec3{Y: .2}) {
+		t.Fatal("GPU folded displaced hinge did not draw a fold crease")
+	}
+	if mad := hookImgMeanAbsDiff(dgpu1, softwareRender(df1)); mad > 2.5 {
+		t.Fatalf("displaced fold GPU vs software MAD = %.3f", mad)
+	}
+
+	// Multi-instance SharedGeometry vertex displacement runs nt3d_displace per instance in vs_crease.
+	instG, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .5, Y: .5, Z: .5}, Color: creaseGray})
+	check(t, err)
+	instG.Displacement = creaseShiftDisplacement(t, .35)
+	shared, err := NewSharedGeometry(instG)
+	check(t, err)
+	instS := NewScene()
+	for i, x := range []float32{-1.0, .4} {
+		id, err := instS.SetShared(string(rune('a'+i)), shared)
+		check(t, err)
+		check(t, instS.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: x})))
+	}
+	check(t, instS.SetOutline(Root, creaseStyle))
+	instF := creaseFrame(t, instS)
+	instR := &gpuRenderer{}
+	defer instR.Close()
+	instGPU := creaseGPU(t, instR, instF)
+	if len(instR.draws) != 1 || instR.draws[0].count != 2 {
+		t.Fatalf("expected 1 instanced draw of 2 cubes, got %d draws", len(instR.draws))
+	}
+	instSW := softwareRender(instF)
+	for i := range instF.Geometry {
+		for _, mid := range cornerEdges(instF, i, false) {
+			shifted := mid.Add(nt3dmath.Vec3{X: .35})
+			if !inked(instF, instGPU, shifted) {
+				t.Fatalf("GPU instanced displaced cube %d missing crease at %v", i, shifted)
+			}
+		}
+	}
+	if mad := hookImgMeanAbsDiff(instGPU, instSW); mad > 3.0 {
+		t.Fatalf("instanced displaced crease GPU vs software MAD = %.3f", mad)
+	}
+}

@@ -22,9 +22,10 @@ func ToonMain() { mainDemo(false, sceneToon) }
 // toonScene is the toon demo's state: which look is on, and the nodes the
 // outline applies to.
 type toonScene struct {
-	on, outlines              bool
-	bands                     int // Index into toonBands.
-	buildings, street, actors nt3d.NodeID
+	on, outlines, softShadows        bool
+	bands                            int // Index into toonBands.
+	buildings, street, actors, props nt3d.NodeID
+	bannerJoint                      nt3d.NodeID
 }
 
 var (
@@ -46,9 +47,10 @@ var (
 )
 
 const (
-	toonActorHeight = 14  // Meters: giants, to read against four-storey buildings.
-	toonRoadWidth   = 7   // Meters.
-	toonRoadLift    = .05 // Meters above the ground.
+	toonActorHeight    = 14  // Meters: giants, to read against four-storey buildings.
+	toonRoadWidth      = 7   // Meters.
+	toonRoadLift       = .05 // Meters above the ground.
+	toonShadowSoftness = .45 // Softened cast-shadow penumbra on city streets.
 )
 
 // toonCamera looks at the actors from the street's end, buildings behind.
@@ -63,12 +65,16 @@ func (d *demo) toonStyle(rim float32) nt3d.ToonStyle {
 	if !d.toon.on {
 		return nt3d.ToonStyle{}
 	}
-	return nt3d.ToonStyle{Bands: toonBands[d.toon.bands], Shade: toonShade, Rim: rim}
+	shadowSoft := float32(0)
+	if d.toon.softShadows {
+		shadowSoft = toonShadowSoftness
+	}
+	return nt3d.ToonStyle{Bands: toonBands[d.toon.bands], ShadowSoftness: shadowSoft, Shade: toonShade, Rim: rim}
 }
 
-// applyToon gives the whole scene the toon style, and the buildings and
-// actors their ink. The street takes none: crease lines would trace every
-// road ribbon's border.
+// applyToon gives the whole scene the toon style, and the buildings, actors,
+// and street props their ink. The street takes none: crease lines would trace
+// every road ribbon's border.
 func (d *demo) applyToon() error {
 	if err := d.scene.SetToon(nt3d.Root, d.toonStyle(0)); err != nil {
 		return err
@@ -80,7 +86,7 @@ func (d *demo) applyToon() error {
 	if d.toon.outlines {
 		ink = nt3d.OutlineStyle{Width: 2, Color: toonInk, Crease: 30}
 	}
-	for _, id := range []nt3d.NodeID{d.toon.buildings, d.toon.actors} {
+	for _, id := range []nt3d.NodeID{d.toon.buildings, d.toon.actors, d.toon.props} {
 		if err := d.scene.SetOutline(id, ink); err != nil {
 			return err
 		}
@@ -101,6 +107,19 @@ func (d *demo) cycleToonBands() error {
 func (d *demo) toggleToonOutlines() error {
 	d.toon.outlines = !d.toon.outlines
 	return d.applyToon()
+}
+
+func (d *demo) toggleToonShadows() error {
+	d.toon.softShadows = !d.toon.softShadows
+	return d.applyToon()
+}
+
+func (d *demo) stepToon() error {
+	if d.toon == nil || d.toon.bannerJoint == 0 {
+		return nil
+	}
+	angle := (38 + 14*math.Sin(d.animationTime*2.2)) * math.Pi / 180
+	return d.scene.SetTransform(d.toon.bannerJoint, nt3dmath.RotationZ(angle))
 }
 
 func paint(g *nt3d.Geometry, c color.RGBA) {
@@ -164,8 +183,121 @@ func roadSpots(lines []nt3d.Vertex, clear float32) (first, second nt3dmath.Vec3)
 	return first, second
 }
 
+// buildToonProps places an inked street-level glass transit shelter (refractive
+// enclosure + translucent canopy) topped by a skinned articulated transit
+// pennant so see-through and deforming crease linework stand right beside the
+// block's rigid buildings.
+func buildToonProps(s *nt3d.Scene, here, there nt3dmath.Vec3) (props, bannerJoint nt3d.NodeID, err error) {
+	props, err = s.Add(nt3d.Root, "props")
+	if err != nil {
+		return 0, 0, err
+	}
+	dir := there.Sub(here)
+	dir.Z = 0
+	yaw := math.Atan2(float64(dir.Y), float64(dir.X))
+	normal := nt3dmath.Vec3{X: -float32(math.Sin(yaw)), Y: float32(math.Cos(yaw))}
+	pos := here.Add(there).Scale(.5).Add(normal.Scale(4.6))
+	pos.Z = toonRoadLift
+	if err = s.SetTransform(props, nt3dmath.Translation(pos).Mul(nt3dmath.RotationZ(yaw))); err != nil {
+		return 0, 0, err
+	}
+
+	enclosure, err := nt3d.BuildCuboid(nt3d.Cuboid{
+		Size:     nt3dmath.Vec3{X: 5.2, Y: 2.6, Z: 4.6},
+		Color:    color.RGBA{225, 244, 252, 255},
+		Material: &nt3d.Material{PBR: true, Transmission: .82, Roughness: .08, IOR: 1.5},
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	glassID, err := s.Add(props, "shelter glass")
+	if err != nil {
+		return 0, 0, err
+	}
+	if err = s.SetNodeGeometry(glassID, enclosure); err != nil {
+		return 0, 0, err
+	}
+	if err = s.SetTransform(glassID, nt3dmath.Translation(nt3dmath.Vec3{Z: 2.3})); err != nil {
+		return 0, 0, err
+	}
+
+	canopy, err := nt3d.BuildCuboid(nt3d.Cuboid{
+		Size:     nt3dmath.Vec3{X: 6.2, Y: 3.4, Z: .4},
+		Color:    color.RGBA{96, 184, 214, 175},
+		Material: &nt3d.Material{Transparent: true},
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	canopyID, err := s.Add(props, "shelter canopy")
+	if err != nil {
+		return 0, 0, err
+	}
+	if err = s.SetNodeGeometry(canopyID, canopy); err != nil {
+		return 0, 0, err
+	}
+	if err = s.SetTransform(canopyID, nt3dmath.Translation(nt3dmath.Vec3{Z: 4.8})); err != nil {
+		return 0, 0, err
+	}
+
+	// Two-panel articulated 3D pennant sharing x = 0 so its fold and borders
+	// carry live skinned crease linework.
+	coral := color.RGBA{236, 118, 92, 255}
+	mastLeaf, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 1.2, Y: .22, Z: 1.8}, Color: coral})
+	if err != nil {
+		return 0, 0, err
+	}
+	wingLeaf, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 2.2, Y: .22, Z: 1.8}, Color: coral})
+	if err != nil {
+		return 0, 0, err
+	}
+	var banner nt3d.Geometry
+	var inf []nt3d.Influence
+	for _, v := range mastLeaf.Vertices {
+		v.Position.X -= .6
+		banner.Vertices = append(banner.Vertices, v)
+		inf = append(inf, nt3d.Influence{})
+	}
+	banner.Indices = append(banner.Indices, mastLeaf.Indices...)
+	base := uint32(len(banner.Vertices))
+	for _, v := range wingLeaf.Vertices {
+		v.Position.X += 1.1
+		banner.Vertices = append(banner.Vertices, v)
+		inf = append(inf, nt3d.Influence{Weights: [4]float32{1}})
+	}
+	for _, idx := range wingLeaf.Indices {
+		banner.Indices = append(banner.Indices, base+idx)
+	}
+	banner.Bounds = nt3d.GeometryBounds(banner)
+
+	bannerID, err := s.Add(props, "shelter banner")
+	if err != nil {
+		return 0, 0, err
+	}
+	if err = s.SetNodeGeometry(bannerID, banner); err != nil {
+		return 0, 0, err
+	}
+	if err = s.SetTransform(bannerID, nt3dmath.Translation(nt3dmath.Vec3{X: -1.6, Z: 5.9})); err != nil {
+		return 0, 0, err
+	}
+	bannerJoint, err = s.Add(bannerID, "banner flap")
+	if err != nil {
+		return 0, 0, err
+	}
+	if err = s.SetDeformation(bannerID, nt3d.Deformation{
+		Skeleton:   &nt3d.Skeleton{Joints: []nt3d.NodeID{bannerJoint}},
+		Influences: inf,
+	}); err != nil {
+		return 0, 0, err
+	}
+	if err = s.SetTransform(bannerJoint, nt3dmath.RotationZ(38*math.Pi/180)); err != nil {
+		return 0, 0, err
+	}
+	return props, bannerJoint, nil
+}
+
 func (d *demo) setupToon() error {
-	d.toon = &toonScene{on: true, outlines: true, bands: 1}
+	d.toon = &toonScene{on: true, outlines: true, softShadows: true, bands: 1}
 	data, err := fs.ReadFile(SampleFiles, "flatiron.obj")
 	if err != nil {
 		return err
@@ -261,6 +393,9 @@ func (d *demo) setupToon() error {
 	if err = d.scene.SetTransform(id, standing(robot.Bounds(), there)); err != nil {
 		return err
 	}
+	if d.toon.props, d.toon.bannerJoint, err = buildToonProps(d.scene, here, there); err != nil {
+		return err
+	}
 	return d.applyToon()
 }
 
@@ -270,13 +405,16 @@ func (d *demo) decorateToon(f *nt3d.Frame) {
 }
 
 func (d *demo) toonView(content string) string {
-	look, ink := "toon off", "outlines off"
+	look, ink, shadows := "toon off", "outlines off", "crisp shadows"
 	if d.toon.on {
 		look = fmt.Sprintf("toon on · %d bands", toonBands[d.toon.bands])
 	}
 	if d.toon.outlines {
 		ink = "outlines on"
 	}
-	return fmt.Sprintf("nt3d toon · © OpenStreetMap contributors · Spot by Keenan Crane · t toon · n bands · b outlines · c fit · 1/2/3 backend · q quit\n%s\n%s · %s · %s · %s",
-		content, d.rendering(), look, ink, d.status)
+	if d.toon.softShadows {
+		shadows = "soft shadows"
+	}
+	return fmt.Sprintf("nt3d toon · © OpenStreetMap contributors · Spot by Keenan Crane · t toon · n bands · b outlines · s shadows · a breeze · c fit · 1/2/3 backend · q quit\n%s\n%s · %s · %s · %s · %s",
+		content, d.rendering(), look, ink, shadows, d.status)
 }

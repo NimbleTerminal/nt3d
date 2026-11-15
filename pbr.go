@@ -129,6 +129,7 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 	if m.Toon.on() {
 		t := m.Toon
 		w := toonEdge(t.Softness, t.Bands)
+		sw := toonShadowEdge(t.ShadowSoftness)
 		var direct [3]float32
 		for i := range rig.lights {
 			l := &rig.lights[i]
@@ -137,11 +138,11 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 			if fade <= 0 || nl <= 0 {
 				continue
 			}
-			vis := float32(1)
+			sh := float32(1)
 			if i == rig.shadowLight && rig.shadow != nil {
-				vis = rig.shadow.visibility(p, geometric, dir)
+				sh = toonStep(.5, sw, rig.shadow.visibilityToon(p, geometric, dir, t.ShadowSoftness))
 			}
-			b := toonBand(nl*vis, t.Bands, w) * fade
+			b := toonBand(nl, t.Bands, w) * sh * fade
 			for k := range direct {
 				direct[k] += l.color[k] * b
 			}
@@ -151,7 +152,7 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 				vh := max(0, min(1, view.Dot(hn)))
 				denom := nh*nh*(a2-1) + 1
 				lobe := a2 / max(1e-7, denom*denom) * .25
-				spot := toonStep(toonSpot, w, lobe) * fade * vis
+				spot := toonStep(toonSpot, w, lobe) * fade * sh
 				fvh5 := pow5(1 - vh)
 				for k := range specularOut {
 					fk := f0[k] + (1-f0[k])*fvh5

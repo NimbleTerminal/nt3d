@@ -50,7 +50,7 @@ type scenePipelineSet struct {
 	blendPipelines      [2]*wgpu.RenderPipeline
 	pointBlends         [2][3]*wgpu.RenderPipeline
 	dropPipeline        *wgpu.RenderPipeline
-	outlinePipelines    [6]*wgpu.RenderPipeline
+	outlinePipelines    [9]*wgpu.RenderPipeline
 	texturePipeline     *wgpu.RenderPipeline
 	cutoutPipeline      *wgpu.RenderPipeline
 	textureBlends       [2]*wgpu.RenderPipeline
@@ -364,7 +364,7 @@ type gpuRenderer struct {
 	plan                   blendPlan // The frame's blended work, as the sort and the draws see it.
 	lod                    lodPlan   // The splats of plan's slots the sort keys: its points are their total.
 	dropPipeline           *wgpu.RenderPipeline
-	outlinePipelines       [6]*wgpu.RenderPipeline
+	outlinePipelines       [9]*wgpu.RenderPipeline
 	creaseFrame            uint64 // Counts frames, to tell which crease edges are in use.
 	shadowLayout           *wgpu.BindGroupLayout
 	noShadow, shadowTarget shadowTarget
@@ -933,7 +933,9 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder
 					}
 				}
 				for _, d := range g.draws {
-					g.drawCrease(pass, f, d)
+					if !transparent(&f.Geometry[d.index]) && !transmitting(&f.Geometry[d.index]) {
+						g.drawCrease(pass, f, d)
+					}
 				}
 				for _, d := range g.draws {
 					if d.geom.batches[8].count > 0 {
@@ -973,6 +975,11 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder
 						}
 					}
 					if transmitted {
+						for _, d := range g.draws {
+							if transmitting(&f.Geometry[d.index]) {
+								g.drawCrease(pass, f, d)
+							}
+						}
 						if err := pass.End(); err != nil {
 							return err
 						}
@@ -1079,6 +1086,9 @@ func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 				pass.SetBindGroup(0, d.set.binds[1], nil)
 				pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 			}
+		}
+		if !f.OIT {
+			g.drawCrease(pass, f, d)
 		}
 	}
 	if blendedPoints(geom) && geom.PointStyle.Blend == AdditiveBlend && d.geom.batches[0].count > 0 {
@@ -1267,8 +1277,11 @@ func (g *gpuRenderer) activateSampleCount(dev *wgpu.Device, msaa bool) error {
 // (side 1), blending by alpha, depth tested without writing depth.
 func blendPipelineMS(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.ShaderModule, vertex, fragment string, side int, ms gputypes.MultisampleState) (*wgpu.RenderPipeline, error) {
 	cull := gputypes.CullModeFront
-	if side == 1 {
+	switch side {
+	case 1:
 		cull = gputypes.CullModeBack
+	case 2:
+		cull = gputypes.CullModeNone
 	}
 	blend := gputypes.BlendStateAlpha()
 	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: "transparent " + vertex, Layout: layout, Vertex: wgpu.VertexState{Module: shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: cull}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: ms, Fragment: &wgpu.FragmentState{Module: shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}}})

@@ -144,3 +144,37 @@ func rasterStroke(f Frame, a, b Vertex, width, headSize, bias float32, put func(
 		}
 	}
 }
+
+// rasterCreaseStroke visits each screen pixel covered by a crease segment from
+// a to b with its biased depth and perspective-correct segment parameter wt in
+// 0..1, matching vs_crease's interpolation of UV, opacity, and world position.
+func rasterCreaseStroke(f Frame, a, b nt3dmath.Vec3, width, bias float32, visit func(x, y int, z, wt float32)) {
+	s, ok := projectStroke(f, a, b)
+	if !ok {
+		return
+	}
+	width = lineWidth(width)
+	pad := width * .5
+	lowX := max(0, int(math.Floor(float64(min(s.a.x, s.b.x)-pad))))
+	highX := min(f.Width-1, int(math.Ceil(float64(max(s.a.x, s.b.x)+pad))))
+	lowY := max(0, int(math.Floor(float64(min(s.a.y, s.b.y)-pad))))
+	highY := min(f.Height-1, int(math.Ceil(float64(max(s.a.y, s.b.y)+pad))))
+	for y := lowY; y <= highY; y++ {
+		for x := lowX; x <= highX; x++ {
+			rx, ry := float32(x)+.5-s.a.x, float32(y)+.5-s.a.y
+			along, side := rx*s.dx+ry*s.dy, abs(-rx*s.dy+ry*s.dx)
+			t := float32(0)
+			if s.length < 1e-5 {
+				if abs(rx) > pad || abs(ry) > pad {
+					continue
+				}
+			} else {
+				if along < 0 || along > s.length || side > pad {
+					continue
+				}
+				t = along / s.length
+			}
+			visit(x, y, s.a.z*(1-t)+s.b.z*t+bias, s.worldT(t))
+		}
+	}
+}

@@ -9,25 +9,52 @@ import (
 	"github.com/gogpu/wgpu"
 )
 
-// creasePipeline is the crease lines' slot among the outline pipelines, after
-// the five hull kinds.
-const creasePipeline = 5
+// Crease pipeline slots follow the five hull kinds (0..4).
+const (
+	creasePipeline         = 5
+	creaseCutoutPipeline   = 6
+	creaseBlendPipeline    = 7
+	creaseBlendMapPipeline = 8
+)
 
-// Lazily create only the hull pipelines needed by this frame, and the crease
-// line pipeline. All reuse the surface buffers, instance transforms, texture
-// bindings, and skin compute pass.
+func creasePipelineKind(g *Geometry) int {
+	if transparent(g) {
+		if mapped(*g) {
+			return creaseBlendMapPipeline
+		}
+		return creaseBlendPipeline
+	}
+	if mapped(*g) && g.Material != nil && g.Material.Cutout {
+		return creaseCutoutPipeline
+	}
+	return creasePipeline
+}
+
+func creaseNeedsMaterialBind(g *Geometry) bool {
+	if hasShaderHook(*g) {
+		return true
+	}
+	if !mapped(*g) {
+		return false
+	}
+	return transparent(g) || (g.Material != nil && g.Material.Cutout)
+}
+
+// Lazily create only the hull and crease pipelines needed by this frame. All
+// reuse the surface buffers, instance transforms, texture bindings, and skin
+// compute pass.
 func (g *gpuRenderer) prepareOutlines(dev *wgpu.Device, f Frame) error {
 	for i := range f.Geometry {
 		geom := &f.Geometry[i]
 		if geom.Outline.Width == 0 || len(geom.Indices) == 0 {
 			continue
 		}
-		var kinds []int
-		if (!f.OIT || !transparent(geom)) && !hasShaderHook(*geom) {
-			kinds = append(kinds, outlinePipelineKind(geom))
+		if (f.OIT && transparent(geom)) || hasShaderHook(*geom) {
+			continue
 		}
+		kinds := []int{outlinePipelineKind(geom)}
 		if creased(geom) {
-			kinds = append(kinds, creasePipeline)
+			kinds = append(kinds, creasePipelineKind(geom))
 		}
 		for _, kind := range kinds {
 			if err := g.prepareOutline(dev, geom, kind); err != nil {
@@ -42,6 +69,12 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 	if g.outlinePipelines[kind] != nil {
 		return nil
 	}
+	needsTexLayout := kind == 2 || kind == 3 || kind == 4 || kind == creaseCutoutPipeline || kind == creaseBlendMapPipeline
+	if needsTexLayout && g.textureLayout == nil {
+		if err := g.ensureTexturePipelines(dev); err != nil {
+			return err
+		}
+	}
 	idx := g.sampleIdx
 	if g.shared != nil {
 		g.shared.mu.Lock()
@@ -54,24 +87,31 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 	}
 	layout, vertex, fragment := g.layout, "vs_outline", "fs_main"
 	cull := gputypes.CullModeFront
-	if kind == creasePipeline {
-		vertex, cull = "vs_crease", gputypes.CullModeNone
-	} else if mapped(*geom) {
+	blendSide := 0
+	switch kind {
+	case 2:
 		layout, vertex = g.textureLayout, "vs_outline_map"
+	case 3:
+		layout, vertex, fragment = g.textureLayout, "vs_outline_map", "fs_outline_cutout"
+	case 4:
+		layout, vertex, fragment = g.textureLayout, "vs_outline_map", "fs_outline_blend"
+	case creasePipeline:
+		vertex, cull = "vs_crease", gputypes.CullModeNone
+	case creaseCutoutPipeline:
+		layout, vertex, fragment, cull = g.textureLayout, "vs_crease", "fs_outline_cutout", gputypes.CullModeNone
+	case creaseBlendPipeline:
+		vertex, cull, blendSide = "vs_crease", gputypes.CullModeNone, 2
+	case creaseBlendMapPipeline:
+		layout, vertex, fragment, cull, blendSide = g.textureLayout, "vs_crease", "fs_outline_blend", gputypes.CullModeNone, 2
 	}
-	if kind == 3 {
-		fragment = "fs_outline_cutout"
-	}
-	if kind == 4 {
-		fragment = "fs_outline_blend"
-	}
+	isBlended := kind == 1 || kind == 4 || kind == creaseBlendPipeline || kind == creaseBlendMapPipeline
 	ms := g.multisample()
 	var err error
-	if kind != creasePipeline && transparent(geom) {
-		g.outlinePipelines[kind], err = blendPipelineMS(dev, layout, g.shader, vertex, fragment, 0, ms)
+	if isBlended {
+		g.outlinePipelines[kind], err = blendPipelineMS(dev, layout, g.shader, vertex, fragment, blendSide, ms)
 	} else {
 		label := "outline hull"
-		if kind == creasePipeline {
+		if kind >= creasePipeline {
 			label = "crease lines"
 		}
 		g.outlinePipelines[kind], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
@@ -92,14 +132,48 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 	return nil
 }
 
-// maxCreaseAngles is how many crease angles' edges an uploaded mesh keeps
-// before those no draw has used lately are released.
+// maxCreaseAngles is how many crease uploads a mesh keeps before those no draw
+// has used lately are released.
 const maxCreaseAngles = 4
 
+func creaseKeyForDraw(f Frame, d gpuDraw) (creaseUploadKey, uint64, creaseDisplaceState) {
+	geom := &f.Geometry[d.index]
+	var flags uint32
+	if geom.Material != nil && geom.Material.Repeat {
+		flags |= 1
+	}
+	displaceOnGPU := geom.Displacement != nil && (d.count > 1 || d.geom.used > 1)
+	if displaceOnGPU {
+		flags |= 2
+	}
+	var cutBits uint32
+	if transparent(geom) {
+		cutBits = 0xFFFFFFFF
+	} else if geom.Material != nil && geom.Material.Cutout {
+		cutBits = math.Float32bits(geom.Material.threshold())
+	}
+	var poseRev uint64
+	if geom.posed != nil {
+		poseRev = geom.posed.revision
+	}
+	var disp creaseDisplaceState
+	if geom.Displacement != nil && !displaceOnGPU {
+		disp = creaseDisplaceState{
+			active: true,
+			ptr:    geom.Displacement,
+			world:  instance(f, d.index).World,
+		}
+	}
+	return creaseUploadKey{
+		angleBits: math.Float32bits(geom.Outline.Crease),
+		cutBits:   cutBits,
+		flags:     flags,
+	}, poseRev, disp
+}
+
 // prepareCreases uploads the crease edges each draw of a creased mesh needs,
-// at its own crease angle, and pairs them with the draw's transforms. A mesh
-// keeps the edges of the angles its instances use; past maxCreaseAngles,
-// those no draw has used in this frame or the last are released.
+// updating posed or displaced meshes in place when capacity permits, and pairs
+// them with the draw's transforms.
 func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
 	g.creaseFrame++
 	for _, d := range g.draws {
@@ -107,43 +181,84 @@ func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
 		if !creased(geom) {
 			continue
 		}
-		bits := math.Float32bits(geom.Outline.Crease)
-		c := d.geom.creases[bits]
-		if c == nil {
-			edges := creaseEdges(geom.Vertices, geom.Indices, geom.Outline.Crease)
-			data := make([]byte, 0, len(edges)*48)
-			for _, p := range edges {
-				data = appendFloats(data, p.X, p.Y, p.Z, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+		key, poseRev, disp := creaseKeyForDraw(f, d)
+		c := d.geom.creases[key]
+		if c == nil || c.poseRevision != poseRev || c.displace != disp {
+			verts := geom.Vertices
+			if disp.active {
+				verts = displacedVertices(geom, disp.world)
 			}
-			if len(d.geom.creases) >= maxCreaseAngles {
-				for angle, old := range d.geom.creases {
-					if old.used+1 >= g.creaseFrame {
-						continue
+			segments := creaseSegments(verts, geom.Indices, geom.UV, geom.Outline.Crease)
+			isTrans := transparent(geom)
+			cutVal := float32(1)
+			if !isTrans && geom.Material != nil && geom.Material.Cutout {
+				cutVal = geom.Material.threshold()
+			}
+			flagFloat := float32(key.flags)
+			data := make([]byte, 0, len(segments)*48)
+			for _, v := range segments {
+				alpha := cutVal
+				if isTrans {
+					alpha = v.opacity
+				}
+				data = appendFloats(data, v.pos.X, v.pos.Y, v.pos.Z, v.uv.U, v.normal.X, v.normal.Y, v.normal.Z, v.uv.V, alpha, flagFloat, 0, 0)
+			}
+			if c == nil {
+				if len(d.geom.creases) >= maxCreaseAngles {
+					for k, old := range d.geom.creases {
+						if old.used+1 >= g.creaseFrame {
+							continue
+						}
+						for _, set := range d.geom.sets {
+							if bind := set.creaseBinds[old]; bind != nil {
+								bind.Release()
+								delete(set.creaseBinds, old)
+							}
+						}
+						releaseBatch(old.batch)
+						delete(d.geom.creases, k)
 					}
+				}
+				c = &gpuCrease{poseRevision: poseRev, displace: disp}
+				if err := g.uploadData(dev, &c.batch, data, 48); err != nil {
+					return err
+				}
+				c.capacity = c.batch.size
+				if d.geom.creases == nil {
+					d.geom.creases = map[creaseUploadKey]*gpuCrease{}
+				}
+				d.geom.creases[key] = c
+			} else {
+				c.poseRevision, c.displace = poseRev, disp
+				if len(data) == 0 {
+					c.batch.count = 0
+				} else if c.batch.buffer != nil && uint64(len(data)) <= c.capacity {
+					if err := dev.Queue().WriteBuffer(c.batch.buffer, 0, data); err != nil {
+						return err
+					}
+					c.batch.count = uint32(len(data) / 48)
+					c.batch.size = uint64(len(data))
+				} else {
 					for _, set := range d.geom.sets {
-						if bind := set.creaseBinds[old]; bind != nil {
+						if bind := set.creaseBinds[c]; bind != nil {
 							bind.Release()
-							delete(set.creaseBinds, old)
+							delete(set.creaseBinds, c)
 						}
 					}
-					releaseBatch(old.batch)
-					delete(d.geom.creases, angle)
+					releaseBatch(c.batch)
+					c.batch = gpuBatch{}
+					if err := g.uploadData(dev, &c.batch, data, 48); err != nil {
+						return err
+					}
+					c.capacity = c.batch.size
 				}
 			}
-			c = &gpuCrease{}
-			if err := g.uploadData(dev, &c.batch, data, 48); err != nil {
-				return err
-			}
-			if d.geom.creases == nil {
-				d.geom.creases = map[uint32]*gpuCrease{}
-			}
-			d.geom.creases[bits] = c
 		}
 		c.used = g.creaseFrame
 		if c.batch.buffer == nil || d.set.creaseBinds[c] != nil {
 			continue
 		}
-		entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: c.batch.buffer, Size: c.batch.size}, {Binding: 2, Buffer: d.set.transform, Size: uint64(d.set.capacity) * instanceRecordSize}}
+		entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: c.batch.buffer, Size: c.capacity}, {Binding: 2, Buffer: d.set.transform, Size: uint64(d.set.capacity) * instanceRecordSize}}
 		bind, err := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.bindLayout, Entries: entries})
 		if err != nil {
 			return err
@@ -157,18 +272,55 @@ func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
 }
 
 // drawCrease draws a creased mesh's crease lines for a draw's instances, six
-// vertices a segment, after the opaque hulls.
+// vertices a segment.
 func (g *gpuRenderer) drawCrease(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
 	geom := &f.Geometry[d.index]
 	if !creased(geom) {
 		return
 	}
-	c := d.geom.creases[math.Float32bits(geom.Outline.Crease)]
-	if c == nil || d.set.creaseBinds[c] == nil {
+	key, _, _ := creaseKeyForDraw(f, d)
+	c := d.geom.creases[key]
+	if c == nil || c.batch.count < 2 || d.set.creaseBinds[c] == nil {
 		return
 	}
-	g.setScenePipeline(pass, g.outlinePipelines[creasePipeline])
-	pass.SetBindGroup(0, d.set.creaseBinds[c], nil)
+	kind := creasePipelineKind(geom)
+	if creaseNeedsMaterialBind(geom) {
+		g.setHookOrScenePipeline(pass, geom, g.outlinePipelines[kind], hookCreasePipeKind(kind))
+		pass.SetBindGroup(0, d.set.creaseBinds[c], nil)
+		mk := g.materialKey(geom.Material, f.anisotropy())
+		pass.SetBindGroup(2, g.materialBinds[mk], nil)
+		if bind := g.hookBindFor(geom); bind != nil {
+			pass.SetBindGroup(3, bind, nil)
+		}
+	} else {
+		g.setScenePipeline(pass, g.outlinePipelines[kind])
+		pass.SetBindGroup(0, d.set.creaseBinds[c], nil)
+	}
+	pass.Draw(gputypes.DrawArgs{VertexCount: c.batch.count / 2 * 6, InstanceCount: d.count})
+}
+
+func (g *gpuRenderer) drawCreaseOIT(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, creasePipes [2]*wgpu.RenderPipeline) {
+	geom := &f.Geometry[d.index]
+	if !creased(geom) {
+		return
+	}
+	key, _, _ := creaseKeyForDraw(f, d)
+	c := d.geom.creases[key]
+	if c == nil || c.batch.count < 2 || d.set.creaseBinds[c] == nil {
+		return
+	}
+	if mapped(*geom) {
+		g.setHookOrScenePipeline(pass, geom, creasePipes[1], hookPipeOITCrease)
+		pass.SetBindGroup(0, d.set.creaseBinds[c], nil)
+		mk := g.materialKey(geom.Material, f.anisotropy())
+		pass.SetBindGroup(2, g.materialBinds[mk], nil)
+		if bind := g.hookBindFor(geom); bind != nil {
+			pass.SetBindGroup(3, bind, nil)
+		}
+	} else {
+		g.setScenePipeline(pass, creasePipes[0])
+		pass.SetBindGroup(0, d.set.creaseBinds[c], nil)
+	}
 	pass.Draw(gputypes.DrawArgs{VertexCount: c.batch.count / 2 * 6, InstanceCount: d.count})
 }
 

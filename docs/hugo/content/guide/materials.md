@@ -240,12 +240,19 @@ tested and fogged like the hull, and like it leave picking and shadows
 alone. `Scene.SetOutline` changes the angle on geometry already in a scene;
 nodes that show one `SharedGeometry` may each use their own.
 
-Crease lines are drawn on opaque, rigid meshes. Transparent, cutout,
-transmissive, skinned, and morphed meshes keep the hull alone. The edges
-are found once per mesh and angle.
+Crease lines work on rigid and deforming meshes (skinned, morphed, in-place
+vertex-updated, and `VertexDisplacement` meshes, including instanced
+`SharedGeometry`) as well as see-through materials: `Cutout` creases alpha-test
+against textures and `Material.Shader`, `Transmission` creases draw after
+transmissive front faces write depth so glass mullions show in front while back
+edges stay hidden, and `Transparent` creases blend by vertex, texture, and
+shader opacity in both depth-sorted slices and Weighted Blended `Frame.OIT`.
+Static and posed meshes cache their extracted edges up to two angles per mesh,
+and the GPU reuses its crease vertex buffers in place via `WriteBuffer`.
 
 Try the [shapes demo](https://nimbleterminal.github.io/nt3d/shapes/): press
-`b` to toggle outlines (also available in the [characters demo](https://nimbleterminal.github.io/nt3d/characters/)), `s` to compare normal styles, and `1` / `2` to compare
+`b` to toggle outlines and crease lines (`t` cycles opaque, OIT glass, and
+sorted glass; also available on deforming models in the [characters demo](https://nimbleterminal.github.io/nt3d/characters/) and `animate`), `s` to compare normal styles, and `1` / `2` to compare
 GPU and software.
 
 ## Toon shading
@@ -256,19 +263,24 @@ GPU and software.
 
 ```go
 mesh.Material = &nt3d.Material{Toon: nt3d.ToonStyle{
-    Bands: 3,                                // tones from shade to fully lit, 2 to 8; 0 is off
-    Shade: color.RGBA{150, 160, 220, 255},   // tint of the unlit band; unset is white
-    Rim:   .3,                               // highlight where a lit surface turns away, 0 to 1
+    Bands:          3,                              // tones from shade to fully lit, 2 to 8; 0 is off
+    ShadowSoftness: .45,                            // cast-shadow penumbra softness, 0 to 1
+    Shade:          color.RGBA{150, 160, 220, 255}, // tint of the unlit band; unset is white
+    Rim:            .3,                             // highlight where a lit surface turns away, 0 to 1
 }}
 mesh.Outline = nt3d.OutlineStyle{Width: 2, Color: ink, Crease: 30}
 ```
 
-Each light's cosine, times its cast shadow, snaps to the nearest of `Bands`
-even levels, so a shadow map's soft edge becomes a hard one too. A point
-light's distance falloff is not banded: it stays smooth, and band edges
-follow shape and shadow only. `Softness` (0 to 1) widens the blend between
-two bands as a fraction of one band; at zero the GPU blends across about a
-pixel, so edges do not shimmer.
+Each light's cosine snaps to the nearest of `Bands` even levels, while cast
+shadows evaluate a continuous separable tent filter on directional, spot, and
+point shadow maps and step cleanly from shadowed to lit. A point light's
+distance falloff is not banded: it stays smooth, and band edges follow shape
+and shadow only. `Softness` (0 to 1) widens the blend between `N·L` cel bands
+as a fraction of one band; at zero the GPU blends across about a pixel, so
+edges do not shimmer. `ShadowSoftness` (0 to 1) widens both the tent shadow
+filter footprint and the cast-shadow transition across shadow penumbras so
+large city streets show no stair-stepped shadow-texel teeth, while leaving
+curved surfaces' `N·L` cel bands crisp in sunlight.
 
 A toon surface takes flat ambient light, the midpoint of the sky and ground
 colors plus an environment's constant term, since a gradient would bring the
@@ -289,7 +301,8 @@ For geometry already in a scene, such as a loaded or animated model,
 settings, poses, and buffers; the zero style turns it off.
 
 The [toon demo](https://nimbleterminal.github.io/nt3d/toon/) puts it together
-with outlines and crease lines: `t` flips the look, `n` changes the bands.
+with outlines and crease lines: `t` flips the look, `n` changes the bands, and
+`s` toggles softened street cast shadows.
 
 ### Toon fur
 

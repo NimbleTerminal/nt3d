@@ -197,12 +197,15 @@ Only `cmd/animate` imports the glTF sample embed package and assigns its `Files`
 
 <img class="poster" src="../../posters/toon.png" alt="A cartoon cow and robot standing among inked city buildings">
 
-`task toon` stands Spot the cow and the robot, scaled to 14 m giants, on a
-street in a block of Manhattan near Flatiron, [toon shaded](../materials/#toon-shading)
+`task toon` stands Spot the cow and the robot, scaled to 14 m giants, beside a
+refractive and translucent glass transit shelter topped by a skinned articulated
+pennant on a street in a block of Manhattan near Flatiron, [toon shaded](../materials/#toon-shading)
 with outlines and [crease lines](../materials/#crease-lines) under one
 shadow-casting sun. `t` flips between toon and smooth shading, `n` cycles
-two, three, and four bands, and `b` toggles the ink. `1` / `2` / `3` select
-GPU, software, and wireframe.
+two, three, and four bands, `b` toggles the ink across rigid buildings, glass
+mullions, and the deforming pennant, `s` toggles softened street cast shadows
+(`ToonStyle.ShadowSoftness`), and `a` toggles the pennant breeze. `1` / `2` / `3`
+select GPU, software, and wireframe.
 
 The block is `flatiron.obj`, 181 KB: 142 extruded buildings, a ground quad,
 and road centerlines, baked from OpenStreetMap data with

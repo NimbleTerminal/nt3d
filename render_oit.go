@@ -34,6 +34,7 @@ type gpuOITShared struct {
 	meshPipelines      [2]*wgpu.RenderPipeline
 	texPipelines       [2]*wgpu.RenderPipeline
 	outlinePipelines   [2][2]*wgpu.RenderPipeline
+	creasePipelines    [2][2]*wgpu.RenderPipeline
 	compositeShader    *wgpu.ShaderModule
 	compositeGroup     *wgpu.BindGroupLayout
 	compositeLayout    *wgpu.PipelineLayout
@@ -54,6 +55,9 @@ func (s *gpuOITShared) release() {
 		for k := range 2 {
 			if s.outlinePipelines[i][k] != nil {
 				s.outlinePipelines[i][k].Release()
+			}
+			if s.creasePipelines[i][k] != nil {
+				s.creasePipelines[i][k].Release()
 			}
 		}
 	}
@@ -136,6 +140,7 @@ func (g *gpuRenderer) prepareOIT(dev *wgpu.Device, f Frame, drawn []bool) error 
 
 	needMesh, needTex := false, false
 	var needOutline [2]bool
+	var needCrease [2]bool
 	for i := range f.Geometry {
 		geom := &f.Geometry[i]
 		if !drawn[i] || !transparent(geom) {
@@ -146,13 +151,24 @@ func (g *gpuRenderer) prepareOIT(dev *wgpu.Device, f Frame, drawn []bool) error 
 				needTex = true
 				if geom.Outline.Width != 0 && len(geom.Indices) > 0 {
 					needOutline[1] = true
+					if creased(geom) {
+						needCrease[1] = true
+					}
 				}
 			}
 		} else {
 			needMesh = true
 			if geom.Outline.Width != 0 && len(geom.Indices) > 0 {
 				needOutline[0] = true
+				if creased(geom) {
+					needCrease[0] = true
+				}
 			}
+		}
+	}
+	if (needTex || needOutline[1] || needCrease[1]) && g.textureLayout == nil {
+		if err := g.ensureTexturePipelines(dev); err != nil {
+			return err
 		}
 	}
 
@@ -228,6 +244,22 @@ func (g *gpuRenderer) prepareOIT(dev *wgpu.Device, f Frame, drawn []bool) error 
 				return err
 			}
 			os.outlinePipelines[idx][1] = p
+		}
+		if needCrease[0] && os.creasePipelines[idx][0] == nil {
+			p, err := createOITPipeline(dev, g.layout, g.shader, "vs_crease", "fs_oit_main", gputypes.CullModeNone, ms)
+			if err != nil {
+				g.shared.mu.Unlock()
+				return err
+			}
+			os.creasePipelines[idx][0] = p
+		}
+		if needCrease[1] && os.creasePipelines[idx][1] == nil {
+			p, err := createOITPipeline(dev, g.textureLayout, g.shader, "vs_crease", "fs_oit_outline_blend", gputypes.CullModeNone, ms)
+			if err != nil {
+				g.shared.mu.Unlock()
+				return err
+			}
+			os.creasePipelines[idx][1] = p
 		}
 		compGroup := os.compositeGroup
 		g.shared.mu.Unlock()
@@ -324,6 +356,7 @@ func (g *gpuRenderer) encodeOITPass(f Frame, encoder *wgpu.CommandEncoder, depth
 	meshPipe := g.shared.oit.meshPipelines[idx]
 	texPipe := g.shared.oit.texPipelines[idx]
 	outlinePipes := g.shared.oit.outlinePipelines[idx]
+	creasePipes := g.shared.oit.creasePipelines[idx]
 	g.shared.mu.Unlock()
 
 	for _, d := range g.draws {
@@ -353,6 +386,7 @@ func (g *gpuRenderer) encodeOITPass(f Frame, encoder *wgpu.CommandEncoder, depth
 			pass.SetBindGroup(0, d.set.binds[1], nil)
 			pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 		}
+		g.drawCreaseOIT(pass, f, d, creasePipes)
 	}
 	return pass.End()
 }

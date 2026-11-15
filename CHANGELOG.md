@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Add `ToonStyle.ShadowSoftness` (`0..1`) with continuous separable tent PCF
+  (`sinc²` frequency response across `1.5..4.0` shadow-map texels on
+  directional, spot, and point shadow maps) and decoupled cast-shadow band
+  transitions so large toon-lit scenes smooth shadow-texel staircases across
+  streets without blurring `N·L` cel bands on curved characters or creating
+  mid-band contour rings. Extend `OutlineStyle.Crease` to deforming (skinned,
+  morphed, in-place updated, and single- or instanced-`VertexDisplacement`) and
+  see-through (`Cutout`, `Transmission`, sorted `Transparent`, and Weighted
+  Blended `Frame.OIT`) meshes across both WebGPU and software renderers, with
+  in-place `WriteBuffer` crease reuse on GPU. Showcase soft street shadows
+  (`s`), a refractive/translucent inked transit shelter, and a breeze-animated
+  skinned pennant (`a`) in `toon`, plus crease linework on transparent/OIT
+  glass in `shapes` and deforming rigs in `animate` and `characters`.
 - Add data-driven shader hooks with pure-Go fallbacks for vertex displacement
   and per-fragment material color: `VertexDisplacement` (`NewVertexDisplacement`,
   `NewVertexDisplacementWithParameters`, `WithParameters`, `WithMaxDisplacement`,

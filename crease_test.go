@@ -175,9 +175,6 @@ func TestCreasedEligibility(t *testing.T) {
 		"no width":     func(g *Geometry) { g.Outline.Width = 0 },
 		"no crease":    func(g *Geometry) { g.Outline.Crease = 0 },
 		"no triangles": func(g *Geometry) { g.Indices = nil },
-		"transparent":  func(g *Geometry) { g.Material = &Material{Transparent: true} },
-		"cutout":       func(g *Geometry) { g.Material = &Material{Cutout: true} },
-		"transmitting": func(g *Geometry) { g.Material = &Material{Transmission: .5} },
 	} {
 		other := g
 		change(&other)
@@ -185,10 +182,21 @@ func TestCreasedEligibility(t *testing.T) {
 			t.Errorf("%s: draws crease lines", name)
 		}
 	}
+	for name, change := range map[string]func(*Geometry){
+		"transparent":  func(g *Geometry) { g.Material = &Material{Transparent: true} },
+		"cutout":       func(g *Geometry) { g.Material = &Material{Cutout: true} },
+		"transmitting": func(g *Geometry) { g.Material = &Material{Transmission: .5} },
+	} {
+		other := g
+		change(&other)
+		if !creased(&other) {
+			t.Errorf("%s: skipped crease lines", name)
+		}
+	}
 	s, _, _ := animationSkinScene(t)
 	check(t, s.SetOutline(Root, style))
-	if f := frame(t, s); f.Geometry[0].Outline != style || creased(&f.Geometry[0]) {
-		t.Fatal("a deformed mesh draws crease lines")
+	if f := frame(t, s); f.Geometry[0].Outline != style || !creased(&f.Geometry[0]) {
+		t.Fatal("a deformed mesh skipped crease lines")
 	}
 }
 
@@ -317,19 +325,300 @@ func TestCreaseLinesFollowInstances(t *testing.T) {
 	}
 }
 
-func TestCreaseSkipsIneligible(t *testing.T) {
-	glass := &Material{Transparent: true}
-	_, with := creaseScene(t, creaseStyle, glass, nt3dmath.Identity())
-	_, without := creaseScene(t, OutlineStyle{Width: 2, Color: outlineInk}, glass, nt3dmath.Identity())
-	if !bytes.Equal(softwareRender(with).(*image.RGBA).Pix, softwareRender(without).(*image.RGBA).Pix) {
-		t.Fatal("a transparent mesh drew crease lines")
+func creaseCutoutTextureScene(t *testing.T) Frame {
+	t.Helper()
+	half := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for y := range 8 {
+		for x := range 4 {
+			half.SetNRGBA(x, y, color.NRGBA{creaseGray.R, creaseGray.G, creaseGray.B, 255})
+		}
 	}
-	s, _, _ := animationSkinScene(t)
-	check(t, s.SetOutline(Root, OutlineStyle{Width: 2, Color: outlineInk}))
-	hull := softwareRender(frame(t, s)).(*image.RGBA)
-	check(t, s.SetOutline(Root, creaseStyle))
-	if !bytes.Equal(hull.Pix, softwareRender(frame(t, s)).(*image.RGBA).Pix) {
-		t.Fatal("a deformed mesh drew crease lines")
+	tex, err := NewTexture(half)
+	check(t, err)
+	g := quad(.6, 0, white, &Material{Texture: tex, Cutout: true}, false)
+	g.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	g.Outline = creaseStyle
+	s := NewScene()
+	_, err = s.SetGeometry("cutout", g)
+	check(t, err)
+	return creaseFrame(t, s)
+}
+
+func creaseCutoutShaderScene(t *testing.T) Frame {
+	t.Helper()
+	const wgsl = `
+fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
+	let a = select(in.color.a, 0.0, in.world.x > 0.0);
+	return vec4<f32>(in.color.rgb, a);
+}
+`
+	sh, err := NewMaterialShader(wgsl, func(in MaterialColorInput) [4]float32 {
+		c := in.Color
+		if in.World.X > 0 {
+			c[3] = 0
+		}
+		return c
+	})
+	check(t, err)
+	g := quad(.6, 0, creaseGray, &Material{Cutout: true, Shader: sh}, false)
+	g.Outline = creaseStyle
+	s := NewScene()
+	_, err = s.SetGeometry("cutout", g)
+	check(t, err)
+	return creaseFrame(t, s)
+}
+
+func creaseTransmissiveScene(t *testing.T) (Frame, int) {
+	t.Helper()
+	s := NewScene()
+	_, err := s.SetGeometry("floor", quad(2, -.6, color.RGBA{220, 140, 80, 255}, nil, false))
+	check(t, err)
+	cube, err := BuildCuboid(Cuboid{
+		Size:     nt3dmath.Vec3{X: .5, Y: .5, Z: .5},
+		Color:    white,
+		Material: &Material{PBR: true, Transmission: .85, Roughness: .08, IOR: 1.5},
+	})
+	check(t, err)
+	cube.Outline = creaseStyle
+	cubeNode, err := s.SetGeometry("glass", cube)
+	check(t, err)
+	f := creaseFrame(t, s)
+	for i, inst := range f.Instances {
+		if inst.Node == cubeNode {
+			return f, i
+		}
+	}
+	t.Fatal("missing glass cube instance")
+	return f, 0
+}
+
+func creaseTransparentScene(t *testing.T, style OutlineStyle, alpha uint8) Frame {
+	t.Helper()
+	g, err := BuildCuboid(Cuboid{
+		Size:     nt3dmath.Vec3{X: .5, Y: .5, Z: .5},
+		Color:    color.RGBA{200, 200, 200, alpha},
+		Material: &Material{Transparent: true},
+	})
+	check(t, err)
+	g.Outline = style
+	s := NewScene()
+	_, err = s.SetGeometry("glass", g)
+	check(t, err)
+	return creaseFrame(t, s)
+}
+
+func inkBlendedNear(f Frame, creasedImg, plainImg image.Image, p nt3dmath.Vec3) bool {
+	iabs := func(v int) int {
+		if v < 0 {
+			return -v
+		}
+		return v
+	}
+	dist := func(a, b color.RGBA) int {
+		return iabs(int(a.R)-int(b.R)) + iabs(int(a.G)-int(b.G)) + iabs(int(a.B)-int(b.B))
+	}
+	x, y := pixel(f, p)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			c, pl := at(creasedImg, x+dx, y+dy), at(plainImg, x+dx, y+dy)
+			if dist(c, outlineInk)+30 < dist(pl, outlineInk) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestCreaseSeeThroughMeshes(t *testing.T) {
+	for name, f := range map[string]Frame{
+		"texture cutout": creaseCutoutTextureScene(t),
+		"shader cutout":  creaseCutoutShaderScene(t),
+	} {
+		img := softwareRender(f)
+		kept := nt3dmath.Vec3{X: -.3, Y: .6}
+		discarded := nt3dmath.Vec3{X: .3, Y: .6}
+		if !inked(f, img, kept) {
+			t.Fatalf("%s: opaque border at %v is not inked", name, kept)
+		}
+		if inked(f, img, discarded) {
+			t.Fatalf("%s: discarded border at %v drew ink", name, discarded)
+		}
+	}
+
+	tf, glassIdx := creaseTransmissiveScene(t)
+	timg := softwareRender(tf)
+	for _, mid := range cornerEdges(tf, glassIdx, false) {
+		if !inked(tf, timg, mid) {
+			t.Fatalf("transmissive near edge at %v has no ink", mid)
+		}
+	}
+	for _, mid := range cornerEdges(tf, glassIdx, true) {
+		if inked(tf, timg, mid) {
+			t.Fatalf("transmissive far edge at %v leaked through front glass depth", mid)
+		}
+	}
+
+	for _, oit := range []bool{false, true} {
+		with := creaseTransparentScene(t, creaseStyle, 150)
+		without := creaseTransparentScene(t, OutlineStyle{Width: 2, Color: outlineInk}, 150)
+		with.OIT, without.OIT = oit, oit
+		imgWith, imgWithout := softwareRender(with), softwareRender(without)
+		for _, mid := range cornerEdges(with, 0, false) {
+			if !inkBlendedNear(with, imgWith, imgWithout, mid) {
+				t.Fatalf("transparent cube (OIT=%v) did not blend crease ink at %v", oit, mid)
+			}
+		}
+		zero := creaseTransparentScene(t, creaseStyle, 0)
+		zeroPlain := creaseTransparentScene(t, OutlineStyle{}, 0)
+		zero.OIT, zeroPlain.OIT = oit, oit
+		if !bytes.Equal(softwareRender(zero).(*image.RGBA).Pix, softwareRender(zeroPlain).(*image.RGBA).Pix) {
+			t.Fatalf("zero-alpha mesh (OIT=%v) drew visible crease ink", oit)
+		}
+	}
+}
+
+func creaseSkinnedScene(t *testing.T) (*Scene, NodeID) {
+	t.Helper()
+	s := NewScene()
+	joint, err := s.Add(Root, "joint")
+	check(t, err)
+	g := hinge(90)
+	for i := range g.Vertices {
+		g.Vertices[i].Position = g.Vertices[i].Position.Scale(.4)
+		g.Vertices[i].Color = creaseGray
+	}
+	g.Outline = creaseStyle
+	id, err := s.SetGeometry("hinge", g)
+	check(t, err)
+	inf := make([]Influence, len(g.Vertices))
+	for i := range inf {
+		inf[i] = Influence{Weights: [4]float32{1}}
+	}
+	check(t, s.SetDeformation(id, Deformation{
+		Skeleton:   &Skeleton{Joints: []NodeID{joint}},
+		Influences: inf,
+	}))
+	return s, joint
+}
+
+func creaseMorphScene(t *testing.T) (*Scene, NodeID) {
+	t.Helper()
+	s := NewScene()
+	g := hinge(5)
+	for i := range g.Vertices {
+		g.Vertices[i].Position = g.Vertices[i].Position.Scale(.4)
+		g.Vertices[i].Color = creaseGray
+	}
+	g.Outline = creaseStyle
+	id, err := s.SetGeometry("morph", g)
+	check(t, err)
+	offsets := make([]nt3dmath.Vec3, len(g.Vertices))
+	offsets[4] = nt3dmath.Vec3{Z: .6}
+	offsets[5] = nt3dmath.Vec3{Z: .6}
+	check(t, s.SetDeformation(id, Deformation{
+		Morphs: []MorphTarget{{Positions: offsets}},
+	}))
+	return s, id
+}
+
+func creaseFoldDisplacement(t *testing.T, lift float32) *VertexDisplacement {
+	t.Helper()
+	const wgsl = `
+fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput {
+	let dz = nt3dDisplaceParam(0u).x * select(0.0, 1.0, in.position.x > 0.2);
+	return NT3DVertexOutput(in.position + vec3<f32>(0.0, 0.0, dz), in.normal);
+}
+`
+	d, err := NewVertexDisplacementWithParameters(wgsl, .8, 0, [][4]float32{{lift, 0, 0, 0}}, func(in VertexDisplaceInput) VertexDisplaceOutput {
+		dz := float32(0)
+		if in.Position.X > .2 {
+			dz = in.Params[0][0]
+		}
+		return VertexDisplaceOutput{
+			Position: in.Position.Add(nt3dmath.Vec3{Z: dz}),
+			Normal:   in.Normal,
+		}
+	})
+	check(t, err)
+	return d
+}
+
+func creaseShiftDisplacement(t *testing.T, dx float32) *VertexDisplacement {
+	t.Helper()
+	const wgsl = `
+fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput {
+	let dx = nt3dDisplaceParam(0u).x;
+	return NT3DVertexOutput(in.position + vec3<f32>(dx, 0.0, 0.0), in.normal);
+}
+`
+	d, err := NewVertexDisplacementWithParameters(wgsl, abs(dx)+.2, 0, [][4]float32{{dx, 0, 0, 0}}, func(in VertexDisplaceInput) VertexDisplaceOutput {
+		return VertexDisplaceOutput{
+			Position: in.Position.Add(nt3dmath.Vec3{X: in.Params[0][0]}),
+			Normal:   in.Normal,
+		}
+	})
+	check(t, err)
+	return d
+}
+
+func TestCreaseDeformingMeshes(t *testing.T) {
+	skinS, joint := creaseSkinnedScene(t)
+	f0 := creaseFrame(t, skinS)
+	img0 := softwareRender(f0)
+	if !inked(f0, img0, nt3dmath.Vec3{Y: .2}) {
+		t.Fatal("skinned hinge fold has no crease at rest")
+	}
+	check(t, skinS.SetTransform(joint, nt3dmath.Translation(nt3dmath.Vec3{X: .55})))
+	f1 := creaseFrame(t, skinS)
+	img1 := softwareRender(f1)
+	if inked(f1, img1, nt3dmath.Vec3{Y: .2}) || !inked(f1, img1, nt3dmath.Vec3{X: .55, Y: .2}) {
+		t.Fatal("skinned hinge crease did not follow the joint transform")
+	}
+
+	morphS, morphID := creaseMorphScene(t)
+	flatF := creaseFrame(t, morphS)
+	flatImg := softwareRender(flatF)
+	if inked(flatF, flatImg, nt3dmath.Vec3{Y: .2}) || !inked(flatF, flatImg, nt3dmath.Vec3{X: -.4, Y: .2}) {
+		t.Fatal("flat morph hinge should ink its border but not its 5-degree fold")
+	}
+	check(t, morphS.SetMorphWeights(morphID, []float32{1}))
+	bentF := creaseFrame(t, morphS)
+	bentImg := softwareRender(bentF)
+	if !inked(bentF, bentImg, nt3dmath.Vec3{Y: .2}) {
+		t.Fatal("bent morph hinge did not gain a fold crease line")
+	}
+
+	dispS := NewScene()
+	dg := hinge(5)
+	for i := range dg.Vertices {
+		dg.Vertices[i].Position = dg.Vertices[i].Position.Scale(.4)
+		dg.Vertices[i].Color = creaseGray
+	}
+	dg.Outline = creaseStyle
+	dg.Displacement = creaseFoldDisplacement(t, 0)
+	dispID, err := dispS.SetGeometry("disp", dg)
+	check(t, err)
+	df0 := creaseFrame(t, dispS)
+	if inked(df0, softwareRender(df0), nt3dmath.Vec3{Y: .2}) {
+		t.Fatal("unfolded displaced hinge drew a fold crease")
+	}
+	creaseCache.Lock()
+	beforeEntries := len(creaseCache.entries)
+	creaseCache.Unlock()
+	for step := 1; step <= 10; step++ {
+		dg.Displacement = creaseFoldDisplacement(t, float32(step)*.06)
+		check(t, dispS.SetNodeGeometry(dispID, dg))
+		df := creaseFrame(t, dispS)
+		img := softwareRender(df)
+		if step == 10 && !inked(df, img, nt3dmath.Vec3{Y: .2}) {
+			t.Fatal("folded displaced hinge did not draw a fold crease")
+		}
+	}
+	creaseCache.Lock()
+	grown := len(creaseCache.entries) - beforeEntries
+	creaseCache.Unlock()
+	if grown != 0 {
+		t.Fatalf("per-frame vertex displacement grew creaseCache by %d entries", grown)
 	}
 }
 

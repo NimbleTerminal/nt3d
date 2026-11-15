@@ -256,7 +256,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, phaseTick()
 		}
-		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil) {
+		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil && d.toon == nil) {
 			return d, phaseTick()
 		}
 		d.animationTime += elapsed
@@ -283,6 +283,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.stepWater()
 		case d.aabb != nil:
 			err = d.stepAABB()
+		case d.toon != nil:
+			err = d.stepToon()
 		default:
 			err = d.updatePlasma()
 		}
@@ -554,6 +556,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.terrain()
 		case "s":
 			switch {
+			case d.toon != nil:
+				err = d.toggleToonShadows()
 			case d.fur != nil:
 				d.fur.shells = (d.fur.shells + 1) % len(furShells)
 				err = d.growFur()

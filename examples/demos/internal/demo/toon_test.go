@@ -54,7 +54,7 @@ func TestToonDemo(t *testing.T) {
 	if d.toon == nil || d.terrainScene() {
 		t.Fatal("the toon scene still answers as terrain")
 	}
-	buildings, street, actors := under(t, d.scene, d.toon.buildings), under(t, d.scene, d.toon.street), under(t, d.scene, d.toon.actors)
+	buildings, street, actors, props := under(t, d.scene, d.toon.buildings), under(t, d.scene, d.toon.street), under(t, d.scene, d.toon.actors), under(t, d.scene, d.toon.props)
 	frame := func() nt3d.Frame {
 		t.Helper()
 		f, err := d.scene.Frame(d.view.Camera(), 160, 90)
@@ -63,8 +63,8 @@ func TestToonDemo(t *testing.T) {
 		}
 		return f
 	}
-	// look checks every mesh's band count, and the outline of the inked ones.
-	look := func(bands int, width float32) {
+	// look checks every mesh's band count, shadow softness, and the outline of the inked ones.
+	look := func(bands int, width, shadowSoft float32) {
 		t.Helper()
 		f := frame()
 		for i, g := range f.Geometry {
@@ -72,11 +72,11 @@ func TestToonDemo(t *testing.T) {
 				continue
 			}
 			node := f.Instances[i].Node
-			if g.Material == nil || g.Material.Toon.Bands != bands {
-				t.Fatalf("node %d: material %+v, want %d bands", node, g.Material, bands)
+			if g.Material == nil || g.Material.Toon.Bands != bands || g.Material.Toon.ShadowSoftness != shadowSoft {
+				t.Fatalf("node %d: material %+v, want %d bands and shadow softness %v", node, g.Material, bands, shadowSoft)
 			}
 			want := nt3d.OutlineStyle{}
-			if width > 0 && (buildings[node] || actors[node]) {
+			if width > 0 && (buildings[node] || actors[node] || props[node]) {
 				want = nt3d.OutlineStyle{Width: width, Color: toonInk, Crease: 30}
 			}
 			if g.Outline != want {
@@ -86,7 +86,7 @@ func TestToonDemo(t *testing.T) {
 	}
 
 	f := frame()
-	meshes, textured := 0, 0
+	meshes, textured, transmissive, transparentProps := 0, 0, 0, 0
 	colors := map[color.RGBA]bool{}
 	low, high := float32(1e9), float32(-1e9)
 	for i, g := range f.Geometry {
@@ -110,6 +110,13 @@ func TestToonDemo(t *testing.T) {
 				z := world.Point(v.Position).Z
 				low, high = min(low, z), max(high, z)
 			}
+		case props[node]:
+			if g.Material != nil && g.Material.Transmission > 0 {
+				transmissive++
+			}
+			if g.Material != nil && g.Material.Transparent {
+				transparentProps++
+			}
 		case street[node]:
 			z := world.Point(g.Vertices[0].Position).Z
 			if len(g.Indices) == 6 && (z < -.001 || z > .001) {
@@ -120,13 +127,13 @@ func TestToonDemo(t *testing.T) {
 			}
 		}
 	}
-	if meshes < 146 || len(buildings) != 143 || len(colors) != 5 || textured < 1 {
-		t.Fatalf("%d meshes, %d building nodes, %d building colors, %d textured actors", meshes, len(buildings)-1, len(colors), textured)
+	if meshes < 149 || len(buildings) != 143 || len(colors) != 5 || textured < 1 || transmissive != 1 || transparentProps != 1 {
+		t.Fatalf("%d meshes, %d building nodes, %d building colors, %d textured actors, %d transmissive, %d transparent props", meshes, len(buildings)-1, len(colors), textured, transmissive, transparentProps)
 	}
 	if high-low < 13.9 || high-low > 14.1 || low < .03 || low > .07 {
 		t.Fatalf("actors stand from z %v to %v", low, high)
 	}
-	look(3, 2)
+	look(3, 2, toonShadowSoftness)
 
 	press := func(r rune) {
 		t.Helper()
@@ -136,29 +143,38 @@ func TestToonDemo(t *testing.T) {
 		}
 	}
 	press('t')
-	look(0, 2)
+	look(0, 2, 0)
 	press('t')
-	look(3, 2)
+	look(3, 2, toonShadowSoftness)
 	for _, bands := range []int{4, 2, 3} {
 		press('n')
-		look(bands, 2)
+		look(bands, 2, toonShadowSoftness)
 	}
 	press('b')
-	look(3, 0)
+	look(3, 0, toonShadowSoftness)
 	press('b')
-	look(3, 2)
-	d.Update(phaseMsg(time.Now()))
-	look(3, 2)
+	look(3, 2, toonShadowSoftness)
+	press('s')
+	look(3, 2, 0)
+	if view := d.toonView("VIEW"); !strings.Contains(view, "crisp shadows") {
+		t.Fatalf("view after shadow toggle: %q", view)
+	}
+	press('s')
+	look(3, 2, toonShadowSoftness)
+	press('a')
+	d.Update(phaseMsg(time.Now().Add(200 * time.Millisecond)))
+	look(3, 2, toonShadowSoftness)
+	press('a')
 
 	_, keys := d.sceneKeys()
 	help := map[string]bool{}
 	for _, k := range keys.scene {
 		help[k.Help().Desc] = true
 	}
-	if !help["toon"] || !help["bands"] || !help["outlines"] {
+	if !help["toon"] || !help["bands"] || !help["outlines"] || !help["shadows"] || !help["breeze"] {
 		t.Fatalf("scene keys %v", help)
 	}
-	if view := d.toonView("VIEW"); !strings.Contains(view, "© OpenStreetMap contributors") || !strings.Contains(view, "3 bands") {
+	if view := d.toonView("VIEW"); !strings.Contains(view, "© OpenStreetMap contributors") || !strings.Contains(view, "3 bands") || !strings.Contains(view, "soft shadows") {
 		t.Fatalf("view: %q", view)
 	}
 

@@ -236,6 +236,77 @@ func (m *shadowMap) visibilityFace(pos, n, l nt3dmath.Vec3, clampEdge bool) floa
 	return lit / 9
 }
 
+// visibilityToon samples cast-shadow visibility with a continuous separable
+// tent PCF kernel whose half-width grows from 1.5 texels at shadowSoftness 0
+// to 4.0 texels at shadowSoftness 1, eliminating texel-grid stair-steps before
+// toon shadow quantization.
+func (m *shadowMap) visibilityToon(p, n, l nt3dmath.Vec3, shadowSoftness float32) float32 {
+	radius := 1.5 + 2.5*shadowSoftness
+	if len(m.faces) > 0 {
+		d := p.Sub(m.position)
+		texel := 2 * max(abs(d.X), abs(d.Y), abs(d.Z)) / float32(m.faces[0].size)
+		p = p.Add(n.Scale(radius * texel))
+		return m.faces[pointShadowFace(p.Sub(m.position))].visibilityFaceToon(p, n, l, true, radius)
+	}
+	pos := p
+	if m.perspective {
+		_, _, _, w0 := m.matrix.Transform(p)
+		if w0 <= 0 {
+			return 1
+		}
+		pos = p.Add(n.Scale(radius * w0 * m.texel))
+	} else {
+		pos = p.Add(n.Scale(radius * m.texel))
+	}
+	return m.visibilityFaceToon(pos, n, l, false, radius)
+}
+
+func (m *shadowMap) visibilityFaceToon(pos, n, l nt3dmath.Vec3, clampEdge bool, radius float32) float32 {
+	_, _, _, w := m.matrix.Transform(pos)
+	if w <= 0 {
+		return 1
+	}
+	x, y, z := m.mapCoords(pos)
+	if clampEdge {
+		x = min(float32(m.size)-.001, max(float32(0), x))
+		y = min(float32(m.size)-.001, max(float32(0), y))
+	}
+	if x < 0 || y < 0 || x >= float32(m.size) || y >= float32(m.size) || z < 0 || z > 1 {
+		return 1
+	}
+	bias := (1 + 2*(1-max(float32(0), n.Dot(l)))) * (radius / 1.5) / float32(m.size)
+	if m.perspective {
+		bias *= max(1-z, 1e-6)
+	}
+	loX, hiX := int(math.Floor(float64(x-radius+.5))), int(math.Floor(float64(x+radius-.5)))
+	loY, hiY := int(math.Floor(float64(y-radius+.5))), int(math.Floor(float64(y+radius-.5)))
+	var lit, total float32
+	for iy := loY; iy <= hiY; iy++ {
+		wy := max(0, radius-abs(float32(iy)+.5-y))
+		if wy <= 0 {
+			continue
+		}
+		sy := max(0, min(m.size-1, iy))
+		row := sy * m.size
+		for ix := loX; ix <= hiX; ix++ {
+			wx := max(0, radius-abs(float32(ix)+.5-x))
+			if wx <= 0 {
+				continue
+			}
+			wt := wx * wy
+			total += wt
+			sx := max(0, min(m.size-1, ix))
+			if m.depth[row+sx] >= z-bias {
+				lit += wt
+			}
+		}
+	}
+	if total <= 0 {
+		return 1
+	}
+	return lit / total
+}
+
 func dropShadowBounds(g *Geometry) nt3dmath.AABB {
 	if !g.Bounds.IsValid() {
 		return g.Bounds

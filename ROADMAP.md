@@ -35,12 +35,6 @@ Nothing queued; the sections below are the open work.
   keep all their markers in one geometry, already one upload and draw,
   and sharing them means instancing shaders that index primitives by
   instance today.
-- [ ] **Crease lines on deforming and see-through meshes**: skinned, morphed,
-  transparent, cutout, and transmissive meshes draw the hull alone.
-- [ ] **Toon cast shadows are stair-stepped** over a large scene: the bands
-  threshold the shadow map's texels hard, as the toon demo's ground shows.
-  Accepted as it is for now (2026-11-09); blending the shadow term across
-  the band threshold would smooth it, at the cost of the crisp edge.
 - [ ] **Fur fins don't sway** with the wind; only slightly visible.
 
 ## Formats
@@ -72,6 +66,23 @@ Nothing queued; the sections below are the open work.
   texture constructor); nt3d avoids the name.
 
 ## Done
+
+- **Softened toon cast shadows (`ToonStyle.ShadowSoftness`) and crease lines on
+  deforming & see-through meshes**: `ToonStyle.ShadowSoftness` (`0..1`) pairs a
+  continuous separable tent PCF shadow filter (`1.5..4.0` texels, `sinc²`
+  frequency response across directional, spot, and point shadow maps) with a
+  decoupled cast-shadow band transition (`toonShadowFactor`), eliminating
+  stair-stepped shadow-texel teeth on large city streets while keeping curved
+  characters' `N·L` cel bands crisp in sunlight and avoiding mid-band contour
+  rings. `OutlineStyle.Crease` now renders architectural/mechanical crease
+  linework on deforming (skinned, morphed, in-place vertex-updated, and single-
+  or instanced-`VertexDisplacement`) and see-through (`Cutout` textures and
+  `Material.Shader`, post-depth `Transmission`, sorted `Transparent`, and
+  Weighted Blended `Frame.OIT` at 1× and 4× MSAA) meshes across both WebGPU and
+  software renderers, reusing GPU crease buffers via `WriteBuffer`. Showcased in
+  `toon` (`s` soft street shadows, refractive/translucent inked transit shelter,
+  and `a` breeze-animated skinned pennant), `shapes` (`b` + `t`), `animate`, and
+  `characters`.
 
 - **Data-driven shader hooks (`VertexDisplacement` and `MaterialShader`)**:
   `Geometry.Displacement` (`NewVertexDisplacement`,
