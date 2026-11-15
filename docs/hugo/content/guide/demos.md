@@ -217,6 +217,18 @@ ribbons. Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/
 under the Open Database License; building heights are estimates from tags.
 Only `cmd/toon` embeds the block, robot, and cow.
 
+## Camera paths
+
+<img class="poster" src="../../posters/campath.png" alt="Terracotta portals framing a golden beacon, cobalt sculpture, and cyan 3D camera spline with an orange frustum">
+
+`task campath`. Three declarative YAML camera rigs (`nt3d/cam` and `nt3d/cam/spec`) fly around three terracotta portals, a spinning golden beacon, and a clearcoated cobalt sculpture:
+
+- **Canyon flythrough**: an S-curve centripetal Catmull-Rom trajectory with Gauss-Legendre constant-speed arc-length timing, banking roll (`-12°` to `+14°`), causal `look` crossfades (`"node:beacon"` → Bishop parallel-transport `tangent` → `"node:sculpture"` → `"node:beacon"`), FOV narrowing (`56°` → `36°`), and timeline cue markers.
+- **Closed orbit**: a periodic closed spline locked onto `"node:beacon"` while pulling focal length from `28mm` wide to `70mm` portrait telephoto (`nt3dcam.FocalMMToFovY` on a 24 mm vertical full-frame gate).
+- **Camera switcher**: causal crossfades (`nt3dcam.Switch`) between the flythrough and orbit paths over a 16-second loop.
+
+`[` and `]` cycle presets, `k` detaches to an interactive director orbit camera (or re-attaches to ride the path; dragging or zooming also detaches smoothly), `,` and `.` scrub the playhead backward and forward by 0.5 s, `b` toggles the 3D spline, control-point, target-ray, and live camera frustum overlay (`nt3d.AppendCameraPathOverlay`), `a` pauses playback, and **Enter** restarts at `t = 0`. `1` / `2` / `3` select GPU, software, and wireframe.
+
 ## Gobkit characters
 
 <img class="poster" src="../../posters/characters.png" alt="An animated Gobkit minion">

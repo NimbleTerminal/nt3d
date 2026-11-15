@@ -6,12 +6,12 @@ env:
 
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
-  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water toon
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water toon campath
   # Every tool: a command in cmd/nt3d-NAME, built to bin/nt3d-NAME.
   TOOLS: palette
   # Every fuzz target, as package:Function; fuzz-smoke runs each briefly, and
   # the NimbleTerminal fuzzing fleet (fuzz.nimbleterminal.com) runs them continuously.
-  FUZZ_TARGETS: .:FuzzClipLine aabbtree:FuzzTreeOperations sh:FuzzRotateEvaluate mesh:FuzzDecodeSTL mesh:FuzzDecodeOBJ mesh:FuzzDecodePLY mesh:FuzzDecode3MF mesh:FuzzDecodeConf mesh:FuzzTriangulate mesh/gltf:FuzzDecode mesh/sog:FuzzDecode mesh/spz:FuzzDecode
+  FUZZ_TARGETS: .:FuzzClipLine .:FuzzNewHDREnvironment cam/spec:FuzzParse aabbtree:FuzzTreeOperations sh:FuzzRotateEvaluate mesh:FuzzDecodeSTL mesh:FuzzDecodeOBJ mesh:FuzzDecodePLY mesh:FuzzDecode3MF mesh:FuzzDecodeConf mesh:FuzzTriangulate mesh/gltf:FuzzDecode mesh/sog:FuzzDecode mesh/spz:FuzzDecode
   FUZZTIME: 10s
 
 tasks:
@@ -25,18 +25,20 @@ tasks:
       - cp go.work.example go.work
   fmt:
     cmds:
-      - gofmt -w *.go aabbtree/*.go clod/*.go cmd/*/*.go fur/*.go math/*.go mesh/*.go mesh/*/*.go sh/*.go water/*.go widget/*.go examples/gogpu/*.go examples/demos/cmd/*/*.go examples/demos/gallery/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
+      - gofmt -w *.go aabbtree/*.go cam/*.go cam/*/*.go clod/*.go cmd/*/*.go fur/*.go math/*.go mesh/*.go mesh/*/*.go sh/*.go water/*.go widget/*.go examples/gogpu/*.go examples/demos/cmd/*/*.go examples/demos/gallery/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go
   fmt-check:
     cmds:
-      - test -z "$(gofmt -l *.go aabbtree/*.go clod/*.go cmd/*/*.go fur/*.go math/*.go mesh/*.go mesh/*/*.go sh/*.go water/*.go widget/*.go examples/gogpu/*.go examples/demos/cmd/*/*.go examples/demos/gallery/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
+      - test -z "$(gofmt -l *.go aabbtree/*.go cam/*.go cam/*/*.go clod/*.go cmd/*/*.go fur/*.go math/*.go mesh/*.go mesh/*/*.go sh/*.go water/*.go widget/*.go examples/gogpu/*.go examples/demos/cmd/*/*.go examples/demos/gallery/*.go examples/demos/internal/demo/*.go examples/demos/internal/demo/gltf/*.go examples/demos/internal/demo/gltf/generate/*.go examples/demos/internal/demo/gobkit/*.go examples/demos/internal/demo/models/*.go examples/demos/internal/demo/models/generate/*.go)"
   test:
     cmds:
       - go test -mod=readonly ./...
       - go -C examples/demos test -mod=readonly ./...
+      - go -C examples/gogpu test -mod=readonly ./...
   test-race:
     cmds:
       - go test -mod=readonly -race ./...
       - go -C examples/demos test -mod=readonly -race ./...
+      - go -C examples/gogpu test -mod=readonly -race ./...
   fuzz-smoke:
     desc: Run every fuzz target for FUZZTIME (default 10s) as the fleet does, one process on one CPU
     cmds:
@@ -52,10 +54,12 @@ tasks:
     cmds:
       - go vet -mod=readonly ./...
       - go -C examples/demos vet -mod=readonly ./...
+      - go -C examples/gogpu vet -mod=readonly ./...
   build:
     desc: Build the library, every tool, and every demo; Go's cache rebuilds only what changed
     deps:
       - build:lib
+      - build:gogpu
       - for: {var: TOOLS}
         task: build:tool
         vars: {NAME: '{{.ITEM}}'}
@@ -90,7 +94,7 @@ tasks:
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb dist/web/water dist/web/toon
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb dist/web/water dist/web/toon dist/web/campath
       - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
       - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -110,6 +114,7 @@ tasks:
       - go -C examples/demos build -mod=readonly -o ../../dist/web/aabb/app.wasm ./cmd/aabb
       - go -C examples/demos build -mod=readonly -o ../../dist/web/water/app.wasm ./cmd/water
       - go -C examples/demos build -mod=readonly -o ../../dist/web/toon/app.wasm ./cmd/toon
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/campath/app.wasm ./cmd/campath
   web-assets:
     cmds:
       - go -C examples/demos tool booba-assets ../../dist/web/terrain/
@@ -131,6 +136,7 @@ tasks:
       - go -C examples/demos tool booba-assets ../../dist/web/aabb/
       - go -C examples/demos tool booba-assets ../../dist/web/water/
       - go -C examples/demos tool booba-assets ../../dist/web/toon/
+      - go -C examples/demos tool booba-assets ../../dist/web/campath/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -266,6 +272,11 @@ tasks:
     desc: Cel shade Spot, a robot, and a city block, with inked outlines and crease lines
     deps: [{task: build:demo, vars: {NAME: toon}}]
     cmds: ["bin/nt3d-toon {{.CLI_ARGS}}"]
+
+  campath:
+    desc: Fly declarative YAML camera paths (flythrough, orbit, switcher) with 3D frustum overlays
+    deps: [{task: build:demo, vars: {NAME: campath}}]
+    cmds: ["bin/nt3d-campath {{.CLI_ARGS}}"]
 
   cloud:
     desc: Show a galaxy of up to a million points, culled and thinned by clusters

@@ -38,9 +38,10 @@ var demoNames = []string{
 	"aabb",
 	"water",
 	"toon",
+	"campath",
 }
 
-// Names returns the ordered list of all 19 interactive demo scene names.
+// Names returns the ordered list of all 20 interactive demo scene names.
 func Names() []string {
 	out := make([]string, len(demoNames))
 	copy(out, demoNames)
@@ -78,6 +79,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		kind = sceneFur
 	case "toon":
 		kind = sceneToon
+	case "campath":
+		kind = sceneCamPath
 	case "mipmaps":
 		kind = sceneMipmaps
 	case "forest":
@@ -145,6 +148,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		err = d.setupFur()
 	case sceneToon:
 		err = d.setupToon()
+	case sceneCamPath:
+		err = d.setupCamPath()
 	case sceneMipmaps:
 		err = d.setupMipmaps()
 	case sceneForest:
@@ -212,6 +217,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
 	case sceneToon:
 		toonCamera(&camera)
+	case sceneCamPath:
+		camPathDirectorCamera(&camera)
 	}
 	camera.AutoRotate = proceduralDefault
 
@@ -245,6 +252,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		d.frameAnimatedSample()
 	case sceneModels:
 		d.frameSample()
+	case sceneCamPath:
+		d.followCamPath()
 	}
 	d.scene.WarmPickIndices()
 
@@ -308,10 +317,16 @@ func (r *Runner) SetCamera(c nt3d.Camera) {
 	r.d.view.SetCamera(c)
 }
 
-// DetachSampleCamera switches back from an authored glTF camera node to the
-// interactive orbit camera when the user orbits, pans, or zooms.
+// DetachSampleCamera switches back from an authored glTF or declarative path
+// camera to the interactive orbit camera when the user orbits, pans, or zooms.
 func (r *Runner) DetachSampleCamera() {
-	if r == nil || r.d == nil || r.d.animatedSamples == nil {
+	if r == nil || r.d == nil {
+		return
+	}
+	if r.d.camPath != nil {
+		r.d.detachCamPath()
+	}
+	if r.d.animatedSamples == nil {
 		return
 	}
 	if r.d.animatedSamples.camera > 0 {
@@ -561,6 +576,8 @@ func (r *Runner) HeaderAndStatus() (header, status string) {
 		raw = d.furView(sentinel)
 	case d.toon != nil:
 		raw = d.toonView(sentinel)
+	case d.camPath != nil:
+		raw = d.camPathView(sentinel)
 	case d.mipmaps != nil:
 		raw = d.mipmapsView(sentinel)
 	case d.forest != nil:

@@ -14,7 +14,7 @@ A small 3D scene engine for Go programs that draw in the terminal, the browser, 
 
 Build a scene of meshes, points, lines, Gaussians, and textures, point a camera at it, and `nt3d` renders it: on the GPU with WebGPU, in software when there is no GPU, or as wireframe text when there are no graphics at all. A [Bubble Tea](https://github.com/charmbracelet/bubbletea) widget puts it in your terminal app with mouse orbiting, picking, Kitty graphics, and half-block fallback—or `GPUSession` draws straight into a host WebGPU window.
 
-**[Try the 19 live browser demos →](https://nimbleterminal.github.io/nt3d/)** · **[Read the user guide →](https://nimbleterminal.github.io/nt3d/docs/)** · **[Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-started/)** · **[Go reference](https://pkg.go.dev/nimbleterminal.dev/nt3d)**
+**[Try the 20 live browser demos →](https://nimbleterminal.github.io/nt3d/)** · **[Read the user guide →](https://nimbleterminal.github.io/nt3d/docs/)** · **[Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-started/)** · **[Go reference](https://pkg.go.dev/nimbleterminal.dev/nt3d)**
 
 <p>
   <a href="https://nimbleterminal.github.io/nt3d/"><img src="web/assets/fur.png" alt="Spot the cow covered in black-and-white fur — click to open the live demo gallery" width="480"></a>
@@ -40,10 +40,11 @@ See [Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-s
 
 ## What's inside
 
-- **Scene graph & level of detail** — Named nodes with parent transforms, visibility, instanced shared geometry, distance-tiered `Scene.SetLOD`, and per-frame `Frame.Stats` counters.
+- **Scene graph, dynamic meshes & level of detail** — Named nodes with parent transforms, `float64` camera-relative world origins (`Scene.SetNodeOrigin` / `Camera.Origin`) for jitter-free geographic-scale scenes, visibility, instanced shared geometry, zero-reallocation in-place vertex updates (`Scene.SetNodeVertices` / `UpdateNodeVertices`), subtree `Scene.SetMaterial`, distance-tiered `Scene.SetLOD`, and per-frame `Frame.Stats` counters.
+- **Declarative camera paths** — Pure `float64`, zero-allocation camera trajectories (`nt3d/cam` and YAML/JSON `nt3d/cam/spec`) with arc-length-parameterized Catmull-Rom, Bézier, and B-spline curves, Bishop parallel-transport tangent steering, `C¹` SQUAD orientation, causal look crossfades, camera switching, and 3D frustum/spline debug overlays (`AppendCameraPathOverlay`).
 - **One scene, three renderers** — WebGPU, software, and wireframe renderers that draw the same picture, plus `GPUSession` / `GPUTarget` to render directly into a host window's WebGPU swapchain or sub-viewport without CPU readback.
-- **Materials, lighting & effects** — Unified `Material` with Cook-Torrance GGX metallic/roughness PBR (`Metallic`, `Roughness`, `IOR`, packed linear `ORMMap` ambient occlusion/roughness/metallic, and HDR `Emissive` / `EmissiveMap`) alongside classic Blinn-Phong, mipmapped and anisotropic textures, normal maps, transparency with optional Weighted Blended Order-Independent Transparency (`Frame.OIT`), cutouts, scene transmission/refraction, directional, point, and `SpotLight` lighting and shadow maps, Radiance `.hdr` (`NewHDREnvironment`) and LDR panoramas with roughness-filtered specular IBL and spherical-harmonics sky (`nt3d/sh`), fog, 4× WebGPU MSAA and supersampling, GPU post-processing (`Frame.PostProcess`: SSAO, HDR bloom, exposure, Reinhard/ACES tone mapping, and vignette, with tiered CPU software fallbacks), shader textures, shell fur (`nt3d/fur`), cel/toon shading with inked silhouettes and creases, and shared Gerstner waves (`nt3d/water`) with wakes, foam, and buoyancy queries.
-- **Meshes, glTF animation & 3D Gaussian splatting** — Bounded decoders for STL, OBJ, 3MF, PLY, glTF/GLB (PBR materials, ORM/emissive maps, `KHR_lights_punctual`, `KHR_materials_emissive_strength` / `ior` / `transmission` / `volume`, joints, morph targets, cameras, transform tracks), and 3DGS splats (`.ply`, `.spz`, `.sog`) with degree-3 spherical harmonics.
+- **Materials, lighting & effects** — Unified `Material` with Cook-Torrance GGX metallic/roughness PBR (`Metallic`, `Roughness`, `IOR`, `Clearcoat` / `ClearcoatRoughness`, Charlie cloth `SheenColor` / `SheenRoughness`, packed linear `ORMMap`, and HDR `Emissive` / `EmissiveMap`) alongside classic Blinn-Phong, mipmapped and anisotropic textures, normal maps, transparency with optional Weighted Blended Order-Independent Transparency (`Frame.OIT`), cutouts, scene transmission/refraction, directional, point, and `SpotLight` lighting and shadow maps, Radiance `.hdr` (`NewHDREnvironment`) and LDR panoramas with roughness-filtered specular IBL and spherical-harmonics sky (`nt3d/sh`), fog, 4× WebGPU MSAA and supersampling, GPU post-processing (`Frame.PostProcess`: SSAO, HDR bloom, exposure, Reinhard/ACES tone mapping, and vignette, with tiered CPU software fallbacks), shader textures, data-driven `VertexDisplacement` and `MaterialShader` WGSL/Go hooks, shell fur (`nt3d/fur`), cel/toon shading (`ToonStyle.ShadowSoftness`) with inked silhouettes and creases (including deforming and see-through meshes), and shared Gerstner waves (`nt3d/water`) with wakes, foam, and buoyancy queries.
+- **Meshes, glTF animation & 3D Gaussian splatting** — Bounded decoders for STL, OBJ, 3MF, PLY, glTF/GLB (PBR materials, ORM/emissive maps, `KHR_lights_punctual`, `KHR_materials_clearcoat` / `sheen` / `emissive_strength` / `ior` / `transmission` / `volume`, joints, morph targets, cameras, transform tracks), and 3DGS splats (`.ply`, `.spz`, `.sog`) with degree-3 spherical harmonics.
 - **Clustering & spatial indexing** — `nt3d/clod` clusters large point clouds, instances, and labels once and selects visible clusters per frame on CPU or WebGPU compute; `nt3d/aabbtree` provides a standalone generic dynamic AABB tree (`Tree[T]`) with overlap and ray-cast queries.
 - **Bubble Tea widget** — `nt3d/widget` handles orbit/pan/zoom input, background-indexed picking, world-anchored labels, Kitty graphics via [`ntpicture`](https://github.com/NimbleTerminal/ntpicture), and graceful fallback when the GPU or terminal can't keep up.
 
@@ -53,6 +54,7 @@ See [Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-s
 | :--- | :--- | :--- |
 | [`nimbleterminal.dev/nt3d`](https://pkg.go.dev/nimbleterminal.dev/nt3d) | `nt3d` | Core scene graph, camera, shapes, materials, lighting, animation, and GPU/software/wireframe renderers |
 | [`nimbleterminal.dev/nt3d/widget`](https://pkg.go.dev/nimbleterminal.dev/nt3d/widget) | `nt3dwidget` | Interactive Bubble Tea v2 viewport with camera controls, picking, labels, and automatic renderer fallback |
+| [`nimbleterminal.dev/nt3d/cam`](https://pkg.go.dev/nimbleterminal.dev/nt3d/cam) | `nt3dcam` | Pure `float64`, zero-allocation declarative camera paths, switchers, and spatial framing (`cam/spec`, `cam/curve`, `cam/frames`, `cam/ease`) |
 | [`nimbleterminal.dev/nt3d/mesh`](https://pkg.go.dev/nimbleterminal.dev/nt3d/mesh) | `nt3dmesh` | Bounded STL, OBJ, 3MF, and PLY decoders (`mesh/gltf`, `mesh/spz`, `mesh/sog`, and `mesh/formats` add glTF/GLB and compressed Gaussian splats) |
 | [`nimbleterminal.dev/nt3d/water`](https://pkg.go.dev/nimbleterminal.dev/nt3d/water) | `nt3dwater` | Analytic Gerstner wave surfaces, wake impulses, tiled water meshes, and Archimedes hull buoyancy/drag/planing forces |
 | [`nimbleterminal.dev/nt3d/fur`](https://pkg.go.dev/nimbleterminal.dev/nt3d/fur) | `nt3dfur` | Shell-fur layers, wind/gravity sway transforms, and edge-on silhouette fins for triangle meshes |
@@ -67,25 +69,26 @@ Every demo in the **[live browser gallery](https://nimbleterminal.github.io/nt3d
 
 | Browser demo | Terminal | What it shows |
 | :--- | :--- | :--- |
-| **[Terrain explorer ↗](https://nimbleterminal.github.io/nt3d/terrain/)** | `task terrain` | Annotated heightfield, world-anchored labels, picking, and parent transforms |
-| **[Procedural plasma ↗](https://nimbleterminal.github.io/nt3d/procedural/)** | `task procedural` | GPU shader-generated surface texture with matching software fallback |
+| **[Terrain explorer ↗](https://nimbleterminal.github.io/nt3d/terrain/)** | `task terrain` | Annotated heightfield, world-anchored labels, picking, parent transforms, and shader hooks |
+| **[Procedural plasma ↗](https://nimbleterminal.github.io/nt3d/procedural/)** | `task procedural` | GPU shader textures plus `VertexDisplacement` and `MaterialShader` wave hooks with Go fallbacks |
 | **[Dynamic scene ↗](https://nimbleterminal.github.io/nt3d/dynamic/)** | `task dynamic` | Independently moving nodes surrounding a live-deforming wave mesh |
-| **[Shape builders ↗](https://nimbleterminal.github.io/nt3d/shapes/)** | `task shapes` | Built-in spheres, cylinders, cones, tori, and cuboids with flat/smooth normals |
+| **[Shape builders ↗](https://nimbleterminal.github.io/nt3d/shapes/)** | `task shapes` | Built-in primitives, flat/smooth normals, and intersecting-glass `Frame.OIT` vs sorted blending |
 | **[Mesh files ↗](https://nimbleterminal.github.io/nt3d/models/)** | `task models` | Embedded STL, OBJ, and 3MF assets with components, vertex colors, and textures |
 | **[Dense mesh ↗](https://nimbleterminal.github.io/nt3d/large/)** | `task large` | 735,000-triangle asteroid with background-indexed ray picking |
-| **[Fur ↗](https://nimbleterminal.github.io/nt3d/fur/)** | `task fur` | Spot the cow in swaying shell fur built from cutout texture layers |
-| **[Mipmaps ↗](https://nimbleterminal.github.io/nt3d/mipmaps/)** | `task mipmaps` | Horizon checkerboard comparing mipmaps and anisotropic filtering on GPU and CPU |
+| **[Fur ↗](https://nimbleterminal.github.io/nt3d/fur/)** | `task fur` | Spot the cow in swaying shell fur with MSAA, post-processing, and toon ink |
+| **[Mipmaps ↗](https://nimbleterminal.github.io/nt3d/mipmaps/)** | `task mipmaps` | Horizon checkerboard comparing mipmaps, anisotropic filtering, and MSAA on GPU and CPU |
 | **[Forest ↗](https://nimbleterminal.github.io/nt3d/forest/)** | `task forest` | Thousands of instanced swaying trees with `Scene.SetLOD` tiers and `Frame.Stats` |
-| **[Lights ↗](https://nimbleterminal.github.io/nt3d/lights/)** | `task lights` | `.hdr`/sky/panorama IBL, rotating spherical-harmonics sky, sunlight, spotlights, and shadows |
+| **[Lights ↗](https://nimbleterminal.github.io/nt3d/lights/)** | `task lights` | PBR, Clearcoat & Sheen, `.hdr` IBL, spotlights, shadow maps, MSAA, and HDR post-processing |
 | **[Particles ↗](https://nimbleterminal.github.io/nt3d/particles/)** | `task particles` | Up to 100,000 fire, smoke, and dust points blended additively or in depth order |
 | **[glTF animation ↗](https://nimbleterminal.github.io/nt3d/animation/)** | `task animation` | Generated glTF ribbon with joints, morph targets, and transform tracks |
-| **[glTF animation lab ↗](https://nimbleterminal.github.io/nt3d/animate/)** | `task animate` | Authored cameras, transformed textures, and Khronos morph/skin/rotation samples |
+| **[glTF animation lab ↗](https://nimbleterminal.github.io/nt3d/animate/)** | `task animate` | Authored cameras, animated `KHR_lights_punctual` spotlights, and Khronos morph/skin/rotation samples |
 | **[Gobkit characters ↗](https://nimbleterminal.github.io/nt3d/characters/)** | `task characters` | Embedded CC0 minion, corgi, and duck switching between idle, walk, and attack clips |
 | **[Gaussian splatting ↗](https://nimbleterminal.github.io/nt3d/gaussians/)** | `task gaussians` | Embedded 3DGS PLY rendered as sorted, alpha-blended anisotropic ellipses |
 | **[Point cloud ↗](https://nimbleterminal.github.io/nt3d/cloud/)** | `task cloud` | Million-point spiral galaxy culled and thinned per frame with `nt3d/clod` |
 | **[AABB tree ↗](https://nimbleterminal.github.io/nt3d/aabb/)** | `task aabb` | Interactive `nt3d/aabbtree` spatial index showing clicked ancestor bounds |
 | **[Water ↗](https://nimbleterminal.github.io/nt3d/water/)** | `task water` | Craft riding Gerstner waves with boat wakes, crest jumps, foam, spray, and reflections |
-| **[Toon city ↗](https://nimbleterminal.github.io/nt3d/toon/)** | `task toon` | Cel-shaded Spot and robot in a Manhattan block with silhouette and crease ink |
+| **[Toon city ↗](https://nimbleterminal.github.io/nt3d/toon/)** | `task toon` | Cel-shaded Spot, robot, glass shelter, and cloth pennant in Manhattan with soft shadows and crease ink |
+| **[Camera paths ↗](https://nimbleterminal.github.io/nt3d/campath/)** | `task campath` | Declarative YAML camera paths: banked flythrough, focal-length pull orbit, switcher, and 3D frustum rig |
 
 To run demos, inspect your own 3D files, or launch the native desktop window viewer from a local checkout (using [Go Task](https://taskfile.dev)):
 

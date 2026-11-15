@@ -10,8 +10,8 @@ import (
 
 func TestAllDemosBuildAndStep(t *testing.T) {
 	names := Names()
-	if len(names) != 19 || names[18] != "toon" {
-		t.Fatalf("Names() = %v, want 19 ending in toon", names)
+	if len(names) != 20 || names[18] != "toon" || names[19] != "campath" {
+		t.Fatalf("Names() = %v, want 20 ending in toon, campath", names)
 	}
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {

@@ -2,32 +2,84 @@
 
 ## Unreleased
 
+This release upgrades `nt3d`'s shading, lighting, camera, and transparency
+pipeline on both WebGPU and software: Cook-Torrance GGX PBR with Clearcoat and
+Sheen lobes, Radiance `.hdr` environments and roughness-filtered specular IBL,
+spotlights and glTF punctual lights, Weighted Blended Order-Independent
+Transparency, 4× WebGPU MSAA, HDR post-processing, data-driven vertex/material
+shader hooks, in-place dynamic mesh updates, distance-tiered LOD, declarative
+`float64` camera paths (`nt3d/cam` and `nt3d/cam/spec`) with jitter-free
+camera-relative world origins, and softened toon street shadows with crease ink
+on deforming and see-through meshes. It also moves `water` and `fur` into
+dedicated subpackages.
+
+### Breaking changes
+
+- **Move water into `nt3d/water`:** Gerstner wave surfaces, wake impulses, tiled
+  water meshes, and Archimedes hull buoyancy, drag, and planing evaluation move
+  out of the root `nt3d` package into `nimbleterminal.dev/nt3d/water`
+  (`package nt3dwater`), renaming `WaterSurface`, `WaterBodyState`, and
+  `WaterForces` to `Surface`, `BodyState`, and `Forces`.
+- **Move shell fur into `nt3d/fur`:** shell-fur and silhouette-fin builders move
+  out of the root `nt3d` package into `nimbleterminal.dev/nt3d/fur`
+  (`package nt3dfur`) as `Config`, `Coat`, and `New`. Expose `Texture.NRGBAAt`
+  and `Texture.Sample` for straight-alpha texel reads and bilinear UV sampling.
+
+### PBR, Clearcoat, Sheen, and HDR image-based lighting
+
+- Add Cook-Torrance GGX metallic/roughness PBR, packed linear ORM maps,
+  roughness-filtered specular IBL, and HDR emissive materials to `Material` on
+  both WebGPU and software renderers (`PBR`, `Metallic`, `Roughness`, `IOR`,
+  `ORMMap`, `ORMRepeat`, `OcclusionStrength`, `Emissive`, `EmissiveIntensity`,
+  `EmissiveMap`, `EmissiveRepeat`, `NewORMMap`, `NewShaderORMMap`,
+  `NewShaderORMMapWithParameters`, `Scene.SetORMMap`, and
+  `Scene.SetEmissiveMap`).
 - Add `Material.Clearcoat`, `Material.ClearcoatRoughness`,
   `Material.SheenColor`, and `Material.SheenRoughness` to both smooth PBR and
-  `PBR` + `Toon` across WebGPU and software renderers, and promote
-  `KHR_materials_clearcoat` and `KHR_materials_sheen` into supported glTF 2.0
-  extensions in `nt3d/mesh/gltf` (accepted in `extensionsRequired`). Clearcoat
-  adds an energy-conserving dielectric top coat (`IOR = 1.5`, `F0 = 0.04`)
-  along the unperturbed geometric surface normal with independent prefiltered
-  GGX environment IBL, direct GGX specular, and quantized cel lacquer
-  highlights over normal-mapped or rough bases; Sheen adds an Estevez & Kulla
-  Charlie microfiber grazing/retroreflective lobe with Neubelt visibility,
+  `PBR` + `Toon` across WebGPU and software renderers. Clearcoat adds an
+  energy-conserving dielectric top coat (`IOR = 1.5`, `F0 = 0.04`) along the
+  unperturbed geometric surface normal with independent prefiltered GGX
+  environment IBL, direct GGX specular, and quantized cel lacquer highlights
+  over normal-mapped or rough bases; Sheen adds an Estevez & Kulla Charlie
+  microfiber grazing/retroreflective lobe with Neubelt visibility,
   directional-albedo base attenuation, ambient cloth sheen, and quantized cel
-  cloth bands. Showcase `coat+sheen` (`e`) in `lights` and coated rain-slick
-  asphalt plus a cloth-sheen pennant in `toon`.
-- Add `ToonStyle.ShadowSoftness` (`0..1`) with continuous separable tent PCF
-  (`sinc²` frequency response across `1.5..4.0` shadow-map texels on
-  directional, spot, and point shadow maps) and decoupled cast-shadow band
-  transitions so large toon-lit scenes smooth shadow-texel staircases across
-  streets without blurring `N·L` cel bands on curved characters or creating
-  mid-band contour rings. Extend `OutlineStyle.Crease` to deforming (skinned,
-  morphed, in-place updated, and single- or instanced-`VertexDisplacement`) and
-  see-through (`Cutout`, `Transmission`, sorted `Transparent`, and Weighted
-  Blended `Frame.OIT`) meshes across both WebGPU and software renderers, with
-  in-place `WriteBuffer` crease reuse on GPU. Showcase soft street shadows
-  (`s`), a refractive/translucent inked transit shelter, and a breeze-animated
-  skinned pennant (`a`) in `toon`, plus crease linework on transparent/OIT
-  glass in `shapes` and deforming rigs in `animate` and `characters`.
+  cloth bands.
+- Update `nt3d/mesh/gltf` to decode glTF 2.0 PBR metallic/roughness, merged
+  occlusion/metallic-roughness ORM maps, emissive textures, and
+  `KHR_materials_clearcoat`, `KHR_materials_sheen`,
+  `KHR_materials_emissive_strength`, `KHR_materials_ior`,
+  `KHR_materials_transmission`, and `KHR_materials_volume` (accepted in
+  `extensionsRequired`).
+- Add `NewHDREnvironment`, a zero-dependency Radiance RGBE (`.hdr` / `.pic`)
+  panorama decoder feeding unclamped `RGBA16Float` radiance into GGX specular
+  IBL, diffuse SH, HDR skies, and `Bloom`, plus `Material.EnvironmentReflect`
+  so reflective (`Reflectivity > 0`) and `PBR` materials can sample
+  `Frame.Environment` reflections when `Frame.EnvironmentBackgroundOnly` keeps
+  diffuse environment SH lighting off for the rest of the scene.
+
+### Lighting, OIT, MSAA, and post-processing
+
+- Add `SpotLight` (`InnerCone`, `OuterCone`, and single-face perspective shadow
+  maps on GPU and software), scene-graph punctual light nodes
+  (`Scene.SetNodeLight`, `Lights`, `NodeLight`, `SceneLights`), and glTF
+  `KHR_lights_punctual` decoding in `nt3d/mesh/gltf`. Add `RotationX` and
+  `RotationY` to `nt3d/math`.
+- Add McGuire & Bavoil Weighted Blended Order-Independent Transparency
+  (`Frame.OIT` and `nt3dwidget` `WithOIT` / `SetOIT` / `OIT`), compatible with
+  1× and 4× WebGPU MSAA and software float accumulation.
+- Add `Frame.MSAA` (4× WebGPU multisample anti-aliasing across scene passes,
+  transmission captures, and `GPUSession.Pick` depth reads, shared across
+  `GPUSession.NewView`) and `Frame.PostProcess` (`SSAO`, HDR `Bloom`,
+  `Exposure`, `ReinhardToneMap` / `ACESToneMap`, and `Vignette`) on GPU with
+  tiered CPU software fallbacks and `nt3dwidget` `WithMSAA` / `SetMSAA` and
+  `WithEffects` / `SetEffects`.
+- Showcase PBR, ORM/emissive, `coat+sheen`, `HDR IBL`, `spotlights`, MSAA, and
+  post-processing in `lights`, intersecting-glass OIT (`m` and `t`) in `shapes`,
+  an animated `KHR_lights_punctual` **Spotlight stage** scene in `animate`, and
+  matching controls in `fur`, `mipmaps`, and `examples/gogpu`.
+
+### Shader hooks, dynamic meshes, and level of detail
+
 - Add data-driven shader hooks with pure-Go fallbacks for vertex displacement
   and per-fragment material color: `VertexDisplacement` (`NewVertexDisplacement`,
   `NewVertexDisplacementWithParameters`, `WithParameters`, `WithMaxDisplacement`,
@@ -40,79 +92,83 @@
   instancing; software rendering, directional/point/spot shadow maps (including
   procedural `Cutout` shadows), silhouette outlines, wireframe, and `Scene.Pick`
   / `GPUSession.Pick` evaluate the Go fallbacks in parity. Wire live wave
-  displacement and crest material shader hooks (`w`) into the `procedural` and
-  `terrain` demos.
+  displacement and crest material shader hooks (`w`) into `procedural` and
+  `terrain`.
 - Add `Scene.SetNodeVertices`, `Scene.UpdateNodeVertices`,
   `Scene.SetNodeVerticesWithTangents`, and `(*nt3dwater.WaveTile).Apply` for
   in-place fixed-topology mesh updates that preserve indices, UVs, and
   materials, skip redundant per-frame `O(V + I)` validation and smooth-grid
   outline-normal maps, and overwrite existing WebGPU vertex buffers via
-  `WriteBuffer` without buffer reallocations. Add `Material.EnvironmentReflect`
-  so reflective (`Reflectivity > 0`) and `PBR` materials can sample
-  `Frame.Environment` reflections when `Frame.EnvironmentBackgroundOnly` keeps
-  diffuse environment SH lighting off for the rest of the scene, and add
-  `Scene.SetMaterial` to replace or clear materials atomically across indexed
-  meshes in a subtree (including `SharedGeometry`, `LOD` tiers, and deformed
-  meshes) while preserving GPU mesh buffers when vertex-baked fields are
-  unchanged. Wire all three into the `water` demo.
-- Add `NewHDREnvironment` (zero-dependency Radiance RGBE `.hdr` / `.pic`
-  panorama decoder feeding unclamped `RGBA16Float` radiance into GGX specular
-  IBL, diffuse SH, HDR skies, and `Bloom`), `SpotLight` (`InnerCone`,
-  `OuterCone`, and single-face perspective shadow maps on GPU and software),
-  scene-graph punctual light nodes (`Scene.SetNodeLight`, `Lights`, `NodeLight`,
-  `SceneLights`) with glTF `KHR_lights_punctual` decoding in `nt3d/mesh/gltf`,
-  and McGuire & Bavoil Weighted Blended Order-Independent Transparency
-  (`Frame.OIT` and `nt3dwidget` `WithOIT` / `SetOIT` / `OIT`, compatible with
-  1× and 4× WebGPU MSAA and software float accumulation). Wire `HDR IBL` and
-  `spotlights` into `lights`, an intersecting-glass OIT showcase (`m` and `t`)
-  into `shapes`, an animated `KHR_lights_punctual` **Spotlight stage** scene
-  into `animate`, `RotationX` / `RotationY` into `nt3d/math`, and `.hdr`
-  panorama loading, `Spotlights`, and intersecting crystal-glass `OIT` into
-  `examples/gogpu`.
-- **Breaking:** move Gerstner wave surfaces, wake impulses, tiled water meshes,
-  and Archimedes hull buoyancy, drag, and planing evaluation out of the root
-  `nt3d` package into `nimbleterminal.dev/nt3d/water` (`package nt3dwater`),
-  renaming `WaterSurface`, `WaterBodyState`, and `WaterForces` to `Surface`,
-  `BodyState`, and `Forces`.
-- **Breaking:** move shell-fur and silhouette-fin builders out of the root
-  `nt3d` package into `nimbleterminal.dev/nt3d/fur` (`package nt3dfur`) as
-  `Config`, `Coat`, and `New`. Expose `Texture.NRGBAAt` and `Texture.Sample`
-  for straight-alpha texel reads and bilinear UV sampling.
-- Add Cook-Torrance GGX metallic/roughness PBR, packed linear ORM maps,
-  roughness-filtered specular IBL, and HDR emissive materials to `Material` on
-  both WebGPU and software renderers (`PBR`, `Metallic`, `Roughness`, `IOR`,
-  `ORMMap`, `ORMRepeat`, `OcclusionStrength`, `Emissive`, `EmissiveIntensity`,
-  `EmissiveMap`, `EmissiveRepeat`, `NewORMMap`, `NewShaderORMMap`,
-  `NewShaderORMMapWithParameters`, `Scene.SetORMMap`, and
-  `Scene.SetEmissiveMap`). Update `nt3d/mesh/gltf` to decode real PBR
-  metallic/roughness, merged occlusion/metallic-roughness ORM maps, emissive
-  textures, and `KHR_materials_emissive_strength`, `KHR_materials_ior`,
-  `KHR_materials_transmission`, and `KHR_materials_volume`, and showcase PBR
-  and emissive materials in `lights` (`e` material cycle) and `examples/gogpu`.
-- Add `Frame.MSAA` (4× WebGPU multisample anti-aliasing across scene passes,
-  transmission captures, and `GPUSession.Pick` depth reads, shared across
-  `GPUSession.NewView`) and `Frame.PostProcess` (`SSAO`, HDR `Bloom`,
-  `Exposure`, `ReinhardToneMap` / `ACESToneMap`, and `Vignette`) on GPU with
-  tiered CPU software fallbacks and `nt3dwidget` `WithMSAA` / `SetMSAA` and
-  `WithEffects` / `SetEffects`. Wire AA and post-processing controls into the
-  demos (`--msaa`, `--effect`, `fur`, `mipmaps`, `lights`) and `examples/gogpu`
-  (`-msaa`, `-post`, `4`/`M`, `F12`/`X`).
+  `WriteBuffer` without buffer reallocations. Add `Scene.SetMaterial` to replace
+  or clear materials atomically across indexed meshes in a subtree while
+  preserving GPU mesh buffers when vertex-baked fields are unchanged. Wire these
+  into `water`.
 - Add `Scene.SetLOD` and `LODLevel` for multi-tier distance-based level of
   detail with shared GPU buffers and BVH pick indexes across instances,
-  per-tier outline overrides, and optional far-distance cutoffs.
-- Add `Frame.Stats` and `FrameStats` to report total, visible, and
-  frustum-drawn instances, draw batches, triangles, lines, and splat-budgeted
-  points. Update the `forest` demo to showcase three-tier tree LODs (`l` to
-  cycle `LOD on`, `LOD tint`, and `LOD off`) and live `Frame.Stats` counters.
-- Add `Camera.Forward` and `Camera.Basis` to return the camera's world-space
-  viewing direction and orthonormal right/up/forward basis alongside
-  `Camera.Eye`.
+  per-tier outline overrides, and optional far-distance cutoffs, plus
+  `Frame.Stats` / `FrameStats` (`forest` `l` toggle) and `Camera.Forward` /
+  `Camera.Basis`.
+
+### Stylized toon shading and crease lines
+
+- Add `ToonStyle.ShadowSoftness` (`0..1`) with continuous separable tent PCF
+  (`sinc²` frequency response across `1.5..4.0` shadow-map texels on
+  directional, spot, and point shadow maps) and decoupled cast-shadow band
+  transitions so large toon-lit scenes smooth shadow-texel staircases across
+  streets without blurring `N·L` cel bands on curved characters or creating
+  mid-band contour rings.
+- Extend `OutlineStyle.Crease` to deforming (skinned, morphed, in-place updated,
+  and single- or instanced-`VertexDisplacement`) and see-through (`Cutout`,
+  `Transmission`, sorted `Transparent`, and Weighted Blended `Frame.OIT`) meshes
+  across both WebGPU and software renderers, with in-place `WriteBuffer` crease
+  reuse on GPU.
+- Expand `toon` with coated rain-slick asphalt, soft street shadows (`s`), a
+  refractive/translucent inked transit shelter, and a breeze-animated skinned
+  cloth-sheen pennant (`a`), plus crease linework on transparent/OIT glass in
+  `shapes` and deforming rigs in `animate` and `characters`.
+
+### Declarative camera paths and float64 world origins
+
+- Add zero-dependency pure-`float64` camera path packages (`nt3d/cam`,
+  `nt3d/cam/ease`, `nt3d/cam/curve`, `nt3d/cam/frames`, and `nt3d/cam/spec`
+  with JSON Schema `ntcamera.schema.json`): precompiled immutable `Path` values
+  evaluate `CameraState` (`Pos`, `Rot`, `FovY`, `OrthoScale`, `FocusDist`,
+  `Aperture`, `Near`, `Far`) in ~0.2 µs with zero heap allocations at any
+  `time.Duration` (`Eval` / `EvalWith` / `EvalOverrides`, `Blend`, `Switch`,
+  `FitRect`), supporting centripetal Catmull-Rom, cubic Bézier, clamped/periodic
+  B-splines, Gauss-Legendre arc-length parameterization, `C¹` `Squad` and `Slerp`
+  orientation, Hanson & Ma Bishop parallel-transport tangent steering, causal
+  look crossfades (`target`, `tangent`, `orient`, `path`), banking `roll`,
+  keyframed `fov` / `focal_mm` / `ortho_scale` / depth-of-field hints, timeline
+  markers, and YAML 1.2 + JSON parsing and round-trip marshaling.
+- Add `Camera.Origin`, `Camera.WorldEye`, `Frame.Origin`, `Scene.SetNodeOrigin`,
+  `Scene.NodeOrigin`, `Scene.NodeWorldPosition`, and `Hit.WorldPosition` so
+  scenes and cameras placed at geographic or astronomical `float64` coordinates
+  subtract `Camera.Origin` in `float64` before constructing `float32` render,
+  shadow, and picking transforms, eliminating `float32` vertex and depth jitter
+  far from `(0, 0, 0)` with zero overhead when origins are unset.
+- Add `CameraFromState`, `StateFromCamera`, `SceneResolver` (resolving
+  `"node:<name>"` world positions and `"path:<name>"` trajectories), and
+  `AppendCameraPathOverlay` (`CameraPathOverlayOptions` /
+  `DefaultCameraPathOverlayOptions`) for 3D spline polylines, control points,
+  Bézier tangents, marker ticks, target rays, and live camera frustum pyramids.
+- Add the `campath` demo (`task campath`, browser gallery #20, and
+  `examples/gogpu`) showcasing a banked canyon flythrough, a closed orbit with
+  focal-length pull, causal camera switching, bidirectional scrubbing, and an
+  interactive director camera with live 3D frustum and spline overlays.
+
+### Reliability, viewer, and documentation
+
+- Add `FuzzNewHDREnvironment` for Radiance `.hdr` decoding with pre-allocation
+  scanline bounds checks and `FuzzParse` for `nt3d/cam/spec` YAML/JSON round-trip
+  validation, and include `examples/gogpu` in `task ci` builds, race tests, and
+  `go vet`.
 - Document remaining exported symbols across all library packages, and separate
   file copyright headers from `package` clauses so `go doc` and `pkg.go.dev`
   render clean package overviews.
 - Split the `examples/gogpu` desktop viewer into focused source files,
   consolidate benchmark artifacts under `docs/performance/`, add
-  `CODE_OF_CONDUCT.md`, and refresh `README.md`.
+  `CODE_OF_CONDUCT.md`, and refresh `README.md` and the Hugo guide.
 
 ----
 

@@ -53,6 +53,7 @@ type demo struct {
 	large             *largeScene
 	fur               *furScene
 	toon              *toonScene
+	camPath           *camPathScene
 	mipmaps           *mipScene
 	forest            *forestScene
 	lights            *lightScene
@@ -119,11 +120,12 @@ const (
 	sceneAABB
 	sceneWater
 	sceneToon
+	sceneCamPath
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil && d.toon == nil
+	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil
 }
 
 type quitMsg struct{}
@@ -256,7 +258,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, phaseTick()
 		}
-		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil && d.toon == nil) {
+		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil) {
 			return d, phaseTick()
 		}
 		d.animationTime += elapsed
@@ -285,6 +287,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.stepAABB()
 		case d.toon != nil:
 			err = d.stepToon()
+		case d.camPath != nil:
+			err = d.stepCamPath(elapsed)
 		default:
 			err = d.updatePlasma()
 		}
@@ -293,7 +297,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.animate = false
 			return d, phaseTick()
 		}
-		return d, tea.Batch(d.followSampleCamera(), d.view.Refresh(), phaseTick())
+		return d, tea.Batch(d.followSampleCamera(), d.followCamPath(), d.view.Refresh(), phaseTick())
 	case paletteTickMsg:
 		if d.meshes != nil && d.meshes.palette.building {
 			return d, paletteTick()
@@ -337,6 +341,9 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, d.view.Refresh()
 			}
 		}
+		if d.camPath != nil && d.camPath.riding && detachesSampleCamera(v) {
+			d.detachCamPath()
+		}
 		var err error
 		switch v.String() {
 		case "q", "ctrl+c":
@@ -346,6 +353,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, tea.Sequence(d.view.Dispose(), tea.Quit)
 		case "enter":
+			if d.camPath != nil {
+				d.camPath.playhead = 0
+				if err := d.stepCamPathNodes(0); err != nil {
+					d.status = err.Error()
+				}
+				return d, tea.Batch(d.followCamPath(), d.view.Refresh())
+			}
 			if d.animatedSamples != nil {
 				return d, d.restartAnimation()
 			}
@@ -423,6 +437,12 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.fog = !d.fog
 			return d, d.view.Refresh()
 		case "b", "x":
+			if d.camPath != nil {
+				if v.String() == "b" {
+					d.camPath.overlay = !d.camPath.overlay
+				}
+				break
+			}
 			if d.toon != nil {
 				if v.String() == "b" {
 					err = d.toggleToonOutlines()
@@ -571,6 +591,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, nil
 			}
 		case "[", "]":
+			if d.camPath != nil {
+				step := 1
+				if v.String() == "[" {
+					step = -1
+				}
+				return d, d.cycleCamPathPreset(step)
+			}
 			if d.animatedSamples != nil {
 				step := 1
 				if v.String() == "[" {
@@ -587,6 +614,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, d.stepSample(step)
 		case ",", ".":
+			if d.camPath != nil {
+				delta := 500 * time.Millisecond
+				if v.String() == "," {
+					delta = -delta
+				}
+				return d, d.scrubCamPath(delta)
+			}
 			if d.animatedSamples == nil {
 				return d, nil
 			}
@@ -632,6 +666,9 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.angle += math.Pi / 12
 			err = d.scene.SetTransform(d.group, nt3dmath.RotationZ(d.angle))
 		case "k":
+			if d.camPath != nil {
+				return d, d.toggleCamPathView()
+			}
 			if d.animatedSamples != nil && len(d.animatedSamples.cameras) > 0 {
 				return d, d.cycleSampleCamera()
 			}
@@ -716,6 +753,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	if d.toon != nil {
 		d.decorateToon(f)
 	}
+	if d.camPath != nil {
+		d.decorateCamPath(f)
+	}
 	if d.cloud != nil {
 		d.captureCloudView(f)
 	}
@@ -758,6 +798,11 @@ func (d *demo) View() tea.View {
 	}
 	if d.toon != nil {
 		v.Content = d.zones.Scan(d.toonView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.camPath != nil {
+		v.Content = d.zones.Scan(d.camPathView(v.Content))
 		v.AltScreen = true
 		return v
 	}
@@ -968,6 +1013,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupToon(); err != nil {
 			return err
 		}
+	case sceneCamPath:
+		if err = d.setupCamPath(); err != nil {
+			return err
+		}
 	case sceneMipmaps:
 		if err = d.setupMipmaps(); err != nil {
 			return err
@@ -1057,6 +1106,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
 	case sceneToon:
 		toonCamera(&camera)
+	case sceneCamPath:
+		camPathDirectorCamera(&camera)
 	}
 	camera.AutoRotate = proceduralDefault
 	d.kittySession = ntpicture.NewTerminalSession(ntpicture.TerminalOptions{FrameEdits: frameCapability})
@@ -1089,6 +1140,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		d.frameAnimatedSample()
 	case sceneModels:
 		d.frameSample()
+	case sceneCamPath:
+		d.followCamPath()
 	}
 	if *effectName != "none" {
 		matched := false

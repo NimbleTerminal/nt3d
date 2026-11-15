@@ -88,6 +88,8 @@ func (d *demo) sceneKeys() (string, keys) {
 		return "mipmaps", keys{[]key.Binding{bind("m", "m", "filtering"), bind("t", "t", "texture"), bind("x", "x", "AA")}}
 	case d.toon != nil:
 		return "toon", keys{[]key.Binding{bind("t", "t", "toon"), bind("n", "n", "bands"), bind("b", "b", "outlines"), bind("s", "s", "shadows"), bind("a", "a", "breeze")}}
+	case d.camPath != nil:
+		return "campath", keys{[]key.Binding{bind("[", "[", "prev path"), bind("]", "]", "next path"), bind("k", "k", "camera"), bind(",", ",", "scrub -"), bind(".", ".", "scrub +"), bind("b", "b", "overlay"), bind("a", "a", "play/pause"), bind("enter", "enter", "restart")}}
 	case d.fur != nil:
 		return "fur", keys{[]key.Binding{bind("a", "a", "wind"), bind("s", "s", "shells"), bind("l", "l", "length"), bind("f", "f", "fins"), bind("m", "m", "mipmaps"), bind("t", "t", "toon"), bind("x", "x", "AA"), bind("e", "e", "effect")}}
 	case d.large != nil:

@@ -30,9 +30,10 @@ Frames skip what the camera can't see. Every renderer, and picking, passes over 
 - `Camera.Fit(bounds, aspect)` frames the bounds, keeping the view direction.
 - `LookAt(eye, target)` places the camera and sets Distance to the eye-to-target distance.
 - `LookDirection(eye, forward)` places the camera while preserving Distance and automatic clipping scale, useful for first-person and chase cameras.
-- `Eye()`, `Forward()`, and `Basis()` return the camera's world-space position and right, up, and forward unit vectors.
+- `Eye()`, `Forward()`, and `Basis()` return the camera's world-space position and right, up, and forward unit vectors; `WorldEye()` returns the double-precision `[3]float64` eye position when `Camera.Origin` is set.
 - Orbit, pan, and zoom move it as the widget's mouse controls do, and `Step(elapsed, idle)` turns it automatically.
 - `AABB.Normalization` instead moves the scene to suit the camera.
+- **Declarative camera paths (`nt3d/cam` and `nt3d/cam/spec`).** Compile YAML or JSON `camera_path` v1 specs once via `nt3dcamspec.ParseYAML` / `ParseJSON` into an immutable `*nt3dcam.Path` (arc-length-parameterized Catmull-Rom, Bézier, or B-spline curves, Hanson & Ma Bishop parallel transport, `C¹` SQUAD orientation, causal `look` crossfades across `"node:<name>"` / `"path:<name>"` / `tangent` / `orient` modes, banking `roll`, keyframed `fov` / `focal_mm` / `ortho_scale`, and `Switch` / `FitRect`). Evaluate any `time.Duration` in pure `float64` with zero allocations (`path.EvalWith(t, nt3d.SceneResolver(scene, paths))`), convert to an `nt3d.Camera` via `nt3d.CameraFromState(state)` (preserving `Camera.Origin` in `float64` for jitter-free geographic worlds, with `StateFromCamera` as the inverse), and visualize the 3D spline, control points, target ray, and live frustum pyramid on any frame with `nt3d.AppendCameraPathOverlay(&frame, path, t, opts)`. See the [camera paths demo](../demos/#camera-paths).
 
 Automatic clipping runs from `Distance * 0.05 / 3.4` to `Distance * 200 / 3.4`.
 Positive `Near` and `Far` override their respective planes. A positive `Near`
@@ -78,8 +79,8 @@ dc.MarkPreserveContent()
 - `target.Load` preserves existing pixels inside the resolved region and alpha-composites the 3D scene over them (for example, with `frame.Background = color.RGBA{0, 0, 0, 0}` and `frame.Environment = nil`).
 - `session.Close()` releases only nt3d's pipelines, buffers, and textures, leaving the caller's `*wgpu.Device` open.
 
-Run `task gogpu` (or `task gogpu -- -demo water` for any of the 18 gallery demos, or `task gogpu -- -file scene.sog` for any `.glb`, `.gltf`, `.sog`, `.spz`, `.ply`, `.stl`, `.obj`, or `.3mf` file) in `examples/gogpu` for a complete native desktop application:
-- **18 gallery demos & file viewer**: switch between all 18 gallery demos with `[` / `]` or the interactive top-left HUD dropdown menu (`M`), or drag and drop 3D model and Gaussian splat files directly onto the window.
+Run `task gogpu` (or `task gogpu -- -demo water` for any of the 20 gallery demos, or `task gogpu -- -file scene.sog` for any `.glb`, `.gltf`, `.sog`, `.spz`, `.ply`, `.stl`, `.obj`, or `.3mf` file) in `examples/gogpu` for a complete native desktop application:
+- **20 gallery demos & file viewer**: switch between all 20 gallery demos with `[` / `]` or the interactive top-left HUD dropdown menu (`M`), or drag and drop 3D model and Gaussian splat files directly onto the window.
 - **Interactive 3D gizmo & orientation triad**: click to pick with `session.Pick` (with 3D callout labels, `DynamicLines`, and selection outlines), press `G` to cycle the 3D transform gizmo (`Translate` → `Rotate` → `Scale` → `Off`) and drag axes or the uniform-scale center handle to manipulate picked nodes, and click the top-right 3D Camera Orientation Triad (`+X`, `-X`, `+Y`, `-Y`, `+Z`, `-Z`) to snap the camera to cardinal views.
 - **Lighting, post-processing, capture & multi-view**: switch lighting presets (`L`/`F7`), environment skies (`E`/`F6`), shadows (`K`/`F8`), 4× GPU MSAA (`M`/`4`), supersampling (`S`), and GPU post-processing presets (`X`/`F12`: Studio, Bloom+ACES, SSAO, Cinema Warm, Reinhard), capture PNG screenshots (`P`/`F9`) or animated GIF turntables (`T`/`F10`) via `RenderToImage` / `RenderToImageInto`, and toggle the 2D HUD (`I`/`F1`), animation clips (`C`), Gaussian SH and splat budget controls (`H`, `U`/`Y`/`Z`), picture-in-picture sub-viewport (`V`/`F2`), `Load` compositing (`B`/`F3`), and a second window sharing the same GPU device (`2`/`F4`).
 

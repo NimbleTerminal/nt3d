@@ -204,7 +204,7 @@ func TestToonDemo(t *testing.T) {
 
 func TestToonDemoInGallery(t *testing.T) {
 	names := Names()
-	if len(names) != 19 || names[18] != "toon" {
+	if len(names) < 19 || names[18] != "toon" {
 		t.Fatalf("names %v", names)
 	}
 	r, err := NewRunner("toon", models.Toon, nil, nt3dmesh.ZUp, false)
