@@ -695,3 +695,160 @@ func itoaTest(n int) string {
 	}
 	return string(buf[i:])
 }
+
+func TestSceneSetLODReferenceBounds(t *testing.T) {
+	var (
+		tier0 = color.RGBA{220, 40, 40, 255}
+		tier1 = color.RGBA{40, 200, 60, 255}
+	)
+	box := func(min, size nt3dmath.Vec3, c color.RGBA) Geometry {
+		return Geometry{Boxes: []Box{{Min: min, Size: size, Color: c}}}
+	}
+	// Part a is a small box at the origin; part b is a slab 100 m east, so
+	// their own bounds give very different camera distances.
+	aMin, aSize := nt3dmath.Vec3{X: -1, Y: -1, Z: -1}, nt3dmath.Vec3{X: 2, Y: 2, Z: 2}
+	bMin, bSize := nt3dmath.Vec3{X: 100, Y: -1, Z: -1}, nt3dmath.Vec3{X: 100, Y: 2, Z: 2}
+	levels := func(min, size nt3dmath.Vec3) []LODLevel {
+		return []LODLevel{
+			{MaxDistance: 20, Geometry: box(min, size, tier0)},
+			{MaxDistance: 40, Geometry: box(min, size, tier1)},
+		}
+	}
+
+	s := NewScene()
+	chunk, err := s.Add(Root, "chunk")
+	check(t, err)
+	a, err := s.Add(chunk, "a")
+	check(t, err)
+	b, err := s.Add(chunk, "b")
+	check(t, err)
+	plain, err := s.Add(chunk, "plain")
+	check(t, err)
+	check(t, s.SetNodeGeometry(plain, box(aMin, aSize, tier0)))
+	check(t, s.SetLOD(a, levels(aMin, aSize)))
+	check(t, s.SetLOD(b, levels(bMin, bSize)))
+
+	camAt := func(x float32) Camera {
+		c := DefaultCamera()
+		c.Projection = Perspective
+		return c.LookAt(nt3dmath.Vec3{X: x}, nt3dmath.Vec3{})
+	}
+	// state reports the tier color drawn for id, or the zero color when hidden.
+	state := func(x float32, id NodeID) color.RGBA {
+		t.Helper()
+		f, err := s.Frame(camAt(x), 64, 64)
+		check(t, err)
+		for i, in := range f.Instances {
+			if in.Node == id {
+				if !in.Visible {
+					return color.RGBA{}
+				}
+				return f.Geometry[i].Boxes[0].Color
+			}
+		}
+		t.Fatalf("node %d missing from frame", id)
+		return color.RGBA{}
+	}
+
+	// Own bounds: at x=-10 a is 9 m away (tier 0) but b is 109 m away (hidden).
+	if ca, cb := state(-10, a), state(-10, b); ca != tier0 || cb != (color.RGBA{}) {
+		t.Fatalf("own bounds at -10: a=%v b=%v, want tier0 and hidden", ca, cb)
+	}
+
+	// Errors: no LOD, root, unknown node, invalid bounds; each leaves the node unchanged.
+	var ref nt3dmath.AABB
+	ref.Include(nt3dmath.Vec3{X: -1, Y: -1, Z: -1})
+	ref.Include(nt3dmath.Vec3{X: 1, Y: 1, Z: 1})
+	// Min and Max are exported, so a valid box can still be made non-finite.
+	badNaN, badInf := ref, ref
+	badNaN.Min.X = float32(math.NaN())
+	badInf.Max.X = float32(math.Inf(1))
+	for name, err := range map[string]error{
+		"no LOD":    s.SetLODReferenceBounds(plain, ref),
+		"root":      s.SetLODReferenceBounds(Root, ref),
+		"unknown":   s.SetLODReferenceBounds(NodeID(9999), ref),
+		"empty box": s.SetLODReferenceBounds(a, nt3dmath.AABB{}),
+		"NaN":       s.SetLODReferenceBounds(a, badNaN),
+		"Inf":       s.SetLODReferenceBounds(a, badInf),
+	} {
+		if err == nil {
+			t.Errorf("%s: SetLODReferenceBounds succeeded, want error", name)
+		}
+	}
+	if cb := state(-10, b); cb != (color.RGBA{}) {
+		t.Fatalf("failed calls changed b: %v", cb)
+	}
+
+	// Shared reference bounds: both parts now switch together across a sweep,
+	// although b's own bounds are 100 m further east.
+	rev := s.Revision()
+	check(t, s.SetLODReferenceBounds(a, ref))
+	check(t, s.SetLODReferenceBounds(b, ref))
+	if s.Revision() == rev {
+		t.Fatal("SetLODReferenceBounds did not advance Revision")
+	}
+	for _, c := range []struct {
+		x    float32 // eye X; distance to ref is |x|-1
+		want color.RGBA
+	}{
+		{-5, tier0}, {-15, tier0}, {-20, tier0}, {-22, tier1}, {-35, tier1}, {-41, tier1}, {-42, color.RGBA{}}, {-60, color.RGBA{}}, {-30, tier1}, {-10, tier0},
+	} {
+		if ca, cb := state(c.x, a), state(c.x, b); ca != c.want || cb != c.want {
+			t.Fatalf("shared bounds at x=%g: a=%v b=%v, want both %v", c.x, ca, cb, c.want)
+		}
+	}
+
+	// Bounds are measured through the node's world transform: moving the
+	// chunk 100 m west brings the reference box to x=-100, so the eye at the
+	// origin is 99 m from it.
+	check(t, s.SetTransform(chunk, nt3dmath.Translation(nt3dmath.Vec3{X: -100})))
+	if ca, cb := state(0, a), state(0, b); ca != (color.RGBA{}) || cb != (color.RGBA{}) {
+		t.Fatalf("translated chunk: a=%v b=%v, want both hidden", ca, cb)
+	}
+	check(t, s.SetTransform(chunk, nt3dmath.Identity()))
+
+	// SetLOD clears the reference bounds: b is back to its own distance.
+	check(t, s.SetLOD(b, levels(bMin, bSize)))
+	if cb := state(-10, b); cb != (color.RGBA{}) {
+		t.Fatalf("after SetLOD b=%v, want own bounds (hidden)", cb)
+	}
+}
+
+func TestSceneSetLODReferenceBoundsResetsHysteresis(t *testing.T) {
+	s := NewScene()
+	check(t, s.SetLODHysteresis(0.1))
+	id, err := s.Add(Root, "item")
+	check(t, err)
+	tier0, tier1 := color.RGBA{220, 40, 40, 255}, color.RGBA{40, 200, 60, 255}
+	g := func(c color.RGBA) Geometry {
+		return Geometry{Boxes: []Box{{Min: nt3dmath.Vec3{X: -1, Y: -1, Z: -1}, Size: nt3dmath.Vec3{X: 2, Y: 2, Z: 2}, Color: c}}}
+	}
+	check(t, s.SetLOD(id, []LODLevel{{MaxDistance: 20, Geometry: g(tier0)}, {MaxDistance: 40, Geometry: g(tier1)}}))
+	var ref nt3dmath.AABB
+	ref.Include(nt3dmath.Vec3{X: -1, Y: -1, Z: -1})
+	ref.Include(nt3dmath.Vec3{X: 1, Y: 1, Z: 1})
+	check(t, s.SetLODReferenceBounds(id, ref))
+
+	at := func(dist float32) color.RGBA {
+		t.Helper()
+		c := DefaultCamera()
+		c.Projection = Perspective
+		f, err := s.Frame(c.LookAt(nt3dmath.Vec3{X: -(dist + 1)}, nt3dmath.Vec3{}), 64, 64)
+		check(t, err)
+		return f.Geometry[0].Boxes[0].Color
+	}
+	// Start inside the near tier, then step into the deadband (20, 22]: the
+	// hysteresis memory keeps tier 0.
+	if got := at(19); got != tier0 {
+		t.Fatalf("at 19: %v, want tier0", got)
+	}
+	if got := at(21); got != tier0 {
+		t.Fatalf("at 21 in the deadband: %v, want tier0 held by hysteresis", got)
+	}
+	// Setting reference bounds (even unchanged) clears the memory, so the same
+	// distance now selects its tier without hysteresis.
+	check(t, s.SetLODReferenceBounds(id, ref))
+	if got := at(21); got != tier1 {
+		t.Fatalf("at 21 after reset: %v, want tier1", got)
+	}
+}

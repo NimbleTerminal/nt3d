@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add `Scene.SetLODReferenceBounds`, which gives a `Scene.SetLOD` node shared
+  reference bounds (in the node's local space) to measure its distance from
+  instead of its own tier bounds, so the separate parts of one chunk switch
+  tiers together. It resets the node's LOD hysteresis; `SceneAsset` already did
+  this internally for multi-part props.
+
 ## v0.11.0 (2026-11-16)
 
 This release completes pure-Go, WASM-safe glTF 2.0 and OGC 3D Tiles 1.1 asset

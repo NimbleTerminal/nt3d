@@ -126,6 +126,31 @@ func (s *Scene) setLODRefBounds(id, refNode NodeID, b nt3dmath.AABB) error {
 	return nil
 }
 
+// SetLODReferenceBounds makes a node measure its LOD distance from b instead of
+// from the bounds of its own tiers, so several nodes given the same b switch
+// tiers together at the same camera distance. Use it for the parts of one
+// chunk (terrain, roads, buildings) whose tiers must never disagree.
+//
+// b is expressed in the node's local space and is carried to the world by the
+// node's own world transform, like the bounds it replaces. Nodes that share b
+// therefore share a reference box only when they share a world transform, for
+// example siblings under one parent with identical local transforms; give each
+// node bounds in its own frame otherwise. b must be finite and valid, which
+// means built with nt3dmath.AABB.Include (a struct literal is empty).
+//
+// The node must already have LOD levels from Scene.SetLOD, and calling SetLOD
+// again clears the reference bounds. Per-node LOD hysteresis memory is reset,
+// so the next frame selects a tier without hysteresis. Scene.LODBias and
+// Scene.LODHysteresis apply as usual. Errors leave the node unchanged.
+func (s *Scene) SetLODReferenceBounds(id NodeID, b nt3dmath.AABB) error {
+	// refNode 0: measure through the node's own world transform.
+	if err := s.setLODRefBounds(id, 0, b); err != nil {
+		return err
+	}
+	s.changed(false, false)
+	return nil
+}
+
 func (s *Scene) lodBiasValue() float32 {
 	if s.lodBias == 0 {
 		return 1
