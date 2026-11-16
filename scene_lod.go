@@ -106,9 +106,23 @@ func (s *Scene) SetLOD(id NodeID, levels []LODLevel) error {
 		}
 	}
 	n.deformation = nil
-	n.lod, n.lodBounds, n.lodEpoch, n.lodTier = built, lodBounds, 0, 0
+	n.lod, n.lodBounds, n.lodRefBounds, n.lodRefNode, n.lodDispPad, n.lodEpoch, n.lodTier = built, lodBounds, nt3dmath.AABB{}, 0, 0, 0, 0
 	n.geometry, n.shared, n.geometryRevision, n.pickIndex = built[0].geometry, built[0].shared, built[0].geometryRevision, nil
 	s.changed(true, true)
+	return nil
+}
+
+func (s *Scene) setLODRefBounds(id, refNode NodeID, b nt3dmath.AABB) error {
+	n, ok := s.nodes[id]
+	if !ok || len(n.lod) == 0 {
+		return fmt.Errorf("nt3d: node %d has no LOD levels", id)
+	}
+	if !b.IsValid() || !validFloat(b.Min.X, b.Min.Y, b.Min.Z, b.Max.X, b.Max.Y, b.Max.Z) {
+		return errors.New("nt3d: invalid LOD reference bounds")
+	}
+	n.lodRefBounds = b
+	n.lodRefNode = refNode
+	n.lodEpoch = 0
 	return nil
 }
 
@@ -220,7 +234,16 @@ func hysteresisLower(d, band float32) float32 {
 
 func (n *sceneNode) selectLOD(world nt3dmath.Mat4, eye nt3dmath.Vec3, bias, band float32, epoch uint64, visible bool) (*lodLevel, bool) {
 	var dist float32
-	if box := n.lodBounds.Transformed(world); box.IsValid() {
+	refBounds := n.lodBounds
+	if n.lodRefBounds.IsValid() {
+		refBounds = n.lodRefBounds
+		if n.lodDispPad > 0 {
+			p := nt3dmath.Vec3{X: n.lodDispPad, Y: n.lodDispPad, Z: n.lodDispPad}
+			refBounds.Include(n.lodRefBounds.Min.Sub(p))
+			refBounds.Include(n.lodRefBounds.Max.Add(p))
+		}
+	}
+	if box := refBounds.Transformed(world); box.IsValid() {
 		dist = aabbDistance(box, eye)
 	} else {
 		d := world.Point(nt3dmath.Vec3{}).Sub(eye)

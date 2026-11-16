@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add multi-LOD asset compilation and `Scene.SetLOD` template support:
+  `AssetNode.LOD`, `AssetNode.LODBounds`, and `AssetNode.LODVariantMaterials`
+  let `SceneAsset.Instantiate` bind shared `LODLevel` chains directly with
+  synchronized multi-part AABB switching and per-tier `Scene.SetMaterialVariant`
+  colorway updates; `(*SceneAsset).WithLOD`, `CombineAssetLOD`,
+  `nt3dmesh.Model.LODAsset`, `Model.AddLODTo`, `nt3dmesh.CombineLOD`, and
+  `nt3dmesh.AddLODModels` compile sibling `*_LOD0..N` `.glb` subtrees (including
+  kitbash packs and showcase-offset previews) or separate per-tier files into
+  instanced `SharedGeometry` LOD assets.
 - Add glTF `KHR_materials_variants` support (`nt3d/mesh/gltf`, accepted in
   `extensionsRequired`), per-instance `Material.BaseColor`, and format-independent
   asset colorway switching (`SceneAsset.Variants`, `AssetNode.VariantMaterials`,

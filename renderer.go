@@ -202,7 +202,11 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 		geom, rev, sg := n.geometry, n.geometryRevision, n.shared
 		world, visible := s.worldRelative(id, frameOrigin), s.visible(id)
 		if len(n.lod) > 0 {
-			lvl, inRange := n.selectLOD(world, f.Eye, lodBias, lodBand, lodEpoch, visible)
+			lodWorld := world
+			if n.lodRefBounds.IsValid() && n.lodRefNode != 0 && s.nodes[n.lodRefNode] != nil {
+				lodWorld = s.worldRelative(n.lodRefNode, frameOrigin)
+			}
+			lvl, inRange := n.selectLOD(lodWorld, f.Eye, lodBias, lodBand, lodEpoch, visible)
 			geom, rev, sg = lvl.geometry, lvl.geometryRevision, lvl.shared
 			visible = visible && inRange
 		}

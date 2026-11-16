@@ -12,9 +12,9 @@ import (
 
 // AssetNode is a reusable hierarchy node. Parent is -1 for a root, otherwise
 // an earlier node index. Skeleton and clip NodeIDs are one-based node indices.
-// Geometry and Shared are mutually exclusive; Shared attaches a SharedGeometry
-// via Scene.SetNodeShared so repeated nodes and repeated Instantiate calls
-// share one GPU mesh upload, instanced draw batch, and BVH pick index.
+// Geometry, Shared, and LOD are mutually exclusive; Shared and Shared-backed
+// LOD levels share one GPU mesh upload, instanced draw batch, and BVH pick
+// index across repeated nodes and repeated Instantiate calls.
 type AssetNode struct {
 	Camera      *Camera
 	Light       *Light
@@ -23,12 +23,21 @@ type AssetNode struct {
 	Local       nt3dmath.Mat4
 	Geometry    *Geometry
 	Shared      *SharedGeometry
+	LOD         []LODLevel
+	LODBounds   nt3dmath.AABB // Optional reference AABB for synchronized multi-part LOD switching.
 	Deformation *Deformation
 	// VariantMaterials optionally maps indices into SceneAsset.Variants to
-	// alternate materials for this triangle mesh node. Unmapped variants (or
+	// alternate materials for this triangle mesh node (or across all non-empty
+	// LOD tiers when LODVariantMaterials is nil). Unmapped variants (or
 	// resetting with SetMaterialVariant(root, "")) restore the node's default
-	// material from Shared or Geometry.
+	// material.
 	VariantMaterials map[int]*Material
+	// LODVariantMaterials optionally supplies per-tier VariantMaterials maps
+	// parallel to LOD (for example when separate per-tier files carry distinct
+	// texture resolutions per LOD level).
+	LODVariantMaterials []map[int]*Material
+
+	lodBoundsParent bool
 }
 
 // SceneAsset is a format-independent scene template. Instantiate remaps all
@@ -54,6 +63,9 @@ type variantBinding struct {
 	defaultShared *SharedGeometry
 	defaultMat    *Material
 	variants      map[int]*Material
+	lodShared     []*SharedGeometry
+	lodDefaults   []*Material
+	lodVariants   []map[int]*Material
 }
 
 type variantInstance struct {
@@ -111,53 +123,130 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 				return nil, e
 			}
 		}
-		if n.Shared != nil && n.Geometry != nil {
-			return nil, errors.New("nt3d: asset node cannot set both Geometry and Shared")
+		hasGeom, hasShared, hasLOD := n.Geometry != nil, n.Shared != nil, len(n.LOD) > 0
+		if (hasGeom && hasShared) || (hasGeom && hasLOD) || (hasShared && hasLOD) {
+			return nil, errors.New("nt3d: asset node cannot set more than one of Geometry, Shared, or LOD")
 		}
-		if n.Shared != nil && n.Deformation != nil {
-			return nil, errors.New("nt3d: shared asset node cannot deform")
+		if (hasShared || hasLOD) && n.Deformation != nil {
+			return nil, errors.New("nt3d: shared or LOD asset node cannot deform")
 		}
-		if n.Shared != nil {
+		if hasLOD {
+			if e = s.SetLOD(id, n.LOD); e != nil {
+				return nil, e
+			}
+			if n.LODBounds.IsValid() {
+				var refNode NodeID
+				if n.lodBoundsParent {
+					refNode = p
+				}
+				if e = s.setLODRefBounds(id, refNode, n.LODBounds); e != nil {
+					return nil, e
+				}
+			}
+		} else if hasShared {
 			if e = s.SetNodeShared(id, n.Shared); e != nil {
 				return nil, e
 			}
-		} else if n.Geometry != nil {
+		} else if hasGeom {
 			if e = s.SetNodeGeometry(id, *n.Geometry); e != nil {
 				return nil, e
 			}
 		}
-		if len(n.VariantMaterials) > 0 {
-			var baseGeom Geometry
-			var defaultMat *Material
-			switch {
-			case n.Shared != nil:
-				baseGeom = n.Shared.geometry
-				defaultMat = cloneMaterial(n.Shared.geometry.Material)
-			case n.Geometry != nil && len(n.Geometry.Indices) > 0:
-				baseGeom = *n.Geometry
-				defaultMat = cloneMaterial(n.Geometry.Material)
-			default:
-				return nil, errors.New("nt3d: material variants require an indexed triangle mesh node")
-			}
-			vmap := make(map[int]*Material, len(n.VariantMaterials))
-			for vi, vm := range n.VariantMaterials {
-				if vi < 0 || vi >= len(a.Variants) {
-					return nil, fmt.Errorf("nt3d: invalid asset material variant index %d", vi)
+		if len(n.LODVariantMaterials) > 0 && !hasLOD {
+			return nil, errors.New("nt3d: LODVariantMaterials requires LOD levels")
+		}
+		if len(n.LODVariantMaterials) > len(n.LOD) {
+			return nil, errors.New("nt3d: LODVariantMaterials exceeds LOD level count")
+		}
+		if len(n.VariantMaterials) > 0 || len(n.LODVariantMaterials) > 0 {
+			cloneAndValidateMap := func(baseGeom Geometry, src map[int]*Material) (map[int]*Material, error) {
+				if len(src) == 0 {
+					return nil, nil
 				}
-				if e := validateMaterial(vm); e != nil {
+				vmap := make(map[int]*Material, len(src))
+				for vi, vm := range src {
+					if vi < 0 || vi >= len(a.Variants) {
+						return nil, fmt.Errorf("nt3d: invalid asset material variant index %d", vi)
+					}
+					if e := validateMaterial(vm); e != nil {
+						return nil, e
+					}
+					if e := validateMaterialForMesh(baseGeom, vm); e != nil {
+						return nil, e
+					}
+					vmap[vi] = cloneMaterial(vm)
+				}
+				return vmap, nil
+			}
+			if hasLOD {
+				sn := s.nodes[id]
+				lodShared := make([]*SharedGeometry, len(sn.lod))
+				lodDefaults := make([]*Material, len(sn.lod))
+				var lodVariants []map[int]*Material
+				if len(n.LODVariantMaterials) > 0 {
+					lodVariants = make([]map[int]*Material, len(sn.lod))
+				}
+				var sharedVMap map[int]*Material
+				hasAnyMesh := false
+				for t := range sn.lod {
+					lg := *sn.lod[t].geometry
+					lodShared[t] = sn.lod[t].shared
+					lodDefaults[t] = cloneMaterial(lg.Material)
+					if len(lg.Indices) == 0 {
+						continue
+					}
+					hasAnyMesh = true
+					if len(n.VariantMaterials) > 0 {
+						vm, e := cloneAndValidateMap(lg, n.VariantMaterials)
+						if e != nil {
+							return nil, e
+						}
+						if sharedVMap == nil {
+							sharedVMap = vm
+						}
+					}
+					if t < len(n.LODVariantMaterials) && len(n.LODVariantMaterials[t]) > 0 {
+						vm, e := cloneAndValidateMap(lg, n.LODVariantMaterials[t])
+						if e != nil {
+							return nil, e
+						}
+						lodVariants[t] = vm
+					}
+				}
+				if !hasAnyMesh {
+					return nil, errors.New("nt3d: material variants require an indexed triangle mesh node")
+				}
+				bindings = append(bindings, variantBinding{
+					node:        id,
+					variants:    sharedVMap,
+					lodShared:   lodShared,
+					lodDefaults: lodDefaults,
+					lodVariants: lodVariants,
+				})
+			} else {
+				var baseGeom Geometry
+				var defaultMat *Material
+				switch {
+				case hasShared:
+					baseGeom = n.Shared.geometry
+					defaultMat = cloneMaterial(n.Shared.geometry.Material)
+				case hasGeom && len(n.Geometry.Indices) > 0:
+					baseGeom = *n.Geometry
+					defaultMat = cloneMaterial(n.Geometry.Material)
+				default:
+					return nil, errors.New("nt3d: material variants require an indexed triangle mesh node")
+				}
+				vmap, e := cloneAndValidateMap(baseGeom, n.VariantMaterials)
+				if e != nil {
 					return nil, e
 				}
-				if e := validateMaterialForMesh(baseGeom, vm); e != nil {
-					return nil, e
-				}
-				vmap[vi] = cloneMaterial(vm)
+				bindings = append(bindings, variantBinding{
+					node:          id,
+					defaultShared: n.Shared,
+					defaultMat:    defaultMat,
+					variants:      vmap,
+				})
 			}
-			bindings = append(bindings, variantBinding{
-				node:          id,
-				defaultShared: n.Shared,
-				defaultMat:    defaultMat,
-				variants:      vmap,
-			})
 		}
 	}
 	remap := func(id NodeID) (NodeID, error) {
@@ -270,6 +359,10 @@ func (s *Scene) SetMaterialVariant(root NodeID, variant string) error {
 		if n == nil {
 			continue
 		}
+		if len(b.lodDefaults) > 0 && len(n.lod) == len(b.lodDefaults) {
+			s.applyLODVariantBinding(b.node, n, &b, idx)
+			continue
+		}
 		target := b.defaultMat
 		if idx >= 0 {
 			if vm, ok := b.variants[idx]; ok {
@@ -291,4 +384,85 @@ func (s *Scene) SetMaterialVariant(root NodeID, variant string) error {
 	}
 	vi.active = variant
 	return nil
+}
+
+func (s *Scene) applyLODVariantBinding(id NodeID, n *sceneNode, b *variantBinding, idx int) {
+	anyChanged, anyVertexChanged, anyTexChanged, lodRebuilt := false, false, false, false
+	for t := range n.lod {
+		lg := n.lod[t].geometry
+		if len(lg.Indices) == 0 {
+			continue
+		}
+		target := b.lodDefaults[t]
+		if idx >= 0 {
+			if t < len(b.lodVariants) && b.lodVariants[t] != nil {
+				if vm, ok := b.lodVariants[t][idx]; ok {
+					target = vm
+				}
+			} else if vm, ok := b.variants[idx]; ok {
+				target = vm
+			}
+		}
+		if materialsEqual(lg.Material, target) && (b.lodShared[t] == nil || n.lod[t].shared != nil) {
+			continue
+		}
+		if !textureBindingsEqual(lg.Material, target) {
+			anyTexChanged = true
+		}
+		if sg := b.lodShared[t]; sg != nil {
+			cand := sg.geometry
+			cand.Material = cloneMaterial(target)
+			cand.Outline = lg.Outline
+			if vertexMaterialEqual(sg.geometry, cand) {
+				cand.retainKeys = lg.retainKeys
+				cand.lodTierPlusOne = t + 1
+				if n.lod[t].shared == nil {
+					lodRebuilt = true
+					anyVertexChanged = true
+				}
+				n.lod[t].geometry = &cand
+				n.lod[t].shared = sg
+				n.lod[t].geometryRevision = sg.id
+				n.lod[t].pickIndex = nil
+				anyChanged = true
+				continue
+			}
+		}
+		g := *lg
+		g.Material = cloneMaterial(target)
+		if target != nil && target.NormalMap != nil && len(g.Tangents) == 0 {
+			generateTangentsOnUpload(&g)
+		}
+		if !vertexMaterialEqual(*lg, g) {
+			g.meshUpdate = nil
+			g.meshCert = newMeshCertificate(&g, lg.splitOutlines())
+			n.lod[t].shared = nil
+			n.lod[t].geometryRevision = nextRevision.Add(1)
+			n.lod[t].pickIndex = nil
+			lodRebuilt = true
+			anyVertexChanged = true
+		}
+		n.lod[t].geometry = &g
+		anyChanged = true
+	}
+	if !anyChanged {
+		return
+	}
+	if lodRebuilt {
+		retainKeys := make([]geometryKey, len(n.lod))
+		for t := range n.lod {
+			if n.lod[t].shared != nil {
+				retainKeys[t] = geometryKey{shared: n.lod[t].shared.id}
+			} else {
+				retainKeys[t] = geometryKey{node: id, revision: n.lod[t].geometryRevision}
+			}
+		}
+		for t := range n.lod {
+			g := *n.lod[t].geometry
+			g.retainKeys = retainKeys
+			n.lod[t].geometry = &g
+		}
+	}
+	n.geometry, n.shared, n.geometryRevision = n.lod[0].geometry, n.lod[0].shared, n.lod[0].geometryRevision
+	s.changed(anyVertexChanged, anyTexChanged || anyVertexChanged)
 }

@@ -81,6 +81,8 @@ Each `LODLevel` sets either `Geometry` or `Shared` (`*SharedGeometry`) and an op
 
 To drive detail from a frame-time budget without rebuilding per-node tiers, `scene.SetLODBias(f)` scales every `MaxDistance` (including finite hide-beyond cutoffs) by `f > 0` in `O(1)` (`1` by default; `scene.LODBias()`), resetting per-node hysteresis so budget steps apply on the very next `Scene.Frame`. `scene.SetLODHysteresis(band)` adds a fractional deadband in `[0, 0.5]` (`0` by default; `scene.LODHysteresis()`) so a node crossing effective boundary `D` switches to a coarser tier only above `D * (1 + band)` and returns to a finer tier only below `D * (1 - band)`; first frames, `SetLOD`, re-showing a hidden node with `SetVisible`, and `SetLODBias` changes select without hysteresis. `frame.Stats().LODTierInstances` reports how many drawn LOD instances landed in each tier (`0..6`, with `7+` folded into index `7`). The [forest demo](../demos/#forest) uses three shared tiers per tree species (`l` cycles `LOD on`, color-coded `LOD tint`, and `LOD off`; `[` and `]` step bias by `×0.9` / `×1.1`; `b` toggles a 5% hysteresis band).
 
+Reusable `SceneAsset` templates can also carry `AssetNode.LOD` directly (with optional `LODBounds` for synchronized multi-part prop switching and `LODVariantMaterials` for per-tier colorways): call `asset.WithLOD(40, 120)` to collapse sibling `*_LOD0`, `*_LOD1`, `*_LOD2` subtrees in a single `.glb`, or `CombineAssetLOD` / `nt3dmesh.CombineLOD` to merge separate per-tier files into one reusable template (see [Multi-LOD assets](../meshes/#multi-lod-assets)).
+
 ## Labels
 
 [`SetLabel` and `NewBillboard`](../labels/) add world-anchored text and images.

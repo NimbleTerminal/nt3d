@@ -135,6 +135,32 @@ See the [glTF camera specification](https://registry.khronos.org/glTF/specs/2.0/
 - `scene.Lights(root)` lists punctual light nodes in hierarchy order, `scene.NodeLight(id)` resolves one light's current world position and `-Z` forward orientation (including animated parent nodes), and `scene.SceneLights(root)` resolves up to `nt3d.MaxLights` visible lights.
 - `Scene.Frame` populates `Frame.Lighting.Lights` automatically from `scene.SceneLights(nt3d.Root)` whenever visible light nodes exist, and `nt3dwidget` preserves those scene lights unless `SetLighting` is called explicitly.
 
+### Multi-LOD assets
+
+Asset packs commonly ship distance-tiered meshes either as sibling subtrees in one `.glb` (`SM_Bench_01_LOD0`, `SM_Bench_01_LOD1`, `SM_Bench_01_LOD2`, `bench-lod0`, `Bench.LOD1`, or `LOD0` / `LOD1`) or as separate per-tier files. `Model.LODAsset`, `Model.AddLODTo`, `CombineLOD`, and `AddLODModels` compile them directly onto `Scene.SetLOD` while preserving `*nt3d.SharedGeometry` instancing and `KHR_materials_variants` colorways across every tier:
+
+```go
+// Single .glb with sibling *_LOD0, *_LOD1, *_LOD2 subtrees:
+// pass K-1 transition distances (unbounded final tier) or all K distances (finite cull cutoff).
+lodAsset, err := propModel.LODAsset(35, 100, 250)
+if err != nil { return err }
+for i, pos := range positions {
+    inst, err := lodAsset.Instantiate(scene, nt3d.Root, fmt.Sprintf("lamp-%d", i))
+    if err != nil { return err }
+    _ = scene.SetTransform(inst.Root, nt3dmath.Translation(pos))
+    _ = scene.SetMaterialVariant(inst.Root, "MunicipalGreen")
+}
+
+// Or combine separate per-tier files (.glb, .obj, .stl, .3mf, or .ply):
+root, err := nt3dmesh.AddLODModels(scene, nt3d.Root, "sedan", []nt3dmesh.ModelLOD{
+    {MaxDistance: 30, Model: sedanLOD0},
+    {MaxDistance: 90, Model: sedanLOD1},
+    {MaxDistance: 0, Model: sedanLOD2},
+})
+```
+
+Multi-material props whose coarser tiers drop detail primitives (such as glass or trim) automatically cap dropped slots at their last tier's `MaxDistance` and synchronize switching across all parts of the prop via `AssetNode.LODBounds`. Showcase `.glb` files that park sibling `*_LOD0`, `*_LOD1`, `*_LOD2` nodes side-by-side keep `LOD0`'s placement pivot without teleporting when tiers switch.
+
 ## Writing
 
 `EncodeSTL`, `EncodeOBJ`, `Encode3MF`, and `EncodePLY` write triangles; OBJ writes lines too. Nothing is normalized on the way out. `nt3dsog.Encode` writes a Gaussian cloud whose bands above DC are a palette (see [Preprocessing splats](#preprocessing-splats)) as a SOG bundle.

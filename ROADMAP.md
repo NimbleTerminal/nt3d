@@ -67,6 +67,16 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Multi-LOD `.glb` and multi-file `Scene.SetLOD` helpers**: `AssetNode.LOD`,
+  `AssetNode.LODBounds`, and `AssetNode.LODVariantMaterials` extend `SceneAsset`
+  so `Instantiate` binds shared `LODLevel` chains with synchronized multi-part
+  prop bounds and `Scene.SetMaterialVariant` colorway switching across tiers.
+  `(*SceneAsset).WithLOD` / `nt3dmesh.Model.LODAsset` / `Model.AddLODTo` collapse
+  sibling `*_LOD0..N` subtrees in single or kitbash `.glb` packs, and
+  `CombineAssetLOD` / `nt3dmesh.CombineLOD` / `AddLODModels` merge separate
+  per-tier files while preserving `SharedGeometry` GPU instancing and BVH pick
+  indexes.
+
 - **glTF `KHR_materials_variants`, `Material.BaseColor`, and per-instance
   `Scene.SetMaterialVariant`**: `Material.BaseColor` packs per-instance sRGB
   albedo tint and transparent opacity into existing GPU instance uniforms so

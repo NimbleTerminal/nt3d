@@ -456,6 +456,7 @@ func (s *Scene) SetDisplacement(root NodeID, d *VertexDisplacement) error {
 				lodChanged = true
 			}
 			if lodChanged {
+				n.lodDispPad = d.MaxDisplacement()
 				if lodBoundsChanged {
 					var lb nt3dmath.AABB
 					for i := range n.lod {

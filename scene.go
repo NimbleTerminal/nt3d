@@ -47,6 +47,9 @@ type sceneNode struct {
 	pickIndex        *bvhSlot // Built for picking on demand, for this geometry.
 	lod              []lodLevel
 	lodBounds        nt3dmath.AABB
+	lodRefBounds     nt3dmath.AABB
+	lodRefNode       NodeID
+	lodDispPad       float32
 	lodEpoch         uint64
 	lodTier          int
 	noPickIndex      bool // SetNodePickIndexing turned indexing off here.
@@ -384,7 +387,7 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	if err != nil {
 		return err
 	}
-	n.deformation, n.lod, n.lodBounds, n.lodEpoch, n.lodTier = nil, nil, nt3dmath.AABB{}, 0, 0
+	n.deformation, n.lod, n.lodBounds, n.lodRefBounds, n.lodRefNode, n.lodDispPad, n.lodEpoch, n.lodTier = nil, nil, nt3dmath.AABB{}, nt3dmath.AABB{}, 0, 0, 0, 0
 	n.geometry, n.shared, n.pickIndex = &g, nil, nil
 	s.changed(true, true)
 	n.geometryRevision = s.revision
@@ -464,7 +467,7 @@ func (s *Scene) SetNodeShared(id NodeID, sg *SharedGeometry) error {
 	if sg == nil {
 		return errors.New("nt3d: nil shared geometry")
 	}
-	n.deformation, n.lod, n.lodBounds, n.lodEpoch, n.lodTier = nil, nil, nt3dmath.AABB{}, 0, 0
+	n.deformation, n.lod, n.lodBounds, n.lodRefBounds, n.lodRefNode, n.lodDispPad, n.lodEpoch, n.lodTier = nil, nil, nt3dmath.AABB{}, nt3dmath.AABB{}, 0, 0, 0, 0
 	n.geometry, n.shared, n.pickIndex = &sg.geometry, sg, nil
 	s.changed(true, true)
 	n.geometryRevision = sg.id // The same for every node that shows it.
