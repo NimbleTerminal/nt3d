@@ -6,6 +6,7 @@ import (
 	"math"
 	"testing"
 
+	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
 )
@@ -17,7 +18,8 @@ func fuzzOptions() *nt3dmesh.Options {
 
 // checkModel is the decoder oracle: refusing input is fine, but an accepted
 // model respects its budget, indexes its own vertices, holds finite
-// coordinates, and validates as nt3d geometry.
+// coordinates, validates as nt3d geometry, and instantiates cleanly through
+// SceneAsset, material variants, multi-LOD compilation, and Scene.Frame.
 func checkModel(t *testing.T, m *nt3dmesh.Model, err error, o *nt3dmesh.Options) {
 	if err != nil {
 		return
@@ -56,6 +58,62 @@ func checkModel(t *testing.T, m *nt3dmesh.Model, err error, o *nt3dmesh.Options)
 		}
 		if err := g.Validate(); err != nil {
 			t.Fatalf("object %d: %v", i, err)
+		}
+	}
+	if m.Asset != nil {
+		checkAsset(t, m)
+	}
+}
+
+func checkAsset(t *testing.T, m *nt3dmesh.Model) {
+	s := nt3d.NewScene()
+	inst, err := m.Asset.Instantiate(s, nt3d.Root, "fuzz")
+	if err != nil {
+		t.Fatalf("Asset.Instantiate failed on accepted glTF model: %v", err)
+	}
+	checkSceneFrame(t, s)
+
+	if vars := m.Variants(); len(vars) > 0 {
+		if err := s.SetMaterialVariant(inst.Root, vars[0]); err != nil {
+			t.Fatalf("SetMaterialVariant(%q): %v", vars[0], err)
+		}
+		checkSceneFrame(t, s)
+		if err := s.SetMaterialVariant(inst.Root, ""); err != nil {
+			t.Fatalf("SetMaterialVariant reset: %v", err)
+		}
+	}
+
+	if tiers := m.LODTiers(); tiers >= 2 && tiers <= 8 {
+		dists := make([]float32, tiers-1)
+		for i := range dists {
+			dists[i] = float32(i+1) * 10
+		}
+		lodAsset, err := m.LODAsset(dists...)
+		if err != nil {
+			t.Fatalf("LODAsset(%v) failed after LODTiers()=%d: %v", dists, tiers, err)
+		}
+		sLOD := nt3d.NewScene()
+		lodInst, err := lodAsset.Instantiate(sLOD, nt3d.Root, "fuzz-lod")
+		if err != nil {
+			t.Fatalf("lodAsset.Instantiate: %v", err)
+		}
+		if vars := m.Variants(); len(vars) > 0 {
+			if err := sLOD.SetMaterialVariant(lodInst.Root, vars[0]); err != nil {
+				t.Fatalf("LOD SetMaterialVariant(%q): %v", vars[0], err)
+			}
+		}
+		checkSceneFrame(t, sLOD)
+	}
+}
+
+func checkSceneFrame(t *testing.T, s *nt3d.Scene) {
+	f, err := s.Frame(nt3d.DefaultCamera(), 64, 48)
+	if err != nil {
+		t.Fatalf("Scene.Frame: %v", err)
+	}
+	for i := range f.Geometry {
+		if err := f.Geometry[i].Validate(); err != nil {
+			t.Fatalf("Frame.Geometry[%d]: %v", i, err)
 		}
 	}
 }

@@ -273,8 +273,21 @@ func (a *SceneAsset) WithLOD(maxDistances ...float32) (*SceneAsset, error) {
 		}
 	}
 
-	var scanSiblings func(parent int, parentName string, sibs []int) error
-	scanSiblings = func(parent int, parentName string, sibs []int) error {
+	var hasAbsorbedDescendant func(int) bool
+	hasAbsorbedDescendant = func(idx int) bool {
+		if absorbed[idx] {
+			return true
+		}
+		for _, c := range children[idx] {
+			if hasAbsorbedDescendant(c) {
+				return true
+			}
+		}
+		return false
+	}
+
+	var scanSiblings func(parent int, parentName string, sibs []int, singleTier bool) error
+	scanSiblings = func(parent int, parentName string, sibs []int, singleTier bool) error {
 		type candBucket struct {
 			stem  string
 			tiers []tierMatch
@@ -282,6 +295,9 @@ func (a *SceneAsset) WithLOD(maxDistances ...float32) (*SceneAsset, error) {
 		var order []string
 		buckets := map[string]*candBucket{}
 		for _, idx := range sibs {
+			if absorbed[idx] {
+				continue
+			}
 			stem, tier, ok := parseLODName(a.Nodes[idx].Name, parentName)
 			if !ok {
 				continue
@@ -305,17 +321,12 @@ func (a *SceneAsset) WithLOD(maxDistances ...float32) (*SceneAsset, error) {
 					return fmt.Errorf("nt3d: duplicate LOD%d node for %q", b.tiers[i].tier, b.stem)
 				}
 			}
-			// Multi-tier sibling sets always form an LOD group; a lone *_LOD0
-			// node forms a 1-tier group when the caller specifies a single
-			// cutoff distance (or a pack-wide finite hide-beyond cutoff).
-			if len(b.tiers) < 2 {
-				if b.tiers[0].tier != 0 {
+			if singleTier {
+				if len(b.tiers) != 1 || b.tiers[0].tier != 0 || hasAbsorbedDescendant(b.tiers[0].nodeIdx) {
 					continue
 				}
-				last := maxDistances[len(maxDistances)-1]
-				if len(maxDistances) != 1 && (!nt3dmath.IsFinite(float64(last)) || last <= 0) {
-					continue
-				}
+			} else if len(b.tiers) < 2 {
+				continue
 			}
 			firstAt := b.tiers[0].nodeIdx
 			for _, tm := range b.tiers[1:] {
@@ -339,45 +350,39 @@ func (a *SceneAsset) WithLOD(maxDistances ...float32) (*SceneAsset, error) {
 			if absorbed[idx] {
 				continue
 			}
-			if err := scanSiblings(idx, a.Nodes[idx].Name, children[idx]); err != nil {
+			if err := scanSiblings(idx, a.Nodes[idx].Name, children[idx], singleTier); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	if err := scanSiblings(-1, "", roots); err != nil {
+	// Pass 1: collect all multi-tier (>= 2) sibling LOD groups first so a parent
+	// container named *_LOD0 never masks multi-tier LOD groups inside its subtree.
+	if err := scanSiblings(-1, "", roots, false); err != nil {
 		return nil, err
 	}
-	if len(groups) == 0 {
-		return nil, errors.New("nt3d: scene asset contains no LOD node groups")
-	}
-
 	maxTiers := 0
 	for _, g := range groups {
 		if len(g.tiers) > maxTiers {
 			maxTiers = len(g.tiers)
 		}
 	}
-	// If single-tier *_LOD0 candidates were matched only tentatively against a
-	// finite final distance, drop them when len(maxDistances) == maxTiers-1
-	// (where the final passed distance is a transition threshold, not a cull cutoff).
-	if maxTiers >= 2 && len(maxDistances) == maxTiers-1 {
-		filtered := groups[:0]
-		clear(groupByFirst)
-		clear(absorbed)
-		for _, g := range groups {
-			if len(g.tiers) == 1 {
-				continue
-			}
-			gi := len(filtered)
-			filtered = append(filtered, g)
-			groupByFirst[g.firstAt] = gi
-			for _, tm := range g.tiers {
-				markAbsorbed(tm.nodeIdx)
-			}
+	// Pass 2: include standalone 1-tier *_LOD0 leaf props when the caller passed a
+	// single cutoff distance (maxTiers == 0 && len == 1) or a pack-wide finite
+	// hide-beyond cutoff (len == maxTiers).
+	lastDist := maxDistances[len(maxDistances)-1]
+	if (maxTiers == 0 && len(maxDistances) == 1) ||
+		(maxTiers >= 2 && len(maxDistances) == maxTiers && nt3dmath.IsFinite(float64(lastDist)) && lastDist > 0) {
+		if err := scanSiblings(-1, "", roots, true); err != nil {
+			return nil, err
 		}
-		groups = filtered
+		if maxTiers == 0 && len(groups) > 0 {
+			maxTiers = 1
+		}
+	}
+	if len(groups) == 0 {
+		return nil, errors.New("nt3d: scene asset contains no LOD node groups")
 	}
 
 	fullDists, err := normalizeLODDistances(maxDistances, maxTiers)
@@ -957,6 +962,9 @@ func validateAssetParents(a *SceneAsset) error {
 	for i, n := range a.Nodes {
 		if n.Parent >= i || n.Parent < -1 {
 			return errors.New("nt3d: invalid asset parent")
+		}
+		if err := validateTransformMatrix(n.Local); err != nil {
+			return err
 		}
 	}
 	return nil

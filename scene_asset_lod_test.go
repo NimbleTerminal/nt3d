@@ -501,4 +501,38 @@ func TestSceneAssetLODValidationErrors(t *testing.T) {
 	if b := compiledPair.Bounds(); !b.IsValid() || b.Min.X != -0.5 || b.Max.X != 0.5 {
 		t.Fatalf("unexpected compiledPair.Bounds() = %+v", b)
 	}
+
+	// Regression (found by FuzzSceneAssetLOD):
+	// 1. A lone *_LOD0 parent container wrapping a 3-tier child group must not mask the 3-tier group.
+	nestedContainer := &SceneAsset{
+		Nodes: []AssetNode{
+			{Name: "Section_LOD0", Parent: -1, Local: nt3dmath.Identity()},
+			{Name: "Lamp_LOD0", Parent: 0, Local: nt3dmath.Identity(), Shared: sg},
+			{Name: "Lamp_LOD1", Parent: 0, Local: nt3dmath.Identity(), Shared: sg},
+			{Name: "Lamp_LOD2", Parent: 0, Local: nt3dmath.Identity(), Shared: sg},
+		},
+	}
+	if got := nestedContainer.LODTiers(); got != 3 {
+		t.Fatalf("nestedContainer.LODTiers() = %d, want 3", got)
+	}
+	nestedCompiled, err := nestedContainer.WithLOD(15, 45)
+	check(t, err)
+	sNested := NewScene()
+	_, err = nestedCompiled.Instantiate(sNested, Root, "nested")
+	check(t, err)
+
+	// 2. Singular non-LOD node transform must be rejected by both LODTiers and WithLOD.
+	singularSibling := &SceneAsset{
+		Nodes: []AssetNode{
+			{Name: "BrokenZero", Parent: -1, Local: nt3dmath.Mat4{}},
+			{Name: "Lamp_LOD0", Parent: -1, Local: nt3dmath.Identity(), Shared: sg},
+			{Name: "Lamp_LOD1", Parent: -1, Local: nt3dmath.Identity(), Shared: sg},
+		},
+	}
+	if got := singularSibling.LODTiers(); got != 0 {
+		t.Fatalf("singularSibling.LODTiers() = %d, want 0", got)
+	}
+	if _, err := singularSibling.WithLOD(15); err == nil {
+		t.Fatal("expected error for singular node transform in WithLOD")
+	}
 }
