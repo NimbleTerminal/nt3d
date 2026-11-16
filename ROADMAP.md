@@ -41,6 +41,24 @@ Nothing queued; the sections below are the open work.
 
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
   exact rendering means subdividing them.
+- [ ] **Double-sided glTF materials without copying faces**: `nt3d/mesh/gltf`
+  adds every triangle again facing the other way for `doubleSided` materials.
+  Blender exports most materials double-sided by default, so a whole imported
+  kit doubles in triangles, memory and vertex work, and the doubled faces count
+  against the loader's face budget. A per-material cull-none pipeline (GPU) and
+  no-cull rasterisation (software) would halve that. `Model.Triangles()` should
+  probably report authored as well as drawn triangles.
+
+## Assets and licensing
+
+- [ ] **License-aware assets**: per-asset provenance and usage policy (source,
+  license, "may be shown to AI", redistributable), carried from asset import
+  through the scene. Captures for an AI or other restricted consumers can
+  then substitute stand-ins ("downgrade" to proxies such as bounds boxes,
+  placeholder meshes or a neutral material) or omit the asset. Editors and
+  exporters can refuse to export restricted assets, and web builds can pack
+  rather than serve raw files. Prompt:
+  `docs/prompts/2026-11-16-license-aware-assets.md`.
 
 ## Robustness
 
