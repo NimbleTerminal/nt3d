@@ -1,82 +1,119 @@
 # Changelog
 
-## Unreleased
+## v0.11.0 (2026-11-16)
 
-- Add pure-Go, WASM-safe `KHR_texture_basisu` (KTX 2.0) and
-  `KHR_materials_specular` support (`nt3d/mesh/gltf`, both accepted in
-  `extensionsRequired`), plus `Material.SpecularColor` and
-  `Material.SpecularIntensity` across WebGPU and software PBR renderers:
-  - `KHR_texture_basisu` decodes KTX 2.0 BasisLZ/ETC1S (global endpoint &
-    selector codebooks, canonical Huffman/VLC/RLE/`approx_move_to_front` slices,
-    single-slice RGB/RRR and dual-slice RGBA/RRRG), UASTC (all 19 4×4 block
-    modes), and uncompressed 8-bit `VkFormat` payloads with None, Zstandard, or
-    zlib supercompression within `Options.MaxBytes`, reconstructing tangent `Z`
-    on two-channel normal maps and falling back cleanly to `EXT_texture_webp` /
-    `Texture.Source` when external `.ktx2` side files are absent.
-  - `KHR_materials_specular` (`specularFactor`, `specularColorFactor`) maps to
-    per-instance `Material.SpecularColor` and `Material.SpecularIntensity` with
-    zero increase in GPU `instanceRecordSize` and full `SharedGeometry`
-    compatibility across `Scene.SetMaterialVariant`.
-- Add interactive `KHR_materials_variants` and multi-LOD `.glb` inspection to
-  `task meshes` (`nt3d-meshes`) and `task gogpu` (`examples/gogpu`), plus
-  `(*SceneAsset).LODTiers`, `(*SceneAsset).Bounds`, `(*SceneAsset).Triangles`,
-  and `(*nt3dmesh.Model).LODTiers`: glTF assets opened in `task meshes` now
-  preserve their full `SceneAsset` PBR hierarchy, auto-collapse `*_LOD0..N`
-  subtrees onto `Scene.SetLOD` (`l` toggles `LOD auto` vs raw hierarchy, `[`/`]`
-  step `SetLODBias`), cycle colorways on `v`, and display live drawn/total
-  triangles and `LODTierInstances` (`V`/`Shift+V` and `D`/`-`/`=`/`0` in
-  `task gogpu`).
-- Add multi-LOD asset compilation and `Scene.SetLOD` template support:
-  `AssetNode.LOD`, `AssetNode.LODBounds`, and `AssetNode.LODVariantMaterials`
-  let `SceneAsset.Instantiate` bind shared `LODLevel` chains directly with
-  synchronized multi-part AABB switching and per-tier `Scene.SetMaterialVariant`
-  colorway updates; `(*SceneAsset).WithLOD`, `CombineAssetLOD`,
-  `nt3dmesh.Model.LODAsset`, `Model.AddLODTo`, `nt3dmesh.CombineLOD`, and
-  `nt3dmesh.AddLODModels` compile sibling `*_LOD0..N` `.glb` subtrees (including
-  kitbash packs and showcase-offset previews) or separate per-tier files into
-  instanced `SharedGeometry` LOD assets.
-- Add glTF `KHR_materials_variants` support (`nt3d/mesh/gltf`, accepted in
-  `extensionsRequired`), per-instance `Material.BaseColor`, and format-independent
-  asset colorway switching (`SceneAsset.Variants`, `AssetNode.VariantMaterials`,
-  `AnimatedInstance.Variants`, `nt3dmesh.Model.Variants`, `Scene.MaterialVariants`,
-  `Scene.MaterialVariant`, and `Scene.SetMaterialVariant`) so multi-colorway
-  props and vehicles switch materials per instantiated subtree while preserving
-  `SharedGeometry` GPU vertex buffers and BVH pick indexes.
+This release completes pure-Go, WASM-safe glTF 2.0 and OGC 3D Tiles 1.1 asset
+loading, instanced multi-colorway switching, and distance-tiered multi-LOD
+compilation across `nt3d` and `nt3d/mesh`: KTX 2.0 (`KHR_texture_basisu`
+BasisLZ/ETC1S and 19-mode UASTC), `KHR_mesh_quantization`, and
+`EXT_meshopt_compression` decode without CGo; `EXT_texture_webp`,
+`EXT_mesh_gpu_instancing`, `KHR_materials_variants`, and
+`KHR_materials_specular` work across WebGPU and software renderers while
+sharing `*SharedGeometry` GPU buffers; `(*SceneAsset).WithLOD`,
+`CombineAssetLOD`, `Scene.SetLODBias`, and `Scene.SetLODHysteresis` scale
+thousands of multi-tier props in `O(1)` per frame; and `task meshes` and
+`task gogpu` inspect colorways and LOD tiers interactively out of the box.
+
+### Pure-Go glTF and OGC 3D Tiles 1.1 codecs
+
+- Add pure-Go, WASM-safe `KHR_texture_basisu` (KTX 2.0) decoding to
+  `nt3d/mesh/gltf` (accepted in `extensionsRequired`, with zero new module
+  dependencies):
+  - Decodes `KHR_DF_MODEL_ETC1S` (`BasisLZ` global DPCM endpoint and raw/XOR-DPCM
+    selector codebooks, canonical LSB-first Huffman + VLC + RLE +
+    `approx_move_to_front` selector history slices, `2×2` spatial endpoint
+    predictors, single-slice `RGB`/`RRR`, and dual-slice `RGBA` / `RRR+GGG`),
+    `KHR_DF_MODEL_UASTC` across all 19 4×4 LDR block modes (`0..18`, including
+    BISE trit/quint endpoints, 1/2/3-subset ASTC partitions, and dual-plane
+    weights), and uncompressed 8-bit `VkFormat` payloads with `None`, Zstandard,
+    or zlib supercompression bounded by `Options.MaxBytes`.
+  - Automatically reconstructs unit tangent `+Z` on two-channel (`RRRG`,
+    `RRR+GGG`, `R8G8`) normal maps before `NewNormalMap`, and resolves texture
+    sources in priority order `KHR_texture_basisu` → `EXT_texture_webp` →
+    `Texture.Source` with clean fallback when external side files are absent.
 - Add pure-Go, WASM-safe `KHR_mesh_quantization` and `EXT_meshopt_compression`
   support to `nt3d/mesh/gltf` (accepted in `extensionsRequired`):
-  `KHR_mesh_quantization` decodes quantized `BYTE`, `UNSIGNED_BYTE`, `SHORT`,
-  and `UNSIGNED_SHORT` `POSITION` and `TEXCOORD_n` accessors, normalized `BYTE` /
-  `SHORT` `NORMAL` and `TANGENT` frames, and quantized morph target deltas
-  (`POSITION`, `NORMAL`, `TANGENT`); `EXT_meshopt_compression` decompresses
-  `ATTRIBUTES`, `TRIANGLES`, and `INDICES` `bufferView` streams with
-  `OCTAHEDRAL`, `QUATERNION`, and `EXPONENTIAL` filters and dummy `fallback`
-  buffers within `Options.MaxBytes` (plus normalized integer `rotation` and
-  `weights` animation sampler outputs).
+  - `KHR_mesh_quantization` decodes quantized `BYTE`, `UNSIGNED_BYTE`, `SHORT`,
+    and `UNSIGNED_SHORT` `POSITION` and `TEXCOORD_n` accessors, normalized `BYTE` /
+    `SHORT` `NORMAL` and `TANGENT` frames, and quantized morph target deltas
+    (`POSITION`, `NORMAL`, `TANGENT`).
+  - `EXT_meshopt_compression` decompresses `ATTRIBUTES`, `TRIANGLES`, and
+    `INDICES` `bufferView` streams with `OCTAHEDRAL`, `QUATERNION`, and
+    `EXPONENTIAL` post-filters and dummy `fallback` buffers within
+    `Options.MaxBytes`, plus normalized integer `rotation` and `weights`
+    animation sampler outputs.
+- Add `EXT_texture_webp` and `EXT_mesh_gpu_instancing` support to
+  `nt3d/mesh/gltf` (accepted in `extensionsRequired`), expanding per-instance
+  `TRANSLATION`, `ROTATION` (`FLOAT` and normalized `BYTE` / `SHORT`
+  quaternions), and `SCALE` accessors in both `Model.Objects` and `Model.Asset`
+  within triangle, visit, and byte budgets.
+
+### Material colorways, dielectric specular, and shared asset meshes
+
+- Add glTF `KHR_materials_variants` support (`nt3d/mesh/gltf`, accepted in
+  `extensionsRequired`), per-instance `Material.BaseColor`, and
+  format-independent colorway switching (`SceneAsset.Variants`,
+  `AssetNode.VariantMaterials`, `AnimatedInstance.Variants`,
+  `nt3dmesh.Model.Variants`, `Scene.MaterialVariants`, `Scene.MaterialVariant`,
+  and `Scene.SetMaterialVariant`) so multi-colorway props and vehicles switch
+  materials per instantiated subtree while preserving `SharedGeometry` GPU
+  vertex buffers and BVH pick indexes.
+- Add `KHR_materials_specular` support (`nt3d/mesh/gltf`, accepted in
+  `extensionsRequired`, leaving `ignoredExtensions` empty) and per-instance
+  `Material.SpecularColor` and `Material.SpecularIntensity` across smooth PBR
+  and `PBR` + `Toon` on both WebGPU and software renderers, packing
+  `sqrt`-quantized dielectric `F0` RGB and grazing `F90` into existing GPU
+  instance uniform slots without increasing `instanceRecordSize`.
 - Add `AssetNode.Shared` (`*SharedGeometry`) and `SharedGeometry.Geometry` so
   `SceneAsset.Instantiate` attaches shared triangle meshes via
   `Scene.SetNodeShared`. Update `nt3d/mesh/gltf` to deduplicate undeformed
   static triangle primitives in `Model.Asset` into cached `*SharedGeometry`
   handles (including cached reflected handles for static mirrored nodes),
-  sharing one GPU upload, instanced draw batch, and BVH pick index both across
-  repeated mesh nodes in a `.glb` and across repeated `Model.AddTo` /
+  sharing one GPU upload, instanced draw batch, and BVH pick index across
+  repeated mesh nodes in a `.glb` and repeated `Model.AddTo` /
   `SceneAsset.Instantiate` placements in a scene.
-- Add `EXT_texture_webp` and `EXT_mesh_gpu_instancing` support to
-  `nt3d/mesh/gltf` (accepted in `extensionsRequired`): `nt3d/mesh/gltf` now
-  registers WebP decoding directly, prefers `EXT_texture_webp` sources with
-  graceful fallback to `Texture.Source` when an external WebP side file is
-  missing, and expands per-instance `TRANSLATION`, `ROTATION` (`FLOAT` and
-  normalized `BYTE` / `SHORT` quaternions), and `SCALE` accessors in both
-  `Model.Objects` and `Model.Asset` within triangle, visit, and byte budgets.
+
+### Multi-LOD compilation, distance scaling, and viewer inspection
+
+- Add multi-LOD asset compilation and `Scene.SetLOD` template support:
+  `AssetNode.LOD`, `AssetNode.LODBounds`, and `AssetNode.LODVariantMaterials`
+  let `SceneAsset.Instantiate` bind shared `LODLevel` chains directly with
+  synchronized multi-part AABB switching and per-tier `Scene.SetMaterialVariant`
+  colorway updates; `(*SceneAsset).WithLOD`, `CombineAssetLOD`,
+  `(*SceneAsset).LODTiers`, `(*SceneAsset).Bounds`, `(*SceneAsset).Triangles`,
+  `nt3dmesh.Model.LODAsset`, `Model.AddLODTo`, `Model.LODTiers`,
+  `nt3dmesh.CombineLOD`, and `nt3dmesh.AddLODModels` compile sibling `*_LOD0..N`
+  `.glb` subtrees (including kitbash packs, nested containers, and
+  showcase-offset previews) or separate per-tier files into instanced
+  `SharedGeometry` LOD assets.
 - Add `Scene.SetLODBias` / `LODBias` for `O(1)` scene-wide distance scaling
   across `Scene.SetLOD` tiers (including finite hide-beyond cutoffs) without
-  rebuilding node geometries or invalidating GPU/BVH caches, `Scene.SetLODHysteresis` /
-  `LODHysteresis` (`[0, 0.5]`) for deterministic per-node deadband anti-popping
-  across WebGPU and software renderers (resetting on first frame, `SetLOD`,
-  `SetVisible` re-show, and bias steps), and `FrameStats.LODTierInstances` (`[8]int`,
-  folding tiers `>= 7` into index `7`).
-- Extend the `forest` demo (`[` / `]` to step bias by `×0.9` / `×1.1`, `b` to
-  toggle a 5% hysteresis band) with live bias, band, and per-tier drawn tree
-  counts in its HUD.
+  rebuilding node geometries or invalidating GPU/BVH caches,
+  `Scene.SetLODHysteresis` / `LODHysteresis` (`[0, 0.5]`) for deterministic
+  per-node deadband anti-popping across WebGPU and software renderers, and
+  `FrameStats.LODTierInstances` (`[8]int`, folding tiers `>= 7` into index `7`).
+- Add interactive `KHR_materials_variants` and multi-LOD `.glb` inspection to
+  `task meshes` (`v` colorway cycle, `l` `LOD auto` vs raw hierarchy toggle,
+  `[`/`]` `SetLODBias` steps) and `task gogpu` (`V`/`Shift+V` colorways,
+  `D`/`-`/`=`/`0` LOD controls, and live `LODTierInstances` HUD telemetry), and
+  extend `forest` (`[`/`]` bias steps, `b` 5% hysteresis band).
+
+### Fuzzing, dependencies, and validation
+
+- Add `FuzzDecodeKTX2` and `FuzzDecodeMeshopt` in `nt3d/mesh/gltf` and
+  `FuzzSceneAssetLOD` in root `nt3d` (registered in `Taskfile.yml`
+  `FUZZ_TARGETS`), and expand `mesh/gltf:FuzzDecode`'s oracle to instantiate
+  `SceneAsset`, cycle material variants, compile multi-LOD assets, and validate
+  `Scene.Frame` outputs.
+- Bump the nominal `nimbleterminal.dev/nt3d` requirement in `examples/demos` and
+  `examples/gogpu` to `v0.10.0` while adding zero new external module
+  dependencies (retaining `wgpu v0.34.5`, `naga v0.20.4`, `gputypes v0.8.2`, and
+  `gogpu v0.54.0` for Apple Metal compatibility after verifying `wgpu v0.34.15`
+  with `naga v0.22.4` still fails Metal environment pipeline creation).
+- Full CI (`task ci`), fuzz smoke (`task fuzz-smoke` across all 17 targets),
+  site/guide builds (`task build-site`), and Apple Metal hardware GPU suites
+  (`task test-gpu`) pass across all library packages and 20 gallery demos. Linux
+  Vulkan GPU validation remains open per [ROADMAP.md](ROADMAP.md).
 
 ----
 

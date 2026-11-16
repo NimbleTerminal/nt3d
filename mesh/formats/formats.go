@@ -7,9 +7,10 @@
 //	import _ "nimbleterminal.dev/nt3d/mesh/formats"
 //
 // nt3dmesh reads STL, OBJ, 3MF, PLY, and Stanford .conf itself, with PNG and
-// JPEG textures. This adds glTF (.gltf, .glb) and WebP textures, as glTF's
-// EXT_texture_webp uses, and the SPZ (.spz) and SOG (.sog) Gaussian splat
-// formats. Import individual formats instead when only some are needed.
+// JPEG textures. This adds glTF (.gltf, .glb) with KTX 2.0
+// (KHR_texture_basisu) and WebP (EXT_texture_webp) textures, and the SPZ
+// (.spz) and SOG (.sog) Gaussian splat formats. Import individual formats
+// instead when only some are needed.
 package formats
 
 import (
