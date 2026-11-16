@@ -24,6 +24,197 @@ type AssetLOD struct {
 	Asset       *SceneAsset
 }
 
+// LODTiers returns the maximum tier count (>= 2) across compilable sibling
+// *_LOD0..N node groups in a (or across already-compiled AssetNode.LOD chains),
+// or 0 when a has no multi-tier LOD groups. When LODTiers returns K >= 2 on an
+// uncompiled asset, calling a.WithLOD with K-1 or K valid distances succeeds.
+func (a *SceneAsset) LODTiers() int {
+	if a == nil || validateAssetParents(a) != nil {
+		return 0
+	}
+	compiledMax := 0
+	for _, n := range a.Nodes {
+		if len(n.LOD) > compiledMax {
+			compiledMax = len(n.LOD)
+		}
+	}
+	if compiledMax >= 2 {
+		return compiledMax
+	}
+	children := make([][]int, len(a.Nodes))
+	var roots []int
+	for i, n := range a.Nodes {
+		if n.Parent == -1 {
+			roots = append(roots, i)
+		} else {
+			children[n.Parent] = append(children[n.Parent], i)
+		}
+	}
+	dynamic := assetDynamicNodes(a)
+	absorbed := make([]bool, len(a.Nodes))
+	var markAbsorbed func(int)
+	markAbsorbed = func(idx int) {
+		absorbed[idx] = true
+		for _, c := range children[idx] {
+			markAbsorbed(c)
+		}
+	}
+	type tierMatch struct {
+		nodeIdx int
+		tier    int
+	}
+	maxTiers := 0
+	valid := true
+	var scan func(parentName string, sibs []int)
+	scan = func(parentName string, sibs []int) {
+		type bucket struct {
+			tiers []tierMatch
+		}
+		var order []string
+		buckets := map[string]*bucket{}
+		for _, idx := range sibs {
+			stem, tier, ok := parseLODName(a.Nodes[idx].Name, parentName)
+			if !ok {
+				continue
+			}
+			key := strings.ToLower(stem)
+			b := buckets[key]
+			if b == nil {
+				b = &bucket{}
+				buckets[key] = b
+				order = append(order, key)
+			}
+			b.tiers = append(b.tiers, tierMatch{nodeIdx: idx, tier: tier})
+		}
+		for _, key := range order {
+			b := buckets[key]
+			slices.SortFunc(b.tiers, func(x, y tierMatch) int {
+				return cmp.Compare(x.tier, y.tier)
+			})
+			for i := 1; i < len(b.tiers); i++ {
+				if b.tiers[i].tier == b.tiers[i-1].tier {
+					valid = false
+					return
+				}
+			}
+			if len(b.tiers) < 2 {
+				continue
+			}
+			groupLocal := a.Nodes[b.tiers[0].nodeIdx].Local
+			if validateTransformMatrix(groupLocal) != nil {
+				valid = false
+				return
+			}
+			totalPrims := 0
+			for _, tm := range b.tiers {
+				rootPre, err := siblingTierRootAdjust(groupLocal, a.Nodes[tm.nodeIdx].Local)
+				if err != nil {
+					valid = false
+					return
+				}
+				prims, err := collectSubtreeLODPrims(a, children, dynamic, tm.nodeIdx, rootPre, nil)
+				if err != nil {
+					valid = false
+					return
+				}
+				totalPrims += len(prims)
+				markAbsorbed(tm.nodeIdx)
+			}
+			if totalPrims == 0 {
+				valid = false
+				return
+			}
+			if len(b.tiers) > maxTiers {
+				maxTiers = len(b.tiers)
+			}
+		}
+		for _, idx := range sibs {
+			if !valid {
+				return
+			}
+			if absorbed[idx] {
+				continue
+			}
+			scan(a.Nodes[idx].Name, children[idx])
+		}
+	}
+	scan("", roots)
+	if !valid || maxTiers < 2 {
+		return 0
+	}
+	return maxTiers
+}
+
+// Bounds returns the rest-pose world-space bounding box enclosing all geometry,
+// shared meshes, and LOD tiers in a.
+func (a *SceneAsset) Bounds() (b nt3dmath.AABB) {
+	if a == nil || validateAssetParents(a) != nil {
+		return b
+	}
+	worlds := make([]nt3dmath.Mat4, len(a.Nodes))
+	includeGeom := func(g Geometry, w nt3dmath.Mat4) {
+		if !g.Bounds.IsValid() {
+			g.Bounds = GeometryBounds(g)
+		}
+		if box := geometryWorldBounds(&g, w); box.IsValid() {
+			b.Include(box.Min)
+			b.Include(box.Max)
+		}
+	}
+	for i, n := range a.Nodes {
+		w := n.Local
+		if n.Parent >= 0 {
+			w = worlds[n.Parent].Mul(w)
+		}
+		worlds[i] = w
+		switch {
+		case len(n.LOD) > 0:
+			for _, lvl := range n.LOD {
+				if lvl.Shared != nil {
+					includeGeom(lvl.Shared.geometry, w)
+				} else if hasPrimitives(&lvl.Geometry) || lvl.Geometry.Billboard != nil {
+					includeGeom(lvl.Geometry, w)
+				}
+			}
+		case n.Shared != nil:
+			includeGeom(n.Shared.geometry, w)
+		case n.Geometry != nil:
+			includeGeom(*n.Geometry, w)
+		}
+	}
+	return b
+}
+
+// Triangles counts the rest-pose triangles in a (counting the finest non-empty
+// tier on AssetNode.LOD nodes).
+func (a *SceneAsset) Triangles() (total int) {
+	if a == nil {
+		return 0
+	}
+	for _, n := range a.Nodes {
+		switch {
+		case len(n.LOD) > 0:
+			for _, lvl := range n.LOD {
+				var g *Geometry
+				if lvl.Shared != nil {
+					g = &lvl.Shared.geometry
+				} else {
+					g = &lvl.Geometry
+				}
+				if t := geometryTriangles(g); t > 0 {
+					total += t
+					break
+				}
+			}
+		case n.Shared != nil:
+			total += geometryTriangles(&n.Shared.geometry)
+		case n.Geometry != nil:
+			total += geometryTriangles(n.Geometry)
+		}
+	}
+	return total
+}
+
 // WithLOD returns a copy of a in which sibling LOD subtrees (such as
 // Mesh_LOD0, Mesh_LOD1, Mesh_LOD2 or LOD0, LOD1) are collapsed into compact
 // AssetNodes backed by LODLevel slices for Scene.SetLOD.

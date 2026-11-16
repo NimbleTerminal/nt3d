@@ -258,7 +258,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, phaseTick()
 		}
-		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil) {
+		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && (d.meshes == nil || d.meshes.player == nil) && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil) {
 			return d, phaseTick()
 		}
 		d.animationTime += elapsed
@@ -271,6 +271,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case d.animation != nil:
 			err = d.animation.Sample(d.animationTime)
+		case d.meshes != nil && d.meshes.player != nil:
+			err = d.meshes.player.Sample(d.animationTime)
 		case d.dynamic != nil:
 			err = d.stepDynamic()
 		case d.fur != nil:
@@ -575,6 +577,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = d.growFur()
 				break
 			}
+			if d.meshes != nil && d.meshes.hasLOD {
+				if err = d.toggleMeshLOD(); err != nil {
+					d.status = err.Error()
+					return d, d.view.Refresh()
+				}
+				return d, tea.Batch(d.fitMeshes(), d.view.Refresh())
+			}
 			if !d.terrainScene() {
 				return d, nil
 			}
@@ -618,6 +627,14 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					step = -1
 				}
 				return d, d.stepAnimatedSample(step)
+			}
+			if d.meshes != nil && d.meshes.hasLOD {
+				factor := 1.1
+				if v.String() == "[" {
+					factor = 0.9
+				}
+				err = d.stepMeshLODBias(factor)
+				break
 			}
 			if d.models == nil {
 				return d, nil
@@ -689,6 +706,10 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, cmd := d.view.Update(msg)
 			return d, cmd
 		case "v":
+			if d.meshes != nil && len(d.meshes.variants) > 0 {
+				err = d.cycleMeshVariant()
+				break
+			}
 			d.hidden = !d.hidden
 			err = d.scene.SetVisible(d.group, !d.hidden)
 		case "c":
@@ -776,8 +797,11 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	if d.mipmaps != nil && d.mipmaps.mode == mipOnly {
 		f.Anisotropy = 1
 	}
-	if d.meshes != nil && d.meshes.glass == 1 {
-		f.OIT = true
+	if d.meshes != nil {
+		if d.meshes.glass == 1 {
+			f.OIT = true
+		}
+		d.captureMeshes(f)
 	}
 	if d.showsSplats() {
 		d.splats.drawn, d.splats.resident = f.SplatSelection()

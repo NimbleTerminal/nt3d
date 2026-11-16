@@ -3,10 +3,14 @@
 package demo
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"image/color"
 	"math"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +18,7 @@ import (
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
+	_ "nimbleterminal.dev/nt3d/mesh/gltf"
 	nt3dsh "nimbleterminal.dev/nt3d/sh"
 	"nimbleterminal.dev/nt3d/widget"
 )
@@ -436,5 +441,186 @@ func TestIntersectingGlassShowcase(t *testing.T) {
 	d.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
 	if d.meshes.intersecting || d.meshes.title != "shape builders" || len(d.meshes.nodes) != 5 {
 		t.Fatalf("expected return to 5 shape builders, got intersecting=%v title=%q len=%d", d.meshes.intersecting, d.meshes.title, len(d.meshes.nodes))
+	}
+}
+
+func writeTestMultiLODVariantGLTF(t *testing.T) string {
+	t.Helper()
+	// 4 vertices forming a 2x2 quad in X/Z (becomes X/-Y facing camera in Z-up) + 2 indices sets:
+	// - quad indices (6 uint16 = 2 tris) for LOD0
+	// - single-tri indices (3 uint16 = 1 tri) for LOD1 & LOD2
+	var buf []byte
+	appendF32 := func(vals ...float32) {
+		for _, v := range vals {
+			var b [4]byte
+			binary.LittleEndian.PutUint32(b[:], math.Float32bits(v))
+			buf = append(buf, b[:]...)
+		}
+	}
+	appendU16 := func(vals ...uint16) {
+		for _, v := range vals {
+			var b [2]byte
+			binary.LittleEndian.PutUint16(b[:], v)
+			buf = append(buf, b[:]...)
+		}
+	}
+	// Positions (offset 0, 48 bytes): quad in X/Y with +Z normal (glTF +Z -> -Y in Z-up)
+	appendF32(
+		-1, -1, 0,
+		1, -1, 0,
+		1, 1, 0,
+		-1, 1, 0,
+	)
+	// Normals (offset 48, 48 bytes)
+	appendF32(
+		0, 0, 1,
+		0, 0, 1,
+		0, 0, 1,
+		0, 0, 1,
+	)
+	// Indices LOD0 (offset 96, 12 bytes): 2 tris
+	appendU16(0, 1, 2, 0, 2, 3)
+	// Indices LOD1/LOD2 (offset 108, 6 bytes + 2 pad): 1 tri
+	appendU16(0, 1, 2, 0)
+
+	uri := "data:application/octet-stream;base64," + base64.StdEncoding.EncodeToString(buf)
+	gltfJSON := fmt.Sprintf(`{
+  "asset": {"version": "2.0"},
+  "extensionsUsed": ["KHR_materials_variants"],
+  "extensions": {
+    "KHR_materials_variants": {
+      "variants": [{"name": "Taxi"}, {"name": "Police"}]
+    }
+  },
+  "buffers": [{"uri": %q, "byteLength": %d}],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 48},
+    {"buffer": 0, "byteOffset": 48, "byteLength": 48},
+    {"buffer": 0, "byteOffset": 96, "byteLength": 12},
+    {"buffer": 0, "byteOffset": 108, "byteLength": 6}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3", "min": [-1, -1, 0], "max": [1, 1, 0]},
+    {"bufferView": 1, "componentType": 5126, "count": 4, "type": "VEC3"},
+    {"bufferView": 2, "componentType": 5123, "count": 6, "type": "SCALAR"},
+    {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"}
+  ],
+  "materials": [
+    {"name": "Default", "pbrMetallicRoughness": {"baseColorFactor": [0.8, 0.8, 0.8, 1]}},
+    {"name": "Taxi", "pbrMetallicRoughness": {"baseColorFactor": [0.95, 0.75, 0.05, 1]}},
+    {"name": "Police", "pbrMetallicRoughness": {"baseColorFactor": [0.1, 0.3, 0.95, 1]}}
+  ],
+  "meshes": [
+    {"name": "Sign_LOD0", "primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1}, "indices": 2, "material": 0, "extensions": {"KHR_materials_variants": {"mappings": [{"material": 1, "variants": [0]}, {"material": 2, "variants": [1]}]}}}]},
+    {"name": "Sign_LOD1", "primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1}, "indices": 3, "material": 0, "extensions": {"KHR_materials_variants": {"mappings": [{"material": 1, "variants": [0]}, {"material": 2, "variants": [1]}]}}}]},
+    {"name": "Sign_LOD2", "primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1}, "indices": 3, "material": 0, "extensions": {"KHR_materials_variants": {"mappings": [{"material": 1, "variants": [0]}, {"material": 2, "variants": [1]}]}}}]}
+  ],
+  "nodes": [
+    {"name": "SM_Sign_LOD0", "mesh": 0, "translation": [0, 0, 0]},
+    {"name": "SM_Sign_LOD1", "mesh": 1, "translation": [4, 0, 0]},
+    {"name": "SM_Sign_LOD2", "mesh": 2, "translation": [8, 0, 0]}
+  ],
+  "scenes": [{"nodes": [0, 1, 2]}],
+  "scene": 0
+}`, uri, len(buf))
+
+	p := filepath.Join(t.TempDir(), "sign_pack.gltf")
+	if err := os.WriteFile(p, []byte(gltfJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestMeshesGLTFVariantsAndMultiLOD(t *testing.T) {
+	gltfPath := writeTestMultiLODVariantGLTF(t)
+
+	d := &demo{scene: nt3d.NewScene()}
+	group, err := d.scene.Add(nt3d.Root, "island")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.group = group
+	if err := d.setupMeshes([]string{gltfPath}, nt3dmesh.ZUp); err != nil {
+		t.Fatal(err)
+	}
+	d.view = nt3dwidget.New(d.scene, 60, 20, nt3dwidget.WithRenderMode(nt3d.Software), nt3dwidget.WithFrameDecorator(d.decorate))
+	defer d.view.Close()
+
+	if !d.meshes.hasLOD || !d.meshes.lodMode || d.meshes.maxLODTiers != 3 || d.meshes.triangles != 2 {
+		t.Fatalf("expected auto LOD0 with 2 tris, got hasLOD=%v lodMode=%v tiers=%d tris=%d",
+			d.meshes.hasLOD, d.meshes.lodMode, d.meshes.maxLODTiers, d.meshes.triangles)
+	}
+
+	cam := nt3d.Camera{Target: nt3dmath.Vec3{}, Distance: 3.0, Beta: -90, Near: 0.1, Far: 100, Projection: nt3d.Perspective}
+	f0, err := d.scene.Frame(cam, 96, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.decorate(&f0)
+	view0 := d.meshesView("")
+	if !strings.Contains(view0, "2 / 2 triangles") || !strings.Contains(view0, "tiers 1/0/0") || !strings.Contains(view0, "variant default (0/2)") {
+		t.Fatalf("unexpected initial LOD0 view: %s", view0)
+	}
+
+	// Cycle colorway with 'v' -> Taxi (1/2) -> Police (2/2).
+	d.Update(tea.KeyPressMsg{Code: 'v', Text: "v"})
+	if got := d.activeMeshVariantName(); got != "Taxi" {
+		t.Fatalf("after v: active variant = %q, want Taxi", got)
+	}
+	fTaxi, err := d.scene.Frame(cam, 96, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sw := nt3d.NewSoftwareRenderer()
+	imgTaxi, err := sw.Render(fTaxi)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d.Update(tea.KeyPressMsg{Code: 'v', Text: "v"})
+	if got := d.activeMeshVariantName(); got != "Police" {
+		t.Fatalf("after second v: active variant = %q, want Police", got)
+	}
+	fPolice, err := d.scene.Frame(cam, 96, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgPolice, err := sw.Render(fPolice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pxTaxi := color.RGBAModel.Convert(imgTaxi.At(48, 36)).(color.RGBA)
+	pxPolice := color.RGBAModel.Convert(imgPolice.At(48, 36)).(color.RGBA)
+	if pxTaxi.R <= pxTaxi.B || pxPolice.B <= pxPolice.R {
+		t.Fatalf("expected Taxi yellow vs Police blue at center pixel, got taxi=%v police=%v", pxTaxi, pxPolice)
+	}
+
+	// Zoom camera out to Distance = 6.5 (aabbDistance ~6.5 in (4.0, 7.4] -> LOD1: 1 tri, tiers 0/1/0!).
+	camMid := cam
+	camMid.Distance = 6.5
+	f1, err := d.scene.Frame(camMid, 96, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.decorate(&f1)
+	if view1 := d.meshesView(""); !strings.Contains(view1, "1 / 2 triangles") || !strings.Contains(view1, "tiers 0/1/0") {
+		t.Fatalf("unexpected LOD1 view at dist 6.5: %s", view1)
+	}
+
+	// Toggle 'l' to inspect raw uncollapsed hierarchy (2 + 1 + 1 = 4 triangles), preserving Police variant!
+	d.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	if d.meshes.lodMode || d.meshes.triangles != 4 {
+		t.Fatalf("expected raw mode with 4 tris, got lodMode=%v tris=%d", d.meshes.lodMode, d.meshes.triangles)
+	}
+	if viewRaw := d.meshesView(""); !strings.Contains(viewRaw, "4 triangles · LOD raw") || !strings.Contains(viewRaw, "variant Police (2/2)") {
+		t.Fatalf("unexpected raw LOD view: %s", viewRaw)
+	}
+
+	// Toggle 'b' outlines and 'l' back to LOD auto.
+	d.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	d.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	if !d.meshes.lodMode || !d.meshes.outlined || d.meshes.triangles != 2 {
+		t.Fatalf("expected return to LOD auto with outlines, got lodMode=%v outlined=%v tris=%d",
+			d.meshes.lodMode, d.meshes.outlined, d.meshes.triangles)
 	}
 }

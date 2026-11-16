@@ -17,6 +17,16 @@ import (
 	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
 
+type loadedAssetEntry struct {
+	name      string
+	rawAsset  *nt3d.SceneAsset
+	lodAsset  *nt3d.SceneAsset
+	rawBounds nt3dmath.AABB
+	lodTiers  int
+	offsetX   float32
+	root      nt3d.NodeID
+}
+
 type viewerState struct {
 	scene             *nt3d.Scene
 	runner            *gallery.Runner
@@ -30,6 +40,15 @@ type viewerState struct {
 	clips             []nt3d.AnimationClip
 	clipIndex         int
 	player            *nt3d.Animation
+	assets            []loadedAssetEntry
+	variants          []string
+	variantIndex      int // 0 = default (""), 1..N = variants[0..N-1]
+	hasLOD            bool
+	lodAuto           bool
+	maxLODTiers       int
+	flatTriangles     int
+	lastStats         nt3d.FrameStats
+	haveStats         bool
 	splatNodes        []nt3d.NodeID
 	splatSources      []nt3d.Geometry
 	totalTriangles    int
@@ -313,6 +332,17 @@ func splatFraming(m *nt3dmesh.Model) (nt3dmath.AABB, bool) {
 	return box, true
 }
 
+func viewerLODDistances(tiers int) []float32 {
+	if tiers < 2 {
+		return nil
+	}
+	dists := make([]float32, tiers-1)
+	for i := range dists {
+		dists[i] = float32(4.0 * math.Pow(1.85, float64(i)))
+	}
+	return dists
+}
+
 func loadModelScene(files []string, up nt3dmesh.Up) (*viewerState, error) {
 	s := nt3d.NewScene()
 	s.SetPickIndexing(true)
@@ -324,7 +354,8 @@ func loadModelScene(files []string, up nt3dmesh.Up) (*viewerState, error) {
 
 	state := &viewerState{scene: s}
 	spacing := float32(2.2)
-	var totalTriangles, totalSplats int
+	var flatTriangles, totalSplats int
+	seenVariants := map[string]bool{}
 
 	for i, name := range files {
 		m, err := nt3dmesh.ReadFile(name, &nt3dmesh.Options{
@@ -337,7 +368,42 @@ func loadModelScene(files []string, up nt3dmesh.Up) (*viewerState, error) {
 		for _, w := range m.Warnings {
 			log.Printf("%s: %s", filepath.Base(name), w)
 		}
-		group, err := m.AddTo(s, nt3d.Root, filepath.Base(name))
+		offsetX := spacing * (float32(i) - float32(len(files)-1)/2)
+		if m.Asset != nil {
+			var lodAsset *nt3d.SceneAsset
+			tiers := m.LODTiers()
+			if tiers >= 2 {
+				lodAsset, err = m.LODAsset(viewerLODDistances(tiers)...)
+				if err != nil {
+					return nil, fmt.Errorf("%s: %w", name, err)
+				}
+				state.hasLOD = true
+				if tiers > state.maxLODTiers {
+					state.maxLODTiers = tiers
+				}
+			}
+			for _, v := range m.Variants() {
+				if !seenVariants[v] {
+					seenVariants[v] = true
+					state.variants = append(state.variants, v)
+				}
+			}
+			nodeName := filepath.Base(name)
+			if len(files) > 1 {
+				nodeName = fmt.Sprintf("%d:%s", i, filepath.Base(name))
+			}
+			state.assets = append(state.assets, loadedAssetEntry{
+				name:      nodeName,
+				rawAsset:  m.Asset,
+				lodAsset:  lodAsset,
+				rawBounds: m.Bounds(),
+				lodTiers:  tiers,
+				offsetX:   offsetX,
+			})
+			continue
+		}
+
+		group, err := m.AddTo(s, nt3d.Root, fmt.Sprintf("%d:%s", i, filepath.Base(name)))
 		if err != nil {
 			return nil, err
 		}
@@ -346,7 +412,7 @@ func loadModelScene(files []string, up nt3dmesh.Up) (*viewerState, error) {
 			box = framing
 		}
 		fit, _, _ := box.Normalization()
-		offset := nt3dmath.Translation(nt3dmath.Vec3{X: spacing * (float32(i) - float32(len(files)-1)/2)})
+		offset := nt3dmath.Translation(nt3dmath.Vec3{X: offsetX})
 		if err := s.SetTransform(group, offset.Mul(fit)); err != nil {
 			return nil, err
 		}
@@ -364,17 +430,20 @@ func loadModelScene(files []string, up nt3dmesh.Up) (*viewerState, error) {
 				}
 			}
 		}
-		if clips := s.AnimationClips(group); len(clips) > 0 && state.player == nil {
-			state.modelRoot = group
-			state.clips = clips
-			player, err := nt3d.NewAnimation(s, clips[0])
-			if err == nil {
-				player.Mode = nt3d.Loop
-				_ = player.Sample(0)
-				state.player = player
-			}
+		flatTriangles += m.Triangles()
+	}
+
+	state.flatTriangles = flatTriangles
+	state.totalTriangles = flatTriangles
+	state.totalSplats = totalSplats
+	if state.hasLOD {
+		state.lodAuto = true
+		_ = s.SetLODHysteresis(0.05)
+	}
+	if len(state.assets) > 0 {
+		if err := state.instantiateAssets(); err != nil {
+			return nil, err
 		}
-		totalTriangles += m.Triangles()
 	}
 
 	// Normalized models sit in a ~2-unit box around the origin.
@@ -387,8 +456,6 @@ func loadModelScene(files []string, up nt3dmesh.Up) (*viewerState, error) {
 	fitBox.Include(nt3dmath.Vec3{X: halfWidth, Y: 1, Z: 1})
 	state.fitBounds = fitBox
 
-	state.totalTriangles = totalTriangles
-	state.totalSplats = totalSplats
 	names := make([]string, len(files))
 	for i, f := range files {
 		names[i] = filepath.Base(f)
@@ -400,9 +467,137 @@ func loadModelScene(files []string, up nt3dmesh.Up) (*viewerState, error) {
 		log.Printf("Loaded %d file(s): %d Gaussian splats (hasSH=%v)", len(files), totalSplats, state.hasSH)
 	} else {
 		s.WarmPickIndices()
-		log.Printf("Loaded %d file(s): %d triangles, %d animation clip(s)", len(files), totalTriangles, len(state.clips))
+		log.Printf("Loaded %d file(s): %d triangles, %d animation clip(s), %d variant(s), lodTiers=%d",
+			len(files), state.totalTriangles, len(state.clips), len(state.variants), state.maxLODTiers)
 	}
 	return state, nil
+}
+
+func (v *viewerState) activeVariantName() string {
+	if v == nil || v.variantIndex <= 0 || v.variantIndex > len(v.variants) {
+		return ""
+	}
+	return v.variants[v.variantIndex-1]
+}
+
+func (v *viewerState) applyVariantTo(root nt3d.NodeID) error {
+	supported := v.scene.MaterialVariants(root)
+	if len(supported) == 0 {
+		return nil
+	}
+	want := v.activeVariantName()
+	if want != "" && !slices.Contains(supported, want) {
+		want = ""
+	}
+	return v.scene.SetMaterialVariant(root, want)
+}
+
+func (v *viewerState) instantiateAssets() error {
+	v.modelRoot = 0
+	v.clips = nil
+	v.clipIndex = 0
+	v.player = nil
+	v.haveStats = false
+	assetTris := 0
+	for i := range v.assets {
+		entry := &v.assets[i]
+		if entry.root != 0 {
+			if err := v.scene.Remove(entry.root); err != nil {
+				return err
+			}
+			entry.root = 0
+		}
+		active := entry.rawAsset
+		if v.lodAuto && entry.lodAsset != nil {
+			active = entry.lodAsset
+		}
+		inst, err := active.Instantiate(v.scene, nt3d.Root, entry.name)
+		if err != nil {
+			return err
+		}
+		entry.root = inst.Root
+		box := active.Bounds()
+		if !box.IsValid() {
+			box = entry.rawBounds
+		}
+		fit, _, _ := box.Normalization()
+		offset := nt3dmath.Translation(nt3dmath.Vec3{X: entry.offsetX})
+		if err := v.scene.SetTransform(inst.Root, offset.Mul(fit)); err != nil {
+			return err
+		}
+		if err := v.applyVariantTo(inst.Root); err != nil {
+			return err
+		}
+		if clips := v.scene.AnimationClips(inst.Root); len(clips) > 0 && v.player == nil {
+			v.modelRoot = inst.Root
+			v.clips = clips
+			player, err := nt3d.NewAnimation(v.scene, clips[0])
+			if err == nil {
+				player.Mode = nt3d.Loop
+				_ = player.Sample(0)
+				v.player = player
+			}
+		}
+		assetTris += active.Triangles()
+	}
+	v.totalTriangles = v.flatTriangles + assetTris
+	return nil
+}
+
+func (v *viewerState) stepVariant(delta int) {
+	if v == nil || len(v.variants) == 0 {
+		return
+	}
+	n := len(v.variants) + 1
+	v.variantIndex = (v.variantIndex + delta%n + n) % n
+	for i := range v.assets {
+		if v.assets[i].root != 0 {
+			if err := v.applyVariantTo(v.assets[i].root); err != nil {
+				log.Printf("SetMaterialVariant: %v", err)
+			}
+		}
+	}
+	v.haveStats = false
+	if name := v.activeVariantName(); name != "" {
+		fmt.Printf("Material variant [%d/%d]: %q\n", v.variantIndex, len(v.variants), name)
+	} else {
+		fmt.Println("Material variant: default")
+	}
+}
+
+func (v *viewerState) toggleLODMode() {
+	if v == nil || !v.hasLOD {
+		return
+	}
+	v.clearPick()
+	v.lodAuto = !v.lodAuto
+	if err := v.instantiateAssets(); err != nil {
+		log.Printf("toggleLODMode: %v", err)
+		return
+	}
+	v.scene.WarmPickIndices()
+	if v.lodAuto {
+		fmt.Printf("LOD mode: auto (bias %.2fx)\n", v.scene.LODBias())
+	} else {
+		fmt.Println("LOD mode: off (raw hierarchy)")
+	}
+}
+
+func (v *viewerState) stepLODBias(factor float64) {
+	if v == nil || !v.hasLOD || !v.lodAuto {
+		return
+	}
+	next := float32(1.0)
+	if factor > 0 {
+		next = float32(float64(v.scene.LODBias()) * factor)
+		next = max(0.05, min(20, next))
+	}
+	if err := v.scene.SetLODBias(next); err != nil {
+		log.Printf("SetLODBias: %v", err)
+		return
+	}
+	v.haveStats = false
+	fmt.Printf("LOD bias: %.2fx\n", v.scene.LODBias())
 }
 
 func (v *viewerState) toggleModelFloor() {

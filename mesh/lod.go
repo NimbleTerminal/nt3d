@@ -21,6 +21,15 @@ type ModelLOD struct {
 	Model       *Model
 }
 
+// LODTiers returns the maximum tier count (>= 2) across compilable sibling
+// *_LOD0..N node groups in m.Asset, or 0 when m has no multi-tier LOD groups.
+func (m *Model) LODTiers() int {
+	if m == nil || m.Asset == nil {
+		return 0
+	}
+	return m.Asset.LODTiers()
+}
+
 // LODAsset compiles sibling LOD subtrees in m.Asset (such as Mesh_LOD0,
 // Mesh_LOD1, Mesh_LOD2 in a single glTF/GLB file) into a reusable
 // *nt3d.SceneAsset backed by nt3d.LODLevel slices; see (*nt3d.SceneAsset).WithLOD.

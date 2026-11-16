@@ -19,8 +19,12 @@ func sheenActive(m *Material) bool {
 	return m != nil && !m.Unlit && (m.SheenColor.R > 0 || m.SheenColor.G > 0 || m.SheenColor.B > 0)
 }
 
+func specularCustom(m *Material) bool {
+	return m != nil && !m.Unlit && (m.SpecularColor != (color.RGBA{}) || m.SpecularIntensity > 0)
+}
+
 func pbrActive(m *Material) bool {
-	return m != nil && !m.Unlit && (m.PBR || m.Metallic > 0 || m.Roughness > 0 || m.ORMMap != nil || m.Clearcoat > 0 || sheenActive(m))
+	return m != nil && !m.Unlit && (m.PBR || m.Metallic > 0 || m.Roughness > 0 || m.ORMMap != nil || m.Clearcoat > 0 || sheenActive(m) || specularCustom(m))
 }
 
 func coatParams(m *Material) [4]float32 {
@@ -76,6 +80,40 @@ func dielectricF0(m *Material) float32 {
 	return r * r
 }
 
+// dielectricSpecular returns the dielectric normal-incidence F0 per channel,
+// the dielectric grazing F90 factor, and the GPU-packed sqrt-quantized F0
+// payload (0 when default dielectric specular is in effect).
+func dielectricSpecular(m *Material, linear bool) (df0 [3]float32, factor, packed float32) {
+	base := dielectricF0(m)
+	if !specularCustom(m) {
+		return [3]float32{base, base, base}, 1, 0
+	}
+	c := m.SpecularColor
+	if c == (color.RGBA{}) {
+		c = color.RGBA{255, 255, 255, 255}
+	}
+	factor = float32(c.A) / 255
+	intensity := m.SpecularIntensity
+	if intensity == 0 {
+		intensity = 1
+	}
+	var col [3]float32
+	if linear {
+		col = [3]float32{srgbDecode[c.R] * intensity, srgbDecode[c.G] * intensity, srgbDecode[c.B] * intensity}
+	} else {
+		col = [3]float32{float32(c.R) / 255 * intensity, float32(c.G) / 255 * intensity, float32(c.B) / 255 * intensity}
+	}
+	var q [3]uint8
+	for k := range 3 {
+		raw := min(1, max(0, base*col[k])) * factor
+		q[k] = uint8(math.Sqrt(float64(raw))*255 + .5)
+		s := float32(q[k]) / 255
+		df0[k] = s * s
+	}
+	packed = float32(int(q[0])<<16|int(q[1])<<8|int(q[2])) + 1
+	return df0, factor, packed
+}
+
 func occlusionStrength(m *Material) float32 {
 	if m == nil || m.ORMMap == nil {
 		return 0
@@ -123,7 +161,7 @@ func pow5(x float32) float32 {
 	return x2 * x2 * x
 }
 
-func envBRDFApprox(f0 [3]float32, roughness, nv float32) [3]float32 {
+func envBRDFApprox(f0 [3]float32, f90In float32, customF90 bool, roughness, nv float32) [3]float32 {
 	r0 := -roughness + 1
 	r1 := -.0275*roughness + .0425
 	r2 := -.572*roughness + 1.04
@@ -133,6 +171,9 @@ func envBRDFApprox(f0 [3]float32, roughness, nv float32) [3]float32 {
 	abX := -1.04*a004 + r2
 	abY := 1.04*a004 + r3
 	f90 := min(1, max(0, 50*max(f0[0], max(f0[1], f0[2]))))
+	if customF90 {
+		f90 = min(1, max(0, f90In))
+	}
 	return [3]float32{
 		f0[0]*abX + f90*abY,
 		f0[1]*abX + f90*abY,
@@ -179,12 +220,13 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 	alpha := roughness * roughness
 	a2 := alpha * alpha
 
-	df0 := dielectricF0(m)
+	df0, specFactor, specPacked := dielectricSpecular(m, f.Linear)
 	f0 := [3]float32{
-		df0 + (base[0]-df0)*metallic,
-		df0 + (base[1]-df0)*metallic,
-		df0 + (base[2]-df0)*metallic,
+		df0[0] + (base[0]-df0[0])*metallic,
+		df0[1] + (base[1]-df0[1])*metallic,
+		df0[2] + (base[2]-df0[2])*metallic,
 	}
+	f90Base := specFactor + (1-specFactor)*metallic
 	diffuseColor := [3]float32{
 		base[0] * (1 - metallic),
 		base[1] * (1 - metallic),
@@ -272,7 +314,7 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 					lobe := a2 / max(1e-7, denom*denom) * .25
 					spot := toonStep(toonSpot, w, lobe) * fade * sh * ccAtten * sheenScale
 					for k := range specularOut {
-						fk := f0[k] + (1-f0[k])*fvh5
+						fk := f0[k] + (f90Base-f0[k])*fvh5
 						specularOut[k] += l.color[k] * spot * fk
 					}
 					if maxSheen > 0 {
@@ -337,7 +379,7 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 	fresnelTerm := pow5(1 - nv)
 	baseIndScale := sheenViewScale * ccViewScale
 	for k := range diffuseOut {
-		f90 := max(1-roughness, f0[k])
+		f90 := max(f90Base*(1-roughness), f0[k])
 		ks := f0[k] + (f90-f0[k])*fresnelTerm
 		diffuseOut[k] = diffuseColor[k] * (1 - ks) * indirectDiff[k] * ao * baseIndScale
 		if maxSheen > 0 {
@@ -351,7 +393,7 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 	if envStrength == 0 {
 		envStrength = 1
 	}
-	brdf := envBRDFApprox(f0, roughness, nv)
+	brdf := envBRDFApprox(f0, f90Base, specPacked > 0, roughness, nv)
 	sAO := specularAO(nv, ao, alpha)
 	hemiReflT := reflected.Z*.5 + .5
 	hemiSpecT := hemiReflT + (.5-hemiReflT)*alpha
@@ -374,7 +416,7 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 		specularOut[k] += specEnv[k] * brdf[k] * sAO * baseIndScale
 	}
 	if cc > 0 {
-		ccBRDF := envBRDFApprox([3]float32{.04, .04, .04}, ccRough, ccNV)
+		ccBRDF := envBRDFApprox([3]float32{.04, .04, .04}, 1, false, ccRough, ccNV)
 		ccSAO := specularAO(ccNV, ao, ccAlpha)
 		ccHemiReflT := ccReflected.Z*.5 + .5
 		ccHemiSpecT := ccHemiReflT + (.5-ccHemiReflT)*ccAlpha
@@ -449,7 +491,7 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 			}
 			w := vis * nl * ccAtten
 			for k := range 3 {
-				fk := f0[k] + (1-f0[k])*fvh5
+				fk := f0[k] + (f90Base-f0[k])*fvh5
 				diffuseOut[k] += l.color[k] * w * sheenScale * (1 - fk) * diffuseColor[k]
 				specularOut[k] += l.color[k] * w * (sheenScale*dTerm*fk + shTerm*sheenCol[k])
 			}

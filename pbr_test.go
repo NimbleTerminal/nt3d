@@ -505,3 +505,105 @@ func TestPBRSheenAndToonCoatSheen(t *testing.T) {
 		t.Fatalf("expected PBR+Toon clearcoat white dielectric highlight over red base: uncoated=%v coated=%v", noCoatPx, coatPx)
 	}
 }
+
+func TestPBRDielectricSpecularColorAndIntensity(t *testing.T) {
+	if !pbrActive(&Material{SpecularColor: color.RGBA{255, 0, 0, 255}}) {
+		t.Fatal("nonzero SpecularColor did not activate PBR")
+	}
+	if !pbrActive(&Material{SpecularIntensity: 2}) {
+		t.Fatal("SpecularIntensity > 0 did not activate PBR")
+	}
+	if err := validateMaterial(&Material{SpecularIntensity: -.1}); err == nil {
+		t.Fatal("accepted negative SpecularIntensity")
+	}
+	if err := validateMaterial(&Material{SpecularIntensity: float32(math.NaN())}); err == nil {
+		t.Fatal("accepted NaN SpecularIntensity")
+	}
+
+	headOn := Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{Z: 1}, Intensity: 1.5}}}
+	black := color.RGBA{0, 0, 0, 255}
+
+	// Default dielectric vs specularFactor = 0 (chalk/matte) vs tinted/HDR dielectric F0.
+	fStd := pbrQuadFrame(&Material{PBR: true, Roughness: .1}, black)
+	fStd.Lighting = headOn
+	fZero := pbrQuadFrame(&Material{Roughness: .1, SpecularColor: color.RGBA{255, 255, 255, 0}}, black)
+	fZero.Lighting = headOn
+	fRed := pbrQuadFrame(&Material{Roughness: .1, SpecularColor: color.RGBA{255, 0, 0, 255}}, black)
+	fRed.Lighting = headOn
+	fHDR := pbrQuadFrame(&Material{Roughness: .1, SpecularIntensity: 4}, black)
+	fHDR.Lighting = headOn
+
+	pxStd := at(softwareRender(fStd), 40, 40)
+	pxZero := at(softwareRender(fZero), 40, 40)
+	pxRed := at(softwareRender(fRed), 40, 40)
+	pxHDR := at(softwareRender(fHDR), 40, 40)
+
+	if pxZero != black {
+		t.Fatalf("specularFactor=0 dielectric on black base produced highlight %v", pxZero)
+	}
+	if pxStd.R < 80 {
+		t.Fatalf("expected standard dielectric highlight, got %v", pxStd)
+	}
+	if pxRed.R < 80 || pxRed.G > 5 || pxRed.B > 5 {
+		t.Fatalf("expected pure red dielectric F0 highlight, got %v", pxRed)
+	}
+	if pxHDR.R <= pxStd.R+40 {
+		t.Fatalf("expected SpecularIntensity=4 (%v) brighter than default F0 (%v)", pxHDR, pxStd)
+	}
+
+	// specularColorFactor = [0, 0, 0] with specularFactor = 1 (color.RGBA{A: 255})
+	// suppresses normal-incidence F0 while preserving grazing Fresnel F90 = 1,
+	// whereas specularFactor = 0 (color.RGBA{R: 255, G: 255, B: 255, A: 0}) suppresses grazing too.
+	buildGrazing := func(specCol color.RGBA) (center, limb color.RGBA) {
+		ball, err := BuildSphere(Sphere{
+			Radius:   .85,
+			Segments: 48,
+			Rings:    32,
+			Color:    black,
+			Material: &Material{
+				Roughness:     .22,
+				SpecularColor: specCol,
+			},
+		})
+		check(t, err)
+		s := NewScene()
+		id, err := s.SetGeometry("ball", ball)
+		check(t, err)
+		cam := DefaultCamera()
+		cam.Alpha, cam.Beta, cam.Distance = 0, 0, 2.4
+		f0, err := s.Frame(cam, 96, 96)
+		check(t, err)
+		rev := f0.Revision
+		// Verify SetMaterial changing SpecularColor preserves mesh Revision (instance uniform only).
+		check(t, s.SetMaterial(id, &Material{Roughness: .22, SpecularColor: specCol}))
+		f, err := s.Frame(cam, 96, 96)
+		check(t, err)
+		if f.Revision != rev {
+			t.Fatal("SetMaterial changing SpecularColor unexpectedly bumped geometry Revision")
+		}
+		f.Linear = true
+		f.Background = black
+		eyeDir := f.Eye.Normalize()
+		rimDir := eyeDir.Scale(-.75).Add(nt3dmath.Vec3{Y: .66}).Normalize()
+		f.Lighting = Lighting{
+			Lights: []Light{
+				{Direction: eyeDir, Intensity: 1.5},
+				{Direction: rimDir, Intensity: 3.0},
+			},
+		}
+		img := softwareRender(f)
+		center = at(img, 48, 48)
+		for x := 62; x <= 80; x++ {
+			if c := at(img, x, 48); c.R > limb.R {
+				limb = c
+			}
+		}
+		return center, limb
+	}
+
+	cZeroF0, lZeroF0 := buildGrazing(color.RGBA{A: 255})
+	cZeroAll, lZeroAll := buildGrazing(color.RGBA{R: 255, G: 255, B: 255, A: 0})
+	if cZeroF0 != black || cZeroAll != black || lZeroAll.R != 0 || lZeroF0.R < 40 {
+		t.Fatalf("expected black SpecularColor with A=255 to keep grazing Fresnel over A=0: center=%v/%v limbF90=%v limbZero=%v", cZeroF0, cZeroAll, lZeroF0, lZeroAll)
+	}
+}

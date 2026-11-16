@@ -10,6 +10,7 @@ import (
 	"math"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,16 @@ import (
 // MeshesMain shows the shape builders, or the mesh files named as arguments.
 func MeshesMain() { mainDemo(false, sceneMeshes) }
 
+type meshAssetEntry struct {
+	name      string
+	rawAsset  *nt3d.SceneAsset
+	lodAsset  *nt3d.SceneAsset
+	rawBounds nt3dmath.AABB
+	lodTiers  int
+	offsetX   float32
+	root      nt3d.NodeID
+}
+
 type meshScene struct {
 	hasSH, dcOnly bool
 	splats        bool // Gaussian splats, with or without spherical harmonics.
@@ -31,10 +42,20 @@ type meshScene struct {
 	nodes         []nt3d.NodeID
 	keepOpaque    []bool          // Per-node flag keeping interior core opaque in glass mode.
 	sources       []nt3d.Geometry // As built or read, per node.
-	normals       int             // Index into meshNormals.
-	outlined      bool            // Expanded back-face contours.
-	glass         int             // 0 opaque, 1 glass (OIT), 2 glass (sorted).
-	shiny         bool            // Shapes with specular highlights.
+	assets        []meshAssetEntry
+	variants      []string // Deduplicated material variants across loaded assets.
+	variantIdx    int      // 0 = default (""), 1..N = variants[0..N-1].
+	hasLOD        bool     // At least one loaded asset has compilable *_LOD0..N subtrees.
+	lodMode       bool     // True when *_LOD0..N subtrees are collapsed onto Scene.SetLOD.
+	maxLODTiers   int
+	haveStats     bool
+	frameStats    nt3d.FrameStats
+	player        *nt3d.Animation
+	normals       int  // Index into meshNormals.
+	outlined      bool // Expanded back-face contours.
+	glass         int  // 0 opaque, 1 glass (OIT), 2 glass (sorted).
+	shiny         bool // Shapes with specular highlights.
+	flatTriangles int
 	triangles     int
 	title         string
 	palette       paletteBuild
@@ -202,6 +223,26 @@ func (d *demo) paletteStatus() string {
 
 var meshNormals = []string{"as built", "flat", "smooth 40°"}
 
+func viewerLODDistances(tiers int) []float32 {
+	if tiers < 2 {
+		return nil
+	}
+	dists := make([]float32, tiers-1)
+	for i := range dists {
+		dists[i] = float32(4.0 * math.Pow(1.85, float64(i)))
+	}
+	return dists
+}
+
+func formatLODTierSlice(counts [8]int, maxTiers int) string {
+	n := max(2, min(len(counts), maxTiers))
+	parts := make([]string, n)
+	for i := range n {
+		parts[i] = groupDigits(counts[i])
+	}
+	return strings.Join(parts, "/")
+}
+
 func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 	d.meshes = &meshScene{shiny: true}
 	if len(files) == 0 {
@@ -215,6 +256,7 @@ func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 	if len(files) > 1 {
 		d.meshes.title = fmt.Sprintf("%d files", len(files))
 	}
+	seenVariants := map[string]bool{}
 	// Lay files out in a row, each fitted to a cell two units wide.
 	spacing := float32(2.2)
 	for i, name := range files {
@@ -224,6 +266,36 @@ func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 		}
 		for _, w := range m.Warnings {
 			d.status = filepath.Base(name) + ": " + w
+		}
+		offsetX := spacing * (float32(i) - float32(len(files)-1)/2)
+		if m.Asset != nil {
+			var lodAsset *nt3d.SceneAsset
+			tiers := m.LODTiers()
+			if tiers >= 2 {
+				lodAsset, err = m.LODAsset(viewerLODDistances(tiers)...)
+				if err != nil {
+					return fmt.Errorf("%s: %w", name, err)
+				}
+				d.meshes.hasLOD = true
+				if tiers > d.meshes.maxLODTiers {
+					d.meshes.maxLODTiers = tiers
+				}
+			}
+			for _, v := range m.Variants() {
+				if !seenVariants[v] {
+					seenVariants[v] = true
+					d.meshes.variants = append(d.meshes.variants, v)
+				}
+			}
+			d.meshes.assets = append(d.meshes.assets, meshAssetEntry{
+				name:      fmt.Sprintf("file %d", i),
+				rawAsset:  m.Asset,
+				lodAsset:  lodAsset,
+				rawBounds: m.Bounds(),
+				lodTiers:  tiers,
+				offsetX:   offsetX,
+			})
+			continue
 		}
 		group, err := m.AddTo(d.scene, d.group, fmt.Sprintf("file %d", i))
 		if err != nil {
@@ -236,7 +308,7 @@ func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 			box, d.meshes.capture = framing, true
 		}
 		fit, _, _ := box.Normalization()
-		offset := nt3dmath.Translation(nt3dmath.Vec3{X: spacing * (float32(i) - float32(len(files)-1)/2)})
+		offset := nt3dmath.Translation(nt3dmath.Vec3{X: offsetX})
 		if err = d.scene.SetTransform(group, offset.Mul(fit)); err != nil {
 			return err
 		}
@@ -247,9 +319,153 @@ func (d *demo) setupMeshes(files []string, up nt3dmesh.Up) error {
 			d.meshes.hasSH = d.meshes.hasSH || len(m.Objects[j].Geometry.GaussianSH) > 0
 			d.meshes.splats = d.meshes.splats || m.Objects[j].Geometry.PointStyle.Shape == nt3d.GaussianPoint
 		}
-		d.meshes.triangles += m.Triangles()
+		d.meshes.flatTriangles += m.Triangles()
+	}
+	d.meshes.triangles = d.meshes.flatTriangles
+	if d.meshes.hasLOD {
+		d.meshes.lodMode = true
+		if err := d.scene.SetLODHysteresis(forestHystBand); err != nil {
+			return err
+		}
+	}
+	if len(d.meshes.assets) > 0 {
+		if err := d.instantiateMeshAssets(); err != nil {
+			return err
+		}
 	}
 	return d.rebuildMeshes()
+}
+
+func (d *demo) activeMeshVariantName() string {
+	if d.meshes == nil || d.meshes.variantIdx <= 0 || d.meshes.variantIdx > len(d.meshes.variants) {
+		return ""
+	}
+	return d.meshes.variants[d.meshes.variantIdx-1]
+}
+
+func (d *demo) applyMeshVariantTo(root nt3d.NodeID) error {
+	supported := d.scene.MaterialVariants(root)
+	if len(supported) == 0 {
+		return nil
+	}
+	want := d.activeMeshVariantName()
+	if want != "" && !slices.Contains(supported, want) {
+		want = ""
+	}
+	return d.scene.SetMaterialVariant(root, want)
+}
+
+func (d *demo) instantiateMeshAssets() error {
+	ms := d.meshes
+	ms.player = nil
+	ms.haveStats = false
+	assetTris := 0
+	outlineStyle := nt3d.OutlineStyle{}
+	if ms.outlined {
+		outlineStyle = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}, Crease: 35}
+	}
+	for i := range ms.assets {
+		entry := &ms.assets[i]
+		if entry.root != 0 {
+			if err := d.scene.Remove(entry.root); err != nil {
+				return err
+			}
+			entry.root = 0
+		}
+		active := entry.rawAsset
+		if ms.lodMode && entry.lodAsset != nil {
+			active = entry.lodAsset
+		}
+		inst, err := active.Instantiate(d.scene, d.group, entry.name)
+		if err != nil {
+			return err
+		}
+		entry.root = inst.Root
+		box := active.Bounds()
+		if !box.IsValid() {
+			box = entry.rawBounds
+		}
+		fit, _, _ := box.Normalization()
+		offset := nt3dmath.Translation(nt3dmath.Vec3{X: entry.offsetX})
+		if err := d.scene.SetTransform(inst.Root, offset.Mul(fit)); err != nil {
+			return err
+		}
+		if err := d.applyMeshVariantTo(inst.Root); err != nil {
+			return err
+		}
+		if ms.outlined {
+			if err := d.scene.SetOutline(inst.Root, outlineStyle); err != nil {
+				return err
+			}
+		}
+		if clips := d.scene.AnimationClips(inst.Root); len(clips) > 0 && ms.player == nil {
+			player, err := nt3d.NewAnimation(d.scene, clips[0])
+			if err == nil {
+				player.Mode = nt3d.Loop
+				_ = player.Sample(0)
+				ms.player = player
+			}
+		}
+		assetTris += active.Triangles()
+	}
+	ms.triangles = ms.flatTriangles + assetTris
+	return nil
+}
+
+func (d *demo) cycleMeshVariant() error {
+	ms := d.meshes
+	if ms == nil || len(ms.variants) == 0 {
+		return nil
+	}
+	ms.variantIdx = (ms.variantIdx + 1) % (len(ms.variants) + 1)
+	for i := range ms.assets {
+		if ms.assets[i].root != 0 {
+			if err := d.applyMeshVariantTo(ms.assets[i].root); err != nil {
+				return err
+			}
+		}
+	}
+	if name := d.activeMeshVariantName(); name != "" {
+		d.status = fmt.Sprintf("variant %d/%d: %s", ms.variantIdx, len(ms.variants), name)
+	} else {
+		d.status = "variant: default"
+	}
+	return nil
+}
+
+func (d *demo) toggleMeshLOD() error {
+	ms := d.meshes
+	if ms == nil || !ms.hasLOD {
+		return nil
+	}
+	ms.lodMode = !ms.lodMode
+	if err := d.instantiateMeshAssets(); err != nil {
+		return err
+	}
+	if ms.lodMode {
+		d.status = "LOD auto (zoom or [/] to test tiers)"
+	} else {
+		d.status = "LOD off (showing raw asset hierarchy)"
+	}
+	return nil
+}
+
+func (d *demo) stepMeshLODBias(factor float64) error {
+	if d.meshes == nil || !d.meshes.hasLOD || !d.meshes.lodMode {
+		return nil
+	}
+	next := float32(float64(d.scene.LODBias()) * factor)
+	next = max(forestMinBias, min(forestMaxBias, next))
+	d.meshes.haveStats = false
+	return d.scene.SetLODBias(next)
+}
+
+func (d *demo) captureMeshes(f *nt3d.Frame) {
+	if d.meshes == nil || len(d.meshes.assets) == 0 {
+		return
+	}
+	d.meshes.frameStats = f.Stats()
+	d.meshes.haveStats = true
 }
 
 func (d *demo) setupShapes() error {
@@ -436,6 +652,17 @@ func (d *demo) toggleShine() error {
 
 func (d *demo) toggleOutlines() error {
 	d.meshes.outlined = !d.meshes.outlined
+	outlineStyle := nt3d.OutlineStyle{}
+	if d.meshes.outlined {
+		outlineStyle = nt3d.OutlineStyle{Width: 2, Color: color.RGBA{18, 22, 30, 255}, Crease: 35}
+	}
+	for _, entry := range d.meshes.assets {
+		if entry.root != 0 {
+			if err := d.scene.SetOutline(entry.root, outlineStyle); err != nil {
+				return err
+			}
+		}
+	}
 	return d.rebuildMeshes()
 }
 
@@ -575,10 +802,52 @@ func (d *demo) meshesView(content string) string {
 		}
 		return fmt.Sprintf("nt3d splats · %s%s · u/y budget · z reset · d fog · n turn · 1/2/3 backend · q quit\n%s\n%s · %s%s · drag orbit · wheel zoom · c fit · r rotate · %s", d.meshes.title, hint, content, d.rendering(), d.splatStatus(), mode, d.status)
 	}
-	glass, shine, outlines := "opaque", "dull", "outlines off"
+	outlines := "outlines off"
 	if d.meshes.outlined {
 		outlines = "outlines on"
 	}
+	if len(d.meshes.assets) > 0 && len(d.meshes.nodes) == 0 {
+		var hints []string
+		if len(d.meshes.variants) > 0 {
+			hints = append(hints, "v variant")
+		} else {
+			hints = append(hints, "v visibility")
+		}
+		if d.meshes.hasLOD {
+			hints = append(hints, "l LOD", "[/] bias")
+		}
+		if d.meshes.player != nil {
+			hints = append(hints, "a pause")
+		}
+		hints = append(hints, "b outlines", "d fog", "n rotate", "1/2/3 backend", "q quit")
+
+		triSummary := fmt.Sprintf("%s triangles", groupDigits(d.meshes.triangles))
+		if d.meshes.hasLOD {
+			if d.meshes.lodMode {
+				if d.meshes.haveStats {
+					triSummary = fmt.Sprintf("%s / %s triangles · LOD auto · bias %.2fx · tiers %s",
+						groupDigits(d.meshes.frameStats.Triangles), groupDigits(d.meshes.triangles),
+						d.scene.LODBias(), formatLODTierSlice(d.meshes.frameStats.LODTierInstances, d.meshes.maxLODTiers))
+				} else {
+					triSummary = fmt.Sprintf("%s triangles · LOD auto · bias %.2fx",
+						groupDigits(d.meshes.triangles), d.scene.LODBias())
+				}
+			} else {
+				triSummary = fmt.Sprintf("%s triangles · LOD raw", groupDigits(d.meshes.triangles))
+			}
+		}
+		variantSummary := ""
+		if len(d.meshes.variants) > 0 {
+			if name := d.activeMeshVariantName(); name != "" {
+				variantSummary = fmt.Sprintf(" · variant %s (%d/%d)", name, d.meshes.variantIdx, len(d.meshes.variants))
+			} else {
+				variantSummary = fmt.Sprintf(" · variant default (0/%d)", len(d.meshes.variants))
+			}
+		}
+		return fmt.Sprintf("nt3d meshes · %s · %s\n%s\n%s · %s%s · %s · drag orbit · wheel zoom · c fit · r rotate · %s",
+			d.meshes.title, strings.Join(hints, " · "), content, d.rendering(), triSummary, variantSummary, outlines, d.status)
+	}
+	glass, shine := "opaque", "dull"
 	switch d.meshes.glass {
 	case 1:
 		glass = "glass (OIT)"

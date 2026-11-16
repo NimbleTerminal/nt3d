@@ -139,6 +139,15 @@ func currentMenuIndex(v *viewerState) int {
 	return v.demoIndex + 1
 }
 
+func formatLODTierCounts(counts [8]int, maxTiers int) string {
+	n := max(2, min(len(counts), maxTiers))
+	parts := make([]string, n)
+	for i := range n {
+		parts[i] = fmt.Sprint(counts[i])
+	}
+	return strings.Join(parts, "/")
+}
+
 func formatAAStatus(msaa bool, ss int) string {
 	ss = max(1, ss)
 	switch {
@@ -233,6 +242,14 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 	if animate {
 		animState = "playing"
 	}
+	triText := fmt.Sprintf("%d tris", v.totalTriangles)
+	if v.hasLOD && v.lodAuto && v.haveStats {
+		drawnTris := v.lastStats.Triangles
+		if v.hasFloor && v.floorNode != nt3d.Root {
+			drawnTris = max(0, drawnTris-2)
+		}
+		triText = fmt.Sprintf("%d / %d tris", drawnTris, v.totalTriangles)
+	}
 	if v.totalSplats > 0 {
 		shMode := "off"
 		if v.hasSH {
@@ -249,10 +266,32 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 		fmt.Fprintf(&b, "Splats: %s (%d pts, SH: %s, budget: %d)\n", v.summary, v.totalSplats, shMode, budget)
 	} else if len(v.clips) > 0 {
 		clip := v.clips[v.clipIndex]
-		fmt.Fprintf(&b, "Model: %s (%d tris, clip %d/%d %q %s)\n",
-			v.summary, v.totalTriangles, v.clipIndex+1, len(v.clips), clip.Name, animState)
+		fmt.Fprintf(&b, "Model: %s (%s, clip %d/%d %q %s)\n",
+			v.summary, triText, v.clipIndex+1, len(v.clips), clip.Name, animState)
 	} else {
-		fmt.Fprintf(&b, "Scene: %s (%d tris, anim: %s)\n", v.summary, v.totalTriangles, animState)
+		fmt.Fprintf(&b, "Scene: %s (%s, anim: %s)\n", v.summary, triText, animState)
+	}
+	if len(v.variants) > 0 || v.hasLOD {
+		var parts []string
+		if len(v.variants) > 0 {
+			if name := v.activeVariantName(); name != "" {
+				parts = append(parts, fmt.Sprintf("Variant: %s (%d/%d) [V]", name, v.variantIndex, len(v.variants)))
+			} else {
+				parts = append(parts, fmt.Sprintf("Variant: default (0/%d) [V]", len(v.variants)))
+			}
+		}
+		if v.hasLOD {
+			if v.lodAuto {
+				tierStr := ""
+				if v.haveStats {
+					tierStr = fmt.Sprintf(", tiers %s", formatLODTierCounts(v.lastStats.LODTierInstances, v.maxLODTiers))
+				}
+				parts = append(parts, fmt.Sprintf("LOD: auto (bias %.2fx%s) [D/-/=/0]", v.scene.LODBias(), tierStr))
+			} else {
+				parts = append(parts, "LOD: raw [D]")
+			}
+		}
+		fmt.Fprintf(&b, "%s\n", strings.Join(parts, "   "))
 	}
 
 	postStr := "Off"
@@ -282,6 +321,12 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 	}
 	if h.lastCapture != "" {
 		fmt.Fprintf(&b, "Saved: %s\n", h.lastCapture)
+	}
+	if len(v.variants) > 0 {
+		b.WriteString("[V] Variant ")
+	}
+	if v.hasLOD {
+		b.WriteString("[D] LOD ")
 	}
 	b.WriteString("[`/Click] Menu [O/Drop] Open [M/4] MSAA [N] OIT [X/F12] Post [E] Env [L] Light [K] Shadow [G] Floor [P] Shot")
 	return b.String()

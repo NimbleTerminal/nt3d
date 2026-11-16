@@ -104,6 +104,20 @@ func (d *demo) sceneKeys() (string, keys) {
 			}
 			return "splats", keys{controls}
 		}
+		if len(d.meshes.assets) > 0 && len(d.meshes.nodes) == 0 {
+			var controls []key.Binding
+			if len(d.meshes.variants) > 0 {
+				controls = append(controls, bind("v", "v", "variant"))
+			}
+			if d.meshes.hasLOD {
+				controls = append(controls, bind("l", "l", "LOD"), bind("[", "[", "bias x0.9"), bind("]", "]", "bias x1.1"))
+			}
+			if d.meshes.player != nil {
+				controls = append(controls, bind("a", "a", "pause"))
+			}
+			controls = append(controls, bind("b", "b", "outlines"), bind("n", "n", "turn"))
+			return "meshes", keys{controls}
+		}
 		controls := []key.Binding{bind("s", "s", "normals"), bind("t", "t", "glass"), bind("e", "e", "highlights"), bind("b", "b", "outlines"), bind("n", "n", "turn")}
 		if d.meshes.builtin {
 			controls = append([]key.Binding{bind("m", "m", "scene")}, controls...)

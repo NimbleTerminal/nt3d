@@ -13,7 +13,9 @@ import (
 // 2048-byte OSC 7501 message, with the scene's own controls in the compact bar.
 func TestSceneActions(t *testing.T) {
 	for _, d := range []*demo{
-		{}, {dynamic: &dynamicScene{}}, {meshes: &meshScene{}}, {meshes: &meshScene{builtin: true}}, {meshes: &meshScene{hasSH: true}}, {models: &modelScene{}, meshes: &meshScene{}},
+		{}, {dynamic: &dynamicScene{}}, {meshes: &meshScene{}}, {meshes: &meshScene{builtin: true}}, {meshes: &meshScene{hasSH: true}},
+		{meshes: &meshScene{assets: []meshAssetEntry{{}}, hasLOD: true, variants: []string{"Taxi", "Police"}, player: &nt3d.Animation{}}},
+		{models: &modelScene{}, meshes: &meshScene{}},
 		{animatedSamples: &animateScene{}}, {animatedSamples: &animateScene{cameras: []nt3d.NodeID{1, 2}}}, {large: &largeScene{}}, {fur: &furScene{}}, {mipmaps: &mipScene{}}, {forest: &forestScene{}}, {lights: &lightScene{}}, {particles: &particleScene{}}, {aabb: &aabbScene{}}, {water: &waterScene{}}, {toon: &toonScene{}}, {camPath: &camPathScene{}},
 	} {
 		context, k := d.sceneKeys()

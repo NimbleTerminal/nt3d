@@ -123,9 +123,9 @@ type Material struct {
 	Shininess   float32
 	// PBR enables single-scatter Cook-Torrance GGX metallic/roughness shading
 	// in place of Lambert/Blinn-Phong. Setting Metallic, Roughness, ORMMap,
-	// Clearcoat, or SheenColor above zero also enables PBR automatically; set
-	// PBR: true explicitly when drawing a mirror-smooth dielectric (Metallic: 0,
-	// Roughness: 0).
+	// Clearcoat, SheenColor, SpecularColor, or SpecularIntensity above zero also
+	// enables PBR automatically; set PBR: true explicitly when drawing a
+	// mirror-smooth dielectric (Metallic: 0, Roughness: 0).
 	PBR bool
 	// Metallic is the conductor weight, 0..1 (0 dielectric, 1 metal). Metals
 	// tint F0 by the surface base color and suppress diffuse reflection.
@@ -137,6 +137,20 @@ type Material struct {
 	// IOR is the dielectric index of refraction in [1, 3]; zero defaults to
 	// 1.5 (F0 = 0.04).
 	IOR float32
+	// SpecularColor tints and scales dielectric Fresnel F0 (and scales grazing F90
+	// by SpecularColor.A / 255) in sRGB color, matching glTF's
+	// KHR_materials_specular. The zero value leaves dielectric specular at
+	// [1, 1, 1] with factor 1; pass A: 255 for full factor (such as
+	// color.RGBA{A: 255} for specularColorFactor [0, 0, 0] with grazing Fresnel
+	// preserved) or non-zero RGB with A: 0 (such as color.RGBA{R: 255, G: 255,
+	// B: 255, A: 0}) to suppress dielectric specular completely. Setting a
+	// non-zero SpecularColor or SpecularIntensity > 0 on a lit material activates
+	// PBR.
+	SpecularColor color.RGBA
+	// SpecularIntensity scales SpecularColor (>= 0); zero defaults to 1. Values
+	// above 1 raise dielectric F0 (clamped per channel at 1 before metallic
+	// mixing, per KHR_materials_specular).
+	SpecularIntensity float32
 	// Clearcoat adds a dielectric polyurethane/lacquer/water top layer (IOR 1.5,
 	// F0 = 0.04) evaluated along the unperturbed geometric surface normal over
 	// the base shading layer, 0..1 (0 disables). Evaluated in both PBR and

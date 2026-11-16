@@ -211,7 +211,7 @@ fn toonLobe(n:vec3<f32>,p:vec3<f32>,l:Light,shininess:f32)->f32 {
 fn pbrPow5(x:f32)->f32 {
  let c=clamp(x,0.0,1.0);let c2=c*c;return c2*c2*c;
 }
-fn envBRDF(f0:vec3<f32>,roughness:f32,nv:f32)->vec3<f32> {
+fn envBRDF(f0:vec3<f32>,f90:f32,roughness:f32,nv:f32)->vec3<f32> {
  let r0=-roughness+1.0;
  let r1=-0.0275*roughness+0.0425;
  let r2=-0.572*roughness+1.04;
@@ -219,7 +219,6 @@ fn envBRDF(f0:vec3<f32>,roughness:f32,nv:f32)->vec3<f32> {
  let a004=min(r0*r0,exp2(-9.28*nv))*r0+r1;
  let abX=-1.04*a004+r2;
  let abY=1.04*a004+r3;
- let f90=clamp(50.0*max(f0.r,max(f0.g,f0.b)),0.0,1.0);
  return f0*abX+vec3<f32>(f90*abY);
 }
 fn pbrSpecularAO(nv:f32,ao:f32,alpha:f32)->f32 {
@@ -269,8 +268,8 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
  let nx=dpdx(shadeNormal);let ny=dpdy(shadeNormal);
  let gnx=dpdx(o.normal);let gny=dpdy(o.normal);
  let wx=dpdx(o.world);let wy=dpdy(o.world);
- var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);var pbr=vec4<f32>(0.0);var coat=vec2<f32>(0.0);var sheen=vec4<f32>(0.0);var emissive=vec3<f32>(0.0);var unlit=false;
- if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;pbr=inst.pbr;coat=inst.coat.xy;sheen=inst.sheen;emissive=inst.emissive.rgb;unlit=inst.normal[0].w>0.5;}
+ var toon=vec4<f32>(0.0);var style=vec4<f32>(0.0);var pbr=vec4<f32>(0.0);var coat=vec2<f32>(0.0);var sheen=vec4<f32>(0.0);var emissive=vec3<f32>(0.0);var specPacked=0.0;var unlit=false;
+ if o.optics.w>0.5 {let inst=instances[u32(o.optics.w)-1u];toon=inst.toon;style=inst.toonStyle;pbr=inst.pbr;coat=inst.coat.xy;sheen=inst.sheen;emissive=inst.emissive.rgb;specPacked=inst.emissive.w;unlit=inst.normal[0].w>0.5;}
  if !unlit && dot(o.normal,o.normal)>0.0 {
   let n=normalize(shadeNormal);
   let view=viewAt(o.world);
@@ -284,8 +283,15 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
    let metallic=clamp(pbr.x*orm.z,0.0,1.0);
    let ao=1.0+(orm.x-1.0)*pbr.w;
    let alpha=roughness*roughness;let a2=alpha*alpha;
-   let df0=pbr.z-1.0;
-   let f0=mix(vec3<f32>(df0),c,metallic);
+   var df0=vec3<f32>(pbr.z-1.0);var specFactor=1.0;
+   if specPacked>0.5 {
+    let bits=u32(specPacked)-1u;
+    let sq=vec3<f32>(f32((bits>>16u)&255u),f32((bits>>8u)&255u),f32(bits&255u))*(1.0/255.0);
+    df0=sq*sq;
+    specFactor=pbr.z-1.0;
+   }
+   let f0=mix(df0,c,metallic);
+   let f90Base=mix(specFactor,1.0,metallic);
    let diffColor=c*(1.0-metallic);
    let geometric=normalize(o.normal);
    var rn=n;var facing=dot(n,view);
@@ -337,7 +343,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
         let lobe=a2/max(1e-7,denom*denom)*0.25;
         let sw=max(0.0001,abs(pbrToonLobe(nX,pX,l,a2)-lobe)+abs(pbrToonLobe(nY,pY,l,a2)-lobe)+soft);
         let spot=toonStep(0.5,sw,lobe)*t.w*sh*ccAtten*sheenScale;
-        let fk=f0+(vec3<f32>(1.0)-f0)*fvh5;
+        let fk=f0+(vec3<f32>(f90Base)-f0)*fvh5;
         specOut+=l.b.rgb*spot*fk;
         if maxSheen>0.0 {
          let shLobe=2.0*nl*pbrSheenBRDF(nh,nl,nv,sInvAlpha);
@@ -372,12 +378,13 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
      for(var k=0u;k<9u;k++){shIrr+=u.environment[k].rgb*nt3dSHBasis(k,n);}
      indDiff+=max(vec3<f32>(0.0),shIrr);
     }
-    let f90=max(vec3<f32>(1.0-roughness),f0);
+    let f90=max(vec3<f32>(f90Base*(1.0-roughness)),f0);
     let ks=f0+(f90-f0)*pbrPow5(1.0-nv);
     let baseIndScale=sheenViewScale*ccViewScale;
     diffOut=diffColor*(vec3<f32>(1.0)-ks)*indDiff*(ao*baseIndScale);
     if maxSheen>0.0 {specOut+=sheenCol*sheenEnvV*indDiff*(ao*ccViewScale);}
-    let brdf=envBRDF(f0,roughness,nv);
+    let envF90=select(clamp(50.0*max(f0.r,max(f0.g,f0.b)),0.0,1.0),clamp(f90Base,0.0,1.0),specPacked>0.5);
+    let brdf=envBRDF(f0,envF90,roughness,nv);
     let sAO=pbrSpecularAO(nv,ao,alpha);
     let hemiReflT=reflected.z*0.5+0.5;
     var specEnv=mix(u.ground.rgb,u.sky.rgb,mix(hemiReflT,0.5,alpha));
@@ -389,7 +396,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     }
     specOut+=specEnv*brdf*(sAO*baseIndScale);
     if cc>0.0 {
-     let ccBRDF=envBRDF(vec3<f32>(0.04),ccRough,ccNV);
+     let ccBRDF=envBRDF(vec3<f32>(0.04),1.0,ccRough,ccNV);
      let ccSAO=pbrSpecularAO(ccNV,ao,ccAlpha);
      let ccHemiReflT=ccReflected.z*0.5+0.5;
      var ccSpecEnv=mix(u.ground.rgb,u.sky.rgb,mix(ccHemiReflT,0.5,ccAlpha));
@@ -426,7 +433,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
          dTerm=piD*(0.5/max(1e-5,ggxV+ggxL));
          if maxSheen>0.0 {shTerm=pbrSheenBRDF(nh,nl,nv,sInvAlpha);}
         }
-        let fk=f0+(vec3<f32>(1.0)-f0)*fvh5;
+        let fk=f0+(vec3<f32>(f90Base)-f0)*fvh5;
         let w=vis*nl*ccAtten;
         diffOut+=l.b.rgb*(w*sheenScale)*(vec3<f32>(1.0)-fk)*diffColor;
         specOut+=l.b.rgb*w*(sheenScale*dTerm*fk+shTerm*sheenCol);

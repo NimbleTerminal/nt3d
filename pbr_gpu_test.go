@@ -91,6 +91,25 @@ func TestGPUPBRDirectAndMapsParity(t *testing.T) {
 			SheenRoughness:     .42,
 			Toon:               ToonStyle{Bands: 3, Softness: .2, Rim: .2},
 		}, color.RGBA{42, 88, 132, 255}},
+		{"specular-zero-matte", true, &Material{
+			Roughness:     .22,
+			SpecularColor: color.RGBA{255, 255, 255, 0},
+		}, color.RGBA{195, 65, 55, 255}},
+		{"specular-tinted-hdr", true, &Material{
+			Roughness:         .18,
+			SpecularColor:     color.RGBA{255, 110, 45, 200},
+			SpecularIntensity: 2.5,
+		}, color.RGBA{28, 36, 52, 255}},
+		{"specular-black-grazing-f90", true, &Material{
+			Roughness:     .14,
+			SpecularColor: color.RGBA{0, 0, 0, 255},
+		}, color.RGBA{24, 24, 30, 255}},
+		{"specular-toon-tinted", true, &Material{
+			Roughness:         .28,
+			SpecularColor:     color.RGBA{80, 220, 255, 255},
+			SpecularIntensity: 2,
+			Toon:              ToonStyle{Bands: 3, Softness: .2},
+		}, color.RGBA{50, 35, 70, 255}},
 	}
 
 	for i, tc := range cases {

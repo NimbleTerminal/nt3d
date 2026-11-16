@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Add pure-Go, WASM-safe `KHR_texture_basisu` (KTX 2.0) and
+  `KHR_materials_specular` support (`nt3d/mesh/gltf`, both accepted in
+  `extensionsRequired`), plus `Material.SpecularColor` and
+  `Material.SpecularIntensity` across WebGPU and software PBR renderers:
+  - `KHR_texture_basisu` decodes KTX 2.0 BasisLZ/ETC1S (global endpoint &
+    selector codebooks, canonical Huffman/VLC/RLE/`approx_move_to_front` slices,
+    single-slice RGB/RRR and dual-slice RGBA/RRRG), UASTC (all 19 4×4 block
+    modes), and uncompressed 8-bit `VkFormat` payloads with None, Zstandard, or
+    zlib supercompression within `Options.MaxBytes`, reconstructing tangent `Z`
+    on two-channel normal maps and falling back cleanly to `EXT_texture_webp` /
+    `Texture.Source` when external `.ktx2` side files are absent.
+  - `KHR_materials_specular` (`specularFactor`, `specularColorFactor`) maps to
+    per-instance `Material.SpecularColor` and `Material.SpecularIntensity` with
+    zero increase in GPU `instanceRecordSize` and full `SharedGeometry`
+    compatibility across `Scene.SetMaterialVariant`.
+- Add interactive `KHR_materials_variants` and multi-LOD `.glb` inspection to
+  `task meshes` (`nt3d-meshes`) and `task gogpu` (`examples/gogpu`), plus
+  `(*SceneAsset).LODTiers`, `(*SceneAsset).Bounds`, `(*SceneAsset).Triangles`,
+  and `(*nt3dmesh.Model).LODTiers`: glTF assets opened in `task meshes` now
+  preserve their full `SceneAsset` PBR hierarchy, auto-collapse `*_LOD0..N`
+  subtrees onto `Scene.SetLOD` (`l` toggles `LOD auto` vs raw hierarchy, `[`/`]`
+  step `SetLODBias`), cycle colorways on `v`, and display live drawn/total
+  triangles and `LODTierInstances` (`V`/`Shift+V` and `D`/`-`/`=`/`0` in
+  `task gogpu`).
 - Add multi-LOD asset compilation and `Scene.SetLOD` template support:
   `AssetNode.LOD`, `AssetNode.LODBounds`, and `AssetNode.LODVariantMaterials`
   let `SceneAsset.Instantiate` bind shared `LODLevel` chains directly with

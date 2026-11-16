@@ -473,4 +473,32 @@ func TestSceneAssetLODValidationErrors(t *testing.T) {
 	if _, err := CombineAssetLOD([]AssetLOD{{MaxDistance: 10, Asset: nil}}); err == nil {
 		t.Fatal("expected error for nil asset in CombineAssetLOD")
 	}
+
+	// Verify SceneAsset.LODTiers, Bounds, and Triangles helpers.
+	if got := nilAsset.LODTiers(); got != 0 {
+		t.Fatalf("nilAsset.LODTiers() = %d, want 0", got)
+	}
+	if got := noLOD.LODTiers(); got != 0 {
+		t.Fatalf("noLOD.LODTiers() = %d, want 0", got)
+	}
+	if got := withLight.LODTiers(); got != 0 {
+		t.Fatalf("withLight.LODTiers() = %d, want 0 (light inside LOD tier is uncompilable)", got)
+	}
+	if got := validPair.LODTiers(); got != 3 {
+		t.Fatalf("validPair.LODTiers() = %d, want 3", got)
+	}
+	if got := validPair.Triangles(); got != 6 {
+		t.Fatalf("raw validPair.Triangles() = %d, want 6", got)
+	}
+	compiledPair, err := validPair.WithLOD(15, 45)
+	check(t, err)
+	if got := compiledPair.LODTiers(); got != 3 {
+		t.Fatalf("compiledPair.LODTiers() = %d, want 3", got)
+	}
+	if got := compiledPair.Triangles(); got != 2 {
+		t.Fatalf("compiledPair.Triangles() = %d, want 2 (finest tier)", got)
+	}
+	if b := compiledPair.Bounds(); !b.IsValid() || b.Min.X != -0.5 || b.Max.X != 0.5 {
+		t.Fatalf("unexpected compiledPair.Bounds() = %+v", b)
+	}
 }

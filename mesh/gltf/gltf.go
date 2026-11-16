@@ -88,8 +88,9 @@ const GLTF nt3dmesh.Format = "gltf"
 // KHR_materials_emissive_strength map to Material.Emissive, EmissiveMap, and
 // EmissiveIntensity; KHR_materials_ior, KHR_materials_transmission, and
 // KHR_materials_volume map to IOR, Transmission, Refraction, and Absorption;
-// KHR_materials_clearcoat and KHR_materials_sheen map to Clearcoat,
-// ClearcoatRoughness, SheenColor, and SheenRoughness.
+// KHR_materials_clearcoat, KHR_materials_sheen, and KHR_materials_specular map
+// to Clearcoat, ClearcoatRoughness, SheenColor, SheenRoughness, SpecularColor,
+// and SpecularIntensity.
 // Normals the file omits are computed flat; triangle strips and fans become
 // triangles, points points, and lines lines.
 //
@@ -99,8 +100,10 @@ const GLTF nt3dmesh.Format = "gltf"
 // integer positions, normals, tangents, texture coordinates, and morph deltas;
 // EXT_meshopt_compression decompresses ATTRIBUTES, TRIANGLES, and INDICES
 // bufferViews (including OCTAHEDRAL, QUATERNION, and EXPONENTIAL filters);
-// EXT_texture_webp decodes WebP textures (falling back to Texture.Source when
-// an external WebP side file is missing); EXT_mesh_gpu_instancing expands
+// KHR_texture_basisu decodes KTX 2.0 BasisLZ/ETC1S, UASTC, and uncompressed
+// textures in pure Go (reconstructing tangent Z on two-channel normal maps);
+// EXT_texture_webp decodes WebP textures (both falling back to alternate
+// texture sources when an external side file is missing); EXT_mesh_gpu_instancing expands
 // per-instance TRS accessors; KHR_materials_variants populates Model.Variants
 // and AssetNode.VariantMaterials for per-instance Scene.SetMaterialVariant
 // colorway switching; and undeformed static triangle meshes in Model.Asset
@@ -167,19 +170,22 @@ var supportedExtensions = []string{
 	"KHR_materials_volume",
 	"KHR_materials_clearcoat",
 	"KHR_materials_sheen",
+	"KHR_materials_specular",
 	"KHR_lights_punctual",
 	"KHR_materials_variants",
 	"KHR_mesh_quantization",
+	"KHR_texture_basisu",
 	"EXT_meshopt_compression",
 	"EXT_texture_webp",
 	"EXT_mesh_gpu_instancing",
 }
 
 // ignoredExtensions are passed over silently: they refine looks nt3d does not draw.
-var ignoredExtensions = []string{"KHR_materials_specular"}
+var ignoredExtensions []string
 
 type gltfDecoder struct {
 	decodedLeft    *int64
+	budgetErr      error
 	depth          int
 	capture        bool
 	assetMode      bool
@@ -190,6 +196,7 @@ type gltfDecoder struct {
 	budget         budget
 	files          sideFiles
 	images         map[int]image.Image
+	twoChannelTex  map[int]bool
 	normalTextures map[int]*nt3d.Texture
 	ormTextures    map[[2]int]*nt3d.Texture
 	textures       map[int]*nt3d.Texture // By texture index; nil when it failed.
@@ -498,6 +505,8 @@ type gltfLook struct {
 	clearcoat, clearcoatRoughness                       float32
 	sheenColor                                          color.RGBA
 	sheenRoughness                                      float32
+	specularColor                                       color.RGBA
+	specularIntensity                                   float32
 	transmission, refraction                            float32
 	absorption                                          nt3dmath.Vec3
 	plain                                               bool // No material: Options.Color paints it.
@@ -781,6 +790,77 @@ func (d *gltfDecoder) look(index *int) gltfLook {
 			l.sheenRoughness = float32(srf)
 		}
 	}
+
+	type specTexRef struct {
+		Index      *int            `json:"index"`
+		TexCoord   int             `json:"texCoord"`
+		Extensions gltf.Extensions `json:"extensions"`
+	}
+	var specExt struct {
+		SpecularFactor       *float64    `json:"specularFactor"`
+		SpecularTexture      *specTexRef `json:"specularTexture"`
+		SpecularColorFactor  []float64   `json:"specularColorFactor"`
+		SpecularColorTexture *specTexRef `json:"specularColorTexture"`
+	}
+	if ok, err := decodeExtension(m.Extensions, "KHR_materials_specular", &specExt); err != nil {
+		setErr(err)
+	} else if ok {
+		sf := 1.0
+		if specExt.SpecularFactor != nil {
+			sf = *specExt.SpecularFactor
+			if !validCoordinate(float32(sf)) || sf < 0 || sf > 1 {
+				setErr(errors.New("nt3dmesh: invalid KHR_materials_specular"))
+			}
+		}
+		if specExt.SpecularColorFactor != nil && len(specExt.SpecularColorFactor) != 3 {
+			setErr(errors.New("nt3dmesh: KHR_materials_specular specularColorFactor needs 3 values"))
+		}
+		scf := [3]float64{1, 1, 1}
+		if len(specExt.SpecularColorFactor) == 3 {
+			for k := range 3 {
+				v := specExt.SpecularColorFactor[k]
+				if !validCoordinate(float32(v)) || v < 0 {
+					setErr(errors.New("nt3dmesh: invalid KHR_materials_specular"))
+				}
+				scf[k] = v
+			}
+		}
+		for _, ref := range []*specTexRef{specExt.SpecularTexture, specExt.SpecularColorTexture} {
+			if ref == nil {
+				continue
+			}
+			if ref.Index == nil || *ref.Index < 0 || *ref.Index >= len(d.doc.Textures) || d.doc.Textures[*ref.Index] == nil {
+				setErr(errors.New("nt3dmesh: invalid KHR_materials_specular texture"))
+				continue
+			}
+			_, err := readMapping(ref.TexCoord, ref.Extensions)
+			setErr(err)
+		}
+		if l.err == nil && !l.unlit {
+			a := uint8(sf*255 + .5)
+			maxCh := max(scf[0], max(scf[1], scf[2]))
+			switch {
+			case a == 0:
+				l.specularColor = color.RGBA{R: 255, G: 255, B: 255, A: 0}
+			case maxCh == 0:
+				l.specularColor = color.RGBA{A: a}
+			case maxCh > 1:
+				l.specularColor = color.RGBA{
+					R: srgb8(scf[0] / maxCh),
+					G: srgb8(scf[1] / maxCh),
+					B: srgb8(scf[2] / maxCh),
+					A: a,
+				}
+				l.specularIntensity = float32(maxCh)
+			default:
+				c := color.RGBA{R: srgb8(scf[0]), G: srgb8(scf[1]), B: srgb8(scf[2]), A: a}
+				if c != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+					l.specularColor = c
+				}
+			}
+		}
+	}
+	setErr(d.budgetErr)
 	return l
 }
 
@@ -814,6 +894,9 @@ func (d *gltfDecoder) textureKind(index int, normal bool) (*nt3d.Texture, bool) 
 	}
 	t, err := d.loadTextureKind(index, normal)
 	if err != nil {
+		if errors.Is(err, nt3dmesh.ErrTooLarge) && d.budgetErr == nil {
+			d.budgetErr = err
+		}
 		d.warn("texture %d: %v", index, err)
 	}
 	cache[index] = t
@@ -852,6 +935,9 @@ func (d *gltfDecoder) ormTexture(mrIdx, occIdx int) (*nt3d.Texture, bool) {
 	if mrIdx >= 0 {
 		var err error
 		if mrImg, err = d.loadImage(mrIdx); err != nil {
+			if errors.Is(err, nt3dmesh.ErrTooLarge) && d.budgetErr == nil {
+				d.budgetErr = err
+			}
 			d.warn("texture %d: %v", mrIdx, err)
 		}
 	}
@@ -861,6 +947,9 @@ func (d *gltfDecoder) ormTexture(mrIdx, occIdx int) (*nt3d.Texture, bool) {
 		} else {
 			var err error
 			if occImg, err = d.loadImage(occIdx); err != nil {
+				if errors.Is(err, nt3dmesh.ErrTooLarge) && d.budgetErr == nil {
+					d.budgetErr = err
+				}
 				d.warn("texture %d: %v", occIdx, err)
 			}
 		}
@@ -917,15 +1006,17 @@ func (d *gltfDecoder) validateTextures() error {
 		if tex == nil {
 			continue
 		}
-		var webpExt struct {
-			Source *int `json:"source"`
-		}
-		ok, err := decodeExtension(tex.Extensions, "EXT_texture_webp", &webpExt)
-		if err != nil {
-			return err
-		}
-		if ok && (webpExt.Source == nil || *webpExt.Source < 0 || *webpExt.Source >= len(d.doc.Images) || d.doc.Images[*webpExt.Source] == nil) {
-			return fmt.Errorf("nt3dmesh: texture %d has invalid EXT_texture_webp source", i)
+		for _, extName := range [...]string{"KHR_texture_basisu", "EXT_texture_webp"} {
+			var srcExt struct {
+				Source *int `json:"source"`
+			}
+			ok, err := decodeExtension(tex.Extensions, extName, &srcExt)
+			if err != nil {
+				return err
+			}
+			if ok && (srcExt.Source == nil || *srcExt.Source < 0 || *srcExt.Source >= len(d.doc.Images) || d.doc.Images[*srcExt.Source] == nil) {
+				return fmt.Errorf("nt3dmesh: texture %d has invalid %s source", i, extName)
+			}
 		}
 	}
 	return nil
@@ -941,40 +1032,65 @@ func (d *gltfDecoder) loadImage(index int) (image.Image, error) {
 		return nil, errors.New("does not exist")
 	}
 	tex := d.doc.Textures[index]
-	var webpExt struct {
-		Source *int `json:"source"`
+	var candidates []int
+	addCandidate := func(src *int) {
+		if src == nil || slices.Contains(candidates, *src) {
+			return
+		}
+		candidates = append(candidates, *src)
 	}
-	hasWebP, err := decodeExtension(tex.Extensions, "EXT_texture_webp", &webpExt)
-	if err != nil {
-		return nil, err
+	for _, extName := range [...]string{"KHR_texture_basisu", "EXT_texture_webp"} {
+		var srcExt struct {
+			Source *int `json:"source"`
+		}
+		ok, err := decodeExtension(tex.Extensions, extName, &srcExt)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			addCandidate(srcExt.Source)
+		}
 	}
+	addCandidate(tex.Source)
+	if len(candidates) == 0 {
+		return nil, errors.New("has no image nt3d can read")
+	}
+
 	var img image.Image
-	if hasWebP && webpExt.Source != nil {
-		img, err = d.loadImageSource(*webpExt.Source)
-		if err != nil && tex.Source != nil && *tex.Source != *webpExt.Source {
-			if fallback, ferr := d.loadImageSource(*tex.Source); ferr == nil {
-				img, err = fallback, nil
-			}
+	var twoCh bool
+	var firstErr error
+	for _, src := range candidates {
+		loaded, tc, err := d.loadImageSource(src)
+		if err == nil {
+			img, twoCh, firstErr = loaded, tc, nil
+			break
 		}
-	} else {
-		if tex.Source == nil {
-			return nil, errors.New("has no image nt3d can read")
+		if errors.Is(err, nt3dmesh.ErrTooLarge) {
+			return nil, err
 		}
-		img, err = d.loadImageSource(*tex.Source)
+		if firstErr == nil {
+			firstErr = err
+		}
 	}
-	if err != nil {
-		return nil, err
+	if firstErr != nil {
+		return nil, firstErr
 	}
 	if d.images == nil {
 		d.images = map[int]image.Image{}
 	}
 	d.images[index] = img
+	if twoCh {
+		if d.twoChannelTex == nil {
+			d.twoChannelTex = map[int]bool{}
+		}
+		d.twoChannelTex[index] = true
+	}
 	return img, nil
 }
 
-func (d *gltfDecoder) loadImageSource(src int) (image.Image, error) {
+func (d *gltfDecoder) loadImageSource(src int) (image.Image, bool, error) {
 	if src < 0 || src >= len(d.doc.Images) || d.doc.Images[src] == nil {
-		return nil, errors.New("has no image nt3d can read")
+		return nil, false, errors.New("has no image nt3d can read")
 	}
 	im := d.doc.Images[src]
 	var data []byte
@@ -982,7 +1098,7 @@ func (d *gltfDecoder) loadImageSource(src int) (image.Image, error) {
 	switch {
 	case im.BufferView != nil:
 		if *im.BufferView < 0 || *im.BufferView >= len(d.doc.BufferViews) {
-			return nil, errors.New("names a missing buffer view")
+			return nil, false, errors.New("names a missing buffer view")
 		}
 		data, err = modeler.ReadBufferView(d.doc, d.doc.BufferViews[*im.BufferView])
 	case im.IsEmbeddedResource():
@@ -995,20 +1111,23 @@ func (d *gltfDecoder) loadImageSource(src int) (image.Image, error) {
 		data, err = d.files.ReadFile(name)
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	if isKTX2(data) || im.MimeType == "image/ktx2" {
+		return decodeKTX2(data, d.files.left)
 	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return nil, errors.New("not a PNG, JPEG, or registered image format")
+		return nil, false, errors.New("not a PNG, JPEG, KTX2, or registered image format")
 	}
 	if config.Width > maxTextureSide || config.Height > maxTextureSide {
-		return nil, fmt.Errorf("larger than %d pixels a side", maxTextureSide)
+		return nil, false, fmt.Errorf("larger than %d pixels a side", maxTextureSide)
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return img, nil
+	return img, false, nil
 }
 
 func (d *gltfDecoder) loadTextureKind(index int, normal bool) (*nt3d.Texture, error) {
@@ -1017,6 +1136,9 @@ func (d *gltfDecoder) loadTextureKind(index int, normal bool) (*nt3d.Texture, er
 		return nil, err
 	}
 	if normal {
+		if d.twoChannelTex[index] {
+			img = reconstructNormalXYImage(img)
+		}
 		return nt3d.NewNormalMap(img)
 	}
 	return nt3d.NewTexture(img)
@@ -1428,6 +1550,8 @@ func (d *gltfDecoder) lookMaterial(l gltfLook, hasColors, useBaseColor bool) *nt
 		Metallic:           l.metallic,
 		Roughness:          l.roughness,
 		IOR:                l.ior,
+		SpecularColor:      l.specularColor,
+		SpecularIntensity:  l.specularIntensity,
 		Clearcoat:          l.clearcoat,
 		ClearcoatRoughness: l.clearcoatRoughness,
 		SheenColor:         l.sheenColor,

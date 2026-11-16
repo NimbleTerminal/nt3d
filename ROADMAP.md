@@ -67,6 +67,27 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **Pure-Go `KHR_texture_basisu` (KTX 2.0) and `KHR_materials_specular` +
+  `Material.SpecularColor` / `SpecularIntensity`**: `nt3d/mesh/gltf` decodes
+  KTX 2.0 BasisLZ/ETC1S, 19-mode UASTC, and uncompressed `VkFormat` textures
+  (with None, Zstandard, and zlib supercompression, `Options.MaxBytes`
+  enforcement, two-channel normal-map `Z` reconstruction, and fallback to
+  `EXT_texture_webp` / `Texture.Source`) in pure Go with zero CGo, completing
+  OGC 3D Tiles 1.1 `.glb` payload parity across native and WASM builds.
+  `KHR_materials_specular` moves from `ignoredExtensions` into
+  `supportedExtensions` (accepted in `extensionsRequired`), mapping to
+  per-instance `Material.SpecularColor` and `Material.SpecularIntensity` across
+  WebGPU and software PBR renderers without growing `instanceRecordSize`.
+
+- **Interactive `KHR_materials_variants` and multi-LOD `.glb` inspection in
+  `task meshes` and `task gogpu`**: `(*SceneAsset).LODTiers`, `Bounds`,
+  `Triangles`, and `(*nt3dmesh.Model).LODTiers` inspect arbitrary assets for
+  compilable `*_LOD0..N` subtrees; `task meshes -- model.glb` preserves PBR
+  `SceneAsset` hierarchies, auto-collapses multi-LOD packs (`l` toggles auto vs
+  raw, `[`/`]` step `SetLODBias`, `v` cycles colorways), and `task gogpu` adds
+  matching `V`/`Shift+V` colorway and `D`/`-`/`=`/`0` LOD controls with live
+  per-tier `LODTierInstances` HUD telemetry.
+
 - **Multi-LOD `.glb` and multi-file `Scene.SetLOD` helpers**: `AssetNode.LOD`,
   `AssetNode.LODBounds`, and `AssetNode.LODVariantMaterials` extend `SceneAsset`
   so `Instantiate` binds shared `LODLevel` chains with synchronized multi-part

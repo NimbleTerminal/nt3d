@@ -34,7 +34,9 @@
 //   - Shift+Tab / PageUp: switch to previous interactive demo in the gallery
 //   - ` (Grave) or F5: toggle interactive Demo Dropdown Menu (Up/Down + Enter or mouse click)
 //   - F1 (or I): toggle 2D HUD overlay and 3D pick annotations
-//   - F2 (or V): toggle picture-in-picture sub-viewport (GPUTarget.Viewport)
+//   - V (or Shift+V): cycle glTF KHR_materials_variants colorways when loaded model defines variants
+//   - D (or Shift+L): toggle multi-LOD auto collapse vs raw hierarchy (- / = / 0 adjust LOD bias)
+//   - F2 (or V when no variants): toggle picture-in-picture sub-viewport (GPUTarget.Viewport)
 //   - F3 (or B): toggle Load compositing mode over GoGPU background
 //   - F4 (or 2): open a second GoGPU window sharing the same GPU device
 //   - Escape: close dropdown menu, or quit application
@@ -781,7 +783,27 @@ func main() {
 		case gpucontext.KeyE:
 			lighting.cycleEnvironment(viewer)
 		case gpucontext.KeyL:
-			lighting.cycleRig()
+			if shiftDown && viewer != nil && viewer.hasLOD {
+				viewer.toggleLODMode()
+			} else {
+				lighting.cycleRig()
+			}
+		case gpucontext.KeyD:
+			if viewer != nil && viewer.hasLOD {
+				viewer.toggleLODMode()
+			}
+		case gpucontext.KeyMinus:
+			if viewer != nil && viewer.hasLOD {
+				viewer.stepLODBias(0.9)
+			}
+		case gpucontext.KeyEqual:
+			if viewer != nil && viewer.hasLOD {
+				viewer.stepLODBias(1.1)
+			}
+		case gpucontext.Key0:
+			if viewer != nil && viewer.hasLOD {
+				viewer.stepLODBias(0)
+			}
 		case gpucontext.KeyK:
 			lighting.toggleShadows()
 		case gpucontext.KeyN:
@@ -830,8 +852,16 @@ func main() {
 			showHUD = !showHUD
 			fmt.Printf("HUD & 3D pick annotations: %v\n", showHUD)
 		case gpucontext.KeyV:
-			pipView = !pipView
-			fmt.Printf("Sub-viewport inset: %v\n", pipView)
+			if viewer != nil && len(viewer.variants) > 0 {
+				if shiftDown {
+					viewer.stepVariant(-1)
+				} else {
+					viewer.stepVariant(1)
+				}
+			} else {
+				pipView = !pipView
+				fmt.Printf("Sub-viewport inset: %v\n", pipView)
+			}
 		case gpucontext.KeyB:
 			loadCompose = !loadCompose
 			fmt.Printf("Load composition mode: %v\n", loadCompose)
@@ -1030,6 +1060,8 @@ func main() {
 		viewer.decorateFrame(&f, camera, showHUD, false)
 		lastFrame = f
 		hasFrame = true
+		viewer.lastStats = f.Stats()
+		viewer.haveStats = true
 
 		if err := session.Encode(f, dc.CommandEncoder(), nt3d.GPUTarget{
 			Color:  dc.SurfaceView(),
