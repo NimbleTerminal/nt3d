@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.11.1 (2026-11-16)
+
 - Add `Scene.SetLODReferenceBounds`, which gives a `Scene.SetLOD` node shared
   reference bounds (in the node's local space) to measure its distance from
   instead of its own tier bounds, so the separate parts of one chunk switch
