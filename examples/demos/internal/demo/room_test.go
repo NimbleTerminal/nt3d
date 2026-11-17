@@ -18,7 +18,6 @@ func roomTestFrame(t *testing.T, d *demo, w, h int) nt3d.Frame {
 		t.Fatal(err)
 	}
 	f.Complete = true
-	d.decorateRoom(&f)
 	return f
 }
 func roomPixelDifference(a, b image.Image) int {

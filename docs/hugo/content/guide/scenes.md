@@ -31,6 +31,7 @@ if err := scene.SetTransform(group, nt3dmath.RotationZ(.4)); err != nil { panic(
 - `SetVisible` hides or shows a node and everything under it.
 - `Remove` deletes a node and everything under it.
 - `Node(id)` returns a copy of a node's details.
+- `SetNodeData(id, v)` attaches a value of your own to a node: the record it stands for, a key, a pointer to whatever placed it. nt3d never looks inside. It comes back from `NodeData(id)`, in `Node.Data`, in each frame's `Instance.Data`, and in a pick's `Hit.Data`, so a drawn or picked node leads straight to your record. Use it instead of encoding facts into the node's name and parsing them back out.
 
 Node IDs are stable and never reused, so an ID you hold either still means the same node or means nothing.
 
@@ -45,6 +46,29 @@ Transforms are `nt3dmath.Mat4` values: translations, rotations, and scales, comb
 Moving things is cheap. The GPU keeps each node's mesh in its local coordinates, so moving the camera, moving a node, or hiding one only changes a matrix, never re-uploads the mesh. Replacing one node's geometry uploads just that node; adding and removing nodes leaves the others' buffers alone.
 
 For geographic or astronomical worlds where coordinates exceed `float32`'s ~7 decimal digits of precision, `scene.SetNodeOrigin(id, [3]float64{x, y, z})` attaches a double-precision world-offset origin (`NodeOrigin`, `NodeWorldPosition`). When paired with `Camera.Origin` (set automatically by `CameraFromState`), `Scene.Frame` and `Scene.Pick` subtract the camera's origin in `float64` before building `float32` render and BVH transforms—eliminating vertex, shadow, and ray-picking jitter megameters from `(0, 0, 0)` with zero overhead when origins are unset.
+
+## Draw order
+
+Nodes are drawn in the order they were added, unless you say otherwise. Order shows in two places: where two surfaces lie at exactly the same depth the later one wins, and blended geometry (water, glass, Gaussian splats) has to be drawn after whatever is seen through it.
+
+`SetNodeDrawOrder(id, nt3d.DrawOrder{Layer: l, Key: k})` places a node. Frames draw in ascending `Layer`, then ascending `Key`, then the order nodes were added.
+
+```go
+const (
+    layerScenery = iota // the default: every node starts in layer 0
+    layerSplats
+    layerWater
+)
+water, _ := scene.Add(nt3d.Root, "water")
+_ = scene.SetNodeDrawOrder(water, nt3d.DrawOrder{Layer: layerWater}) // everything under water draws last
+_ = scene.SetNodeDrawOrder(tile, nt3d.DrawOrder{Key: int64(row)<<32 | int64(col)})
+```
+
+- **It is inherited.** A node with no order of its own (the zero `DrawOrder`) draws with its parent's, so ordering a group places everything under it. A node's own order takes the place of its ancestors'. Setting the zero `DrawOrder` hands a node back to its parent's.
+- **`Layer` is for coarse passes**, such as scenery, then decals, then water.
+- **`Key` is for a fixed order within a layer.** A scene that loads in the background adds nodes in whatever order the loads finish; a key from something stable (a tile's row and column, a placement's index) makes two renders of the same view identical.
+
+Changing an order uploads nothing, and the sorted order is kept between frames until a node is added, removed, moved, or reordered.
 
 ## Sharing geometry
 
@@ -80,6 +104,8 @@ err := scene.SetLOD(id, []nt3d.LODLevel{
 Each `LODLevel` sets either `Geometry` or `Shared` (`*SharedGeometry`) and an optional `Outline` override. Measuring distance to the world-space AABB means a large terrain or city tile right beneath the camera evaluates near zero rather than to the tile's center. Setting a finite positive `MaxDistance` on the final level hides the node beyond that distance. Uploaded GPU buffers for visited tiers stay cached as the camera moves across thresholds, and picking builds BVH indexes per tier.
 
 To drive detail from a frame-time budget without rebuilding per-node tiers, `scene.SetLODBias(f)` scales every `MaxDistance` (including finite hide-beyond cutoffs) by `f > 0` in `O(1)` (`1` by default; `scene.LODBias()`), resetting per-node hysteresis so budget steps apply on the very next `Scene.Frame`. `scene.SetLODHysteresis(band)` adds a fractional deadband in `[0, 0.5]` (`0` by default; `scene.LODHysteresis()`) so a node crossing effective boundary `D` switches to a coarser tier only above `D * (1 + band)` and returns to a finer tier only below `D * (1 - band)`; first frames, `SetLOD`, re-showing a hidden node with `SetVisible`, and `SetLODBias` changes select without hysteresis. `frame.Stats().LODTierInstances` reports how many drawn LOD instances landed in each tier (`0..6`, with `7+` folded into index `7`). The [forest demo](../demos/#forest) uses three shared tiers per tree species (`l` cycles `LOD on`, color-coded `LOD tint`, and `LOD off`; `[` and `]` step bias by `×0.9` / `×1.1`; `b` toggles a 5% hysteresis band).
+
+The hysteresis band makes a frame depend on the frames before it, which is right for a moving camera and wrong for a screenshot. [`Scene.StillFrame`](../rendering/#frames) chooses every level by distance alone and leaves the remembered levels untouched.
 
 Reusable `SceneAsset` templates can also carry `AssetNode.LOD` directly (with optional `LODBounds` for synchronized multi-part prop switching and `LODVariantMaterials` for per-tier colorways): call `asset.WithLOD(40, 120)` to collapse sibling `*_LOD0`, `*_LOD1`, `*_LOD2` subtrees in a single `.glb`, or `CombineAssetLOD` / `nt3dmesh.CombineLOD` to merge separate per-tier files into one reusable template (see [Multi-LOD assets](../meshes/#multi-lod-assets)).
 

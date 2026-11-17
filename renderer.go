@@ -39,6 +39,7 @@ type Instance struct {
 	Name    string
 	World   nt3dmath.Mat4
 	Visible bool
+	Data    any // The node's Scene.SetNodeData value.
 }
 
 // OverlayRect is an opaque screen-space rectangle in render pixels.
@@ -56,6 +57,9 @@ type CellText struct {
 
 // Frame is read-only after submission. Geometry is in local coordinates, with
 // one Instance per Geometry entry. Empty Instances means visible identity instances.
+// Scene.Frame orders the entries by Scene.SetNodeDrawOrder, and fills
+// Background, Lighting, Fog, the Environment fields, and PostProcess from the
+// scene's Look; change them on the Scene rather than on each frame.
 // Revision identifies geometry across scenes; transforms and overlays can change
 // without it. TextureRevision changes when texture bindings need refreshing.
 type Frame struct {
@@ -174,9 +178,31 @@ func (f Frame) viewAt(p nt3dmath.Vec3) nt3dmath.Vec3 {
 // MaxFramePixels is the maximum width*height pixel area of a rendered Frame.
 const MaxFramePixels = 4096 * 2160
 
-// Frame creates a scene snapshot. The caller owns its header and decoration
-// slices; its geometry and materials must not be mutated. Scene edits preserve it.
+// Frame creates a scene snapshot for interactive drawing. The caller owns its
+// header and decoration slices; its geometry and materials must not be
+// mutated. Scene edits preserve it.
+//
+// Frame is one of a run of frames: with Scene.SetLODHysteresis in force, a
+// node holds the level of detail it drew last until the camera has moved far
+// enough, which Frame remembers in the scene. For a picture that depends on
+// the scene and camera alone, use StillFrame.
 func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
+	return s.frame(camera, width, height, false)
+}
+
+// StillFrame creates a scene snapshot for a picture of its own: a screenshot,
+// a thumbnail, a golden image, a render for a model to look at. It is Frame
+// except that it reads and writes nothing left by earlier frames. Each level
+// of detail is chosen by distance alone, without hysteresis, so the same scene
+// and camera always give the same frame, and the interactive frames after it
+// draw as if it had never been made. Complete is set, for full sampling.
+func (s *Scene) StillFrame(camera Camera, width, height int) (Frame, error) {
+	f, err := s.frame(camera, width, height, true)
+	f.Complete = true
+	return f, err
+}
+
+func (s *Scene) frame(camera Camera, width, height int, still bool) (Frame, error) {
 	if err := s.UpdateDeformations(); err != nil {
 		return Frame{}, err
 	}
@@ -185,10 +211,20 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	relCam := validCam
 	relCam.Origin = [3]float64{}
 
-	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Environment: s.environment, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Origin: frameOrigin, Cull: true, Linear: true, SplatBudget: s.splatBudget}
+	look := s.look
+	f := Frame{
+		Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision,
+		Background: look.Background, Lighting: Lighting{Ambient: look.Lighting.Ambient}, Fog: look.Fog,
+		Environment: look.Environment, EnvironmentStrength: look.EnvironmentStrength, EnvironmentBackgroundOnly: look.EnvironmentBackgroundOnly,
+		PostProcess: look.PostProcess,
+		Origin:      frameOrigin, Cull: true, Linear: true, SplatBudget: s.splatBudget,
+	}
 	f.ReflectionProbes = s.reflectionProbesRelative(frameOrigin)
+	// The scene's light nodes are its lights; without any, the look's are.
 	if lights := s.sceneLightsRelative(Root, frameOrigin); len(lights) > 0 {
 		f.Lighting.Lights = lights
+	} else if len(look.Lighting.Lights) > 0 {
+		f.Lighting.Lights = lightsRelative(look.Lighting.Lights, frameOrigin)
 	}
 	if width < 1 || height < 1 || width > MaxFramePixels || height > MaxFramePixels/width {
 		return f, fmt.Errorf("nt3d: frame area must be 1..%d pixels", MaxFramePixels)
@@ -200,7 +236,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	// The nodes that draw are counted first, so the frame's slices are each
 	// allocated once at their final size instead of growing node by node.
 	drawn := make([]*sceneNode, 0, len(s.order))
-	for _, id := range s.order {
+	for _, id := range s.sequence() {
 		if n := s.nodes[id]; n.geometry != nil {
 			drawn = append(drawn, n)
 		}
@@ -218,7 +254,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 			if n.lodRefBounds.IsValid() && n.lodRefNode != 0 && s.nodes[n.lodRefNode] != nil {
 				lodWorld = s.worldRelative(n.lodRefNode, frameOrigin)
 			}
-			lvl, inRange := n.selectLOD(lodWorld, f.Eye, lodBias, lodBand, lodEpoch, visible)
+			lvl, inRange := n.selectLOD(lodWorld, f.Eye, lodBias, lodBand, lodEpoch, visible, still)
 			geom, rev, sg = lvl.geometry, lvl.geometryRevision, lvl.shared
 			visible = visible && inRange
 		}
@@ -234,7 +270,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 			world, inDepth = billboardWorld(f, relCam, world, b)
 			visible = visible && inDepth
 		}
-		f.Instances = append(f.Instances, Instance{id, n.Name, world, visible})
+		f.Instances = append(f.Instances, Instance{Node: id, Name: n.Name, World: world, Visible: visible, Data: n.Data})
 	}
 	return f, nil
 }

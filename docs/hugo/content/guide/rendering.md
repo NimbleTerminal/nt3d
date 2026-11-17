@@ -23,6 +23,13 @@ A frame is a snapshot: the geometry, world transforms, and visibility of the sce
 
 Frames skip what the camera can't see. Every renderer, and picking, passes over a node whose bounds lie wholly outside the view. The picture is the same, but in a field of spheres seen from inside, software frames drew about 2.8× faster and wireframe 3.5×. The GPU keeps the skipped nodes' buffers for when they come back.
 
+There are two ways to take one:
+
+- `scene.Frame(camera, w, h)` is one of a run of frames, for interactive drawing. With `SetLODHysteresis` in force a node holds the [level of detail](../scenes/#level-of-detail) it drew last until the camera has moved far enough, and `Frame` remembers that in the scene.
+- `scene.StillFrame(camera, w, h)` is a picture of its own: a screenshot, a thumbnail, a golden image, a render for a model to look at. It reads and writes nothing left by earlier frames, so the same scene and camera always give the same frame, and the interactive frames after it draw as if it had never been made. It also sets `Complete`, for full sampling.
+
+A frame draws its nodes in the scene's [draw order](../scenes/#draw-order), and arrives lit and finished by the scene's [look](#how-it-looks).
+
 ## Cameras
 
 `DefaultCamera()` suits a scene centered on the origin and about two units across. For anything else:
@@ -91,6 +98,18 @@ Retain `NewSoftwareRenderer()` between image-only frames to reuse private depth 
 **Wireframe** draws terminal text with [ntcanvas](https://github.com/NimbleTerminal/ntcanvas), so it works in any terminal. Surfaces hide what's behind them. A coarse mesh draws its edges; a dense one draws its silhouettes, sharp creases, and contours instead, so a 1.5-million-triangle mesh is still a clean drawing, in about 50 ms. Heightfields draw as a lattice whose density adapts to their size on screen.
 
 ## How it looks
+
+A scene's **look** is everything a frame shows that is neither a node nor the camera: `Background`, `Lighting`, `Fog`, the `Environment` with its strength, and `PostProcess`. The scene holds it, and every frame made from the scene starts out dressed in it:
+
+```go
+look := scene.Look() // a new scene has nt3d.DefaultLook()
+look.Background = color.RGBA{16, 14, 20, 255}
+look.Fog = nt3d.Fog{Near: 40, Far: 180}
+look.Lighting.Ambient.Intensity = 0.4
+scene.SetLook(look)
+```
+
+Set it once, where you build the scene, rather than on each frame after it is made. The sections below describe the settings by their `Frame` fields, which is where the renderers read them; `Look` has a field of the same name for each. A frame's own fields can still be changed after it is made, which changes that one frame: right for an effect that follows the camera, such as fog scaled to its distance. Lights placed in the scene with `SetNodeLight` are the scene's lights when it has any, and take the place of the look's `Lighting.Lights`; its ambient light applies either way. Positions in a look are in world space, and frames convert them when `Camera.Origin` is set.
 
 **Lighting.** `Frame.Lighting` (or the widget's `SetLighting`) holds an ambient light and up to eight lights (`MaxLights`), shaded per pixel on both the GPU and in software. The ambient light blends from `Ground`'s color on surfaces facing down to `Sky`'s facing up; equal colors give even light. Each `Light` is a `DirectionalLight` (from `Direction` pointing *toward* the light, like the sun), a `PointLight` (from `Position`, fading to nothing at `Range`, or as 1/(1+d²) without one), or a `SpotLight` (shining from `Position` along `Direction`, with full intensity inside `InnerCone` radians and smooth quadratic falloff to zero at `OuterCone` in `(0, π/2)`, defaulting `OuterCone` to `π/4` when zero), with an sRGB `Color` (zero means white) and an `Intensity` (zero means 1). Lights can also be attached directly to scene-graph nodes via `scene.SetNodeLight(node, light)` (-Z local forward, matching glTF `KHR_lights_punctual` and `SetNodeCamera`): `scene.SceneLights(nt3d.Root)` resolves up to `MaxLights` visible light nodes with their current world transforms, and `Scene.Frame` populates `Frame.Lighting.Lights` automatically when any are present. `DefaultLighting()` is a gray ambient and one white key light from above, front, and right. Unlit materials, points, lines, and overlays are never lit.
 

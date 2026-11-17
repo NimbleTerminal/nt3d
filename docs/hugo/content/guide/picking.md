@@ -14,6 +14,7 @@ if hit != nil {
 }
 ```
 
+- `hit.Data` is whatever you attached to the node with [`SetNodeData`](../scenes/#nodes), so a hit leads straight to your own record.
 - Meshes are hit on their faces. Picking sees through a cutout's holes to what's behind them, and treats transparent surfaces as solid.
 - Hidden nodes, and nodes outside the view, are never hit.
 - Points, boxes, and lines are tested one by one.

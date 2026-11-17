@@ -27,6 +27,7 @@ const (
 type Hit struct {
 	Node          NodeID
 	Name          string
+	Data          any // The node's Scene.SetNodeData value.
 	Primitive     Primitive
 	Index, Datum  int
 	Position      nt3dmath.Vec3
@@ -80,6 +81,7 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 			hit = &Hit{
 				Node:          inst.Node,
 				Name:          inst.Name,
+				Data:          inst.Data,
 				Primitive:     kind,
 				Index:         index,
 				Datum:         datum,
@@ -465,6 +467,7 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 			hit = &Hit{
 				Node:          inst.Node,
 				Name:          inst.Name,
+				Data:          inst.Data,
 				Primitive:     kind,
 				Index:         index,
 				Datum:         datum,

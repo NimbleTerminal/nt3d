@@ -257,7 +257,10 @@ func hysteresisLower(d, band float32) float32 {
 	return float32(float64(d) * scale)
 }
 
-func (n *sceneNode) selectLOD(world nt3dmath.Mat4, eye nt3dmath.Vec3, bias, band float32, epoch uint64, visible bool) (*lodLevel, bool) {
+// selectLOD chooses the level to draw from eye. An interactive frame holds
+// the level its node drew last inside the hysteresis band, and remembers the
+// one it chooses; a still chooses by distance alone and remembers nothing.
+func (n *sceneNode) selectLOD(world nt3dmath.Mat4, eye nt3dmath.Vec3, bias, band float32, epoch uint64, visible, still bool) (*lodLevel, bool) {
 	var dist float32
 	refBounds := n.lodBounds
 	if n.lodRefBounds.IsValid() {
@@ -275,7 +278,7 @@ func (n *sceneNode) selectLOD(world nt3dmath.Mat4, eye nt3dmath.Vec3, bias, band
 		dist = float32(math.Sqrt(float64(d.X)*float64(d.X) + float64(d.Y)*float64(d.Y) + float64(d.Z)*float64(d.Z)))
 	}
 	state := len(n.lod)
-	if visible && band > 0 && n.lodEpoch == epoch {
+	if !still && visible && band > 0 && n.lodEpoch == epoch {
 		cur := n.lodTier
 		movedCoarser := false
 		for cur < len(n.lod) && dist > hysteresisUpper(effectiveLODDistance(n.lod[cur].maxDistance, bias), band) {
@@ -296,10 +299,12 @@ func (n *sceneNode) selectLOD(world nt3dmath.Mat4, eye nt3dmath.Vec3, bias, band
 			}
 		}
 	}
-	if visible {
+	switch {
+	case still:
+	case visible:
 		n.lodTier = state
 		n.lodEpoch = epoch
-	} else {
+	default:
 		n.lodEpoch = 0
 	}
 	if state < len(n.lod) {

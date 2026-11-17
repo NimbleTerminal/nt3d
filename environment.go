@@ -99,10 +99,11 @@ func GradientEnvironment(zenith, horizon, ground color.RGBA) *Environment {
 }
 
 // SetEnvironment selects a shared sky and diffuse light; nil restores the
-// solid background. Existing frames retain their environment.
+// solid background. Existing frames retain their environment. It sets the
+// Environment of the scene's Look and nothing else.
 func (s *Scene) SetEnvironment(e *Environment) {
-	if s.environment != e {
-		s.environment = e
+	if s.look.Environment != e {
+		s.look.Environment = e
 		s.changed(false, false)
 	}
 }

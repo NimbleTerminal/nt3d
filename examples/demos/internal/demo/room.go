@@ -63,8 +63,15 @@ func (d *demo) setupRoom() error {
 	bounds.Include(nt3dmath.Vec3{X: -2, Y: -1.5})
 	bounds.Include(nt3dmath.Vec3{X: 2, Y: 1.5, Z: 2.4})
 	r.probe = nt3d.ReflectionProbe{Environment: env, Position: nt3dmath.Vec3{Z: 1}, Bounds: bounds}
-	// A neutral global source makes the local-vs-distant comparison easy to see.
-	d.scene.SetEnvironment(nt3d.GradientEnvironment(gray(90), gray(120), gray(40)))
+	// The room's look belongs to its scene, so every frame of it has it. A
+	// neutral global source makes the local-vs-distant comparison easy to see.
+	d.scene.SetLook(nt3d.Look{
+		Background:                color.RGBA{18, 22, 30, 255},
+		Lighting:                  nt3d.Lighting{Ambient: nt3d.Ambient{Sky: gray(255), Ground: gray(255), Intensity: .18}, Lights: []nt3d.Light{{Direction: nt3dmath.Vec3{X: 1, Y: -2, Z: 3}, Intensity: .35}}},
+		Environment:               nt3d.GradientEnvironment(gray(90), gray(120), gray(40)),
+		EnvironmentBackgroundOnly: true,
+		PostProcess:               nt3d.PostProcess{ToneMap: nt3d.ACESToneMap},
+	})
 	if err := d.scene.SetReflectionProbes([]nt3d.ReflectionProbe{r.probe}); err != nil {
 		return err
 	}
@@ -148,13 +155,6 @@ func (d *demo) roomKey(key string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
-}
-
-func (d *demo) decorateRoom(f *nt3d.Frame) {
-	f.Background = color.RGBA{18, 22, 30, 255}
-	f.EnvironmentBackgroundOnly = true
-	f.Lighting = nt3d.Lighting{Ambient: nt3d.Ambient{Sky: gray(255), Ground: gray(255), Intensity: .18}, Lights: []nt3d.Light{{Direction: nt3dmath.Vec3{X: 1, Y: -2, Z: 3}, Intensity: .35}}}
-	f.PostProcess = nt3d.PostProcess{ToneMap: nt3d.ACESToneMap}
 }
 
 func (d *demo) roomView(content string) string {

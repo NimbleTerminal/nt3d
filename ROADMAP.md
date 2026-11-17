@@ -5,7 +5,12 @@ move to Done with their commit; git history has the details.
 
 ## Next
 
-Nothing queued; the sections below are the open work.
+- [ ] **Reshape `Frame` (breaking)**: fold its four index-aligned slices
+  (`Geometry`, `Instances`, `GeometryRevisions`, `Shared`) into one slice of
+  draw items, and move `Geometry`'s eight unexported fields out of the type
+  users fill in. Waits on a release carrying draw order, node data,
+  `StillFrame`, and `Look`, and on newlock.city and nebula moving to them, so
+  that nothing outside nt3d still reorders or rebuilds the slices.
 
 ## Rendering
 

@@ -28,6 +28,7 @@ type Node struct {
 	Local, World nt3dmath.Mat4
 	Visible      bool // Local visibility; parents can still hide this node.
 	Children     []NodeID
+	Data         any // What the application attached with Scene.SetNodeData.
 }
 type sceneNode struct {
 	camera *Camera
@@ -53,6 +54,7 @@ type sceneNode struct {
 	lodEpoch         uint64
 	lodTier          int
 	noPickIndex      bool // SetNodePickIndexing turned indexing off here.
+	drawOrder        DrawOrder
 }
 
 // Scene owns a tree of groups and geometry. Use NewScene; do not copy it.
@@ -60,7 +62,7 @@ type sceneNode struct {
 // asynchronously while the scene is edited, provided readers do not mutate them.
 type Scene struct {
 	reflectionProbes                         []ReflectionProbe
-	environment                              *Environment
+	look                                     Look
 	clips                                    map[NodeID][]AnimationClip
 	variants                                 map[NodeID]*variantInstance
 	nodes                                    map[NodeID]*sceneNode
@@ -72,11 +74,15 @@ type Scene struct {
 	noPickIndex                              bool
 	splatBudget                              int
 	originCount                              int
+	// drawOrdered counts the nodes with a DrawOrder of their own, and
+	// drawSequence caches the order they put the scene's nodes in (sequence).
+	drawOrdered  int
+	drawSequence []NodeID
 }
 
 // NewScene returns an empty scene containing a visible Root node.
 func NewScene() *Scene {
-	s := &Scene{nodes: make(map[NodeID]*sceneNode), names: make(map[string]NodeID), lodBias: 1, lodBiasEpoch: 1}
+	s := &Scene{nodes: make(map[NodeID]*sceneNode), names: make(map[string]NodeID), lodBias: 1, lodBiasEpoch: 1, look: DefaultLook()}
 	s.nodes[Root] = &sceneNode{Node: Node{ID: Root, Local: nt3dmath.Identity(), World: nt3dmath.Identity(), Visible: true}}
 	s.changed(true, false)
 	return s
@@ -228,6 +234,32 @@ func (s *Scene) NodeWorldPosition(id NodeID) ([3]float64, bool) {
 	return [3]float64{m[12], m[13], m[14]}, true
 }
 
+// SetNodeData attaches an application's own value to id: what the node stands
+// for, such as a record, a key, or a pointer to the object that placed it.
+// The scene never looks inside it. It comes back from NodeData, in Node.Data,
+// in the Instance.Data of every frame made afterwards, and in the Hit.Data of
+// a pick, so a drawn or picked node leads straight to its record without the
+// record being written into the node's name. Nil removes it. Frames keep the
+// value they were made with, so treat what it points to as read-only.
+func (s *Scene) SetNodeData(id NodeID, data any) error {
+	n, ok := s.nodes[id]
+	if !ok {
+		return fmt.Errorf("nt3d: invalid node %d", id)
+	}
+	n.Data = data
+	s.changed(false, false)
+	return nil
+}
+
+// NodeData returns the value SetNodeData attached to id, or nil.
+func (s *Scene) NodeData(id NodeID) (any, error) {
+	n, ok := s.nodes[id]
+	if !ok {
+		return nil, fmt.Errorf("nt3d: invalid node %d", id)
+	}
+	return n.Data, nil
+}
+
 // Add creates a visible group with an identity transform. Names are unique and nonempty.
 func (s *Scene) Add(parent NodeID, name string) (NodeID, error) {
 	p, ok := s.nodes[parent]
@@ -245,6 +277,7 @@ func (s *Scene) Add(parent NodeID, name string) (NodeID, error) {
 	p.Children = append(p.Children, id)
 	s.names[name] = id
 	s.order = append(s.order, id)
+	s.drawSequence = nil
 	s.changed(false, false)
 	return id, nil
 }
@@ -281,6 +314,7 @@ func (s *Scene) Reparent(id, parent NodeID) error {
 	old.Children = slices.DeleteFunc(old.Children, func(v NodeID) bool { return v == id })
 	p.Children = append(p.Children, id)
 	n.Parent = parent
+	s.drawSequence = nil
 	s.changed(false, false)
 	return nil
 }
@@ -547,6 +581,9 @@ func (s *Scene) Remove(id NodeID) error {
 		if node.origin != ([3]float64{}) {
 			s.originCount--
 		}
+		if node.drawOrder != (DrawOrder{}) {
+			s.drawOrdered--
+		}
 		queue = append(queue, node.Children...)
 		delete(s.names, node.Name)
 		delete(s.nodes, at)
@@ -554,6 +591,7 @@ func (s *Scene) Remove(id NodeID) error {
 		delete(s.variants, at)
 	}
 	s.order = slices.DeleteFunc(s.order, func(v NodeID) bool { return s.nodes[v] == nil })
+	s.drawSequence = nil
 	s.changed(true, true)
 	return nil
 }

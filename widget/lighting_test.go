@@ -56,3 +56,43 @@ func TestSceneEnvironmentReachesWidget(t *testing.T) {
 		t.Fatal("widget environment snapshot changed")
 	}
 }
+
+// A scene's look reaches the widget's frames and snapshots; a setting the
+// application gave the widget itself is the widget's and stands over it.
+func TestSceneLookReachesWidget(t *testing.T) {
+	s := scene(t)
+	look := nt3d.Look{
+		Background:  color.RGBA{10, 20, 30, 255},
+		Lighting:    nt3d.Lighting{Ambient: nt3d.Ambient{Sky: color.RGBA{100, 120, 200, 255}, Ground: color.RGBA{60, 40, 20, 255}}},
+		Fog:         nt3d.Fog{Near: 2, Far: 9},
+		PostProcess: nt3d.PostProcess{Exposure: 1.5},
+	}
+	s.SetLook(look)
+	m := New(s, 20, 8)
+	defer m.Close()
+	f := m.frame()
+	if f.Background != look.Background || f.Fog != look.Fog || f.PostProcess != look.PostProcess || f.Lighting.Ambient != look.Lighting.Ambient {
+		t.Fatalf("widget frame has background %v, fog %v, effects %v, ambient %v; want the scene's look", f.Background, f.Fog, f.PostProcess, f.Lighting.Ambient)
+	}
+
+	fog, effects := nt3d.Fog{Near: 1, Far: 3}, nt3d.PostProcess{Vignette: .5}
+	m.SetFog(fog)
+	m.SetEffects(effects)
+	m.SetBackground(color.RGBA{200, 0, 0, 255})
+	m.SetLighting(nt3d.DefaultLighting())
+	f = m.frame()
+	if f.Fog != fog || f.PostProcess != effects || f.Background != (color.RGBA{200, 0, 0, 255}) || !reflect.DeepEqual(f.Lighting, nt3d.DefaultLighting()) {
+		t.Fatalf("widget frame has background %v, fog %v, effects %v, lighting %+v; want the widget's own", f.Background, f.Fog, f.PostProcess, f.Lighting)
+	}
+}
+
+func TestWidgetOptionsStandOverSceneLook(t *testing.T) {
+	s := scene(t)
+	s.SetLook(nt3d.Look{Background: color.RGBA{10, 20, 30, 255}, PostProcess: nt3d.PostProcess{Exposure: 1.5}})
+	m := New(s, 20, 8, WithBackground(color.RGBA{0, 200, 0, 255}), WithEffects(nt3d.PostProcess{Vignette: .5}))
+	defer m.Close()
+	f := m.frame()
+	if f.Background != (color.RGBA{0, 200, 0, 255}) || f.PostProcess != (nt3d.PostProcess{Vignette: .5}) {
+		t.Fatalf("widget frame has background %v and effects %v, want the options'", f.Background, f.PostProcess)
+	}
+}

@@ -305,6 +305,10 @@ func buildToonProps(s *nt3d.Scene, here, there nt3dmath.Vec3) (props, bannerJoin
 
 func (d *demo) setupToon() error {
 	d.toon = &toonScene{on: true, outlines: true, softShadows: true, bands: 1}
+	// The scene is lit by the sun, under a day sky.
+	look := d.scene.Look()
+	look.Lighting, look.Background = toonSun, toonSky
+	d.scene.SetLook(look)
 	data, err := fs.ReadFile(SampleFiles, "flatiron.obj")
 	if err != nil {
 		return err
@@ -404,11 +408,6 @@ func (d *demo) setupToon() error {
 		return err
 	}
 	return d.applyToon()
-}
-
-// decorateToon lights the frame with the sun, under a day sky.
-func (d *demo) decorateToon(f *nt3d.Frame) {
-	f.Lighting, f.Background = toonSun, toonSky
 }
 
 func (d *demo) toonView(content string) string {

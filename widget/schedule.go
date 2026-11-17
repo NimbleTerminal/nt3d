@@ -143,6 +143,28 @@ func lightingRelative(l nt3d.Lighting, origin [3]float64) nt3d.Lighting {
 	return out
 }
 
+// dress finishes a frame of the scene as the widget draws it. The frame
+// arrives lit and finished by the scene's look; what the application set on
+// the widget itself stands over that, and the decorator has the last word.
+func (m *Model) dress(f *nt3d.Frame) {
+	if m.backgroundSet {
+		f.Background = m.background
+	}
+	if m.fogSet {
+		f.Fog = m.fog
+	}
+	if m.effectsSet {
+		f.PostProcess = m.effects
+	}
+	if m.lightingSet {
+		f.Lighting = lightingRelative(m.lighting, f.Origin)
+	}
+	f.Supersample, f.MSAA, f.OIT = m.supersample, m.msaa, m.oit
+	if m.decorate != nil {
+		m.decorate(f)
+	}
+}
+
 // frame uses the exact encoding target but projects with physical display
 // aspect, which differs from pixel aspect in glyph mode and after rounding.
 func (m *Model) frame() Frame {
@@ -152,14 +174,7 @@ func (m *Model) frame() Frame {
 		cam.AspectRatio = float64(float32(g.DisplayAspect))
 	}
 	f, _ := m.scene.Frame(cam, max(1, g.Pixels.X), max(1, g.Pixels.Y))
-	f.Background, f.Fog = m.background, m.fog
-	if m.lightingSet || len(m.scene.SceneLights(nt3d.Root)) == 0 {
-		f.Lighting = lightingRelative(m.lighting, f.Origin)
-	}
-	f.Supersample, f.MSAA, f.OIT, f.PostProcess = m.supersample, m.msaa, m.oit, m.effects
-	if m.decorate != nil {
-		m.decorate(&f)
-	}
+	m.dress(&f)
 	return f
 }
 

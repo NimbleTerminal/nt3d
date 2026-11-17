@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Four additions close gaps in what a scene could say about its frames, which
+  applications had been working around by editing frames after they were
+  made. Nothing existing changes.
+
+  - **Draw order.** `Scene.SetNodeDrawOrder(id, DrawOrder{Layer, Key})` places
+    a node, and the nodes under it, among those a frame draws: by layer, then
+    key, then the order they were added. Blended geometry can be put after
+    what shows through it, and a scene that loads in the background can draw
+    the same way every time, without reordering `Frame.Geometry`,
+    `Instances`, `GeometryRevisions`, and `Shared` by hand. The sorted order
+    is kept between frames.
+  - **Node data.** `Scene.SetNodeData(id, v)` attaches an application's own
+    value to a node. It comes back from `NodeData`, `Node.Data`,
+    `Instance.Data`, and `Hit.Data`, so nothing has to be encoded into node
+    names. `SceneAsset.Instantiate` now documents how it names its nodes.
+  - **Stills.** `Scene.StillFrame` takes a frame that depends on the scene and
+    camera alone: levels of detail are chosen by distance, and the hysteresis
+    memory `Scene.Frame` keeps is neither read nor written. A capture no
+    longer needs `SetLODHysteresis(0)` around it. `nt3dwidget`'s `Snapshot`
+    uses it.
+  - **Look.** `Scene.SetLook(Look{...})` holds the background, lighting, fog,
+    environment settings, and post-processing, and every frame starts out
+    with them, so a scene is lit where it is built instead of on each frame.
+    `SetEnvironment` sets the look's `Environment`. Light positions are world
+    space and follow `Camera.Origin`. `nt3dwidget` draws the scene's look
+    unless it was given a setting of its own (`WithBackground`, `SetFog`,
+    `SetLighting`, `WithEffects`, and the rest).
+
 - Fix two decoder panics on malformed files. A glTF/GLB document with `null`
   in any array of objects (materials, scenes, cameras, mesh primitives,
   animation channels and samplers, and the rest) is refused by name, such as

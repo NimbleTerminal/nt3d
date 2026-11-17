@@ -74,7 +74,13 @@ type variantInstance struct {
 	bindings []variantBinding
 }
 
-// Instantiate adds a copy of the asset's hierarchy under parent with a root group named name.
+// Instantiate adds a copy of the asset's hierarchy under parent with a root
+// group named name. The returned Nodes are the scene's nodes for the asset's
+// Nodes, index for index, and are how to reach them. Node i is named
+// "<name>/<i>:<asset node's name>", which keeps names unique when one asset is
+// instantiated many times; the names are for people and for Find. To mark what
+// an instance stands for, attach it with Scene.SetNodeData rather than writing
+// it into name.
 func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *AnimatedInstance, err error) {
 	seenVariants := make(map[string]bool, len(a.Variants))
 	for _, v := range a.Variants {

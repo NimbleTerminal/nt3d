@@ -36,48 +36,51 @@ var nextID atomic.Uint64
 
 // Model is a Bubble Tea component that renders and interacts with an nt3d Scene.
 type Model struct {
-	scene                           *nt3d.Scene
-	sceneRevision                   uint64
-	camera                          nt3d.Camera
-	lighting                        nt3d.Lighting
-	lightingSet                     bool
-	fog                             nt3d.Fog
-	background                      color.RGBA
-	renderer                        nt3d.Renderer
-	decorate                        func(*nt3d.Frame)
-	pic                             *picture.Picture
-	session                         *picture.TerminalSession
-	ownSession                      bool
-	nextImageID                     func() (int, error)
-	width, height                   int
-	medium                          picture.KittyMedium
-	kittyFormat                     picture.KittyFormat
-	renderMode, requestedRenderMode RenderMode
-	id, seq, wake                   uint64
-	started, busy, dirty, closed    bool
-	forceGlyph                      bool
-	disableDefaultKeyBindings       bool
-	wire                            string
-	zones                           *zone.Manager
-	ownZones                        bool
-	zoneID                          string
-	drag, moved                     bool
-	lastX, lastY                    int
-	lastInput                       time.Time
-	lastTick                        time.Time // The last auto-rotate tick, or zero.
-	err                             error
-	slow                            int
-	shrink                          float64
-	gpuFailure                      GPUFailure
-	failed                          error // A reported GPU failure; rendering waits for a change.
-	renderErr                       error // The last frame's, until a frame draws without one.
-	supersample                     int
-	msaa                            bool
-	oit                             bool
-	effects                         nt3d.PostProcess
-	postProcess                     func(*image.RGBA)
-	shown                           []time.Time   // When frames were shown, over the last second.
-	renderTime                      time.Duration // The last frame's render.
+	scene         *nt3d.Scene
+	sceneRevision uint64
+	camera        nt3d.Camera
+	lighting      nt3d.Lighting
+	lightingSet   bool
+	// The settings the application gave the widget itself, which stand over
+	// the scene's look; the rest are left as the scene's frame has them.
+	backgroundSet, fogSet, effectsSet bool
+	fog                               nt3d.Fog
+	background                        color.RGBA
+	renderer                          nt3d.Renderer
+	decorate                          func(*nt3d.Frame)
+	pic                               *picture.Picture
+	session                           *picture.TerminalSession
+	ownSession                        bool
+	nextImageID                       func() (int, error)
+	width, height                     int
+	medium                            picture.KittyMedium
+	kittyFormat                       picture.KittyFormat
+	renderMode, requestedRenderMode   RenderMode
+	id, seq, wake                     uint64
+	started, busy, dirty, closed      bool
+	forceGlyph                        bool
+	disableDefaultKeyBindings         bool
+	wire                              string
+	zones                             *zone.Manager
+	ownZones                          bool
+	zoneID                            string
+	drag, moved                       bool
+	lastX, lastY                      int
+	lastInput                         time.Time
+	lastTick                          time.Time // The last auto-rotate tick, or zero.
+	err                               error
+	slow                              int
+	shrink                            float64
+	gpuFailure                        GPUFailure
+	failed                            error // A reported GPU failure; rendering waits for a change.
+	renderErr                         error // The last frame's, until a frame draws without one.
+	supersample                       int
+	msaa                              bool
+	oit                               bool
+	effects                           nt3d.PostProcess
+	postProcess                       func(*image.RGBA)
+	shown                             []time.Time   // When frames were shown, over the last second.
+	renderTime                        time.Duration // The last frame's render.
 }
 
 // Option configures a Model during New.
@@ -130,7 +133,7 @@ func WithOIT(enabled bool) Option {
 // tone mapping, and vignette) applied to rendered frames and snapshots before
 // overlays and any custom WithPostProcess callback.
 func WithEffects(pp nt3d.PostProcess) Option {
-	return func(m *Model) { m.effects = pp }
+	return func(m *Model) { m.effects, m.effectsSet = pp, true }
 }
 
 // WithPostProcess runs fn on each rendered image, GPU or software, before it
@@ -167,7 +170,10 @@ func WithCamera(c nt3d.Camera) Option { return func(m *Model) { m.camera = c.Val
 
 // WithBackground sets the widget's initial opaque background color.
 func WithBackground(c color.Color) Option {
-	return func(m *Model) { m.background = color.RGBAModel.Convert(c).(color.RGBA); m.background.A = 255 }
+	return func(m *Model) {
+		m.background, m.backgroundSet = color.RGBAModel.Convert(c).(color.RGBA), true
+		m.background.A = 255
+	}
 }
 
 // WithTerminalSession shares discovery with other pictures on the same terminal.
@@ -269,7 +275,7 @@ func (m *Model) Effects() nt3d.PostProcess { return m.effects }
 
 // SetEffects updates the built-in post-processing configuration and schedules a render.
 func (m *Model) SetEffects(pp nt3d.PostProcess) tea.Cmd {
-	m.effects = pp
+	m.effects, m.effectsSet = pp, true
 	return m.changed(false)
 }
 
@@ -407,18 +413,11 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	if m.closed {
 		return nil, m.requestedRenderMode, fmt.Errorf("nt3dwidget: closed")
 	}
-	f, err := m.scene.Frame(m.camera, w, h)
+	f, err := m.scene.StillFrame(m.camera, w, h)
 	if err != nil {
 		return nil, m.requestedRenderMode, err
 	}
-	f.Background, f.Fog = m.background, m.fog
-	if m.lightingSet || len(m.scene.SceneLights(nt3d.Root)) == 0 {
-		f.Lighting = lightingRelative(m.lighting, f.Origin)
-	}
-	f.Supersample, f.MSAA, f.OIT, f.PostProcess = m.supersample, m.msaa, m.oit, m.effects
-	if m.decorate != nil {
-		m.decorate(&f)
-	}
+	m.dress(&f)
 	img, mode, err := nt3d.Snapshot(f, m.requestedRenderMode, m.renderer)
 	return postProcessed(img, m.postProcess), mode, err
 }
@@ -520,7 +519,7 @@ func (m *Model) SetBackground(c color.Color) tea.Cmd {
 	if c == nil {
 		return nil
 	}
-	m.background = color.RGBAModel.Convert(c).(color.RGBA)
+	m.background, m.backgroundSet = color.RGBAModel.Convert(c).(color.RGBA), true
 	m.background.A = 255
 	return m.changed(false)
 }
@@ -539,7 +538,7 @@ func (m *Model) SetLighting(l nt3d.Lighting) tea.Cmd {
 // zero Fog is none. Distances are in world units, so a fog that should keep
 // its look as the camera zooms is better set by WithFrameDecorator, from the
 // camera's distance.
-func (m *Model) SetFog(f nt3d.Fog) tea.Cmd { m.fog = f; return m.changed(false) }
+func (m *Model) SetFog(f nt3d.Fog) tea.Cmd { m.fog, m.fogSet = f, true; return m.changed(false) }
 
 // failedView fills the viewport with the reason nothing is drawn.
 func failedView(err error, width, height int) string {

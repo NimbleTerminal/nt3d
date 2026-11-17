@@ -788,9 +788,6 @@ func (d *demo) decorate(f *nt3d.Frame) {
 		}
 		d.captureForest(f)
 	}
-	if d.room != nil {
-		d.decorateRoom(f)
-	}
 	if d.lights != nil {
 		d.decorateLights(f)
 	}
@@ -799,9 +796,6 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	}
 	if d.particles != nil {
 		f.Background = color.RGBA{16, 14, 20, 255} // Night, so the fire glows.
-	}
-	if d.toon != nil {
-		d.decorateToon(f)
 	}
 	if d.camPath != nil {
 		d.decorateCamPath(f)
