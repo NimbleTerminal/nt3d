@@ -11,8 +11,8 @@ import (
 
 // applyPostSoftware applies f.PostProcess in linear light to the w*h float
 // buffer acc (0..255+ in the frame's working space) and writes 8-bit sRGB
-// pixels into img. SSAO runs only when f.Complete is true.
-func applyPostSoftware(f Frame, img *image.RGBA, acc, depth []float32) {
+// pixels into img. SSAO has already been applied during surface shading.
+func applyPostSoftware(f Frame, img *image.RGBA, acc []float32) {
 	w, h := f.Width, f.Height
 	if w <= 0 || h <= 0 || len(acc) < w*h*3 {
 		return
@@ -33,16 +33,6 @@ func applyPostSoftware(f Frame, img *image.RGBA, acc, depth []float32) {
 	}
 
 	p := f.PostProcess
-	if p.SSAO.on() && f.Complete && len(depth) >= w*h {
-		if ao := softwareSSAO(f, depth); ao != nil {
-			for i, occ := range ao {
-				off := i * 3
-				hdr[off] *= occ
-				hdr[off+1] *= occ
-				hdr[off+2] *= occ
-			}
-		}
-	}
 
 	if p.Bloom.on() {
 		softwareBloom(w, h, hdr, p.Bloom)

@@ -136,6 +136,7 @@ func validLighting(l Lighting) bool {
 // working space (decoded when it works in linear light) times their
 // intensities, directions normalized.
 type lightRig struct {
+	screenOcclusion   float32 // 1 - screen-space visibility; zero when disabled.
 	environmentActive bool
 	environment       [9]nt3dsh.RGB
 	shadow            *shadowMap
@@ -229,20 +230,8 @@ func (l *rigLight) toward(p nt3dmath.Vec3) (nt3dmath.Vec3, float32) {
 // in place, as it runs for every lit pixel.
 func (r *lightRig) light(rgb *[3]float32, n, p nt3dmath.Vec3) { r.lightNormal(rgb, n, p, n) }
 func (r *lightRig) lightNormal(rgb *[3]float32, n, p, geometric nt3dmath.Vec3) {
-	t := n.Z*.5 + .5
-	c0, c1, c2 := r.ground[0]+(r.sky[0]-r.ground[0])*t, r.ground[1]+(r.sky[1]-r.ground[1])*t, r.ground[2]+(r.sky[2]-r.ground[2])*t
-	if r.environmentActive {
-		basis := nt3dsh.BasisUnit(2, n)
-		var indirect [3]float32
-		for i, c := range r.environment {
-			for k := range indirect {
-				indirect[k] += c[k] * basis[i]
-			}
-		}
-		c0 += max(0, indirect[0])
-		c1 += max(0, indirect[1])
-		c2 += max(0, indirect[2])
-	}
+	c := r.indirectDiffuse(n, 1-r.screenOcclusion).radiance
+	c0, c1, c2 := c[0], c[1], c[2]
 	for i := range r.lights {
 		l := &r.lights[i]
 		var s float32
@@ -328,12 +317,9 @@ func (r *lightRig) toonLight(rgb *[3]float32, t ToonStyle, n, p, geometric, view
 		rim = t.Rim * toonStep(toonRim, w, 1-max(0, n.Dot(view)))
 	}
 	shade := t.shade()
+	ambient := r.indirectToonDiffuse(1 - r.screenOcclusion).radiance
 	for k := range rgb {
-		ambient := (r.ground[k] + r.sky[k]) * .5
-		if r.environmentActive {
-			ambient += max(0, r.environment[0][k]*.2820948)
-		}
-		rgb[k] *= ambient*shade[k] + direct[k]
+		rgb[k] *= ambient[k]*shade[k] + direct[k]
 		rimLight[k] = rim * direct[k]
 	}
 	return rimLight

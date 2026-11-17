@@ -3,6 +3,7 @@
 @group(1) @binding(2) var reflectionSampler: sampler;
 @group(1) @binding(3) var sceneColor: texture_2d<f32>;
 @group(1) @binding(4) var sceneDepth: texture_depth_2d;
+@group(1) @binding(5) var screenAO: texture_2d<f32>;
 struct Light { a: vec4<f32>, b: vec4<f32>, c: vec4<f32> };
 struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,9>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6>, inverse:mat4x4<f32> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
@@ -169,15 +170,70 @@ fn toonShadowFactor(i:u32,p:vec3<f32>,pX:vec3<f32>,pY:vec3<f32>,n:vec3<f32>,l:ve
  let sv=shadowVisibilityToon(p,pX,pY,n,l,shadowSoft);
  return toonStep(0.5,clamp(max(sv.y,shadowSoft),0.0001,1.0),sv.x);
 }
+// AO is evaluated at output resolution, independent of MSAA/supersampling.
+fn surfaceAO(p:vec3<f32>)->f32 {
+ if u.skyRight.w<0.5 {return 1.0;}
+ let clip=u.matrix*vec4<f32>(p,1.0);
+ let uv=clip.xy/clip.w*vec2<f32>(0.5,-0.5)+vec2<f32>(0.5);
+ let dim=vec2<i32>(textureDimensions(screenAO));
+ let sample=textureLoad(screenAO,clamp(vec2<i32>(uv*vec2<f32>(dim)),vec2<i32>(0),dim-vec2<i32>(1)),0);
+ // Transparent/transmissive surfaces in front of the opaque depth must not
+ // inherit its occlusion. The one-pixel white prepass input has no depth.
+ if abs(eyeDistance(p)-sample.y)>max(0.001,sample.z*0.05) {return 1.0;}
+ return sample.x;
+}
+// Incoming light, premultiplied by coverage. Diffuse is irradiance/pi;
+// specular is roughness-filtered radiance. No material response is baked in.
+// Keep these operations in sync with indirect.go. Occlusion affects radiance,
+// never coverage; apply it to fallback sources before composing screen hits.
+struct IndirectSample { radiance:vec3<f32>, coverage:f32 };
+fn indirectCovered(radiance:vec3<f32>,coverage:f32)->IndirectSample {
+ return IndirectSample(radiance*coverage,coverage);
+}
+fn indirectOver(front:IndirectSample,fallback:IndirectSample)->IndirectSample {
+ let remaining=1.0-front.coverage;
+ return IndirectSample(front.radiance+remaining*fallback.radiance,front.coverage+remaining*fallback.coverage);
+}
+fn indirectOccluded(source:IndirectSample,visibility:f32)->IndirectSample {
+ return IndirectSample(source.radiance*visibility,source.coverage);
+}
+fn indirectDiffuse(n:vec3<f32>,visibility:f32)->IndirectSample {
+ var c=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
+ if u.viewport.w>0.5 {
+  var irradiance=vec3<f32>(0.0);
+  for(var k=0u;k<9u;k++){irradiance+=u.environment[k].rgb*nt3dSHBasis(k,n);}
+  c+=max(vec3<f32>(0.0),irradiance);
+ }
+ return indirectOccluded(indirectCovered(c,1.0),visibility);
+}
+fn indirectToonDiffuse(visibility:f32)->IndirectSample {
+ var c=mix(u.ground.rgb,u.sky.rgb,0.5);
+ if u.viewport.w>0.5 {c+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
+ return indirectOccluded(indirectCovered(c,1.0),visibility);
+}
+fn indirectSpecular(direction:vec3<f32>,roughness:f32,envRefl:bool,visibility:f32)->IndirectSample {
+ let t=mix(direction.z*0.5+0.5,0.5,roughness*roughness);
+ var c=mix(u.ground.rgb,u.sky.rgb,t);
+ if envRefl {
+  let uv=vec2<f32>(atan2(direction.y,direction.x)/6.28318530718+0.5,acos(clamp(direction.z,-1.0,1.0))/3.14159265359);
+  var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,roughness*u.forward.w).rgb;
+  if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
+  c+=sky*u.ground.w;
+ }
+ return indirectOccluded(indirectCovered(c,1.0),visibility);
+}
+// The classic reflection model uses sharp level-zero radiance, no hemisphere.
+fn indirectReflection(direction:vec3<f32>,visibility:f32)->IndirectSample {
+ let half=0.5/f32(textureDimensions(reflectionMap).y);
+ let uv=vec2<f32>(atan2(direction.y,direction.x)/6.28318530718+0.5,clamp(acos(clamp(direction.z,-1.0,1.0))/3.14159265359,half,1.0-half));
+ var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
+ if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
+ return indirectOccluded(indirectCovered(sky*u.ground.w,1.0),visibility);
+}
 // illuminate is the light reaching a surface with unit normal n at p:
 // ambient, from ground to sky as n turns up, and each light's diffuse.
 fn illuminate(n:vec3<f32>,p:vec3<f32>,geometric:vec3<f32>)->vec3<f32> {
- var c=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
- if u.viewport.w>0.5 {
- var indirect=vec3<f32>(0.0);
- for(var k=0u;k<9u;k++){indirect+=u.environment[k].rgb*nt3dSHBasis(k,n);}
- c+=max(vec3<f32>(0.0),indirect);
- }
+ var c=indirectDiffuse(n,surfaceAO(p)).radiance;
  for(var i=0u;i<u32(u.sky.w);i=i+1u) {let l=u.lights[i];let t=toward(l,p);c+=l.b.rgb*(t.w*max(0.0,dot(n,t.xyz))*lightVisibility(i,p,geometric,t.xyz));}
  return c;
 }
@@ -281,7 +337,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
   if pbr.z>=0.5 {
    let roughness=clamp(pbr.y*orm.y,0.045,1.0);
    let metallic=clamp(pbr.x*orm.z,0.0,1.0);
-   let ao=1.0+(orm.x-1.0)*pbr.w;
+   let ao=min(1.0+(orm.x-1.0)*pbr.w,surfaceAO(o.world));
    let alpha=roughness*roughness;let a2=alpha*alpha;
    var df0=vec3<f32>(pbr.z-1.0);var specFactor=1.0;
    if specPacked>0.5 {
@@ -317,8 +373,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
    var diffOut=vec3<f32>(0.0);var specOut=vec3<f32>(0.0);
    if bands>0.5 {
     let ccNX=normalize((o.normal+gnx)*ccSign);let ccNY=normalize((o.normal+gny)*ccSign);
-    var ambient=mix(u.ground.rgb,u.sky.rgb,0.5);
-    if u.viewport.w>0.5 {ambient+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
+    let ambient=indirectToonDiffuse(ao).radiance;
     var direct=vec3<f32>(0.0);var directDiff=vec3<f32>(0.0);
     for(var i=0u;i<u32(u.sky.w);i=i+1u) {
      let l=u.lights[i];let t=toward(l,o.world);let nl=dot(n,t.xyz);let ccNL=dot(ccN,t.xyz);
@@ -363,7 +418,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
       }
      }
     }
-    let ambShaded=ambient*toon.rgb*(ao*ccViewScale);
+    let ambShaded=ambient*toon.rgb*ccViewScale;
     diffOut=diffColor*(ambShaded*sheenViewScale+directDiff);
     if maxSheen>0.0 {specOut+=sheenCol*sheenEnvV*ambShaded;}
     if toon.w>0.0 {
@@ -372,41 +427,22 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
      specOut+=direct*(toon.w*toonStep(0.7,rw,1.0-rimFacing));
     }
    } else {
-    var indDiff=mix(u.ground.rgb,u.sky.rgb,n.z*0.5+0.5);
-    if u.viewport.w>0.5 {
-     var shIrr=vec3<f32>(0.0);
-     for(var k=0u;k<9u;k++){shIrr+=u.environment[k].rgb*nt3dSHBasis(k,n);}
-     indDiff+=max(vec3<f32>(0.0),shIrr);
-    }
+    let indDiff=indirectDiffuse(n,ao).radiance;
     let f90=max(vec3<f32>(f90Base*(1.0-roughness)),f0);
     let ks=f0+(f90-f0)*pbrPow5(1.0-nv);
     let baseIndScale=sheenViewScale*ccViewScale;
-    diffOut=diffColor*(vec3<f32>(1.0)-ks)*indDiff*(ao*baseIndScale);
-    if maxSheen>0.0 {specOut+=sheenCol*sheenEnvV*indDiff*(ao*ccViewScale);}
+    diffOut=diffColor*(vec3<f32>(1.0)-ks)*indDiff*baseIndScale;
+    if maxSheen>0.0 {specOut+=sheenCol*sheenEnvV*indDiff*ccViewScale;}
     let envF90=select(clamp(50.0*max(f0.r,max(f0.g,f0.b)),0.0,1.0),clamp(f90Base,0.0,1.0),specPacked>0.5);
     let brdf=envBRDF(f0,envF90,roughness,nv);
     let sAO=pbrSpecularAO(nv,ao,alpha);
-    let hemiReflT=reflected.z*0.5+0.5;
-    var specEnv=mix(u.ground.rgb,u.sky.rgb,mix(hemiReflT,0.5,alpha));
-    if envRefl {
-     let envUV=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,acos(clamp(reflected.z,-1.0,1.0))/3.14159265359);
-     var sky=textureSampleLevel(reflectionMap,reflectionSampler,envUV,roughness*u.forward.w).rgb;
-     if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
-     specEnv+=sky*u.ground.w;
-    }
-    specOut+=specEnv*brdf*(sAO*baseIndScale);
+    let specEnv=indirectSpecular(reflected,roughness,envRefl,sAO).radiance;
+    specOut+=specEnv*brdf*baseIndScale;
     if cc>0.0 {
      let ccBRDF=envBRDF(vec3<f32>(0.04),1.0,ccRough,ccNV);
      let ccSAO=pbrSpecularAO(ccNV,ao,ccAlpha);
-     let ccHemiReflT=ccReflected.z*0.5+0.5;
-     var ccSpecEnv=mix(u.ground.rgb,u.sky.rgb,mix(ccHemiReflT,0.5,ccAlpha));
-     if envRefl {
-      let ccEnvUV=vec2<f32>(atan2(ccReflected.y,ccReflected.x)/6.28318530718+0.5,acos(clamp(ccReflected.z,-1.0,1.0))/3.14159265359);
-      var ccSky=textureSampleLevel(reflectionMap,reflectionSampler,ccEnvUV,ccRough*u.forward.w).rgb;
-      if u.viewport.z<0.5 {ccSky=select(1.055*pow(ccSky,vec3<f32>(1.0/2.4))-0.055,ccSky*12.92,ccSky<=vec3<f32>(0.0031308));}
-      ccSpecEnv+=ccSky*u.ground.w;
-     }
-     specOut+=ccSpecEnv*ccBRDF*(cc*ccSAO);
+     let ccSpecEnv=indirectSpecular(ccReflected,ccRough,envRefl,ccSAO).radiance;
+     specOut+=ccSpecEnv*ccBRDF*cc;
     }
     let oneMinusA2=1.0-a2;let ccOneMinusA2=1.0-ccA2;
     for(var i=0u;i<u32(u.sky.w);i=i+1u) {
@@ -456,8 +492,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
   } else {
    var direct=vec3<f32>(0.0);
    if bands>0.5 {
-    var ambient=mix(u.ground.rgb,u.sky.rgb,0.5);
-    if u.viewport.w>0.5 {ambient+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
+    let ambient=indirectToonDiffuse(surfaceAO(o.world)).radiance;
     let geometric=normalize(o.normal);
     for(var i=0u;i<u32(u.sky.w);i=i+1u) {
      let l=u.lights[i];let t=toward(l,o.world);let s=dot(n,t.xyz);
@@ -475,12 +510,9 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
    if o.absorption.w>0.0 && envRefl {
     let rn=select(n,-n,dot(n,view)<0.0);
     let reflected=reflect(-view,rn);
-    let half=0.5/f32(textureDimensions(reflectionMap).y);
-    let uv=vec2<f32>(atan2(reflected.y,reflected.x)/6.28318530718+0.5,clamp(acos(clamp(reflected.z,-1.0,1.0))/3.14159265359,half,1.0-half));
-    var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
-    if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
+    let sky=indirectReflection(reflected,surfaceAO(o.world)).radiance;
     let fresnel=o.absorption.w+(1.0-o.absorption.w)*pow(1.0-clamp(dot(rn,view),0.0,1.0),5.0);
-    c=mix(c,sky*u.ground.w,fresnel);
+    c=mix(c,sky,fresnel);
    }
    if o.spec.x>0.0 {
     let specGeom=normalize(o.normal);

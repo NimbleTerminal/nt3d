@@ -46,3 +46,11 @@ The guide is a [Hugo](https://gohugo.io/) site in `docs/hugo`, using the [hugo-b
 ## Where it came from
 
 nt3d was extracted from [ntcharts3d](https://github.com/NimbleMarkets/ntcharts3d), keeping the engine and leaving the charts behind. [MIGRATION.md](https://github.com/NimbleTerminal/nt3d/blob/main/MIGRATION.md) describes how ntcharts3d could later be rebuilt on it. Open work is in [ROADMAP.md](https://github.com/NimbleTerminal/nt3d/blob/main/ROADMAP.md).
+
+## Indirect lighting internals
+
+`indirect.go` and the matching helpers in `scene.wgsl` separate incoming light from material response. Diffuse samples contain irradiance divided by pi; specular samples contain radiance filtered for the requested roughness. PBR applies albedo, Fresnel, sheen, and clearcoat after sampling. Toon diffuse deliberately keeps its direction-independent SH approximation.
+
+Each `indirectSample` / `IndirectSample` contains radiance premultiplied by coverage in `[0,1]`. Composition is `front.radiance + (1-front.coverage)*fallback.radiance`, with the same over operation on coverage. A black hit still covers its fallback. The hemisphere and environment together form a complete final fallback, including when they are dark.
+
+Apply AO to a cached source's radiance before composition, preserving its coverage. Future screen-space hits can then replace that source without receiving AO a second time. Compose only samples with matching units and filtering, in linear HDR light (`Frame.Linear`); the existing non-linear working-space mode is retained for compatibility. These helpers are internal, introduce no new render passes or buffers, and do not yet implement probes, SSR, or SSGI.

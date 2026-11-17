@@ -27,19 +27,19 @@ func softwareRenderScratch(f Frame, depth []float32) image.Image {
 		if s == 1 {
 			scene := f
 			scene.Overlays = nil
-			img, d, acc := softwareDrawDepthHDR(scene, 1, depth, true)
-			applyPostSoftware(f, img, acc, d)
+			img, _, acc := softwareDrawDepthHDR(scene, 1, depth, true)
+			applyPostSoftware(f, img, acc)
 			drawOverlays(img, f)
 			return img
 		}
 		big := f
-		big.Width, big.Height, big.Overlays, big.PostProcess = f.Width*s, f.Height*s, nil, PostProcess{}
+		big.Width, big.Height, big.Overlays = f.Width*s, f.Height*s, nil
 		_, bigDepth, bigAcc := softwareDrawDepthHDR(big, s, depth, true)
-		acc1x, depth1x := shrinkPost(f.Width, f.Height, s, bigAcc, bigDepth, f.Linear)
+		acc1x, _ := shrinkPost(f.Width, f.Height, s, bigAcc, bigDepth, f.Linear)
 		img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
 		fLin := f
 		fLin.Linear = true
-		applyPostSoftware(fLin, img, acc1x, depth1x)
+		applyPostSoftware(fLin, img, acc1x)
 		drawOverlays(img, f)
 		return img
 	}
@@ -65,18 +65,18 @@ func softwareRenderDepth(f Frame) (*image.RGBA, []float32) {
 			scene := f
 			scene.Overlays = nil
 			img, depth, acc := softwareDrawDepthHDR(scene, 1, make([]float32, f.Width*f.Height), true)
-			applyPostSoftware(f, img, acc, depth)
+			applyPostSoftware(f, img, acc)
 			drawOverlays(img, f)
 			return img, depth
 		}
 		big := f
-		big.Width, big.Height, big.Overlays, big.PostProcess = f.Width*s, f.Height*s, nil, PostProcess{}
+		big.Width, big.Height, big.Overlays = f.Width*s, f.Height*s, nil
 		_, bigDepth, bigAcc := softwareDrawDepthHDR(big, s, make([]float32, big.Width*big.Height), true)
 		acc1x, depth := shrinkPost(f.Width, f.Height, s, bigAcc, bigDepth, f.Linear)
 		img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
 		fLin := f
 		fLin.Linear = true
-		applyPostSoftware(fLin, img, acc1x, depth)
+		applyPostSoftware(fLin, img, acc1x)
 		drawOverlays(img, f)
 		return img, depth
 	}
@@ -120,6 +120,15 @@ func softwareDrawDepth(f Frame, scale int, depth []float32) (*image.RGBA, []floa
 }
 
 func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*image.RGBA, []float32, []float32) {
+	var ao []float32
+	if f.PostProcess.SSAO.on() && f.Complete {
+		_, d, _ := softwareDrawWithAO(f, scale, depth, false, nil, true)
+		ao = softwareSSAO(f, d)
+	}
+	return softwareDrawWithAO(f, scale, depth, wantHDR, ao, false)
+}
+
+func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []float32, prepass bool) (*image.RGBA, []float32, []float32) {
 	px := float32(scale)
 	inverseScene, _ := inverseProjection(f.Matrix)
 	var opaqueColor []byte
@@ -136,7 +145,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 	// frame works; pixels are 8-bit sRGB.
 	linear, rig, aniso := f.Linear, newRig(&f), f.anisotropy()
 	drawn := f.drawn(px)
-	if rig.shadowLight >= 0 {
+	if rig.shadowLight >= 0 && !prepass {
 		rig.shadow = buildShadowMap(&f, drawn, softwareShadowSize(&f))
 	}
 	toPixel := func(v float32) uint8 {
@@ -167,10 +176,10 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			acc[i*3], acc[i*3+1], acc[i*3+2] = fromPixel(img.Pix[off]), fromPixel(img.Pix[off+1]), fromPixel(img.Pix[off+2])
 		}
 	}
-	if wantHDR || (f.Environment != nil && f.Environment.hdr && linear) {
+	if !prepass && (wantHDR || (f.Environment != nil && f.Environment.hdr && linear)) {
 		accumulate()
 	}
-	if f.Environment != nil {
+	if f.Environment != nil && !prepass {
 		right, up, forward := f.skyBasis()
 		for y := 0; y < f.Height; y++ {
 			row := forward.Add(up.Scale(1 - 2*(float32(y)+.5)/float32(f.Height)))
@@ -496,6 +505,14 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 						}
 					}
 				}
+				if prepass {
+					putWork(x, y, u*z0+v*z1+t*z2, rgb)
+					continue
+				}
+				rig.screenOcclusion = 0
+				if ao != nil && !blended && (material == nil || material.Transmission == 0) {
+					rig.screenOcclusion = 1 - ao[y*f.Width+x]
+				}
 				if lit && hasShadeN {
 					n := shadeN
 					{
@@ -526,7 +543,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 								transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
 							}
 							if reflective {
-								reflectEnvironment(&rgb, f.Environment, material.Reflectivity, f.EnvironmentStrength, n, f.viewAt(p), linear)
+								reflectEnvironmentAO(&rgb, f.Environment, material.Reflectivity, f.EnvironmentStrength, n, f.viewAt(p), linear, 1-rig.screenOcclusion)
 							}
 							if specular {
 								var s [3]float32
@@ -853,6 +870,10 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 			a := g.Arrows[i]
 			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put, strokeFog(inst.World.Point(a.Start), inst.World.Point(a.End)))
 		}
+	}
+
+	if prepass {
+		return img, depth, acc
 	}
 
 	// Opaque hulls share the surface depth buffer. Draw after all opaque

@@ -123,7 +123,7 @@ Point maps use six 1024² depth faces on the GPU and for complete software frame
 
 **Anti-aliasing (`MSAA` and `Supersample`).** `Frame.MSAA` enables 4× hardware multisample anti-aliasing on WebGPU (`Renderer` and `GPUSession`, shared across `NewView`), smoothing triangle silhouettes, outlines, lines, boxes, and points at low fragment cost while preserving `Transmission` captures and `GPUSession.Pick` depth reads. Software and wireframe renderers ignore `MSAA`. `Frame.Supersample` (1 to 4) renders at that multiple of the frame's size and averages each block down to one pixel, also smoothing interior shader aliasing, thin fur strands, and alpha cutouts (at higher cost, especially in software). The two compose when both are set; points, lines, and overlays keep their pixel sizes.
 
-**Post-processing (`Frame.PostProcess`).** `Frame.PostProcess` runs a built-in HDR effect chain after 3D scene passes and before 2D `Overlays`, so HUD borders and reticles stay crisp and ungraded:
+**Post-processing (`Frame.PostProcess`).** `Frame.PostProcess` configures SSAO during lighting and an HDR effect chain before 2D `Overlays`, so HUD borders and reticles stay crisp and ungraded:
 
 ```go
 frame.MSAA = true
@@ -135,6 +135,8 @@ frame.PostProcess = nt3d.PostProcess{
     Vignette: 0.35,
 }
 ```
+
+SSAO attenuates indirect diffuse and environment reflections; direct lights, emission, unlit geometry, fog, and overlays are unaffected. Material AO and SSAO use the minimum visibility instead of multiplying. Enabling SSAO adds an opaque geometry pass before shading; alpha-tested and deformed surfaces use the same draw paths as the final pass. Transparent and transmissive geometry does not supply AO depth.
 
 - **WebGPU (`Renderer` and `GPUSession`)** runs the full chain in shaders on `RGBA16Float`: depth-reconstructed hemisphere `SSAO` with a separable depth-aware bilateral blur, soft-knee HDR `Bloom` across a five-level downsample/tent-upsample mip pyramid, linear `Exposure` (in stops, `2^Exposure`), `ToneMap` (`NoToneMap`, `ReinhardToneMap`, or filmic `ACESToneMap`), and `Vignette`, respecting `GPUTarget.Viewport` and `GPUTarget.Load`.
 - **Software** provides a tiered CPU fallback: unclamped float accumulation preserves HDR highlights above 1.0 for exact `Exposure`, `ToneMap`, and `Vignette` on every frame, `Bloom` uses a fast quarter-resolution two-level tent pyramid, and `SSAO` runs only on complete frames (`Frame.Complete`, such as `Snapshot`) so interactive software pacing stays responsive.

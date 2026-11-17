@@ -106,9 +106,8 @@ type Frame struct {
 	// in a single unsorted pass without view-dependent popping. Wireframe
 	// ignores it.
 	OIT bool
-	// PostProcess configures built-in post-processing passes applied after the
-	// scene is drawn and before overlays: screen-space ambient occlusion, HDR
-	// bloom, exposure, tone mapping, and vignette.
+	// PostProcess configures SSAO within indirect lighting, followed by HDR
+	// bloom, exposure, tone mapping, and vignette before overlays.
 	PostProcess PostProcess
 	// Eye and Forward are the camera's position and viewing direction, in
 	// frame space (relative to Origin), and Perspective whether its view

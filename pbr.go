@@ -7,7 +7,6 @@ import (
 	"math"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
-	nt3dsh "nimbleterminal.dev/nt3d/sh"
 )
 
 const (
@@ -216,7 +215,7 @@ func sheenBRDF(nh, nl, nv, invAlpha float32) float32 {
 func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]float32, n, p, geometric, view nt3dmath.Vec3) (diffuseOut, specularOut [3]float32) {
 	roughness := max(minPBRRoughness, min(1, m.Roughness*orm[1]))
 	metallic := max(0, min(1, m.Metallic*orm[2]))
-	ao := 1 + (orm[0]-1)*occlusionStrength(m)
+	ao := min(1+(orm[0]-1)*occlusionStrength(m), 1-rig.screenOcclusion)
 	alpha := roughness * roughness
 	a2 := alpha * alpha
 
@@ -337,12 +336,9 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 			}
 		}
 		shade := t.shade()
+		ambient := rig.indirectToonDiffuse(ao).radiance
 		for k := range diffuseOut {
-			amb := (rig.ground[k] + rig.sky[k]) * .5
-			if rig.environmentActive {
-				amb += max(0, rig.environment[0][k]*.2820948)
-			}
-			ambShaded := amb * shade[k] * ao * ccViewScale
+			ambShaded := ambient[k] * shade[k] * ccViewScale
 			diffuseOut[k] = diffuseColor[k] * (ambShaded*sheenViewScale + directDiff[k])
 			if maxSheen > 0 {
 				specularOut[k] += sheenCol[k] * sheenEnvV * ambShaded
@@ -357,86 +353,31 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 		return diffuseOut, specularOut
 	}
 
-	// Indirect diffuse (hemisphere + SH irradiance) with Fresnel, sheen, and clearcoat energy conservation.
-	hemiT := n.Z*.5 + .5
-	indirectDiff := [3]float32{
-		rig.ground[0] + (rig.sky[0]-rig.ground[0])*hemiT,
-		rig.ground[1] + (rig.sky[1]-rig.ground[1])*hemiT,
-		rig.ground[2] + (rig.sky[2]-rig.ground[2])*hemiT,
-	}
-	if rig.environmentActive {
-		basis := nt3dsh.BasisUnit(2, n)
-		var shIrr [3]float32
-		for i, c := range rig.environment {
-			for k := range shIrr {
-				shIrr[k] += c[k] * basis[i]
-			}
-		}
-		for k := range indirectDiff {
-			indirectDiff[k] += max(0, shIrr[k])
-		}
-	}
+	// Sample incoming light before applying the material response.
+	indirectDiff := rig.indirectDiffuse(n, ao).radiance
 	fresnelTerm := pow5(1 - nv)
 	baseIndScale := sheenViewScale * ccViewScale
 	for k := range diffuseOut {
 		f90 := max(f90Base*(1-roughness), f0[k])
 		ks := f0[k] + (f90-f0[k])*fresnelTerm
-		diffuseOut[k] = diffuseColor[k] * (1 - ks) * indirectDiff[k] * ao * baseIndScale
+		diffuseOut[k] = diffuseColor[k] * (1 - ks) * indirectDiff[k] * baseIndScale
 		if maxSheen > 0 {
-			specularOut[k] += sheenCol[k] * sheenEnvV * indirectDiff[k] * ao * ccViewScale
+			specularOut[k] += sheenCol[k] * sheenEnvV * indirectDiff[k] * ccViewScale
 		}
 	}
 
-	// Indirect specular (hemisphere ambient + prefiltered GGX environment IBL).
-	envRefl := f.Environment != nil && (!f.EnvironmentBackgroundOnly || m.EnvironmentReflect)
-	envStrength := f.EnvironmentStrength
-	if envStrength == 0 {
-		envStrength = 1
-	}
 	brdf := envBRDFApprox(f0, f90Base, specPacked > 0, roughness, nv)
 	sAO := specularAO(nv, ao, alpha)
-	hemiReflT := reflected.Z*.5 + .5
-	hemiSpecT := hemiReflT + (.5-hemiReflT)*alpha
-	specEnv := [3]float32{
-		rig.ground[0] + (rig.sky[0]-rig.ground[0])*hemiSpecT,
-		rig.ground[1] + (rig.sky[1]-rig.ground[1])*hemiSpecT,
-		rig.ground[2] + (rig.sky[2]-rig.ground[2])*hemiSpecT,
-	}
-	if envRefl {
-		sky := f.Environment.sampleSpecular(reflected, roughness)
-		for k := range specEnv {
-			c := sky[k]
-			if !f.Linear {
-				c = float32(encodeSRGB(float64(c)))
-			}
-			specEnv[k] += c * envStrength
-		}
-	}
+	specEnv := rig.indirectSpecular(f, reflected, roughness, m.EnvironmentReflect, sAO).radiance
 	for k := range specularOut {
-		specularOut[k] += specEnv[k] * brdf[k] * sAO * baseIndScale
+		specularOut[k] += specEnv[k] * brdf[k] * baseIndScale
 	}
 	if cc > 0 {
 		ccBRDF := envBRDFApprox([3]float32{.04, .04, .04}, 1, false, ccRough, ccNV)
 		ccSAO := specularAO(ccNV, ao, ccAlpha)
-		ccHemiReflT := ccReflected.Z*.5 + .5
-		ccHemiSpecT := ccHemiReflT + (.5-ccHemiReflT)*ccAlpha
-		ccSpecEnv := [3]float32{
-			rig.ground[0] + (rig.sky[0]-rig.ground[0])*ccHemiSpecT,
-			rig.ground[1] + (rig.sky[1]-rig.ground[1])*ccHemiSpecT,
-			rig.ground[2] + (rig.sky[2]-rig.ground[2])*ccHemiSpecT,
-		}
-		if envRefl {
-			sky := f.Environment.sampleSpecular(ccReflected, ccRough)
-			for k := range ccSpecEnv {
-				c := sky[k]
-				if !f.Linear {
-					c = float32(encodeSRGB(float64(c)))
-				}
-				ccSpecEnv[k] += c * envStrength
-			}
-		}
+		ccSpecEnv := rig.indirectSpecular(f, ccReflected, ccRough, m.EnvironmentReflect, ccSAO).radiance
 		for k := range specularOut {
-			specularOut[k] += cc * ccSpecEnv[k] * ccBRDF[k] * ccSAO
+			specularOut[k] += cc * ccSpecEnv[k] * ccBRDF[k]
 		}
 	}
 

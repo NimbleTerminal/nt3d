@@ -348,6 +348,8 @@ func (s *gpuShared) release() {
 }
 
 type gpuRenderer struct {
+	aoPrepassBinds         []*wgpu.BindGroup // Keep encoded prepass bindings alive through submission.
+	lightingAO             *wgpu.TextureView // Borrowed post texture; nil disables screen-space AO.
 	shared                 *gpuShared
 	msaaSets               [2]scenePipelineSet
 	sampleIdx              int
@@ -494,7 +496,7 @@ func (g *gpuRenderer) setupDevice(dev *wgpu.Device) (err error) {
 	if err != nil {
 		return err
 	}
-	g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}, {Binding: 3, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 4, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}}})
+	g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}, {Binding: 3, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 4, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 5, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}}})
 	if err != nil {
 		return err
 	}
@@ -686,6 +688,7 @@ func (g *gpuRenderer) Render(f Frame) (image.Image, error) {
 }
 
 func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame, target GPUTarget) (err error) {
+	g.releaseAOPrepassBinds()
 	defer func() {
 		if err != nil {
 			for _, node := range g.geometries {
@@ -793,8 +796,12 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 		ub = append(ub, floats(c[0], c[1], c[2], 0)...)
 	}
 	right, up, forward := f.skyBasis()
-	for _, v := range []nt3dmath.Vec3{right, up, forward} {
-		ub = append(ub, floats(v.X, v.Y, v.Z, 0)...)
+	for i, v := range []nt3dmath.Vec3{right, up, forward} {
+		aoEnabled := float32(0)
+		if i == 0 && f.PostProcess.SSAO.on() {
+			aoEnabled = 1
+		}
+		ub = append(ub, floats(v.X, v.Y, v.Z, aoEnabled)...)
 	}
 	for i := 0; i < 6; i++ {
 		var matrix nt3dmath.Mat4
@@ -869,7 +876,44 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	// the uniform viewport, so points and lines keep their size when
 	// supersampled.
 	return g.renderScene(dev, encoder, f, target, func(color, depth *wgpu.TextureView) error {
-		return g.drawScene(f, snapshot, oitActive, target.Load, encoder, color, depth)
+		var ps *gpuPostShared
+		var ao *wgpu.TextureView
+		if f.PostProcess.SSAO.on() {
+			var err error
+			ps, err = g.postShared(dev)
+			if err != nil {
+				return err
+			}
+			if err = g.ensurePostUniforms(dev, ps); err != nil {
+				return err
+			}
+			ao = ps.whiteV
+		}
+		// Shadow passes also bind the lighting group. Select the neutral
+		// input before recording either shadows or the opaque prepass.
+		if err := g.bindLightingAO(dev, ao, false); err != nil {
+			return err
+		}
+		if g.shadowActive {
+			if err := g.drawShadow(f, encoder); err != nil {
+				return err
+			}
+		}
+		if ps != nil {
+			// Reuse the opaque draw paths so alpha tests, skinning, and
+			// custom displacement agree exactly with the beauty pass.
+			if err := g.drawScene(f, false, false, target.Load, true, encoder, color, depth); err != nil {
+				return err
+			}
+			ao, err := g.encodeSSAO(dev, encoder, ps, f, supersampleFactor(f), g.target.samples > 1)
+			if err != nil {
+				return err
+			}
+			if err = g.bindLightingAO(dev, ao, true); err != nil {
+				return err
+			}
+		}
+		return g.drawScene(f, snapshot, oitActive, target.Load, false, encoder, color, depth)
 	})
 }
 
@@ -901,14 +945,8 @@ func (g *gpuRenderer) setScenePipeline(pass *wgpu.RenderPassEncoder, pipeline *w
 }
 
 // drawScene records the scene's pass into a color and depth target.
-func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
+func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool, encoder *wgpu.CommandEncoder, color, depth *wgpu.TextureView) error {
 	{
-		if g.shadowActive {
-			if err := g.drawShadow(f, encoder); err != nil {
-				return err
-			}
-		}
-
 		colorAtt := wgpu.RenderPassColorAttachment{View: color, LoadOp: gputypes.LoadOpClear, StoreOp: gputypes.StoreOpStore, ClearValue: background(f, load)}
 		if g.target.samples > 1 {
 			colorAtt.View = g.target.msaaColorView
@@ -918,7 +956,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder
 		if err != nil {
 			return err
 		}
-		if f.Environment != nil {
+		if f.Environment != nil && !prepass {
 			g.setScenePipeline(pass, g.environmentPipeline)
 			pass.SetBindGroup(0, g.environmentBind, nil)
 			pass.Draw(gputypes.DrawArgs{VertexCount: 3, InstanceCount: 1})
@@ -928,6 +966,12 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load bool, encoder
 		// other primitives belong to unshared geometry, one instance each.
 		// Transparent triangles wait for everything opaque.
 		for _, i := range []int{5, 0, 1, 2, 3, 6, 4} {
+			if prepass && i == 5 {
+				continue
+			}
+			if prepass && i == 4 {
+				break
+			}
 			if i == 4 {
 				for _, d := range g.draws {
 					if !transparent(&f.Geometry[d.index]) {
@@ -1353,6 +1397,8 @@ func (g *gpuRenderer) releaseResources() {
 	g.shadowTarget.release()
 	g.screen.release()
 	g.oit.release()
+	g.lightingAO = nil
+	g.releaseAOPrepassBinds()
 	g.post.release(g.shared != nil)
 	g.depthPick.release(g.shared != nil)
 	if g.shared != nil {

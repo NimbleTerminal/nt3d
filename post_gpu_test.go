@@ -324,3 +324,32 @@ func TestGPUSessionPostProcessViewportAndLoad(t *testing.T) {
 		t.Fatalf("emitter center missing in sub-viewport: %v", got)
 	}
 }
+
+func TestGPUSSAOLighting(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	testSSAOLighting(t, r.Render)
+}
+
+func TestGPUSSAOResize(t *testing.T) {
+	r := &gpuRenderer{}
+	defer r.Close()
+	f := cornerSSAOFrame(t)
+	f.PostProcess.SSAO = SSAO{Strength: .9, Radius: .6}
+	for _, size := range []int{96, 80, 96} {
+		f.Width, f.Height = size, size
+		img, err := r.Render(f)
+		check(t, err)
+		if img.Bounds().Dx() != size {
+			t.Fatal("incorrect resized AO frame")
+		}
+		// Compare to a fresh renderer, catching stale AO textures and bindings.
+		fresh := &gpuRenderer{}
+		want, err := fresh.Render(f)
+		check(t, err)
+		check(t, fresh.Close())
+		if !bytes.Equal(nrgbaBytes(img), nrgbaBytes(want)) {
+			t.Fatal("resized AO differs from fresh render")
+		}
+	}
+}

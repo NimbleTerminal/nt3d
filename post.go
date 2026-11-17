@@ -77,8 +77,10 @@ func (b Bloom) radius() float32 {
 }
 
 // SSAO configures screen-space ambient occlusion estimated from the depth
-// buffer, darkening creases, corners, and contact areas. Strength is the
-// maximum occlusion darkening, 0..1; zero disables SSAO. Radius is the
+// buffer, darkening indirect lighting in creases, corners, and contact areas.
+// Direct lighting, emission, and unlit surfaces are unaffected. Material AO
+// and SSAO combine by minimum visibility. An extra opaque pass supplies depth.
+// Strength is the maximum occlusion darkening, 0..1; zero disables SSAO. Radius is the
 // world-space sampling radius (>= 0; zero selects a view-proportional radius
 // of about 6% of the viewport height at each surface's depth). Bias is the
 // minimum horizon cosine step that suppresses self-occlusion on flat surfaces,
@@ -102,10 +104,10 @@ func (s SSAO) bias() float32 {
 	return s.Bias
 }
 
-// PostProcess configures built-in post-processing passes applied in linear
-// light after the scene is drawn and before overlays and target encoding:
-// screen-space ambient occlusion, HDR bloom, exposure, tone mapping, and
-// vignette. The zero value disables all passes.
+// PostProcess configures screen-space ambient occlusion within indirect
+// lighting, followed by HDR bloom, exposure, tone mapping, and vignette in
+// linear light before overlays and target encoding. The zero value disables
+// all passes.
 //
 // Exposure is in photographic stops (-MaxExposure..MaxExposure), scaling
 // linear scene radiance by 2^Exposure before tone mapping: zero leaves

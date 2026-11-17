@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Extract internal Go/WGSL indirect-light sampling from material response,
+  with premultiplied radiance and coverage composition for future local and
+  screen-space sources. Preserve hemisphere, SH, GGX, clearcoat, and toon
+  lighting, with source occlusion that leaves coverage unchanged.
+
+- Apply SSAO within indirect lighting on WebGPU and complete software frames,
+  preserving direct lights, emission, and unlit surfaces. Combine screen-space
+  and material AO by minimum visibility. SSAO now adds an opaque geometry
+  pass before shading; disabled SSAO retains the single scene pass.
+
 ## v0.11.1 (2026-11-16)
 
 - Add `Scene.SetLODReferenceBounds`, which gives a `Scene.SetLOD` node shared

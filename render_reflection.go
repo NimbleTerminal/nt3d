@@ -102,5 +102,56 @@ func (g *gpuRenderer) updateReflection(dev *wgpu.Device, e *Environment) (err er
 }
 
 func (g *gpuRenderer) sceneLightingBind(dev *wgpu.Device, depth *wgpu.TextureView, r *reflectionTexture) (*wgpu.BindGroup, error) {
-	return dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.shadowLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: depth}, {Binding: 1, TextureView: r.view}, {Binding: 2, Sampler: r.sampler}, {Binding: 3, TextureView: g.screen.colorView}, {Binding: 4, TextureView: g.screen.depthView}}})
+	ao := g.lightingAO
+	if ao == nil {
+		ao = g.screen.colorView
+	}
+	return dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.shadowLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: depth}, {Binding: 1, TextureView: r.view}, {Binding: 2, Sampler: r.sampler}, {Binding: 3, TextureView: g.screen.colorView}, {Binding: 4, TextureView: g.screen.depthView}, {Binding: 5, TextureView: ao}}})
+}
+
+// bindLightingAO refreshes both shadow variants without owning the AO texture.
+func (g *gpuRenderer) bindLightingAO(dev *wgpu.Device, ao *wgpu.TextureView, retainPrevious bool) error {
+	if g.lightingAO == ao {
+		return nil
+	}
+	old := g.lightingAO
+	g.lightingAO = ao
+	targets := []*shadowTarget{&g.noShadow, &g.shadowTarget}
+	var binds [2]*wgpu.BindGroup
+	for i, t := range targets {
+		if t.view == nil {
+			continue
+		}
+		b, err := g.sceneLightingBind(dev, t.view, &g.reflection)
+		if err != nil {
+			for _, b := range binds {
+				if b != nil {
+					b.Release()
+				}
+			}
+			g.lightingAO = old
+			return err
+		}
+		binds[i] = b
+	}
+	for i, t := range targets {
+		if binds[i] != nil {
+			if t.bind != nil {
+				if retainPrevious {
+					g.aoPrepassBinds = append(g.aoPrepassBinds, t.bind)
+				} else {
+					t.bind.Release()
+				}
+			}
+			t.bind = binds[i]
+		}
+	}
+	return nil
+}
+
+func (g *gpuRenderer) releaseAOPrepassBinds() {
+	for _, b := range g.aoPrepassBinds {
+		b.Release()
+	}
+	g.aoPrepassBinds = g.aoPrepassBinds[:0]
 }

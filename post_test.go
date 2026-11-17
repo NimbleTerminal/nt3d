@@ -264,7 +264,7 @@ func cornerSSAOFrame(t *testing.T) Frame {
 			{Position: nt3dmath.Vec3{X: -3, Y: 0, Z: 0}, Normal: nt3dmath.Vec3{Z: 1}, Color: white},
 		},
 		Indices:  []uint32{0, 1, 2, 0, 2, 3},
-		Material: &Material{Unlit: true},
+		Material: &Material{},
 	}
 	wall := Geometry{
 		Vertices: []Vertex{
@@ -274,7 +274,7 @@ func cornerSSAOFrame(t *testing.T) Frame {
 			{Position: nt3dmath.Vec3{X: -3, Y: 0, Z: 3}, Normal: nt3dmath.Vec3{Y: -1}, Color: white},
 		},
 		Indices:  []uint32{0, 1, 2, 0, 2, 3},
-		Material: &Material{Unlit: true},
+		Material: &Material{},
 	}
 	s := NewScene()
 	_, err := s.SetGeometry("floor", floor)
@@ -291,6 +291,7 @@ func cornerSSAOFrame(t *testing.T) Frame {
 	f, err := s.Frame(cam, 96, 96)
 	check(t, err)
 	f.Linear = true
+	f.Lighting = Lighting{Ambient: Ambient{Sky: color.RGBA{255, 255, 255, 255}, Ground: color.RGBA{255, 255, 255, 255}}}
 	f.Background = color.RGBA{40, 80, 160, 255}
 	return f
 }

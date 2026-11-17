@@ -368,7 +368,6 @@ struct PostResolve {
 
 @group(0) @binding(0) var<uniform> pr: PostResolve;
 @group(1) @binding(0) var sceneSrc: texture_2d<f32>;
-@group(1) @binding(1) var aoSrc: texture_2d<f32>;
 @group(1) @binding(2) var bloomSrc: texture_2d<f32>;
 @group(1) @binding(3) var postSampler: sampler;
 
@@ -431,9 +430,6 @@ fn resolveToneMap(rgb: vec3<f32>, mode: i32) -> vec3<f32> {
 		}
 	}
 
-	let aoDim = vec2<i32>(textureDimensions(aoSrc));
-	let ao = textureLoad(aoSrc, clamp(local, vec2<i32>(0), aoDim - vec2<i32>(1)), 0).x;
-	rgb *= ao;
 
 	let vpSize = max(vec2<f32>(1.0), vec2<f32>(pr.viewport.zw));
 	let uv = (vec2<f32>(local) + vec2<f32>(0.5)) / vpSize;
@@ -724,7 +720,6 @@ func (ps *gpuPostShared) init(dev *wgpu.Device) (err error) {
 		Label: "nt3d post resolve textures",
 		Entries: []gputypes.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}},
-			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}},
 			{Binding: 2, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}},
 			{Binding: 3, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}},
 		},
@@ -886,7 +881,6 @@ type gpuPost struct {
 	resolveUniform     *wgpu.Buffer
 	resolveUniformBind *wgpu.BindGroup
 	resolveScene       *wgpu.TextureView
-	resolveAO          *wgpu.TextureView
 	resolveBloom       *wgpu.TextureView
 	resolveTexBind     *wgpu.BindGroup
 
@@ -1214,7 +1208,7 @@ func (g *gpuRenderer) encodeBloom(dev *wgpu.Device, enc *wgpu.CommandEncoder, ps
 	return p.mips[0].view, gain, nil
 }
 
-// resolveWithPost runs SSAO, Bloom, Exposure, ToneMap, and Vignette on the
+// resolveWithPost runs Bloom, Exposure, ToneMap, and Vignette on the
 // scene target, draws any screen-space overlays on top without post-grading,
 // and resolves into target.
 func (g *gpuRenderer) resolveWithPost(dev *wgpu.Device, enc *wgpu.CommandEncoder, f Frame, target GPUTarget) error {
@@ -1227,12 +1221,6 @@ func (g *gpuRenderer) resolveWithPost(dev *wgpu.Device, enc *wgpu.CommandEncoder
 	}
 
 	s := supersampleFactor(f)
-	aoView := ps.whiteV
-	if f.PostProcess.SSAO.on() {
-		if aoView, err = g.encodeSSAO(dev, enc, ps, f, s, g.target.samples > 1); err != nil {
-			return err
-		}
-	}
 
 	bloomView := ps.blackV
 	bloomGain := float32(0)
@@ -1243,7 +1231,7 @@ func (g *gpuRenderer) resolveWithPost(dev *wgpu.Device, enc *wgpu.CommandEncoder
 	}
 
 	p := &g.post
-	if p.resolveScene != g.target.colorView || p.resolveAO != aoView || p.resolveBloom != bloomView || p.resolveTexBind == nil {
+	if p.resolveScene != g.target.colorView || p.resolveBloom != bloomView || p.resolveTexBind == nil {
 		if p.resolveTexBind != nil {
 			p.resolveTexBind.Release()
 			p.resolveTexBind = nil
@@ -1252,7 +1240,6 @@ func (g *gpuRenderer) resolveWithPost(dev *wgpu.Device, enc *wgpu.CommandEncoder
 			Layout: ps.resolveTexGroup,
 			Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, TextureView: g.target.colorView},
-				{Binding: 1, TextureView: aoView},
 				{Binding: 2, TextureView: bloomView},
 				{Binding: 3, Sampler: ps.sampler},
 			},
@@ -1260,7 +1247,7 @@ func (g *gpuRenderer) resolveWithPost(dev *wgpu.Device, enc *wgpu.CommandEncoder
 		if err != nil {
 			return err
 		}
-		p.resolveScene, p.resolveAO, p.resolveBloom = g.target.colorView, aoView, bloomView
+		p.resolveScene, p.resolveBloom = g.target.colorView, bloomView
 	}
 
 	hasOverlays := g.batches[4].count > 0
