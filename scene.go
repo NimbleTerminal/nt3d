@@ -108,12 +108,22 @@ func (s *Scene) Node(id NodeID) (Node, bool) {
 	out.Children = slices.Clone(n.Children)
 	return out, true
 }
-func (s *Scene) localWorld(id NodeID) nt3dmath.Mat4 {
-	chain := []NodeID{id}
+
+// ancestry appends id and then each of its ancestors, ending with Root, to
+// chain. World transforms pass a slice of a local array, so that a tree no
+// deeper than the array costs no allocation: Frame asks for every node's.
+func (s *Scene) ancestry(chain []NodeID, id NodeID) []NodeID {
+	chain = append(chain, id)
 	for id != Root {
 		id = s.nodes[id].Parent
 		chain = append(chain, id)
 	}
+	return chain
+}
+
+func (s *Scene) localWorld(id NodeID) nt3dmath.Mat4 {
+	var local [32]NodeID
+	chain := s.ancestry(local[:0], id)
 	m := nt3dmath.Identity()
 	for i := len(chain) - 1; i >= 0; i-- {
 		m = m.Mul(s.nodes[chain[i]].Local)
@@ -141,11 +151,8 @@ func mulMat4d(a, b [16]float64) (m [16]float64) {
 }
 
 func (s *Scene) world64(id NodeID) [16]float64 {
-	chain := []NodeID{id}
-	for id != Root {
-		id = s.nodes[id].Parent
-		chain = append(chain, id)
-	}
+	var local [32]NodeID
+	chain := s.ancestry(local[:0], id)
 	m := [16]float64{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
 	for i := len(chain) - 1; i >= 0; i-- {
 		n := s.nodes[chain[i]]

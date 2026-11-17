@@ -23,7 +23,7 @@ The library is one module. The demos in `examples/demos` are a second module, so
 
 | Task | Does |
 | --- | --- |
-| `task ci` | format check, race tests, vet, native builds, and the complete WebAssembly gallery build |
+| `task ci` | format check, race tests, vet (which also type-checks the GPU tests), native builds, and the complete WebAssembly gallery build |
 | `task test-gpu` | the GPU tests, which need a real WebGPU adapter and fail without one |
 | `task fuzz-smoke` | run every decoder, math, and geometry fuzz target briefly on one CPU |
 | `task build-web`, `task serve` | build the browser gallery, and serve it at http://localhost:8768 |

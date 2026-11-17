@@ -131,5 +131,9 @@ func (t *WaveTile) Apply(s *nt3d.Scene, id nt3d.NodeID) error {
 func (t *WaveTile) RestBounds() nt3dmath.AABB {
 	x, y := t.rest(0, 0)
 	xx, yy := t.rest(t.nx-1, t.ny-1)
-	return nt3dmath.AABB{Min: nt3dmath.Vec3{X: float32(x), Y: float32(y)}, Max: nt3dmath.Vec3{X: float32(xx), Y: float32(yy)}}
+	// Include marks the box valid; a struct literal would be an empty box.
+	var b nt3dmath.AABB
+	b.Include(nt3dmath.Vec3{X: float32(x), Y: float32(y)})
+	b.Include(nt3dmath.Vec3{X: float32(xx), Y: float32(yy)})
+	return b
 }

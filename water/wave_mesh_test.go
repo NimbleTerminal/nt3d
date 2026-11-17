@@ -102,3 +102,32 @@ func TestWaveTileApplyPreservesSceneTopology(t *testing.T) {
 		t.Fatal("WaveTile.Apply did not advance wave vertices")
 	}
 }
+
+// RestBounds is a box other code can use: valid, so transforming, culling,
+// and containment treat it as the tile's extent rather than as empty, and
+// the tiles' boxes together cover the grid.
+func TestWaveTileRestBoundsIsValid(t *testing.T) {
+	tiles, err := BuildWaveTiles(WaveGrid{NX: 9, NY: 5, TileCells: 4, MinX: -4, MaxX: 4, MinY: 1, MaxY: 3})
+	check(t, err)
+	var all nt3dmath.AABB
+	for i, tile := range tiles {
+		b := tile.RestBounds()
+		if !b.IsValid() {
+			t.Fatalf("tile %d rest bounds %v are not valid", i, b)
+		}
+		if b.Min.X >= b.Max.X || b.Min.Y >= b.Max.Y || b.Min.Z != 0 || b.Max.Z != 0 {
+			t.Fatalf("tile %d rest bounds %v", i, b)
+		}
+		if moved := b.Transformed(nt3dmath.Translation(nt3dmath.Vec3{X: 10})); !moved.IsValid() || moved.Min.X != b.Min.X+10 {
+			t.Fatalf("tile %d rest bounds moved to %v", i, moved)
+		}
+		all.Include(b.Min)
+		all.Include(b.Max)
+	}
+	if want := (nt3dmath.Vec3{X: -4, Y: 1}); all.Min != want {
+		t.Fatalf("rest bounds start at %v, want %v", all.Min, want)
+	}
+	if want := (nt3dmath.Vec3{X: 4, Y: 3}); all.Max != want {
+		t.Fatalf("rest bounds end at %v, want %v", all.Max, want)
+	}
+}

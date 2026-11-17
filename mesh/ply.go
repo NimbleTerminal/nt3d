@@ -547,7 +547,9 @@ func plyRangeGrid(r *plyReader, e plyElement, comments []string) (*rangeGrid, er
 		}
 	}
 	scalars, lists := map[string]float64{}, map[string][]float64{}
-	if g.cols < 2 || g.rows < 2 || g.cols*g.rows != e.count {
+	// The header's sizes are untrusted: rows is bounded before it is
+	// multiplied, so the product cannot wrap around to the count.
+	if g.cols < 2 || g.rows < 2 || g.rows > e.count/g.cols || g.cols*g.rows != e.count {
 		for range e.count {
 			if err := plyValues(r, e, scalars, lists); err != nil {
 				return nil, err

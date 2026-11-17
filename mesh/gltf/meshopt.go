@@ -26,6 +26,56 @@ const (
 	glbChunkBIN  = 0x004E4942 // "BIN\x00"
 )
 
+// rejectNullEntries refuses a document with a null where the schema wants an
+// object. Every array of objects decodes to a slice of pointers, so a null
+// entry is a nil pointer; checking them all here, before anything reads one,
+// lets the rest of the decoder index these slices without asking again.
+func rejectNullEntries(doc *gltf.Document) error {
+	for _, err := range []error{
+		nullEntry("accessors", doc.Accessors),
+		nullEntry("animations", doc.Animations),
+		nullEntry("buffers", doc.Buffers),
+		nullEntry("bufferViews", doc.BufferViews),
+		nullEntry("cameras", doc.Cameras),
+		nullEntry("images", doc.Images),
+		nullEntry("materials", doc.Materials),
+		nullEntry("meshes", doc.Meshes),
+		nullEntry("nodes", doc.Nodes),
+		nullEntry("samplers", doc.Samplers),
+		nullEntry("scenes", doc.Scenes),
+		nullEntry("skins", doc.Skins),
+		nullEntry("textures", doc.Textures),
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	for i, m := range doc.Meshes {
+		if err := nullEntry(fmt.Sprintf("meshes[%d].primitives", i), m.Primitives); err != nil {
+			return err
+		}
+	}
+	for i, a := range doc.Animations {
+		if err := nullEntry(fmt.Sprintf("animations[%d].channels", i), a.Channels); err != nil {
+			return err
+		}
+		if err := nullEntry(fmt.Sprintf("animations[%d].samplers", i), a.Samplers); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// nullEntry reports the first null in one of a document's arrays of objects.
+func nullEntry[T any](array string, entries []*T) error {
+	for i, e := range entries {
+		if e == nil {
+			return fmt.Errorf("nt3dmesh: glTF %s[%d] is null", array, i)
+		}
+	}
+	return nil
+}
+
 type meshoptBufferExt struct {
 	Fallback bool `json:"fallback"`
 }
@@ -73,6 +123,9 @@ func (d *gltfDecoder) decodeContainer(data []byte) error {
 		if err := json.NewDecoder(bytes.NewReader(data)).Decode(d.doc); err != nil {
 			return fmt.Errorf("nt3dmesh: glTF: %w", err)
 		}
+	}
+	if err := rejectNullEntries(d.doc); err != nil {
+		return err
 	}
 
 	externalStart := 0

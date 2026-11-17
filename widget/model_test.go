@@ -452,3 +452,30 @@ func TestCameraOriginParityInWidget(t *testing.T) {
 		t.Fatalf("expected center widget Pick to hit geographic sphere, got %+v", hit)
 	}
 }
+
+// A frame that software or wireframe refuses says nothing about the GPU,
+// which did not draw it: the renderer held for WebGPU mode is kept, with its
+// uploads, for when that mode is chosen again.
+func TestFrameErrorKeepsHeldGPURenderer(t *testing.T) {
+	for _, mode := range []RenderMode{Software, Wireframe} {
+		t.Run(mode.String(), func(t *testing.T) {
+			r := &failRenderer{ok: true}
+			m := New(scene(t), 30, 10, WithRenderer(r), WithRenderMode(mode), WithFrameDecorator(func(f *nt3d.Frame) {
+				f.DynamicLines = make([]nt3d.Vertex, 1) // Half a line: no renderer draws the frame.
+			}))
+			defer m.Close()
+			m.started = true
+			msg := m.schedule()().(rendered)
+			if msg.err == nil || msg.fellBack || msg.renderMode != mode {
+				t.Fatalf("err=%v fellBack=%v mode=%v", msg.err, msg.fellBack, msg.renderMode)
+			}
+			m.Update(msg)
+			if m.Err() == nil {
+				t.Fatal("the frame's error was not kept")
+			}
+			if r.closed || m.renderer != r {
+				t.Fatal("a frame the GPU did not draw closed the GPU renderer")
+			}
+		})
+	}
+}

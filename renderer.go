@@ -197,11 +197,20 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	f.Eye, _, _, f.Forward = relCam.basis()
 	f.Perspective = relCam.Projection == Perspective
 	lodBias, lodBand, lodEpoch := s.lodBiasValue(), s.lodHysteresis, s.lodEpochValue()
+	// The nodes that draw are counted first, so the frame's slices are each
+	// allocated once at their final size instead of growing node by node.
+	drawn := make([]*sceneNode, 0, len(s.order))
 	for _, id := range s.order {
-		n := s.nodes[id]
-		if n.geometry == nil {
-			continue
+		if n := s.nodes[id]; n.geometry != nil {
+			drawn = append(drawn, n)
 		}
+	}
+	f.Geometry = make([]Geometry, 0, len(drawn))
+	f.GeometryRevisions = make([]uint64, 0, len(drawn))
+	f.Shared = make([]uint64, 0, len(drawn))
+	f.Instances = make([]Instance, 0, len(drawn))
+	for _, n := range drawn {
+		id := n.ID
 		geom, rev, sg := n.geometry, n.geometryRevision, n.shared
 		world, visible := s.worldRelative(id, frameOrigin), s.visible(id)
 		if len(n.lod) > 0 {

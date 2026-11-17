@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Fix two decoder panics on malformed files. A glTF/GLB document with `null`
+  in any array of objects (materials, scenes, cameras, mesh primitives,
+  animation channels and samplers, and the rest) is refused by name, such as
+  `materials[0] is null`, including a null nothing refers to, which was
+  accepted before. A PLY range grid whose `num_cols` × `num_rows` overflows
+  is skipped like any other size that does not match the element.
+
+- `Scene.Frame` allocates its slices once a call instead of twice a node:
+  10,000 nodes cost 6 allocations and 8.9 MB, from 20,078 and 43.7 MB, in a
+  little over half the time. Frames are unchanged.
+
+- `nt3dwidget`: a frame that software or wireframe mode was asked for and
+  refused no longer closes the GPU renderer held for WebGPU mode. Only a GPU
+  fallback lets it go, as documented.
+
+- `nt3dwater.WaveTile.RestBounds` returns a valid `AABB`; it returned one
+  that `IsValid`, `Transformed`, and culling treated as empty.
+
+- `task ci` type-checks the `webgpu`-tagged GPU tests in every module (`go vet
+  -tags webgpu`), which no CI step compiled before. Running them still takes
+  `task test-gpu` and a GPU.
+
 - Add `task room`: an interactive cutaway-room demo with independent local
   probe and lightmap toggles, a moving polished sphere, bundled synthetic HDR
   fixtures, and terminal, native-gallery, and web entry points.

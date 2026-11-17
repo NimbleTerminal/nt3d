@@ -50,8 +50,10 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		// A frame's error stands until a frame draws without one. The GPU
 		// that software stood in for is let go: falling back is for good.
+		// A frame software or wireframe was asked for and refused is no
+		// fault of the GPU's, whose renderer and uploads are kept.
 		m.renderErr = v.err
-		if (v.fellBack || v.err != nil) && m.renderer != nil {
+		if v.fellBack && m.renderer != nil {
 			_ = m.renderer.Close()
 			m.renderer = nil
 		}

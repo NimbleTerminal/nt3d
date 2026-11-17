@@ -1,9 +1,11 @@
 package nt3d
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 	"nimbleterminal.dev/nt3d/math"
+	"strconv"
 	"testing"
 )
 
@@ -199,5 +201,106 @@ func TestPickTransformedPrimitives(t *testing.T) {
 				t.Fatal("hidden pick")
 			}
 		})
+	}
+}
+
+// frameScene is a scene of n nodes showing one shared mesh, two groups deep,
+// and with origin, placed by float64 node origins as geographic scenes are.
+func frameScene(tb testing.TB, n int, origin bool) *Scene {
+	tb.Helper()
+	fail := func(err error) {
+		tb.Helper()
+		if err != nil {
+			tb.Fatal(err)
+		}
+	}
+	box, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
+	fail(err)
+	shared, err := NewSharedGeometry(box)
+	fail(err)
+	s := NewScene()
+	outer, err := s.Add(Root, "outer")
+	fail(err)
+	inner, err := s.Add(outer, "inner")
+	fail(err)
+	for i := range n {
+		id, err := s.Add(inner, "node"+strconv.Itoa(i))
+		fail(err)
+		fail(s.SetNodeShared(id, shared))
+		if origin {
+			fail(s.SetNodeOrigin(id, [3]float64{float64(i), 500_000, 4_000_000}))
+		}
+	}
+	return s
+}
+
+// A frame allocates its slices once, whatever the scene holds: a node costs
+// its entries in them, and nothing of its own. Frames are made every time a
+// view is drawn, so a per-node allocation is garbage at the frame rate.
+func TestSceneFrameAllocationsDoNotGrowWithNodes(t *testing.T) {
+	for _, origin := range []bool{false, true} {
+		camera := DefaultCamera()
+		if origin {
+			camera.Origin = [3]float64{0, 500_000, 4_000_000}
+		}
+		allocs := func(n int) float64 {
+			s := frameScene(t, n, origin)
+			return testing.AllocsPerRun(5, func() {
+				if f, err := s.Frame(camera, 200, 120); err != nil || len(f.Geometry) != n || len(f.Instances) != n || len(f.GeometryRevisions) != n || len(f.Shared) != n {
+					t.Fatalf("frame of %d: %v", n, err)
+				}
+			})
+		}
+		// A handful of slices, a hundred nodes or a thousand.
+		if few, many := allocs(100), allocs(1000); few > 8 || many > 8 {
+			t.Errorf("origin=%v: %v allocations for 1000 nodes, %v for 100", origin, many, few)
+		}
+	}
+}
+
+func BenchmarkSceneFrame(b *testing.B) {
+	for _, n := range []int{1000, 10000} {
+		for _, origin := range []bool{false, true} {
+			b.Run(fmt.Sprintf("nodes=%d/origin=%v", n, origin), func(b *testing.B) {
+				s := frameScene(b, n, origin)
+				camera := DefaultCamera()
+				b.ReportAllocs()
+				for b.Loop() {
+					if _, err := s.Frame(camera, 640, 480); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// A tree deeper than the array world transforms walk ancestors in still
+// composes every level, with and without float64 node origins.
+func TestWorldTransformOfDeepTree(t *testing.T) {
+	const depth = 40
+	for _, origin := range []bool{false, true} {
+		s := NewScene()
+		parent := Root
+		for i := range depth {
+			id, err := s.Add(parent, "level"+strconv.Itoa(i))
+			check(t, err)
+			check(t, s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: 1})))
+			if origin {
+				check(t, s.SetNodeOrigin(id, [3]float64{0, 2, 0}))
+			}
+			parent = id
+		}
+		n, ok := s.Node(parent)
+		want := nt3dmath.Vec3{X: depth}
+		if origin {
+			want.Y = 2 * depth
+		}
+		if got := n.World.Point(nt3dmath.Vec3{}); !ok || got != want {
+			t.Fatalf("origin=%v: deepest node at %v, want %v", origin, got, want)
+		}
+		if p, ok := s.NodeWorldPosition(parent); !ok || p != [3]float64{float64(want.X), float64(want.Y), 0} {
+			t.Fatalf("origin=%v: deepest node world position %v", origin, p)
+		}
 	}
 }

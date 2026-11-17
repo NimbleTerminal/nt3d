@@ -337,3 +337,40 @@ func TestConf(t *testing.T) {
 		t.Fatal("read scans without side-file access")
 	}
 }
+
+// A grid whose stated size overflows when multiplied is not the size of the
+// element, however the product wraps, and is skipped like any other mismatch:
+// the file decodes as it does with no grid size at all.
+func TestPLYRangeGridSizeOverflow(t *testing.T) {
+	file := func(info string, cells int) []byte {
+		var b strings.Builder
+		fmt.Fprintf(&b, "ply\nformat ascii 1.0\n%selement vertex 3\nproperty float x\nproperty float y\nproperty float z\nelement range_grid %d\nproperty list uchar int vertex_indices\nend_header\n0 0 0\n1 0 0\n0 1 0\n", info, cells)
+		for i := range cells {
+			fmt.Fprintf(&b, "1 %d\n", i%3)
+		}
+		return []byte(b.String())
+	}
+	for name, tc := range map[string]struct {
+		cols  string
+		cells int
+	}{
+		"wraps to zero":  {"4611686018427387904", 0}, // 2^62 columns of 4 rows.
+		"wraps to count": {"4611686018427387906", 8}, // 2^62+2 columns of 4 rows.
+		"out of range":   {"99999999999999999999", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("DecodePLY panicked: %v", r)
+				}
+			}()
+			want, err := DecodePLY(file("", tc.cells), nil)
+			check(t, err)
+			got, err := DecodePLY(file("obj_info num_cols "+tc.cols+"\nobj_info num_rows 4\n", tc.cells), nil)
+			check(t, err)
+			if got.Triangles() != want.Triangles() || len(got.Objects) != len(want.Objects) || len(got.Objects[0].Geometry.Points) != len(want.Objects[0].Geometry.Points) {
+				t.Fatalf("%d triangles and %d points, want %d and %d", got.Triangles(), len(got.Objects[0].Geometry.Points), want.Triangles(), len(want.Objects[0].Geometry.Points))
+			}
+		})
+	}
+}
