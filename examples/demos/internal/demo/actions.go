@@ -80,6 +80,8 @@ func (d *demo) sceneKeys() (string, keys) {
 		return "aabb", keys{[]key.Binding{bind("h", "h", "hierarchy"), bind("a", "a", "drift"), bind("n", "n", "count"), bind("b", "b", "add"), bind("x", "x", "remove")}}
 	case d.cloud != nil:
 		return "cloud", keys{[]key.Binding{bind("l", "l", "LOD"), bind("n", "n", "count"), bind("-", "-", "zoom out"), bind("=", "=", "zoom in")}}
+	case d.room != nil:
+		return "room", keys{[]key.Binding{bind("p", "p", "local probes"), bind("l", "l", "lightmaps"), bind("a", "a", "pause")}}
 	case d.lights != nil:
 		return "lights", keys{[]key.Binding{bind("l", "l", "preset"), bind("h", "h", "SH rotation"), bind("e", "e", "material"), bind("n", "n", "normal map"), bind("s", "s", "shadows"), bind("b", "b", "lift"), bind("p", "p", "post"), bind("a", "a", "pause")}}
 	case d.forest != nil:

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `task room`: an interactive cutaway-room demo with independent local
+  probe and lightmap toggles, a moving polished sphere, bundled synthetic HDR
+  fixtures, and terminal, native-gallery, and web entry points.
+
 - Consume externally baked linear HDR irradiance through `NewLightMap` /
   `NewHDRLightMap`, `Material.LightMap`, and independent `Geometry.LightMapUV`.
   GPU and software replace indirect diffuse, preserve direct/specular/emissive

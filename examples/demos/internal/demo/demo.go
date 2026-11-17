@@ -57,6 +57,7 @@ type demo struct {
 	mipmaps           *mipScene
 	forest            *forestScene
 	lights            *lightScene
+	room              *roomScene
 	particles         *particleScene
 	cloud             *cloudScene
 	aabb              *aabbScene
@@ -111,6 +112,7 @@ const (
 	sceneMipmaps
 	sceneForest
 	sceneLights
+	sceneRoom
 	sceneParticles
 	sceneGaussians
 	sceneAnimation
@@ -125,7 +127,7 @@ const (
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil
+	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.room == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil
 }
 
 type quitMsg struct{}
@@ -258,7 +260,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return d, phaseTick()
 		}
-		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && (d.meshes == nil || d.meshes.player == nil) && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.particles == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil) {
+		if !d.animate || (!d.procedural && !d.hooks && d.animation == nil && (d.meshes == nil || d.meshes.player == nil) && d.dynamic == nil && d.fur == nil && d.forest == nil && d.lights == nil && d.room == nil && d.particles == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil) {
 			return d, phaseTick()
 		}
 		d.animationTime += elapsed
@@ -279,6 +281,8 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = d.stepFur()
 		case d.forest != nil:
 			err = d.stepForest()
+		case d.room != nil:
+			err = d.stepRoom()
 		case d.lights != nil:
 			err = d.stepLights()
 		case d.particles != nil:
@@ -335,6 +339,14 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return d, nil
 	case tea.KeyPressMsg:
+		if d.room != nil {
+			if handled, err := d.roomKey(v.String()); handled {
+				if err != nil {
+					d.status = err.Error()
+				}
+				return d, d.view.Refresh()
+			}
+		}
 		if d.water != nil {
 			if handled, err := d.waterKey(v.String()); handled {
 				if err != nil {
@@ -776,6 +788,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 		}
 		d.captureForest(f)
 	}
+	if d.room != nil {
+		d.decorateRoom(f)
+	}
 	if d.lights != nil {
 		d.decorateLights(f)
 	}
@@ -852,6 +867,10 @@ func (d *demo) View() tea.View {
 	if d.forest != nil {
 		v.Content = d.zones.Scan(d.forestView(v.Content))
 		v.AltScreen = true
+		return v
+	}
+	if d.room != nil {
+		v.Content = d.zones.Scan(d.roomView(v.Content))
 		return v
 	}
 	if d.lights != nil {
@@ -1063,6 +1082,10 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupForest(); err != nil {
 			return err
 		}
+	case sceneRoom:
+		if err = d.setupRoom(); err != nil {
+			return err
+		}
 	case sceneLights:
 		if err = d.setupLights(); err != nil {
 			return err
@@ -1131,6 +1154,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Alpha, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
 	case sceneForest:
 		camera.Alpha, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
+	case sceneRoom:
+		roomCamera(&camera)
 	case sceneLights:
 		camera.Alpha, camera.Distance, camera.Projection = 30, 5.5, nt3d.Perspective
 	case sceneParticles:

@@ -6,7 +6,7 @@ env:
 
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
-  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water toon campath
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water toon campath room
   # Every tool: a command in cmd/nt3d-NAME, built to bin/nt3d-NAME.
   TOOLS: palette
   # Every fuzz target, as package:Function; fuzz-smoke runs each briefly, and
@@ -94,7 +94,7 @@ tasks:
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb dist/web/water dist/web/toon dist/web/campath
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb dist/web/water dist/web/toon dist/web/campath dist/web/room
       - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
       - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -115,6 +115,7 @@ tasks:
       - go -C examples/demos build -mod=readonly -o ../../dist/web/water/app.wasm ./cmd/water
       - go -C examples/demos build -mod=readonly -o ../../dist/web/toon/app.wasm ./cmd/toon
       - go -C examples/demos build -mod=readonly -o ../../dist/web/campath/app.wasm ./cmd/campath
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/room/app.wasm ./cmd/room
   web-assets:
     cmds:
       - go -C examples/demos tool booba-assets ../../dist/web/terrain/
@@ -137,6 +138,7 @@ tasks:
       - go -C examples/demos tool booba-assets ../../dist/web/water/
       - go -C examples/demos tool booba-assets ../../dist/web/toon/
       - go -C examples/demos tool booba-assets ../../dist/web/campath/
+      - go -C examples/demos tool booba-assets ../../dist/web/room/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -311,3 +313,8 @@ tasks:
     deps: [build:gogpu]
     cmds:
       - bin/nt3d-gogpu {{.CLI_ARGS}}
+
+  room:
+    desc: Compare authored local reflections and HDR irradiance lightmaps
+    deps: [{task: build:demo, vars: {NAME: room}}]
+    cmds: ["bin/nt3d-room {{.CLI_ARGS}}"]

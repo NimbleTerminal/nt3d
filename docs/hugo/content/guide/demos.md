@@ -249,3 +249,19 @@ the assets in `examples/demos/internal/demo/gobkit`. Only `cmd/characters` impor
 that embed package and supplies `demo.SampleFiles`; the files stay in the separate
 demos module and are absent from library builds and other demo binaries.
 Playback uses the same generic animation API and sample player as the Khronos gallery.
+
+## Lighting room
+
+Run `task room` in a Kitty-compatible terminal, or select **room** in the native
+GoGPU gallery. For software rendering, run `task room -- --render-mode software`.
+
+A polished sphere moves through an authored box probe inside a cutaway room.
+The walls and floor use supplied HDR irradiance textures with independent UVs.
+Press **p** to toggle local probes, **l** to toggle lightmaps, and **a** to pause.
+Drag to orbit and use the wheel to zoom; **1/2/3** switches GPU/software/wireframe.
+
+The bundled HDR files are small, original synthetic fixtures. Their generator
+is documented in `examples/demos/internal/demo/roomassets/README.md`; they are
+not a GI bake or automatic scene capture. Static contact darkening belongs to
+the pedestal, while the moving sphere does not modify the bake. Replace the
+fixtures and UVs with external-tool exports to try real baked lighting.

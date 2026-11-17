@@ -16,7 +16,7 @@ func TestSceneActions(t *testing.T) {
 		{}, {dynamic: &dynamicScene{}}, {meshes: &meshScene{}}, {meshes: &meshScene{builtin: true}}, {meshes: &meshScene{hasSH: true}},
 		{meshes: &meshScene{assets: []meshAssetEntry{{}}, hasLOD: true, variants: []string{"Taxi", "Police"}, player: &nt3d.Animation{}}},
 		{models: &modelScene{}, meshes: &meshScene{}},
-		{animatedSamples: &animateScene{}}, {animatedSamples: &animateScene{cameras: []nt3d.NodeID{1, 2}}}, {large: &largeScene{}}, {fur: &furScene{}}, {mipmaps: &mipScene{}}, {forest: &forestScene{}}, {lights: &lightScene{}}, {particles: &particleScene{}}, {aabb: &aabbScene{}}, {water: &waterScene{}}, {toon: &toonScene{}}, {camPath: &camPathScene{}},
+		{animatedSamples: &animateScene{}}, {animatedSamples: &animateScene{cameras: []nt3d.NodeID{1, 2}}}, {large: &largeScene{}}, {fur: &furScene{}}, {mipmaps: &mipScene{}}, {forest: &forestScene{}}, {room: &roomScene{}}, {lights: &lightScene{}}, {particles: &particleScene{}}, {aabb: &aabbScene{}}, {water: &waterScene{}}, {toon: &toonScene{}}, {camPath: &camPathScene{}},
 	} {
 		context, k := d.sceneKeys()
 		snapshot, diagnostics, err := bubblehelp.Snapshot(k, "nt3d-"+context, context, 1, bubblehelp.Options{})

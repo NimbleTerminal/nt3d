@@ -39,9 +39,10 @@ var demoNames = []string{
 	"water",
 	"toon",
 	"campath",
+	"room",
 }
 
-// Names returns the ordered list of all 20 interactive demo scene names.
+// Names returns the ordered list of all interactive demo scene names.
 func Names() []string {
 	out := make([]string, len(demoNames))
 	copy(out, demoNames)
@@ -85,6 +86,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		kind = sceneMipmaps
 	case "forest":
 		kind = sceneForest
+	case "room":
+		kind = sceneRoom
 	case "lights":
 		kind = sceneLights
 	case "particles":
@@ -154,6 +157,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		err = d.setupMipmaps()
 	case sceneForest:
 		err = d.setupForest()
+	case sceneRoom:
+		err = d.setupRoom()
 	case sceneLights:
 		err = d.setupLights()
 	case sceneGaussians:
@@ -204,6 +209,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		camera.Alpha, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
 	case sceneForest:
 		camera.Alpha, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
+	case sceneRoom:
+		roomCamera(&camera)
 	case sceneLights:
 		camera.Alpha, camera.Distance, camera.Projection = 30, 5.5, nt3d.Perspective
 	case sceneParticles:
@@ -582,6 +589,8 @@ func (r *Runner) HeaderAndStatus() (header, status string) {
 		raw = d.mipmapsView(sentinel)
 	case d.forest != nil:
 		raw = d.forestView(sentinel)
+	case d.room != nil:
+		raw = d.roomView(sentinel)
 	case d.lights != nil:
 		raw = d.lightsView(sentinel)
 	case d.particles != nil:

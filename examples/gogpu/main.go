@@ -2,7 +2,7 @@
 
 // Command gogpu demonstrates embedding NT3D inside a GoGPU window using
 // nt3d.GPUSession and nt3d.GPUTarget without CPU readback. It serves as:
-//   - A unified desktop application for all 20 interactive NT3D demos
+//   - A unified desktop application for all 21 interactive NT3D demos
 //     (-demo <name>, or Tab / Shift+Tab / PageDown / PageUp to switch live).
 //   - An interactive desktop 3D model and Gaussian splat viewer when given
 //     -file or positional file paths (.glb, .gltf, .sog, .spz, .ply, .stl, .obj, .3mf).

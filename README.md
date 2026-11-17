@@ -14,7 +14,7 @@ A small 3D scene engine for Go programs that draw in the terminal, the browser, 
 
 Build a scene of meshes, points, lines, Gaussians, and textures, point a camera at it, and `nt3d` renders it: on the GPU with WebGPU, in software when there is no GPU, or as wireframe text when there are no graphics at all. A [Bubble Tea](https://github.com/charmbracelet/bubbletea) widget puts it in your terminal app with mouse orbiting, picking, Kitty graphics, and half-block fallback—or `GPUSession` draws straight into a host WebGPU window.
 
-**[Try the 20 live browser demos →](https://nimbleterminal.github.io/nt3d/)** · **[Read the user guide →](https://nimbleterminal.github.io/nt3d/docs/)** · **[Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-started/)** · **[Go reference](https://pkg.go.dev/nimbleterminal.dev/nt3d)**
+**[Try the live browser demos →](https://nimbleterminal.github.io/nt3d/)** · **[Read the user guide →](https://nimbleterminal.github.io/nt3d/docs/)** · **[Getting started](https://nimbleterminal.github.io/nt3d/docs/guide/getting-started/)** · **[Go reference](https://pkg.go.dev/nimbleterminal.dev/nt3d)**
 
 <p>
   <a href="https://nimbleterminal.github.io/nt3d/"><img src="web/assets/fur.png" alt="Spot the cow covered in black-and-white fur — click to open the live demo gallery" width="480"></a>
@@ -89,6 +89,7 @@ Every demo in the **[live browser gallery](https://nimbleterminal.github.io/nt3d
 | **[Water ↗](https://nimbleterminal.github.io/nt3d/water/)** | `task water` | Craft riding Gerstner waves with boat wakes, crest jumps, foam, spray, and reflections |
 | **[Toon city ↗](https://nimbleterminal.github.io/nt3d/toon/)** | `task toon` | Cel-shaded Spot, robot, glass shelter, and cloth pennant in Manhattan with soft shadows and crease ink |
 | **[Camera paths ↗](https://nimbleterminal.github.io/nt3d/campath/)** | `task campath` | Declarative YAML camera paths: banked flythrough, focal-length pull orbit, switcher, and 3D frustum rig |
+| **Lighting room** | `task room` | Toggle box-projected local probes and HDR irradiance lightmaps in a cutaway room |
 
 To run demos, inspect your own 3D files, or launch the native desktop window viewer from a local checkout (using [Go Task](https://taskfile.dev)):
 
