@@ -20,12 +20,12 @@ type meshUpdate struct {
 // meshCertificate identifies immutable mesh slices already validated on upload
 // or during a fixed-topology update so per-frame validation skips O(V+I) scans.
 type meshCertificate struct {
-	vertices       []Vertex
-	indices        []uint32
-	uv, normalUV   []UV
-	tangents       []Tangent
-	certifiedSplit bool
-	splitOutlines  bool
+	vertices                 []Vertex
+	indices                  []uint32
+	uv, normalUV, lightMapUV []UV
+	tangents                 []Tangent
+	certifiedSplit           bool
+	splitOutlines            bool
 }
 
 func sameSlice[T any](a, b []T) bool {
@@ -38,6 +38,7 @@ func newMeshCertificate(g *Geometry, splitOutlines bool) meshCertificate {
 		indices:        g.Indices,
 		uv:             g.UV,
 		normalUV:       g.NormalUV,
+		lightMapUV:     g.LightMapUV,
 		tangents:       g.Tangents,
 		certifiedSplit: true,
 		splitOutlines:  splitOutlines,
@@ -49,7 +50,7 @@ func (c meshCertificate) certifies(g *Geometry) bool {
 		sameSlice(g.Vertices, c.vertices) &&
 		sameSlice(g.Indices, c.indices) &&
 		sameSlice(g.UV, c.uv) &&
-		sameSlice(g.NormalUV, c.normalUV) &&
+		sameSlice(g.NormalUV, c.normalUV) && sameSlice(g.LightMapUV, c.lightMapUV) &&
 		sameSlice(g.Tangents, c.tangents)
 }
 

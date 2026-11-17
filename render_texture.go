@@ -71,12 +71,12 @@ func (t *gpuTexture) release() {
 }
 
 type materialBindKey struct {
-	baseView, normalView, ormView, emissiveView *wgpu.TextureView
-	baseSamp, normalSamp, ormSamp, emissiveSamp *wgpu.Sampler
+	baseView, normalView, ormView, emissiveView, lightMapView *wgpu.TextureView
+	baseSamp, normalSamp, ormSamp, emissiveSamp, lightMapSamp *wgpu.Sampler
 }
 
 func (k materialBindKey) usesView(v *wgpu.TextureView) bool {
-	return k.baseView == v || k.normalView == v || k.ormView == v || k.emissiveView == v
+	return k.baseView == v || k.normalView == v || k.ormView == v || k.emissiveView == v || k.lightMapView == v
 }
 
 func (g *gpuRenderer) slotBinding(key textureKey) (*wgpu.TextureView, *wgpu.Sampler) {
@@ -97,7 +97,9 @@ func (g *gpuRenderer) materialKey(m *Material, aniso int) materialBindKey {
 	nv, ns := g.slotBinding(textureKey{src: normalMap(m), repeat: normRep, aniso: aniso})
 	ov, os := g.slotBinding(textureKey{src: ormMap(m), repeat: ormRep, aniso: aniso})
 	ev, es := g.slotBinding(textureKey{src: emissiveMap(m), repeat: emRep, aniso: aniso})
+	lv, ls := g.slotBinding(textureKey{src: lightMapTexture(m), aniso: aniso})
 	return materialBindKey{
+		lightMapView: lv, lightMapSamp: ls,
 		baseView: bv, normalView: nv, ormView: ov, emissiveView: ev,
 		baseSamp: bs, normalSamp: ns, ormSamp: os, emissiveSamp: es,
 	}
@@ -187,7 +189,7 @@ func sampledEntries(pairs int) []gputypes.BindGroupLayoutEntry {
 
 func (g *gpuRenderer) setupTextureLayouts(dev *wgpu.Device) (err error) {
 	if g.materialBindLayout == nil {
-		if g.materialBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Label: "nt3d material", Entries: sampledEntries(4)}); err != nil {
+		if g.materialBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Label: "nt3d material", Entries: sampledEntries(5)}); err != nil {
 			return err
 		}
 	}
@@ -374,6 +376,7 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 				textureKey{src: normalMap(&m), repeat: m.NormalRepeat, aniso: aniso},
 				textureKey{src: ormMap(&m), repeat: m.ORMRepeat, aniso: aniso},
 				textureKey{src: emissiveMap(&m), repeat: m.EmissiveRepeat, aniso: aniso},
+				textureKey{src: lightMapTexture(&m), aniso: aniso},
 			)
 		}
 		if geom.PointStyle.Texture != nil && len(geom.Points) > 0 {
@@ -399,22 +402,33 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 				g.shared.mu.Unlock()
 			}
 			if t == nil {
-				// Color textures decode sRGB; normal and ORM maps keep linear data.
-				// Both use the software renderer's mip chain and hardware repeat.
-				chain := src.levels()
-				if key.cutout {
-					chain = src.cutoutLevels()
-				}
-				if key.fullSize {
-					chain = chain[:1]
-				}
-				addr := gputypes.AddressModeClampToEdge
-				if key.repeat {
-					addr = gputypes.AddressModeRepeat
-				}
 				var err error
-				if t, err = uploadTextureLevels(dev, chain, !src.data, addr, addr, key.aniso); err != nil {
-					return err
+				if len(src.hdr) > 0 {
+					var tex *wgpu.Texture
+					var view *wgpu.TextureView
+					var sampler *wgpu.Sampler
+					tex, view, sampler, err = uploadHDRLevels(dev, src.hdr, "nt3d lightmap", gputypes.AddressModeClampToEdge, key.aniso)
+					if err != nil {
+						return err
+					}
+					t = &gpuTexture{tex: tex, view: view, sampler: sampler}
+				} else {
+					// Color textures decode sRGB; normal and ORM maps keep linear data.
+					// Both use the software renderer's mip chain and hardware repeat.
+					chain := src.levels()
+					if key.cutout {
+						chain = src.cutoutLevels()
+					}
+					if key.fullSize {
+						chain = chain[:1]
+					}
+					addr := gputypes.AddressModeClampToEdge
+					if key.repeat {
+						addr = gputypes.AddressModeRepeat
+					}
+					if t, err = uploadTextureLevels(dev, chain, !src.data, addr, addr, key.aniso); err != nil {
+						return err
+					}
 				}
 				if g.shared != nil {
 					g.shared.mu.Lock()
@@ -456,6 +470,8 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 						{Binding: 5, Sampler: mk.ormSamp},
 						{Binding: 6, TextureView: mk.emissiveView},
 						{Binding: 7, Sampler: mk.emissiveSamp},
+						{Binding: 8, TextureView: mk.lightMapView},
+						{Binding: 9, Sampler: mk.lightMapSamp},
 					},
 				})
 				if err != nil {

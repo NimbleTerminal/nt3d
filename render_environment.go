@@ -45,55 +45,7 @@ func (t *gpuEnvironmentTexture) release() {
 func createEnvironmentTexture(dev *wgpu.Device, e *Environment, label string) (*wgpu.Texture, *wgpu.TextureView, *wgpu.Sampler, error) {
 	if e.hdr {
 		levels := e.hdrSpecularLevels()
-		w, h := e.hdrBase.width, e.hdrBase.height
-		size := wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}
-		tex, err := dev.CreateTexture(&wgpu.TextureDescriptor{
-			Label:         label,
-			Size:          size,
-			MipLevelCount: uint32(len(levels)),
-			SampleCount:   1,
-			Dimension:     wgpu.TextureDimension2D,
-			Format:        gputypes.TextureFormatRGBA16Float,
-			Usage:         gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst,
-		})
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		view, err := dev.CreateTextureView(tex, nil)
-		if err != nil {
-			tex.Release()
-			return nil, nil, nil, err
-		}
-		sampler, err := dev.CreateSampler(&wgpu.SamplerDescriptor{
-			AddressModeU: gputypes.AddressModeRepeat,
-			AddressModeV: gputypes.AddressModeClampToEdge,
-			MagFilter:    gputypes.FilterModeLinear,
-			MinFilter:    gputypes.FilterModeLinear,
-			MipmapFilter: gputypes.FilterModeLinear,
-			Anisotropy:   1,
-		})
-		if err != nil {
-			view.Release()
-			tex.Release()
-			return nil, nil, nil, err
-		}
-		for m, level := range levels {
-			lw, lh := level.width, level.height
-			rowStride := (lw*8 + 255) &^ 255
-			lsize := wgpu.Extent3D{Width: uint32(lw), Height: uint32(lh), DepthOrArrayLayers: 1}
-			if err := dev.Queue().WriteTexture(
-				&wgpu.ImageCopyTexture{Texture: tex, MipLevel: uint32(m)},
-				packHDRRows(level, rowStride),
-				&wgpu.ImageDataLayout{BytesPerRow: uint32(rowStride), RowsPerImage: uint32(lh)},
-				&lsize,
-			); err != nil {
-				sampler.Release()
-				view.Release()
-				tex.Release()
-				return nil, nil, nil, err
-			}
-		}
-		return tex, view, sampler, nil
+		return uploadHDRLevels(dev, levels, label, gputypes.AddressModeRepeat, 1)
 	}
 
 	levels := e.specularLevels()
@@ -271,4 +223,56 @@ func (g *gpuRenderer) prepareEnvironment(dev *wgpu.Device, f Frame) error {
 		g.environmentBind = bind
 	}
 	return nil
+}
+
+func uploadHDRLevels(dev *wgpu.Device, levels []hdrImage, label string, addrU gputypes.AddressMode, aniso int) (*wgpu.Texture, *wgpu.TextureView, *wgpu.Sampler, error) {
+	w, h := levels[0].width, levels[0].height
+	size := wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1}
+	tex, err := dev.CreateTexture(&wgpu.TextureDescriptor{
+		Label:         label,
+		Size:          size,
+		MipLevelCount: uint32(len(levels)),
+		SampleCount:   1,
+		Dimension:     wgpu.TextureDimension2D,
+		Format:        gputypes.TextureFormatRGBA16Float,
+		Usage:         gputypes.TextureUsageTextureBinding | gputypes.TextureUsageCopyDst,
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	view, err := dev.CreateTextureView(tex, nil)
+	if err != nil {
+		tex.Release()
+		return nil, nil, nil, err
+	}
+	sampler, err := dev.CreateSampler(&wgpu.SamplerDescriptor{
+		AddressModeU: addrU,
+		AddressModeV: gputypes.AddressModeClampToEdge,
+		MagFilter:    gputypes.FilterModeLinear,
+		MinFilter:    gputypes.FilterModeLinear,
+		MipmapFilter: gputypes.FilterModeLinear,
+		Anisotropy:   uint16(aniso),
+	})
+	if err != nil {
+		view.Release()
+		tex.Release()
+		return nil, nil, nil, err
+	}
+	for m, level := range levels {
+		lw, lh := level.width, level.height
+		rowStride := (lw*8 + 255) &^ 255
+		lsize := wgpu.Extent3D{Width: uint32(lw), Height: uint32(lh), DepthOrArrayLayers: 1}
+		if err := dev.Queue().WriteTexture(
+			&wgpu.ImageCopyTexture{Texture: tex, MipLevel: uint32(m)},
+			packHDRRows(level, rowStride),
+			&wgpu.ImageDataLayout{BytesPerRow: uint32(rowStride), RowsPerImage: uint32(lh)},
+			&lsize,
+		); err != nil {
+			sampler.Release()
+			view.Release()
+			tex.Release()
+			return nil, nil, nil, err
+		}
+	}
+	return tex, view, sampler, nil
 }

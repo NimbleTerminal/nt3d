@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Consume externally baked linear HDR irradiance through `NewLightMap` /
+  `NewHDRLightMap`, `Material.LightMap`, and independent `Geometry.LightMapUV`.
+  GPU and software replace indirect diffuse, preserve direct/specular/emissive
+  lighting, and share half-float mip filtering. UVs survive cloning, clipping,
+  merging, and normal rebuilding; material replacements preserve snapshots.
+
 - Add authored local `ReflectionProbe` panoramas with capture positions,
   influence boxes, and box-projected PBR, clearcoat, and classic reflections
   on GPU and software. `Scene.SetReflectionProbes` snapshots up to four

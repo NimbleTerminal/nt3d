@@ -136,6 +136,7 @@ func validLighting(l Lighting) bool {
 // working space (decoded when it works in linear light) times their
 // intensities, directions normalized.
 type lightRig struct {
+	bakedDiffuse      indirectSample
 	screenOcclusion   float32 // 1 - screen-space visibility; zero when disabled.
 	environmentActive bool
 	environment       [9]nt3dsh.RGB

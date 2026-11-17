@@ -67,8 +67,9 @@ func clipLine(a, b Vertex, bounds nt3dmath.AABB) (Vertex, Vertex, bool) {
 type meshVertex struct {
 	Vertex
 	UV
-	normalUV UV
-	tangent  Tangent
+	normalUV   UV
+	lightMapUV UV
+	tangent    Tangent
 }
 
 // lerpTangent mixes two tangent frames: the direction linearly, the
@@ -107,7 +108,7 @@ func clipTriangleUV(a, b, c meshVertex, bounds nt3dmath.AABB) []meshVertex {
 				if inside(previous) != inside(current) {
 					x, y := components(previous.Position)[axis], components(current.Position)[axis]
 					t := (float64(bound) - float64(x)) / (float64(y) - float64(x))
-					v := meshVertex{tangent: lerpTangent(previous.tangent, current.tangent, t), normalUV: UV{previous.normalUV.U + (current.normalUV.U-previous.normalUV.U)*float32(t), previous.normalUV.V + (current.normalUV.V-previous.normalUV.V)*float32(t)}, Vertex: interpolateVertex(previous.Vertex, current.Vertex, t), UV: UV{float32(float64(previous.U)*(1-t) + float64(current.U)*t), float32(float64(previous.V)*(1-t) + float64(current.V)*t)}}
+					v := meshVertex{lightMapUV: UV{previous.lightMapUV.U + (current.lightMapUV.U-previous.lightMapUV.U)*float32(t), previous.lightMapUV.V + (current.lightMapUV.V-previous.lightMapUV.V)*float32(t)}, tangent: lerpTangent(previous.tangent, current.tangent, t), normalUV: UV{previous.normalUV.U + (current.normalUV.U-previous.normalUV.U)*float32(t), previous.normalUV.V + (current.normalUV.V-previous.normalUV.V)*float32(t)}, Vertex: interpolateVertex(previous.Vertex, current.Vertex, t), UV: UV{float32(float64(previous.U)*(1-t) + float64(current.U)*t), float32(float64(previous.V)*(1-t) + float64(current.V)*t)}}
 					p := components(v.Position)
 					p[axis] = bound
 					v.Position = vector(p)
@@ -131,6 +132,7 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 	out.WireGrid = [2]int{}
 	out.UV = nil
 	out.NormalUV = nil
+	out.LightMapUV = nil
 	out.Tangents = nil
 	out.Arrows = nil
 	out.Points, out.Vertices, out.Indices, out.Boxes, out.Lines = nil, nil, nil, nil, nil
@@ -157,6 +159,9 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 			if len(g.UV) > 0 {
 				v.UV = g.UV[index]
 			}
+			if len(g.LightMapUV) > 0 {
+				v.lightMapUV = g.LightMapUV[index]
+			}
 			if len(g.NormalUV) > 0 {
 				v.normalUV = g.NormalUV[index]
 			}
@@ -169,6 +174,9 @@ func clipGeometry(g Geometry, b nt3dmath.AABB) Geometry {
 		base := uint32(len(out.Vertices))
 		for _, v := range polygon {
 			out.Vertices = append(out.Vertices, v.Vertex)
+			if len(g.LightMapUV) > 0 {
+				out.LightMapUV = append(out.LightMapUV, v.lightMapUV)
+			}
 			if len(g.NormalUV) > 0 {
 				out.NormalUV = append(out.NormalUV, v.normalUV)
 			}

@@ -10,6 +10,9 @@ func validateMaterial(m *Material) error {
 	if m == nil {
 		return nil
 	}
+	if m.LightMap != nil && !m.LightMap.valid() {
+		return fmt.Errorf("nt3d: invalid lightmap")
+	}
 	if m.Shader != nil && !m.Shader.valid() {
 		return fmt.Errorf("nt3d: invalid material shader")
 	}
@@ -97,8 +100,11 @@ func validateMaterialForMesh(g Geometry, m *Material) error {
 		return fmt.Errorf("nt3d: emissive map requires a color texture and vertex UVs")
 	}
 	g.Material = m
+	if err := validateLightMap(g); err != nil {
+		return err
+	}
 	if extended(g) && len(g.Indices) > MeshIndexLimit()/2 {
-		return fmt.Errorf("nt3d: normal-mapped mesh with tangents or independent UVs exceeds GPU binding limit")
+		return fmt.Errorf("nt3d: mesh with extended UV or tangent data exceeds GPU binding limit")
 	}
 	return nil
 }
@@ -124,7 +130,7 @@ func textureBindingsEqual(a, b *Material) bool {
 	if b != nil {
 		zb = *b
 	}
-	return za.Texture == zb.Texture &&
+	return za.LightMap == zb.LightMap && za.Texture == zb.Texture &&
 		za.Repeat == zb.Repeat &&
 		za.Cutout == zb.Cutout &&
 		za.FullSize == zb.FullSize &&

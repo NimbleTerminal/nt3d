@@ -129,10 +129,12 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 	var mesh, points *Geometry
 	uv, tangents := true, true
 	normalUV := false
+	lightMapUV := false
 	indices, vertices := 0, 0
 	for i := range gs {
 		g := &gs[i]
 		normalUV = normalUV || len(g.NormalUV) > 0
+		lightMapUV = lightMapUV || len(g.LightMapUV) > 0
 		if out.DropShadow.Strength == 0 && g.DropShadow.Strength > 0 {
 			out.DropShadow = g.DropShadow
 		}
@@ -189,6 +191,13 @@ func MergeGeometry(gs ...Geometry) (Geometry, error) {
 			out.Indices = append(out.Indices, base+i)
 		}
 		out.Vertices = append(out.Vertices, g.Vertices...)
+		if lightMapUV {
+			if len(g.LightMapUV) > 0 {
+				out.LightMapUV = append(out.LightMapUV, g.LightMapUV...)
+			} else {
+				out.LightMapUV = append(out.LightMapUV, make([]UV, len(g.Vertices))...)
+			}
+		}
 		if normalUV {
 			if len(g.NormalUV) > 0 {
 				out.NormalUV = append(out.NormalUV, g.NormalUV...)
@@ -280,11 +289,12 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 		color            color.RGBA
 		uv               UV
 		normalUV         UV
+		lightMapUV       UV
 		tangent          Tangent
 	}
 	out := cloneGeometry(g)
 	out.WireGrid = [2]int{}
-	out.Vertices, out.UV, out.NormalUV, out.Tangents = nil, nil, nil, nil
+	out.Vertices, out.UV, out.NormalUV, out.LightMapUV, out.Tangents = nil, nil, nil, nil, nil
 	out.Indices = make([]uint32, 0, len(g.Indices))
 	seen := map[key]uint32{}
 	textured := len(g.UV) == len(g.Vertices) && len(g.UV) != 0
@@ -295,6 +305,9 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 			k := key{position: v.Position, normal: v.Normal, color: v.Color}
 			if textured {
 				k.uv = g.UV[g.Indices[corner]]
+			}
+			if len(g.LightMapUV) > 0 {
+				k.lightMapUV = g.LightMapUV[g.Indices[corner]]
 			}
 			if len(g.NormalUV) > 0 {
 				k.normalUV = g.NormalUV[g.Indices[corner]]
@@ -307,6 +320,9 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 				index = uint32(len(out.Vertices))
 				seen[k] = index
 				out.Vertices = append(out.Vertices, v)
+				if len(g.LightMapUV) > 0 {
+					out.LightMapUV = append(out.LightMapUV, k.lightMapUV)
+				}
 				if len(g.NormalUV) > 0 {
 					out.NormalUV = append(out.NormalUV, k.normalUV)
 				}

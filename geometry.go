@@ -82,7 +82,8 @@ type Geometry struct {
 	// BuildHeightfield sets this automatically; clear it if changing mesh topology.
 	WireGrid [2]int
 
-	NormalUV []UV // Optional independent normal-map UVs; nil uses UV.
+	LightMapUV []UV // Independent baked irradiance coordinates, required by LightMap.
+	NormalUV   []UV // Optional independent normal-map UVs; nil uses UV.
 	// Tangents optionally gives each vertex its tangent frame for normal
 	// mapping. Nil generates them when the geometry is set on a scene, or
 	// falls back to a per-triangle basis: see GenerateTangents.
@@ -261,6 +262,9 @@ func validateGeometryCert(g Geometry, certifiedMesh bool) error {
 		}
 	}
 
+	if err := validateLightMap(g); err != nil {
+		return err
+	}
 	if len(g.NormalUV) != 0 && len(g.NormalUV) != len(g.Vertices) {
 		return fmt.Errorf("nt3d: normal UV length mismatch")
 	}
@@ -275,9 +279,14 @@ func validateGeometryCert(g Geometry, certifiedMesh bool) error {
 		}
 	}
 	if extended(g) && len(g.Indices) > MeshIndexLimit()/2 {
-		return fmt.Errorf("nt3d: normal-mapped mesh with tangents or independent UVs exceeds GPU binding limit")
+		return fmt.Errorf("nt3d: mesh with extended UV or tangent data exceeds GPU binding limit")
 	}
 	if !certifiedMesh {
+		for _, uv := range g.LightMapUV {
+			if !validFloat(uv.U, uv.V) {
+				return fmt.Errorf("nt3d: non-finite lightmap UV")
+			}
+		}
 		for _, uv := range g.NormalUV {
 			if !validFloat(uv.U, uv.V) {
 				return fmt.Errorf("nt3d: non-finite normal UV")
@@ -451,7 +460,7 @@ func validateGeometryCert(g Geometry, certifiedMesh bool) error {
 // with tangents, independent normal UVs, or a flow field. Such meshes hold at most half
 // the triangles of others (MaxMeshTriangles/2).
 func extended(g Geometry) bool {
-	return g.Material != nil && g.Material.NormalMap != nil && (len(g.NormalUV) > 0 || len(g.Tangents) > 0 || g.Material.FlowMap != nil)
+	return g.Material != nil && (g.Material.LightMap != nil || g.Material.NormalMap != nil && (len(g.NormalUV) > 0 || len(g.Tangents) > 0 || g.Material.FlowMap != nil))
 }
 
 // boxVertices uses outward counterclockwise faces, matching the GPU box shader.

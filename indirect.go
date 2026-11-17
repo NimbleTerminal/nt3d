@@ -51,6 +51,9 @@ func (s indirectSample) occluded(visibility float32) indirectSample {
 // indirectDiffuse is the complete hemisphere + SH fallback. Future local or
 // screen-space sources go over this sample, after its source-local occlusion.
 func (r *lightRig) indirectDiffuse(n nt3dmath.Vec3, visibility float32) indirectSample {
+	if r.bakedDiffuse.coverage > 0 {
+		return r.bakedDiffuse.occluded(visibility)
+	}
 	t := n.Z*.5 + .5
 	c := [3]float32{r.ground[0] + (r.sky[0]-r.ground[0])*t, r.ground[1] + (r.sky[1]-r.ground[1])*t, r.ground[2] + (r.sky[2]-r.ground[2])*t}
 	if r.environmentActive {
@@ -70,6 +73,9 @@ func (r *lightRig) indirectDiffuse(n nt3dmath.Vec3, visibility float32) indirect
 
 // Toon lighting intentionally uses only the direction-independent SH term.
 func (r *lightRig) indirectToonDiffuse(visibility float32) indirectSample {
+	if r.bakedDiffuse.coverage > 0 {
+		return r.bakedDiffuse.occluded(visibility)
+	}
 	var c [3]float32
 	for k := range c {
 		c[k] = (r.ground[k] + r.sky[k]) * .5

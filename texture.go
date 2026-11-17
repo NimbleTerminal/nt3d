@@ -64,6 +64,10 @@ type UV struct{ U, V float32 }
 // stay round on coarse meshes. It needs the frame's camera (Frame.Eye),
 // which Scene.Frame supplies; unlit materials and wireframe have none.
 type Material struct {
+	// LightMap supplies baked linear irradiance using Geometry.LightMapUV.
+	// It replaces ambient/environment diffuse; direct and specular light remain.
+	LightMap *LightMap
+
 	// FlowMap advects NormalMap using Geometry.UV to sample a vertex flow field.
 	// FlowPhase is time in cycles (e.g. seconds / period). Two offset phases
 	// crossfade to avoid a reset jump. FlowStrength scales UV displacement per
@@ -232,6 +236,8 @@ func (m *Material) threshold() float32 {
 // (non-premultiplied) alpha that only Cutout materials use. The zero value is invalid.
 // GPU resources are owned by each renderer, not by Texture.
 type Texture struct {
+	hdr []hdrImage // Internal linear HDR lightmap mip chain.
+
 	data          bool // Linear vector data, not sRGB color.
 	width, height int
 	pixels        []byte
@@ -457,6 +463,9 @@ func remapAlpha(img *image.NRGBA, keys, hist []int32, target [256]float64) *imag
 // blended between the two levels nearest lod (zero is full size), as the
 // GPU's trilinear filtering does. A cutout samples cutoutLevels.
 func (t *Texture) sampleLinear(uv UV, repeat bool, lod float32, cutout bool) [4]float32 {
+	if len(t.hdr) > 0 {
+		return sampleLightMapLevels(t.hdr, uv, lod)
+	}
 	levels := t.levels()
 	if cutout {
 		levels = t.cutoutLevels()

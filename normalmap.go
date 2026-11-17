@@ -37,7 +37,7 @@ func materialOrZero(m *Material) Material {
 }
 
 func mapped(g Geometry) bool {
-	return textured(g) || hasShaderHook(g) || g.Material != nil && (g.Material.NormalMap != nil || g.Material.ORMMap != nil || g.Material.EmissiveMap != nil)
+	return textured(g) || hasShaderHook(g) || g.Material != nil && (g.Material.LightMap != nil || g.Material.NormalMap != nil || g.Material.ORMMap != nil || g.Material.EmissiveMap != nil)
 }
 
 var whiteMap = func() *Texture {

@@ -168,3 +168,55 @@ frames retain their probes. Refresh a static widget after changing the scene.
 Scene probe positions and bounds are in world coordinates. `Scene.Frame`
 converts them relative to `Camera.Origin`. To override `Frame.ReflectionProbes`
 directly, supply coordinates in that frame's space, like `Frame.Eye`.
+
+## Externally baked lightmaps
+
+Use `Material.LightMap` for static diffuse lighting baked by an external tool.
+`Geometry.LightMapUV` is an independent coordinate per vertex; it never falls
+back to the base or normal-map UVs. Supply these coordinates alongside the
+mesh, splitting vertices at UV chart seams. Lightmaps do not require base UVs.
+
+```go
+baked, err := nt3d.NewHDRLightMap(hdrBytes) // Radiance RGBE UV atlas
+if err != nil {
+    return err
+}
+geometry.LightMapUV = bakedUVs
+geometry.Material = &nt3d.Material{
+    PBR: true,
+    Roughness: 0.7,
+    LightMap: baked,
+}
+```
+
+Alternatively, `NewLightMap(width, height, rgb)` accepts row-major float32 RGB
+**linear irradiance**, before albedo and division by pi. Do not pass a display
+image, tone-mapped image, or baked final surface color. nt3d divides by pi and
+applies the surface's material response. Values can exceed one; finite values
+in 0..65504 are stored as half floats. Both constructors copy their inputs.
+Dimensions must be 1..8192 per side. UV (0,0) is the top left; sampling clamps
+at the edges and uses mipmaps and anisotropic filtering. Dilate the bake into
+chart gutters so filtering does not bleed from unrelated charts.
+
+A lightmap replaces hemisphere and environment **diffuse** on its material,
+including at black texels. Direct lights, emissive color, and specular lighting
+(including local reflection probes) remain active. Existing indirect AO applies
+to the baked diffuse source. For a bake that includes occlusion, set material
+AO appropriately and disable SSAO if additional contact darkening is unwanted.
+Bake indirect diffuse only when keeping the corresponding direct lights in
+nt3d; otherwise their diffuse illumination would be counted twice.
+
+Classic, PBR, and toon materials consume the same source; unlit materials ignore
+it. Keep `Frame.Linear` enabled for meaningful irradiance units and use exposure,
+tone mapping, or bloom for HDR presentation. GPU and software use the same mip
+chain. This first format is nondirectional, so normal maps do not rotate baked
+lighting. Changes to static geometry or lighting require rebaking. Animated
+objects still need their own lighting; no probe grid is sampled from this atlas.
+
+Assign the lightmap and its UVs before `Scene.SetGeometry` or
+`NewSharedGeometry`. `Scene.SetMaterial` can replace or remove a lightmap while
+preserving earlier frame snapshots. Different lightmaps can share geometry but
+use separate draw batches. Hand-built frames must update `Frame.Revision` when
+changing geometry or adding/removing its UV extension, following the usual
+frame caching contract. nt3d does not bake, unwrap, or automatically import
+lightmap metadata from glTF; applications supply the atlas and UVs explicitly.

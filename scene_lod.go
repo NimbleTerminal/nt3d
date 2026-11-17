@@ -218,7 +218,7 @@ func (s *Scene) SetLODHysteresis(band float32) error {
 func isZeroGeometry(g Geometry) bool {
 	return len(g.Points) == 0 && len(g.Vertices) == 0 && len(g.Indices) == 0 &&
 		len(g.Boxes) == 0 && len(g.Lines) == 0 && len(g.Arrows) == 0 &&
-		len(g.UV) == 0 && len(g.NormalUV) == 0 && len(g.Tangents) == 0 &&
+		len(g.UV) == 0 && len(g.NormalUV) == 0 && len(g.LightMapUV) == 0 && len(g.Tangents) == 0 &&
 		len(g.GaussianSH) == 0 && len(g.GaussianSHLabels) == 0 &&
 		g.GaussianSHPalette == nil && g.Material == nil && g.Billboard == nil && g.Displacement == nil &&
 		g.Clusters == nil && g.LineWidth == 0 && g.WireGrid == ([2]int{}) &&

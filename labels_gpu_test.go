@@ -31,8 +31,8 @@ func TestGPULabels(t *testing.T) {
 		t.Fatal("GPU labels missing")
 	}
 	uploads, textures := r.uploads, r.textureUploads
-	// One label texture plus the three shared 1x1 default material-map bindings.
-	if uploads != 1 || textures != 4 {
+	// One label texture plus the four shared 1x1 default material-map bindings.
+	if uploads != 1 || textures != 5 {
 		t.Fatalf("shared label uploaded %d meshes, %d textures", uploads, textures)
 	}
 	cam.Beta = 20

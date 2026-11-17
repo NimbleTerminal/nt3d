@@ -24,27 +24,30 @@ type geometryKey struct {
 }
 
 type manualSignature struct {
-	vertices *Vertex
-	nVerts   int
-	indices  *uint32
-	nIndices int
-	points   *Point
-	nPoints  int
-	boxes    *Box
-	nBoxes   int
-	lines    *Vertex
-	nLines   int
-	arrows   *Arrow
-	nArrows  int
-	material Material
-	hasMat   bool
-	hasHook  bool
-	style    PointStyle
-	drop     DropShadow
+	lightMapUV  *UV
+	nLightMapUV int
+	vertices    *Vertex
+	nVerts      int
+	indices     *uint32
+	nIndices    int
+	points      *Point
+	nPoints     int
+	boxes       *Box
+	nBoxes      int
+	lines       *Vertex
+	nLines      int
+	arrows      *Arrow
+	nArrows     int
+	material    Material
+	hasMat      bool
+	hasHook     bool
+	style       PointStyle
+	drop        DropShadow
 }
 
 func manualSig(geom Geometry) manualSignature {
 	sig := manualSignature{
+		lightMapUV: unsafe.SliceData(geom.LightMapUV), nLightMapUV: len(geom.LightMapUV),
 		vertices: unsafe.SliceData(geom.Vertices),
 		nVerts:   len(geom.Vertices),
 		indices:  unsafe.SliceData(geom.Indices),
@@ -292,6 +295,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		normal       textureKey
 		orm          textureKey
 		emissive     textureKey
+		lightMap     textureKey
 		displacement *VertexDisplacement
 		shader       *MaterialShader
 		cutoff       float32
@@ -551,6 +555,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		if mapped(geom) {
 			m := materialOrZero(geom.Material)
 			aniso := f.anisotropy()
+			k.lightMap = textureKey{src: lightMapTexture(&m), aniso: aniso}
 			k.base = baseKey(geom.Material, aniso)
 			k.normal = textureKey{src: normalMap(&m), repeat: m.NormalRepeat, aniso: aniso}
 			k.orm = textureKey{src: ormMap(&m), repeat: m.ORMRepeat, aniso: aniso}
@@ -916,10 +921,8 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []U
 			dst = appendFloats(dst, v.Position.X, v.Position.Y, v.Position.Z, opacity, v.Normal.X, v.Normal.Y, v.Normal.Z, 0, float32(v.Color.R)/255, float32(v.Color.G)/255, float32(v.Color.B)/255, float32(outlineCode))
 		}
 	}
-	// A normal-mapped mesh with tangents or independent normal UVs has an
-	// extension record for each index after the primary ones: the normal
-	// map's coordinates, and the tangent frame with its handedness in w
-	// (zero without tangents).
+	// Extended meshes append one record per index: normal/flow UVs in a,
+	// tangent frame in b, and independent lightmap UVs in color.xy.
 	if isExt {
 		// Flow is fixed in the rest UV field. Resolve it once per vertex, not once
 		// per repeated triangle index, when streaming a large animated grid.
@@ -934,7 +937,10 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []U
 			}
 		}
 		for _, i := range geom.Indices {
-			uv := geom.UV[i]
+			uv := UV{}
+			if len(geom.UV) > 0 {
+				uv = geom.UV[i]
+			}
 			if len(geom.NormalUV) > 0 {
 				uv = geom.NormalUV[i]
 			}
@@ -946,7 +952,11 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []U
 			if flows != nil {
 				flow = flows[i]
 			}
-			dst = appendFloats(dst, uv.U, uv.V, flow.U, flow.V, t.Direction.X, t.Direction.Y, t.Direction.Z, t.W, 0, 0, 0, 0)
+			lm := UV{}
+			if len(geom.LightMapUV) > 0 {
+				lm = geom.LightMapUV[i]
+			}
+			dst = appendFloats(dst, uv.U, uv.V, flow.U, flow.V, t.Direction.X, t.Direction.Y, t.Direction.Z, t.W, lm.U, lm.V, 0, 0)
 		}
 	}
 	return dst, flowScratch

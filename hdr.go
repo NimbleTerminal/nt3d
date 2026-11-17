@@ -310,35 +310,37 @@ func sampleHDRChain(chain []hdrImage, d nt3dmath.Vec3, lod float32) [4]float32 {
 }
 
 func (e *Environment) hdrLevels() []hdrImage {
-	e.hdrMipOnce.Do(func() {
-		mips := []hdrImage{e.hdrBase}
-		cur := e.hdrBase
-		for cur.width > 1 || cur.height > 1 {
-			nw, nh := max(1, cur.width/2), max(1, cur.height/2)
-			next := hdrImage{width: nw, height: nh, pix: make([]float32, nw*nh*3)}
-			for y := 0; y < nh; y++ {
-				sy0 := min(cur.height-1, y*2)
-				sy1 := min(cur.height-1, y*2+1)
-				for x := 0; x < nw; x++ {
-					sx0 := min(cur.width-1, x*2)
-					sx1 := min(cur.width-1, x*2+1)
-					p00 := (sy0*cur.width + sx0) * 3
-					p10 := (sy0*cur.width + sx1) * 3
-					p01 := (sy1*cur.width + sx0) * 3
-					p11 := (sy1*cur.width + sx1) * 3
-					dst := (y*nw + x) * 3
-					for c := 0; c < 3; c++ {
-						avg := .25 * (cur.pix[p00+c] + cur.pix[p10+c] + cur.pix[p01+c] + cur.pix[p11+c])
-						next.pix[dst+c] = float16value(float16bits(avg))
-					}
+	e.hdrMipOnce.Do(func() { e.hdrMips = buildHDRMipChain(e.hdrBase) })
+	return e.hdrMips
+}
+
+func buildHDRMipChain(base hdrImage) []hdrImage {
+	mips := []hdrImage{base}
+	cur := base
+	for cur.width > 1 || cur.height > 1 {
+		nw, nh := max(1, cur.width/2), max(1, cur.height/2)
+		next := hdrImage{width: nw, height: nh, pix: make([]float32, nw*nh*3)}
+		for y := 0; y < nh; y++ {
+			sy0 := min(cur.height-1, y*2)
+			sy1 := min(cur.height-1, y*2+1)
+			for x := 0; x < nw; x++ {
+				sx0 := min(cur.width-1, x*2)
+				sx1 := min(cur.width-1, x*2+1)
+				p00 := (sy0*cur.width + sx0) * 3
+				p10 := (sy0*cur.width + sx1) * 3
+				p01 := (sy1*cur.width + sx0) * 3
+				p11 := (sy1*cur.width + sx1) * 3
+				dst := (y*nw + x) * 3
+				for c := 0; c < 3; c++ {
+					avg := .25 * (cur.pix[p00+c] + cur.pix[p10+c] + cur.pix[p01+c] + cur.pix[p11+c])
+					next.pix[dst+c] = float16value(float16bits(avg))
 				}
 			}
-			mips = append(mips, next)
-			cur = next
 		}
-		e.hdrMips = mips
-	})
-	return e.hdrMips
+		mips = append(mips, next)
+		cur = next
+	}
+	return mips
 }
 
 func (e *Environment) hdrSpecularLevels() []hdrImage {

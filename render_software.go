@@ -509,6 +509,15 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 					putWork(x, y, u*z0+v*z1+t*z2, rgb)
 					continue
 				}
+				rig := rig // Per-fragment light sources must not leak into later primitives.
+				rig.bakedDiffuse = indirectSample{}
+				if lit && material != nil && material.LightMap != nil {
+					aa, bb, cc := *a, *b, *c
+					aa.uv, bb.uv, cc.uv = a.lightMapUV, b.lightMapUV, c.lightMapUV
+					uv := UV{q0*aa.uv.U + q1*bb.uv.U + q2*cc.uv.U, q0*aa.uv.V + q1*bb.uv.V + q2*cc.uv.V}
+					sample := material.LightMap.texture.sampleFootprint(uv, uvAt(&aa, &bb, &cc, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(&aa, &bb, &cc, x0, y0, x1, y1, x2, y2, area, px, py+1), false, aniso)
+					rig.bakedDiffuse = lightMapDiffuse(sample, linear)
+				}
 				rig.screenOcclusion = 0
 				if ao != nil && !blended && (material == nil || material.Transmission == 0) {
 					rig.screenOcclusion = 1 - ao[y*f.Width+x]
@@ -596,7 +605,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	// crosses the near plane is cut there, as the GPU does, not discarded.
 	// side chooses the faces drawn, and how: opaque front faces, or a
 	// transparent geometry's back or front faces.
-	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv, normalUV []UV, tangents []Tangent, material *Material, side int, outline OutlineStyle, isMapped bool) {
+	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv, normalUV, lightMapUV []UV, tangents []Tangent, material *Material, side int, outline OutlineStyle, isMapped bool) {
 		hull := side < 0
 		back := side == backFaces || hull
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
@@ -607,6 +616,9 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				corners[k].uv = uv[i]
 				corners[k].normalUV = uv[i]
 				corners[k].flow = materialFlow(material, uv[i])
+			}
+			if len(lightMapUV) > 0 {
+				corners[k].lightMapUV = lightMapUV[i]
 			}
 			if len(normalUV) > 0 {
 				corners[k].normalUV = normalUV[i]
@@ -852,13 +864,13 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			verts := displacedVertices(&g, inst.World)
 			isMapped := mapped(g)
 			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&local.Matrix, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
+				tri(&local.Matrix, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
 			}
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, nil, opaqueFaces, OutlineStyle{}, false)
+				tri(&local.Matrix, &inst.World, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, nil, nil, opaqueFaces, OutlineStyle{}, false)
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
@@ -907,7 +919,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 		isMapped := mapped(*g)
 		for i := 0; i+2 < len(g.Indices); i += 3 {
-			tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, &material, side, g.Outline, isMapped)
+			tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, &material, side, g.Outline, isMapped)
 		}
 	}
 	for gi := range f.Geometry {
@@ -1090,7 +1102,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			inv, _ := inst.World.InverseAffine()
 			normals := inv.Transpose()
 			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
+				tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
 			}
 		}
 		for gi := range f.Geometry {
@@ -1121,7 +1133,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			normals := inverse.Transpose()
 			for _, side := range []int{backFaces, frontFaces} {
 				for i := 0; i+2 < len(g.Indices); i += 3 {
-					tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
+					tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
 				}
 			}
 			drawCrease(gi)
@@ -1209,7 +1221,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				normals := inverse.Transpose()
 				for _, side := range []int{backFaces, frontFaces} {
 					for i := 0; i+2 < len(g.Indices); i += 3 {
-						tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
+						tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
 					}
 				}
 				if !f.OIT {
