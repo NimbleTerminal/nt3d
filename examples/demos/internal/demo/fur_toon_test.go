@@ -39,7 +39,8 @@ func TestFurToonToggle(t *testing.T) {
 		}
 		skin := d.fur.nodes[0]
 		meshes := 0
-		for i, g := range f.Geometry {
+		for i := range f.Draws {
+			g := f.Draws[i].Geometry
 			if len(g.Indices) == 0 {
 				continue
 			}
@@ -49,11 +50,11 @@ func TestFurToonToggle(t *testing.T) {
 				got = g.Material.Toon.Bands
 			}
 			want := nt3d.OutlineStyle{}
-			if bands > 0 && f.Instances[i].Node == skin {
+			if bands > 0 && f.Draws[i].Node == skin {
 				want = nt3d.OutlineStyle{Width: furLengths[d.fur.length], Units: nt3d.WorldUnits, Color: toonInk}
 			}
 			if got != bands || g.Outline != want {
-				t.Fatalf("%s: %d bands, outline %+v; want %d, %+v", f.Instances[i].Name, got, g.Outline, bands, want)
+				t.Fatalf("%s: %d bands, outline %+v; want %d, %+v", f.Draws[i].Name, got, g.Outline, bands, want)
 			}
 		}
 		if meshes < 3 {

@@ -41,7 +41,7 @@ func TestGPUEnvironment(t *testing.T) {
 	f := flatFrame(64, 64)
 	f.Environment = testEnvironment(t)
 	f.Lighting = Lighting{}
-	f.Geometry = []Geometry{quad(.5, .5, white, nil, false)}
+	f.Draws = drawsOf(quad(.5, .5, white, nil, false))
 	got, err := r.Render(f)
 	check(t, err)
 	want := softwareRender(f)
@@ -52,7 +52,7 @@ func TestGPUEnvironment(t *testing.T) {
 	// surfaces must composite over it without acquiring diffuse illumination.
 	cached := r.environmentTexture
 	f.Revision++
-	f.Geometry = []Geometry{quad(.5, .5, color.RGBA{255, 80, 40, 128}, &Material{Unlit: true, Transparent: true}, false)}
+	f.Draws = drawsOf(quad(.5, .5, color.RGBA{255, 80, 40, 128}, &Material{Unlit: true, Transparent: true}, false))
 	got, err = r.Render(f)
 	check(t, err)
 	want = softwareRender(f)

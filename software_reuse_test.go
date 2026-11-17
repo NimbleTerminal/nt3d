@@ -66,7 +66,7 @@ func TestSoftwareScratchResetRetentionAndClose(t *testing.T) {
 	ptr := &r.depth[0]
 	// Equal area with a new shape must reset every pixel, including hidden pixels.
 	f.Width, f.Height = 320, 640
-	f.Geometry, f.Instances, f.Shared, f.GeometryRevisions = nil, nil, nil, nil
+	f.Draws = nil
 	_, err = r.Render(f)
 	check(t, err)
 	if &r.depth[0] != ptr {

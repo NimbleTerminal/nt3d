@@ -31,7 +31,7 @@ type LODLevel struct {
 
 type lodLevel struct {
 	maxDistance      float32
-	geometry         *Geometry
+	geometry         *sceneGeometry
 	shared           *SharedGeometry
 	geometryRevision uint64
 	pickIndex        *bvhSlot
@@ -319,9 +319,9 @@ func (n *sceneNode) pickTarget(rev uint64) (*Geometry, **bvhSlot) {
 			l := &n.lod[i]
 			if l.geometryRevision == rev {
 				if l.shared != nil {
-					return l.geometry, &l.shared.pick
+					return &l.geometry.Geometry, &l.shared.pick
 				}
-				return l.geometry, &l.pickIndex
+				return &l.geometry.Geometry, &l.pickIndex
 			}
 		}
 		return nil, nil
@@ -330,7 +330,7 @@ func (n *sceneNode) pickTarget(rev uint64) (*Geometry, **bvhSlot) {
 		return nil, nil
 	}
 	if n.shared != nil {
-		return n.geometry, &n.shared.pick
+		return &n.geometry.Geometry, &n.shared.pick
 	}
-	return n.geometry, &n.pickIndex
+	return &n.geometry.Geometry, &n.pickIndex
 }

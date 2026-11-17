@@ -164,7 +164,7 @@ func (g *gpuRenderer) drawShadowFace(f Frame, encoder *wgpu.CommandEncoder, face
 	// Never bind the map being written; this group is required by the layouts.
 	hasCutout := false
 	for _, d := range g.draws {
-		geom := &f.Geometry[d.index]
+		geom := &f.Draws[d.index].Geometry
 		if !transparent(geom) && !transmitting(geom) {
 			if mapped(*geom) {
 				if d.geom.batches[7].count > 0 {
@@ -202,7 +202,7 @@ func (g *gpuRenderer) drawShadowFace(f Frame, encoder *wgpu.CommandEncoder, face
 		return err
 	}
 	for _, d := range g.draws {
-		geom := &f.Geometry[d.index]
+		geom := &f.Draws[d.index].Geometry
 		if !transparent(geom) && !transmitting(geom) && mapped(*geom) && d.geom.batches[7].count > 0 && geom.Material != nil && geom.Material.Cutout {
 			pass.SetPipeline(g.hookOrShadowPipeline(geom, g.shadowPipelines[3], 1))
 			pass.SetBindGroup(1, g.noShadow.bind, nil)

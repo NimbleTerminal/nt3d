@@ -20,7 +20,7 @@ func testLightMap(t *testing.T, c [3]float32) *LightMap {
 
 func lightMapFrame(m *Material) Frame {
 	f := pbrQuadFrame(m, color.RGBA{200, 200, 200, 255})
-	f.Geometry[0].LightMapUV = append([]UV(nil), f.Geometry[0].UV...)
+	f.Draws[0].Geometry.LightMapUV = append([]UV(nil), f.Draws[0].Geometry.UV...)
 	return f
 }
 
@@ -96,7 +96,7 @@ func TestLightMapDiffuseComposition(t *testing.T) {
 
 func TestLightMapUVOperations(t *testing.T) {
 	f := lightMapFrame(&Material{LightMap: testLightMap(t, [3]float32{1, 1, 1})})
-	g := f.Geometry[0]
+	g := f.Draws[0].Geometry
 	for i := range g.LightMapUV {
 		g.LightMapUV[i].U = 1 - g.UV[i].U
 	}
@@ -141,7 +141,7 @@ func TestLightMapMaterialSnapshots(t *testing.T) {
 	s := NewScene()
 	a := testLightMap(t, [3]float32{1, 0, 0})
 	b := testLightMap(t, [3]float32{0, 1, 0})
-	g := lightMapFrame(&Material{LightMap: a}).Geometry[0]
+	g := lightMapFrame(&Material{LightMap: a}).Draws[0].Geometry
 	id, err := s.SetGeometry("baked", g)
 	check(t, err)
 	before := frame(t, s)
@@ -150,7 +150,7 @@ func TestLightMapMaterialSnapshots(t *testing.T) {
 	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision {
 		t.Fatal("lightmap replacement must refresh bindings only")
 	}
-	if before.Geometry[0].Material.LightMap != a || after.Geometry[0].Material.LightMap != b {
+	if before.Draws[0].Geometry.Material.LightMap != a || after.Draws[0].Geometry.Material.LightMap != b {
 		t.Fatal("material snapshot changed")
 	}
 	check(t, s.SetMaterial(id, nil))

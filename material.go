@@ -227,7 +227,7 @@ func (s *Scene) SetMaterial(root NodeID, m *Material) error {
 					continue
 				}
 				hasMesh = true
-				if err := validateMaterialForMesh(*lg, m); err != nil {
+				if err := validateMaterialForMesh(lg.Geometry, m); err != nil {
 					return err
 				}
 			}
@@ -243,7 +243,7 @@ func (s *Scene) SetMaterial(root NodeID, m *Material) error {
 		if n.deformation != nil {
 			checkGeom = n.deformation.base
 		}
-		if err := validateMaterialForMesh(checkGeom, m); err != nil {
+		if err := validateMaterialForMesh(checkGeom.Geometry, m); err != nil {
 			return err
 		}
 		visit = append(visit, id)
@@ -265,11 +265,11 @@ func (s *Scene) SetMaterial(root NodeID, m *Material) error {
 				g := *lg
 				g.Material = cloneMaterial(m)
 				if m != nil && m.NormalMap != nil && len(g.Tangents) == 0 {
-					generateTangentsOnUpload(&g)
+					generateTangentsOnUpload(&g.Geometry)
 				}
-				if !vertexMaterialEqual(*lg, g) {
+				if !vertexMaterialEqual(lg.Geometry, g.Geometry) {
 					g.meshUpdate = nil
-					g.meshCert = newMeshCertificate(&g, lg.splitOutlines())
+					g.meshCert = newMeshCertificate(&g.Geometry, lg.splitOutlines(&lg.Geometry))
 					n.lod[i].shared = nil
 					n.lod[i].geometryRevision = nextRevision.Add(1)
 					n.lod[i].pickIndex = nil
@@ -311,12 +311,12 @@ func (s *Scene) SetMaterial(root NodeID, m *Material) error {
 			nextBase := d.base
 			nextBase.Material = cloneMaterial(m)
 			if m != nil && m.NormalMap != nil && len(nextBase.Tangents) == 0 {
-				generateTangentsOnUpload(&nextBase)
+				generateTangentsOnUpload(&nextBase.Geometry)
 			}
 			oldBase := d.base
 			oldBase.Material = old.Material
 			d.base = nextBase
-			if !vertexMaterialEqual(oldBase, nextBase) {
+			if !vertexMaterialEqual(oldBase.Geometry, nextBase.Geometry) {
 				d.weights = nil
 				d.revision = nextRevision.Add(1)
 				g := *old
@@ -340,11 +340,11 @@ func (s *Scene) SetMaterial(root NodeID, m *Material) error {
 		g := *old
 		g.Material = cloneMaterial(m)
 		if m != nil && m.NormalMap != nil && len(g.Tangents) == 0 {
-			generateTangentsOnUpload(&g)
+			generateTangentsOnUpload(&g.Geometry)
 		}
-		if !vertexMaterialEqual(*old, g) {
+		if !vertexMaterialEqual(old.Geometry, g.Geometry) {
 			g.meshUpdate = nil
-			g.meshCert = newMeshCertificate(&g, old.splitOutlines())
+			g.meshCert = newMeshCertificate(&g.Geometry, old.splitOutlines(&old.Geometry))
 			n.shared = nil
 			n.geometryRevision = nextRevision.Add(1)
 			n.pickIndex = nil

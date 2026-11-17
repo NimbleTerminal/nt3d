@@ -32,34 +32,34 @@ func TestMeshUpdatesPreserveSnapshotsAndTopology(t *testing.T) {
 	check(t, err)
 
 	before := frame(t, s)
-	if len(before.Geometry[0].Tangents) != len(before.Geometry[0].Vertices) {
+	if len(before.Draws[0].Geometry.Tangents) != len(before.Draws[0].Geometry.Vertices) {
 		t.Fatal("expected generated tangents on upload")
 	}
 
 	sub := []Vertex{{
-		Position: nt3dmath.Vec3{X: before.Geometry[0].Vertices[2].Position.X, Y: before.Geometry[0].Vertices[2].Position.Y, Z: .75},
+		Position: nt3dmath.Vec3{X: before.Draws[0].Geometry.Vertices[2].Position.X, Y: before.Draws[0].Geometry.Vertices[2].Position.Y, Z: .75},
 		Normal:   nt3dmath.Vec3{X: -.3, Z: .95}.Normalize(),
 		Color:    color.RGBA{40, 180, 220, 255},
 	}}
 	check(t, s.UpdateNodeVertices(id, 2, sub, meshTestBounds()))
 	afterSub := frame(t, s)
 	sub[0].Position.Z = 99
-	if before.Geometry[0].Vertices[2].Position.Z != 0 || afterSub.Geometry[0].Vertices[2].Position.Z != .75 {
+	if before.Draws[0].Geometry.Vertices[2].Position.Z != 0 || afterSub.Draws[0].Geometry.Vertices[2].Position.Z != .75 {
 		t.Fatal("snapshot or caller slice ownership violated")
 	}
-	if before.GeometryRevisions[0] != afterSub.GeometryRevisions[0] {
+	if before.Draws[0].Revision != afterSub.Draws[0].Revision {
 		t.Fatal("fixed-topology update changed geometryRevision")
 	}
-	if &before.Geometry[0].Indices[0] != &afterSub.Geometry[0].Indices[0] || &before.Geometry[0].UV[0] != &afterSub.Geometry[0].UV[0] {
+	if &before.Draws[0].Geometry.Indices[0] != &afterSub.Draws[0].Geometry.Indices[0] || &before.Draws[0].Geometry.UV[0] != &afterSub.Draws[0].Geometry.UV[0] {
 		t.Fatal("unchanged indices or UVs were cloned")
 	}
-	if afterSub.Geometry[0].Bounds != meshTestBounds() {
+	if afterSub.Draws[0].Geometry.Bounds != meshTestBounds() {
 		t.Fatal("bounds were not taken from caller")
 	}
 	check(t, validateFrame(afterSub))
 
 	// Explicit analytic tangents path.
-	verts := slices.Clone(afterSub.Geometry[0].Vertices)
+	verts := slices.Clone(afterSub.Draws[0].Geometry.Vertices)
 	tangents := make([]Tangent, len(verts))
 	for i := range verts {
 		verts[i].Position.Z = .25
@@ -69,10 +69,10 @@ func TestMeshUpdatesPreserveSnapshotsAndTopology(t *testing.T) {
 	check(t, s.SetNodeVerticesWithTangents(id, verts, tangents, meshTestBounds()))
 	afterExplicit := frame(t, s)
 	tangents[0].W = 1
-	if afterExplicit.Geometry[0].Tangents[0].W != -1 {
+	if afterExplicit.Draws[0].Geometry.Tangents[0].W != -1 {
 		t.Fatal("caller tangent mutation leaked into snapshot")
 	}
-	if afterSub.Geometry[0].Vertices[2].Position.Z != .75 {
+	if afterSub.Draws[0].Geometry.Vertices[2].Position.Z != .75 {
 		t.Fatal("earlier snapshot mutated by SetNodeVerticesWithTangents")
 	}
 	check(t, validateFrame(afterExplicit))
@@ -94,7 +94,7 @@ func TestMeshUpdatesPreserveSnapshotsAndTopology(t *testing.T) {
 	if s.SetNodeVerticesWithTangents(id, verts, nil, meshTestBounds()) == nil {
 		t.Fatal("accepted dropped tangents on tangent-bearing mesh")
 	}
-	badTan := slices.Clone(afterExplicit.Geometry[0].Tangents)
+	badTan := slices.Clone(afterExplicit.Draws[0].Geometry.Tangents)
 	badTan[0].W = 0
 	if s.SetNodeVerticesWithTangents(id, verts, badTan, meshTestBounds()) == nil {
 		t.Fatal("accepted invalid tangent handedness")
@@ -102,7 +102,7 @@ func TestMeshUpdatesPreserveSnapshotsAndTopology(t *testing.T) {
 	if s.SetNodeVertices(id, verts, nt3dmath.AABB{}) == nil {
 		t.Fatal("accepted invalid bounds")
 	}
-	if frame(t, s).Geometry[0].Vertices[0].Position.Z != .25 {
+	if frame(t, s).Draws[0].Geometry.Vertices[0].Position.Z != .25 {
 		t.Fatal("failed vertex update mutated scene state")
 	}
 }
@@ -125,33 +125,33 @@ func TestMeshCertificateValidatesTamperedFrameCopies(t *testing.T) {
 	nan := float32(math.NaN())
 
 	tamperVerts := f
-	tamperVerts.Geometry = slices.Clone(f.Geometry)
-	tamperVerts.Geometry[0].Vertices = slices.Clone(f.Geometry[0].Vertices)
-	tamperVerts.Geometry[0].Vertices[0].Position.X = nan
+	tamperVerts.Draws = slices.Clone(f.Draws)
+	tamperVerts.Draws[0].Geometry.Vertices = slices.Clone(f.Draws[0].Geometry.Vertices)
+	tamperVerts.Draws[0].Geometry.Vertices[0].Position.X = nan
 	if validateFrame(tamperVerts) == nil {
 		t.Fatal("tampered vertices passed validateFrame")
 	}
 
 	tamperIdx := f
-	tamperIdx.Geometry = slices.Clone(f.Geometry)
-	tamperIdx.Geometry[0].Indices = slices.Clone(f.Geometry[0].Indices)
-	tamperIdx.Geometry[0].Indices[0] = 999
+	tamperIdx.Draws = slices.Clone(f.Draws)
+	tamperIdx.Draws[0].Geometry.Indices = slices.Clone(f.Draws[0].Geometry.Indices)
+	tamperIdx.Draws[0].Geometry.Indices[0] = 999
 	if validateFrame(tamperIdx) == nil {
 		t.Fatal("tampered indices passed validateFrame")
 	}
 
 	tamperUV := f
-	tamperUV.Geometry = slices.Clone(f.Geometry)
-	tamperUV.Geometry[0].UV = slices.Clone(f.Geometry[0].UV)
-	tamperUV.Geometry[0].UV[0].U = nan
+	tamperUV.Draws = slices.Clone(f.Draws)
+	tamperUV.Draws[0].Geometry.UV = slices.Clone(f.Draws[0].Geometry.UV)
+	tamperUV.Draws[0].Geometry.UV[0].U = nan
 	if validateFrame(tamperUV) == nil {
 		t.Fatal("tampered UVs passed validateFrame")
 	}
 
 	tamperTan := f
-	tamperTan.Geometry = slices.Clone(f.Geometry)
-	tamperTan.Geometry[0].Tangents = slices.Clone(f.Geometry[0].Tangents)
-	tamperTan.Geometry[0].Tangents[0].W = 0
+	tamperTan.Draws = slices.Clone(f.Draws)
+	tamperTan.Draws[0].Geometry.Tangents = slices.Clone(f.Draws[0].Geometry.Tangents)
+	tamperTan.Draws[0].Geometry.Tangents[0].W = 0
 	if validateFrame(tamperTan) == nil {
 		t.Fatal("tampered tangents passed validateFrame")
 	}

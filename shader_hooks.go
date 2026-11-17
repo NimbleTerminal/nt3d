@@ -400,7 +400,7 @@ func padGeometryBounds(rest nt3dmath.AABB, hasVertices bool, maxDisp float32) nt
 	return padded
 }
 
-func applyStoredDisplacement(g *Geometry, d *VertexDisplacement) {
+func applyStoredDisplacement(g *sceneGeometry, d *VertexDisplacement) {
 	oldPad := g.Displacement.MaxDisplacement()
 	newPad := d.MaxDisplacement()
 	g.Displacement = d
@@ -411,7 +411,7 @@ func applyStoredDisplacement(g *Geometry, d *VertexDisplacement) {
 		g.Bounds = padGeometryBounds(g.restBounds, len(g.Vertices) > 0, newPad)
 		return
 	}
-	g.Bounds, g.restBounds = geometryBoundsPair(*g)
+	g.Bounds, g.restBounds = geometryBoundsPair(g.Geometry)
 }
 
 // SetDisplacement sets or clears the VertexDisplacement of every indexed
@@ -442,11 +442,11 @@ func (s *Scene) SetDisplacement(root NodeID, d *VertexDisplacement) error {
 				if len(lg.Indices) == 0 || lg.Displacement == d {
 					continue
 				}
-				oldMapped := mapped(*lg)
+				oldMapped := mapped(lg.Geometry)
 				oldPad := lg.Displacement.MaxDisplacement()
 				g := *lg
 				applyStoredDisplacement(&g, d)
-				if mapped(g) != oldMapped {
+				if mapped(g.Geometry) != oldMapped {
 					anyTexChanged = true
 				}
 				if oldPad != d.MaxDisplacement() {
@@ -479,7 +479,7 @@ func (s *Scene) SetDisplacement(root NodeID, d *VertexDisplacement) error {
 			continue
 		}
 		old := n.geometry
-		oldMapped := mapped(*old)
+		oldMapped := mapped(old.Geometry)
 		if n.deformation != nil {
 			def := n.deformation
 			oldBase := def.base
@@ -490,7 +490,7 @@ func (s *Scene) SetDisplacement(root NodeID, d *VertexDisplacement) error {
 			nextBase.Material = old.Material
 			g := *old
 			applyStoredDisplacement(&g, d)
-			if mapped(oldBase) != mapped(nextBase) {
+			if mapped(oldBase.Geometry) != mapped(nextBase.Geometry) {
 				def.weights = nil
 				def.revision = nextRevision.Add(1)
 				anyTexChanged = true
@@ -507,7 +507,7 @@ func (s *Scene) SetDisplacement(root NodeID, d *VertexDisplacement) error {
 
 		g := *old
 		applyStoredDisplacement(&g, d)
-		if mapped(g) != oldMapped {
+		if mapped(g.Geometry) != oldMapped {
 			anyTexChanged = true
 		}
 		n.geometry = &g
@@ -573,10 +573,10 @@ func (s *Scene) SetMaterialShader(root NodeID, shader *MaterialShader) error {
 				if !ok {
 					continue
 				}
-				oldMapped := mapped(*lg)
+				oldMapped := mapped(lg.Geometry)
 				g := *lg
 				g.Material = nextMat
-				if mapped(g) != oldMapped {
+				if mapped(g.Geometry) != oldMapped {
 					anyTexChanged = true
 				}
 				n.lod[i].geometry = &g
@@ -597,7 +597,7 @@ func (s *Scene) SetMaterialShader(root NodeID, shader *MaterialShader) error {
 		if !ok {
 			continue
 		}
-		oldMapped := mapped(*old)
+		oldMapped := mapped(old.Geometry)
 		if n.deformation != nil {
 			def := n.deformation
 			oldBase := def.base
@@ -608,7 +608,7 @@ func (s *Scene) SetMaterialShader(root NodeID, shader *MaterialShader) error {
 			nextBase.Displacement = old.Displacement
 			g := *old
 			g.Material = nextMat
-			if mapped(oldBase) != mapped(nextBase) {
+			if mapped(oldBase.Geometry) != mapped(nextBase.Geometry) {
 				def.weights = nil
 				def.revision = nextRevision.Add(1)
 				anyTexChanged = true
@@ -625,7 +625,7 @@ func (s *Scene) SetMaterialShader(root NodeID, shader *MaterialShader) error {
 
 		g := *old
 		g.Material = nextMat
-		if mapped(g) != oldMapped {
+		if mapped(g.Geometry) != oldMapped {
 			anyTexChanged = true
 		}
 		n.geometry = &g

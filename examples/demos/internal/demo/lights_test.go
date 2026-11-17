@@ -151,10 +151,10 @@ func TestShadowCycle(t *testing.T) {
 			t.Fatalf("step %d: sun", step)
 		}
 		found := false
-		for i, inst := range f.Instances {
+		for i, inst := range f.Draws {
 			if inst.Name == "cube" {
 				found = true
-				if f.Geometry[i].DropShadow.Strength != strength {
+				if f.Draws[i].Geometry.DropShadow.Strength != strength {
 					t.Fatalf("step %d: cube", step)
 				}
 			}
@@ -229,9 +229,9 @@ func TestNormalMapToggle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i, inst := range f.Instances {
+		for i, inst := range f.Draws {
 			if inst.Name == "sphere" {
-				m := f.Geometry[i].Material
+				m := f.Draws[i].Geometry.Material
 				if (m != nil && m.NormalMap != nil) != enabled {
 					t.Fatal("toggle did not reach sphere")
 				}
@@ -273,9 +273,9 @@ func TestPointLightShadowsAndDropFloor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, inst := range f.Instances {
+	for i, inst := range f.Draws {
 		if inst.Name == "cube" {
-			g := f.Geometry[i]
+			g := f.Draws[i].Geometry
 			if !g.DropShadow.FixedFloor || g.DropShadow.FloorZ != 0 || g.Bounds.Min.Z < .5 {
 				t.Fatal("lifted cube did not keep its drop floor")
 			}

@@ -83,8 +83,9 @@ func (g *gpuRenderer) initSkin(dev *wgpu.Device) error {
 // skinGeometry writes posed triangle buffers before both shadow and color passes.
 // Rest records and influences persist; joint-only updates upload just the palette.
 func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f Frame) error {
-	for i, geom := range f.Geometry {
-		p := geom.posed
+	for i := range f.Draws {
+		geom := f.Draws[i].Geometry
+		p := f.Draws[i].state.posed
 		if p == nil || len(geom.Indices) == 0 {
 			continue
 		}
@@ -151,7 +152,7 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 			source := p.source
 			source.Material = geom.Material
 			source.Displacement = geom.Displacement
-			data := geometryData(source)[slot][:records*48]
+			data := geometryData(source, &noState)[slot][:records*48]
 			if err := dev.Queue().WriteBuffer(skin.source, 0, data); err != nil {
 				return err
 			}
@@ -165,7 +166,7 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 			return err
 		}
 		if node.batches[8].buffer != nil {
-			data := dropShadowData(&geom)
+			data := dropShadowData(&geom, &f.Draws[i].state)
 			if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, data); err != nil {
 				return err
 			}

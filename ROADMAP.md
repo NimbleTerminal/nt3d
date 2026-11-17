@@ -5,12 +5,7 @@ move to Done with their commit; git history has the details.
 
 ## Next
 
-- [ ] **Reshape `Frame` (breaking)**: fold its four index-aligned slices
-  (`Geometry`, `Instances`, `GeometryRevisions`, `Shared`) into one slice of
-  draw items, and move `Geometry`'s eight unexported fields out of the type
-  users fill in. Waits on a release carrying draw order, node data,
-  `StillFrame`, and `Look`, and on newlock.city and nebula moving to them, so
-  that nothing outside nt3d still reorders or rebuilds the slices.
+Nothing queued; the sections below are the open work.
 
 ## Rendering
 
@@ -90,6 +85,13 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **The frame contract**: nodes declare their draw order
+  (`Scene.SetNodeDrawOrder`) and carry application data (`SetNodeData`), a
+  still is taken without touching level-of-detail memory (`StillFrame`), and
+  the scene holds its look (`SetLook`). `Frame` is one slice of `Draw`s in
+  place of four index-aligned slices, and `Geometry` is plain data with no
+  unexported fields: what a scene knows about a geometry rides beside it in
+  the `Draw`.
 - **Pure-Go `KHR_texture_basisu` (KTX 2.0) and `KHR_materials_specular` +
   `Material.SpecularColor` / `SpecularIntensity`**: `nt3d/mesh/gltf` decodes
   KTX 2.0 BasisLZ/ETC1S, 19-mode UASTC, and uncompressed `VkFormat` textures

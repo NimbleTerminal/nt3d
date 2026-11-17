@@ -89,9 +89,9 @@ func TestMorphSkinSnapshotAndBounds(t *testing.T) {
 	nearAnimation(t, b.Min.X, 2)
 	nearAnimation(t, b.Min.Z, .5)
 	f := frame(t, s)
-	nearAnimation(t, f.Geometry[0].Vertices[0].Position.X, 2)
-	nearAnimation(t, old.Geometry[0].Vertices[0].Position.X, 0)
-	if f.GeometryRevisions[0] == old.GeometryRevisions[0] {
+	nearAnimation(t, f.Draws[0].Geometry.Vertices[0].Position.X, 2)
+	nearAnimation(t, old.Draws[0].Geometry.Vertices[0].Position.X, 0)
+	if f.Draws[0].Revision == old.Draws[0].Revision {
 		t.Fatal("posed mesh revision unchanged")
 	}
 	if _, err := NewSoftwareRenderer().Render(f); err != nil {
@@ -149,7 +149,7 @@ func TestDeformedPickingCullingAndShadowBounds(t *testing.T) {
 	if !active {
 		t.Fatal("deformed mesh lost shadow")
 	}
-	for _, v := range f.Geometry[0].Vertices {
+	for _, v := range f.Draws[0].Geometry.Vertices {
 		_, _, z, w := view.matrix.Transform(v.Position)
 		if z/w < -.001 || z/w > 1.001 {
 			t.Fatal("posed mesh outside shadow bounds")

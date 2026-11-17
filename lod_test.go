@@ -37,7 +37,7 @@ func lodCloud(t *testing.T, n, size int) Geometry {
 func lodOrtho(geometry ...Geometry) Frame {
 	f := Frame{Width: 400, Height: 400, Matrix: nt3dmath.Identity(), Cull: true}
 	f.Matrix[10], f.Matrix[14] = -.25, .5
-	f.Geometry = geometry
+	f.Draws = drawsOf(geometry...)
 	return f
 }
 
@@ -46,7 +46,7 @@ func lodPerspective(distance float64, geometry ...Geometry) Frame {
 	cam := Camera{Projection: Perspective, Beta: 0, Distance: distance, Near: .1, Far: 1000}
 	f := Frame{Width: 400, Height: 400, Matrix: cam.Matrix(1), Cull: true, Perspective: true}
 	f.Eye, _, _, f.Forward = cam.basis()
-	f.Geometry = geometry
+	f.Draws = drawsOf(geometry...)
 	return f
 }
 

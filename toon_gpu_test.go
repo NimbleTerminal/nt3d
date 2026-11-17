@@ -19,7 +19,10 @@ var toonRevision uint64 = 1 << 40
 func toonGPU(t *testing.T, r *gpuRenderer, f Frame) *image.RGBA {
 	t.Helper()
 	toonRevision++
-	f.GeometryRevisions, f.Instances, f.Shared, f.Revision = nil, nil, nil, toonRevision
+	clearRevisions(&f)
+	clearPlacements(&f)
+	clearShared(&f)
+	f.Revision = toonRevision
 	img, err := r.Render(f)
 	check(t, err)
 	out := image.NewRGBA(img.Bounds())

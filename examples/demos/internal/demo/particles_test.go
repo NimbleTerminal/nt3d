@@ -16,7 +16,8 @@ func pointCount(t *testing.T, s *nt3d.Scene) (int, nt3d.Frame) {
 		t.Fatal(err)
 	}
 	n := 0
-	for _, g := range f.Geometry {
+	for di := range f.Draws {
+		g := f.Draws[di].Geometry
 		n += len(g.Points)
 	}
 	return n, f
@@ -83,17 +84,18 @@ func TestParticleSpritesFastUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, after := pointCount(t, d.scene)
-	for i, g := range after.Geometry {
+	for i := range after.Draws {
+		g := after.Draws[i].Geometry
 		if len(g.Points) == 0 {
 			continue
 		}
 		if g.PointStyle.Texture == nil || g.PointStyle.Columns != 2 || g.PointStyle.Rows != 2 {
 			t.Fatal("missing atlas")
 		}
-		if before.GeometryRevisions[i] != after.GeometryRevisions[i] {
+		if before.Draws[i].Revision != after.Draws[i].Revision {
 			t.Fatal("particle buffers rebuilt")
 		}
-		if before.Geometry[i].Points[0] == g.Points[0] {
+		if before.Draws[i].Geometry.Points[0] == g.Points[0] {
 			t.Fatal("particles did not move")
 		}
 	}

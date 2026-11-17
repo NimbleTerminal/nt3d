@@ -723,7 +723,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	// cluster's splats grow to keep its coverage): a disc of its radius on screen, covering the
 	// pixels whose centers it holds, as the GPU's quad does. One whose center
 	// is off screen may still hang into view; only depth clips it.
-	drawPoint := func(g *Geometry, inst Instance, m *nt3dmath.Mat4, i, step int, shFromWorld nt3dmath.Mat4, scale float32) {
+	drawPoint := func(g *Geometry, inst placement, m *nt3dmath.Mat4, i, step int, shFromWorld nt3dmath.Mat4, scale float32) {
 		style := g.PointStyle
 		p := g.Points[i]
 		cx, cy, cz, cw := m.Transform(p.Position)
@@ -839,7 +839,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	// drawPointsUnsorted draws a geometry's points in their own order: opaque
 	// ones with the opaque pass, additive ones where the blended pass puts
 	// their geometry.
-	drawPointsUnsorted := func(g *Geometry, inst Instance, m *nt3dmath.Mat4) {
+	drawPointsUnsorted := func(g *Geometry, inst placement, m *nt3dmath.Mat4) {
 		inverse, _ := inst.World.InverseAffine()
 		shFromWorld := gaussianSHMatrix(g).Mul(inverse)
 		step := pointStep(g)
@@ -847,7 +847,8 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			drawPoint(g, inst, m, i, step, shFromWorld, 1)
 		}
 	}
-	for gi, g := range f.Geometry {
+	for gi := range f.Draws {
+		g := f.Draws[gi].Geometry
 		if !drawn[gi] {
 			continue
 		}
@@ -857,10 +858,10 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		local.Matrix = f.Matrix.Mul(inst.World)
 		inverse, _ := inst.World.InverseAffine()
 		normals := inverse.Transpose()
-		if !blendedPoints(&f.Geometry[gi]) {
-			drawPointsUnsorted(&f.Geometry[gi], inst, &local.Matrix)
+		if !blendedPoints(&f.Draws[gi].Geometry) {
+			drawPointsUnsorted(&f.Draws[gi].Geometry, inst, &local.Matrix)
 		}
-		if !transparent(&f.Geometry[gi]) && !transmitting(&f.Geometry[gi]) {
+		if !transparent(&f.Draws[gi].Geometry) && !transmitting(&f.Draws[gi].Geometry) {
 			verts := displacedVertices(&g, inst.World)
 			isMapped := mapped(g)
 			for i := 0; i+2 < len(g.Indices); i += 3 {
@@ -891,7 +892,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	// Opaque hulls share the surface depth buffer. Draw after all opaque
 	// geometry so nearer surfaces hide them regardless of scene order.
 	drawOutline := func(gi int, side int) {
-		g := &f.Geometry[gi]
+		g := &f.Draws[gi].Geometry
 		if !drawn[gi] || g.Outline.Width == 0 {
 			return
 		}
@@ -907,7 +908,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			material.Shader = nil
 		}
 		verts := displacedVertices(g, inst.World)
-		if g.posed == nil && g.Displacement == nil {
+		if f.Draws[gi].state.posed == nil && g.Displacement == nil {
 			if codes := outlineNormals(verts); codes != nil {
 				verts = slices.Clone(verts)
 				for i, code := range codes {
@@ -922,8 +923,8 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, &material, side, g.Outline, isMapped)
 		}
 	}
-	for gi := range f.Geometry {
-		if !transparent(&f.Geometry[gi]) {
+	for gi := range f.Draws {
+		if !transparent(&f.Draws[gi].Geometry) {
 			drawOutline(gi, outlineOpaque)
 		}
 	}
@@ -934,7 +935,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	// surfaces write front-face depth; transparent creases blend with their
 	// mesh in OIT or sorted slice order.
 	drawCrease := func(gi int) {
-		g := &f.Geometry[gi]
+		g := &f.Draws[gi].Geometry
 		if !drawn[gi] || !creased(g) {
 			return
 		}
@@ -1000,8 +1001,8 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			})
 		}
 	}
-	for gi := range f.Geometry {
-		if !transparent(&f.Geometry[gi]) && !transmitting(&f.Geometry[gi]) {
+	for gi := range f.Draws {
+		if !transparent(&f.Draws[gi].Geometry) && !transmitting(&f.Draws[gi].Geometry) {
 			drawCrease(gi)
 		}
 	}
@@ -1061,11 +1062,11 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 	}
 
-	for gi := range f.Geometry {
+	for gi := range f.Draws {
 		if !drawn[gi] {
 			continue
 		}
-		center, radius, strength, ok := dropDisc(&f.Geometry[gi], instance(f, gi).World)
+		center, radius, strength, ok := dropDisc(&f.Draws[gi].Geometry, &f.Draws[gi].state, instance(f, gi).World)
 		if !ok {
 			continue
 		}
@@ -1090,8 +1091,8 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	if needsSceneSnapshot(f, drawn) {
 		opaqueColor = append([]byte(nil), img.Pix...)
 		opaqueDepth = append([]float32(nil), depth...)
-		for gi := range f.Geometry {
-			g := &f.Geometry[gi]
+		for gi := range f.Draws {
+			g := &f.Draws[gi].Geometry
 			if !drawn[gi] || !transmitting(g) {
 				continue
 			}
@@ -1105,8 +1106,8 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				tri(&m, &inst.World, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
 			}
 		}
-		for gi := range f.Geometry {
-			if transmitting(&f.Geometry[gi]) {
+		for gi := range f.Draws {
+			if transmitting(&f.Draws[gi].Geometry) {
 				drawCrease(gi)
 			}
 		}
@@ -1119,8 +1120,8 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			oitReveal[i] = 1
 		}
 		oitMode = true
-		for gi := range f.Geometry {
-			g := &f.Geometry[gi]
+		for gi := range f.Draws {
+			g := &f.Draws[gi].Geometry
 			if !drawn[gi] || !transparent(g) {
 				continue
 			}
@@ -1165,7 +1166,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	overflow := make([][]int, blendSlices)
 	if err != nil {
 		for _, gi := range plan.slots[maxBlendSlots:] {
-			b := blendBounds(&f.Geometry[gi])
+			b := blendBounds(&f.Draws[gi].Geometry)
 			_, _, z, _ := f.Matrix.Mul(instance(f, gi).World).Transform(b.Min.Add(b.Max).Scale(.5))
 			s := plan.sliceOf(z)
 			overflow[s] = append(overflow[s], gi)
@@ -1175,7 +1176,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	lod := f.planLODScaled(&plan, scale)
 	type slotDraw struct {
 		g           *Geometry
-		inst        Instance
+		inst        placement
 		m           nt3dmath.Mat4
 		shFromWorld nt3dmath.Mat4
 		step        int
@@ -1183,7 +1184,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	slots := make([]slotDraw, len(plan.slots))
 	keys, indices := make([]uint32, 0, plan.points), make([]uint32, 0, plan.points)
 	for slot, gi := range plan.slots {
-		g, inst := &f.Geometry[gi], instance(f, gi)
+		g, inst := &f.Draws[gi].Geometry, instance(f, gi)
 		m := f.Matrix.Mul(inst.World)
 		inverse, _ := inst.World.InverseAffine()
 		slots[slot] = slotDraw{g, inst, m, gaussianSHMatrix(g).Mul(inverse), pointStep(g)}
@@ -1211,7 +1212,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	next := 0 // The first sorted point not yet drawn.
 	for slice, list := range plan.bySlice {
 		for _, gi := range list {
-			g, inst := &f.Geometry[gi], instance(f, gi)
+			g, inst := &f.Draws[gi].Geometry, instance(f, gi)
 			m := f.Matrix.Mul(inst.World)
 			if transparent(g) {
 				drawOutline(gi, outlineTransparent)
@@ -1233,7 +1234,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			}
 		}
 		for _, gi := range overflow[slice] {
-			g, inst := &f.Geometry[gi], instance(f, gi)
+			g, inst := &f.Draws[gi].Geometry, instance(f, gi)
 			m := f.Matrix.Mul(inst.World)
 			drawPointsUnsorted(g, inst, &m)
 		}

@@ -297,8 +297,8 @@ func TestGPUManualFrameGeometryCache(t *testing.T) {
 	_, err := s.SetGeometry("point", pointGeometry())
 	check(t, err)
 	f := frame(t, s)
-	f.GeometryRevisions = nil
-	f.Instances = nil
+	clearRevisions(&f)
+	clearPlacements(&f)
 	r := &gpuRenderer{}
 	defer r.Close()
 	_, err = r.Render(f)
@@ -963,9 +963,9 @@ func TestGPUShadowTargetLifecycle(t *testing.T) {
 	defer r.Close()
 	f := shadowScenes(t)["quad casts"]
 	unbounded := f
-	unbounded.Geometry = append([]Geometry(nil), f.Geometry...)
-	for i := range unbounded.Geometry {
-		unbounded.Geometry[i].Bounds = nt3dmath.AABB{}
+	unbounded.Draws = append([]Draw(nil), f.Draws...)
+	for i := range unbounded.Draws {
+		unbounded.Draws[i].Geometry.Bounds = nt3dmath.AABB{}
 	}
 	_, err := r.Render(unbounded)
 	check(t, err)

@@ -60,8 +60,8 @@ func testGPUSkinMatchesCPU(t *testing.T, texture, normal, point bool) {
 	// Render the identical CPU pose without GPU skin metadata on the same backend:
 	// image differences then measure deformation, not rasterizer edge conventions.
 	reference := f
-	reference.Geometry = append([]Geometry(nil), f.Geometry...)
-	reference.Geometry[0].posed = nil
+	reference.Draws = append([]Draw(nil), f.Draws...)
+	reference.Draws[0].state.posed = nil
 	other := &gpuRenderer{}
 	defer other.Close()
 	want, err := other.Render(reference)

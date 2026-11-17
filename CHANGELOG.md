@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **Breaking: a frame is one list of draws.** `Frame.Geometry`, `Instances`,
+  `GeometryRevisions`, and `Shared`, four slices kept in step by index, are
+  one slice, `Frame.Draws`, and `Instance` is gone. A `Draw` holds a node's
+  `Geometry`, `World`, `Node`, `Name`, `Data`, `Revision`, and `Shared`, and
+  is `Hidden` rather than not `Visible`, so that `Draw{Geometry: g}` alone
+  draws `g` where it lies: a zero `World` is the identity. To migrate:
+
+  | Before | After |
+  | --- | --- |
+  | `f.Geometry[i]` | `f.Draws[i].Geometry` |
+  | `f.Instances[i].World`, `.Node`, `.Name` | `f.Draws[i].World`, `.Node`, `.Name` |
+  | `f.Instances[i].Visible = false` | `f.Draws[i].Hidden = true` |
+  | `f.GeometryRevisions[i]`, `f.Shared[i]` | `f.Draws[i].Revision`, `f.Draws[i].Shared` |
+  | `Frame{Geometry: []Geometry{g}}` | `Frame{Draws: []Draw{{Geometry: g}}}` |
+  | reordering all four slices | `Scene.SetNodeDrawOrder`, or reorder `Draws` |
+
+  Per-node GPU caching is now per draw: a draw with a nonzero `Revision`
+  needs a `Node` that is nonzero and its alone, and a frame may mix cached and
+  uncached draws. `Scene.Frame` makes three allocations however many nodes
+  it draws.
+
+- **Breaking in behaviour only: `Geometry` is plain data.** Its eight
+  unexported fields (certificates, partial-update ranges, skin pose, rest
+  bounds, level-of-detail tier) moved beside it into the `Draw`, so every
+  field of a `Geometry` is the application's, and a geometry copied out of a
+  frame carries nothing with it. A frame edited by assigning to a scene-made
+  draw's `Geometry` should replace the whole `Draw` instead.
+
 - Four additions close gaps in what a scene could say about its frames, which
   applications had been working around by editing frames after they were
   made. Nothing existing changes.

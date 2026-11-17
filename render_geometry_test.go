@@ -18,7 +18,7 @@ func TestGeometryDataAllocations(t *testing.T) {
 	for i := range g.Points {
 		g.Points[i] = Point{Position: nt3dmath.Vec3{X: float32(i)}, Radius: 2, Color: color.RGBA{255, 0, 0, 255}}
 	}
-	if n := testing.AllocsPerRun(10, func() { geometryData(g) }); n > 8 {
+	if n := testing.AllocsPerRun(10, func() { geometryData(g, &noState) }); n > 8 {
 		t.Fatalf("geometryData allocated %v times for 2,100 records", n)
 	}
 }
@@ -32,7 +32,7 @@ func BenchmarkGeometryData(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		geometryData(g)
+		geometryData(g, &noState)
 	}
 }
 
@@ -41,7 +41,7 @@ func BenchmarkGeometryData(b *testing.B) {
 func TestGeometryDataPointRecords(t *testing.T) {
 	for _, units := range []PointUnits{PixelUnits, WorldUnits} {
 		g := Geometry{PointStyle: PointStyle{Units: units}, Points: []Point{{Position: nt3dmath.Vec3{X: 1, Y: 2, Z: 3}, Radius: 4, Color: color.RGBA{10, 20, 30, 40}}, {Radius: 2}}}
-		data := geometryData(g)[0]
+		data := geometryData(g, &noState)[0]
 		if len(data) != 2*pointRecord || pointRecord != 20 {
 			t.Fatalf("%d bytes for two points", len(data))
 		}

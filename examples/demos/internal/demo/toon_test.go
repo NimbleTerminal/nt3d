@@ -67,11 +67,12 @@ func TestToonDemo(t *testing.T) {
 	look := func(bands int, width, shadowSoft float32) {
 		t.Helper()
 		f := frame()
-		for i, g := range f.Geometry {
+		for i := range f.Draws {
+			g := f.Draws[i].Geometry
 			if len(g.Indices) == 0 {
 				continue
 			}
-			node := f.Instances[i].Node
+			node := f.Draws[i].Node
 			if g.Material == nil || g.Material.Toon.Bands != bands || g.Material.Toon.ShadowSoftness != shadowSoft {
 				t.Fatalf("node %d: material %+v, want %d bands and shadow softness %v", node, g.Material, bands, shadowSoft)
 			}
@@ -89,8 +90,9 @@ func TestToonDemo(t *testing.T) {
 	meshes, textured, transmissive, transparentProps := 0, 0, 0, 0
 	colors := map[color.RGBA]bool{}
 	low, high := float32(1e9), float32(-1e9)
-	for i, g := range f.Geometry {
-		node, world := f.Instances[i].Node, f.Instances[i].World
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
+		node, world := f.Draws[i].Node, f.Draws[i].World
 		if len(g.Indices) > 0 {
 			meshes++
 		}

@@ -91,11 +91,12 @@ func TestStillFrameMatchesAFirstFrame(t *testing.T) {
 	check(t, err)
 	still, err := s.StillFrame(DefaultCamera(), 64, 64)
 	check(t, err)
-	if len(still.Instances) != len(f.Instances) || still.Matrix != f.Matrix {
-		t.Fatalf("a still has %d instances, a frame %d", len(still.Instances), len(f.Instances))
+	if len(still.Draws) != len(f.Draws) || still.Matrix != f.Matrix {
+		t.Fatalf("a still has %d instances, a frame %d", len(still.Draws), len(f.Draws))
 	}
-	for i := range f.Instances {
-		if still.Instances[i] != f.Instances[i] || still.GeometryRevisions[i] != f.GeometryRevisions[i] {
+	for i := range f.Draws {
+		a, b := still.Draws[i], f.Draws[i]
+		if a.Node != b.Node || a.World != b.World || a.Hidden != b.Hidden || a.Revision != b.Revision || a.Shared != b.Shared {
 			t.Fatalf("instance %d differs between a still and a frame", i)
 		}
 	}

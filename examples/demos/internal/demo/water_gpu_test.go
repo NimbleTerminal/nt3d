@@ -27,12 +27,12 @@ func TestGPUWaterMotionAndMaterials(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for k, inst := range f.Instances {
+		for k, inst := range f.Draws {
 			if inst.Node == d.water.mesh {
 				if i == 0 {
-					tileRev = f.GeometryRevisions[k]
-				} else if f.GeometryRevisions[k] != tileRev {
-					t.Fatalf("water tile geometryRevision changed across wave step %d: %d != %d", i, f.GeometryRevisions[k], tileRev)
+					tileRev = f.Draws[k].Revision
+				} else if f.Draws[k].Revision != tileRev {
+					t.Fatalf("water tile geometryRevision changed across wave step %d: %d != %d", i, f.Draws[k].Revision, tileRev)
 				}
 			}
 		}

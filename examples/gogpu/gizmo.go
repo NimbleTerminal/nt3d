@@ -458,9 +458,9 @@ func (v *viewerState) updatePickAnnotation(camera nt3d.Camera, show bool) (world
 
 func (v *viewerState) decorateFrame(f *nt3d.Frame, camera nt3d.Camera, showAnnotations, isInset bool) {
 	if (!showAnnotations || isInset) && v.pickLabelID != nt3d.Root {
-		for i := range f.Instances {
-			if f.Instances[i].Node == v.pickLabelID {
-				f.Instances[i].Visible = false
+		for i := range f.Draws {
+			if f.Draws[i].Node == v.pickLabelID {
+				f.Draws[i].Hidden = true
 			}
 		}
 	}

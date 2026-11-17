@@ -111,9 +111,9 @@ func checkSceneFrame(t *testing.T, s *nt3d.Scene) {
 	if err != nil {
 		t.Fatalf("Scene.Frame: %v", err)
 	}
-	for i := range f.Geometry {
-		if err := f.Geometry[i].Validate(); err != nil {
-			t.Fatalf("Frame.Geometry[%d]: %v", i, err)
+	for i := range f.Draws {
+		if err := f.Draws[i].Geometry.Validate(); err != nil {
+			t.Fatalf("Frame.Draws[%d].Geometry: %v", i, err)
 		}
 	}
 }

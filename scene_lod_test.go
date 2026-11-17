@@ -47,28 +47,28 @@ func TestSceneSetLODSelectionAndDistanceCull(t *testing.T) {
 	// Sphere has radius 1 (AABB [-1, 1]^3), so eye at X=8 is distance 7 from AABB (<= 10 -> tier 0).
 	fNear, err := s.Frame(camAt(8), 80, 80)
 	check(t, err)
-	if len(fNear.Geometry[0].Indices) != len(nearMesh.Indices) || fNear.Geometry[0].Outline != inkCrease || !fNear.Instances[0].Visible {
-		t.Fatalf("near frame got indices=%d outline=%+v visible=%v", len(fNear.Geometry[0].Indices), fNear.Geometry[0].Outline, fNear.Instances[0].Visible)
+	if len(fNear.Draws[0].Geometry.Indices) != len(nearMesh.Indices) || fNear.Draws[0].Geometry.Outline != inkCrease || fNear.Draws[0].Hidden {
+		t.Fatalf("near frame got indices=%d outline=%+v visible=%v", len(fNear.Draws[0].Geometry.Indices), fNear.Draws[0].Geometry.Outline, !fNear.Draws[0].Hidden)
 	}
 
 	// Eye at X=20 is distance 19 from AABB (10 < 19 <= 30 -> tier 1).
 	fMid, err := s.Frame(camAt(20), 80, 80)
 	check(t, err)
-	if len(fMid.Geometry[0].Indices) != len(midMesh.Indices) || fMid.Geometry[0].Outline != inkHull || !fMid.Instances[0].Visible {
-		t.Fatalf("mid frame got indices=%d outline=%+v visible=%v", len(fMid.Geometry[0].Indices), fMid.Geometry[0].Outline, fMid.Instances[0].Visible)
+	if len(fMid.Draws[0].Geometry.Indices) != len(midMesh.Indices) || fMid.Draws[0].Geometry.Outline != inkHull || fMid.Draws[0].Hidden {
+		t.Fatalf("mid frame got indices=%d outline=%+v visible=%v", len(fMid.Draws[0].Geometry.Indices), fMid.Draws[0].Geometry.Outline, !fMid.Draws[0].Hidden)
 	}
 
 	// Eye at X=45 is distance 44 from AABB (30 < 44 <= 60 -> tier 2).
 	fFar, err := s.Frame(camAt(45), 80, 80)
 	check(t, err)
-	if len(fFar.Geometry[0].Indices) != len(farMesh.Indices) || fFar.Geometry[0].Outline != (OutlineStyle{}) || !fFar.Instances[0].Visible {
-		t.Fatalf("far frame got indices=%d outline=%+v visible=%v", len(fFar.Geometry[0].Indices), fFar.Geometry[0].Outline, fFar.Instances[0].Visible)
+	if len(fFar.Draws[0].Geometry.Indices) != len(farMesh.Indices) || fFar.Draws[0].Geometry.Outline != (OutlineStyle{}) || fFar.Draws[0].Hidden {
+		t.Fatalf("far frame got indices=%d outline=%+v visible=%v", len(fFar.Draws[0].Geometry.Indices), fFar.Draws[0].Geometry.Outline, !fFar.Draws[0].Hidden)
 	}
 
 	// Eye at X=70 is distance 69 (> 60 -> distance-culled).
 	fCulled, err := s.Frame(camAt(70), 80, 80)
 	check(t, err)
-	if fCulled.Instances[0].Visible {
+	if !fCulled.Draws[0].Hidden {
 		t.Fatal("expected node beyond final finite MaxDistance to be hidden")
 	}
 	img := softwareRender(fCulled).(*image.RGBA)
@@ -84,8 +84,8 @@ func TestSceneSetLODSelectionAndDistanceCull(t *testing.T) {
 	}))
 	fVeryFar, err := s.Frame(camAt(500), 80, 80)
 	check(t, err)
-	if !fVeryFar.Instances[0].Visible || len(fVeryFar.Geometry[0].Indices) != len(farMesh.Indices) {
-		t.Fatalf("unbounded final tier not selected at distance: visible=%v indices=%d", fVeryFar.Instances[0].Visible, len(fVeryFar.Geometry[0].Indices))
+	if fVeryFar.Draws[0].Hidden || len(fVeryFar.Draws[0].Geometry.Indices) != len(farMesh.Indices) {
+		t.Fatalf("unbounded final tier not selected at distance: visible=%v indices=%d", !fVeryFar.Draws[0].Hidden, len(fVeryFar.Draws[0].Geometry.Indices))
 	}
 }
 
@@ -110,7 +110,7 @@ func TestSceneSetLODCityTileAABBDistance(t *testing.T) {
 	c = c.LookAt(nt3dmath.Vec3{X: 250, Y: 350, Z: 25}, nt3dmath.Vec3{X: 250, Y: 350, Z: 5})
 	f, err := s.Frame(c, 64, 64)
 	check(t, err)
-	if got := f.Geometry[0].Boxes[0].Color; got != hiBlock.Boxes[0].Color {
+	if got := f.Draws[0].Geometry.Boxes[0].Color; got != hiBlock.Boxes[0].Color {
 		t.Fatalf("camera above tile roof got color %v, want high-detail %v", got, hiBlock.Boxes[0].Color)
 	}
 }
@@ -160,7 +160,7 @@ func TestSceneSetLODSharedPickAndMutators(t *testing.T) {
 		c = c.LookAt(nt3dmath.Vec3{X: dist}, nt3dmath.Vec3{})
 		f, err := s.Frame(c, 100, 100)
 		check(t, err)
-		if f.Shared[0] == 0 {
+		if f.Draws[0].Shared == 0 {
 			t.Fatalf("dist %g: expected nonzero Shared ID", dist)
 		}
 		hit := s.Pick(c, f, 50, 50, 2)
@@ -267,8 +267,8 @@ func TestSceneSetLODBoundsAndBillboardImpostor(t *testing.T) {
 	c = c.LookAt(nt3dmath.Vec3{X: 50, Y: -5, Z: 2}, nt3dmath.Vec3{X: 10, Y: -5, Z: 2})
 	f, err := s.Frame(c, 80, 80)
 	check(t, err)
-	if f.Geometry[0].Billboard == nil || !f.Instances[0].Visible {
-		t.Fatalf("expected visible billboard impostor at far distance, got billboard=%v visible=%v", f.Geometry[0].Billboard, f.Instances[0].Visible)
+	if f.Draws[0].Geometry.Billboard == nil || f.Draws[0].Hidden {
+		t.Fatalf("expected visible billboard impostor at far distance, got billboard=%v visible=%v", f.Draws[0].Geometry.Billboard, !f.Draws[0].Hidden)
 	}
 }
 
@@ -309,7 +309,7 @@ func TestSceneLODBiasSelectionValidationAndO1(t *testing.T) {
 		check(t, err)
 		f.Cull = false
 		st := f.Stats()
-		if !f.Instances[0].Visible {
+		if f.Draws[0].Hidden {
 			return -1, false
 		}
 		for i, n := range st.LODTierInstances {
@@ -441,7 +441,7 @@ func TestSceneLODHysteresisAndResets(t *testing.T) {
 		f, err := s.Frame(camAt(x), 64, 64)
 		check(t, err)
 		f.Cull = false
-		if !f.Instances[0].Visible {
+		if f.Draws[0].Hidden {
 			return -1, false
 		}
 		st := f.Stats()
@@ -609,7 +609,7 @@ func TestSceneLODDefaultBiasAndBandByteIdentical(t *testing.T) {
 		thresholds := [3]float32{8, 16, 28}
 		for i, id := range untouched.order {
 			n := untouched.nodes[id]
-			d := aabbDistance(n.lodBounds.Transformed(fa.Instances[i].World), fa.Eye)
+			d := aabbDistance(n.lodBounds.Transformed(fa.Draws[i].World), fa.Eye)
 			wantTier := 3
 			for k, th := range thresholds {
 				if d <= th {
@@ -618,11 +618,11 @@ func TestSceneLODDefaultBiasAndBandByteIdentical(t *testing.T) {
 				}
 			}
 			wantVis := wantTier < 3
-			if fa.Instances[i].Visible != wantVis || fb.Instances[i].Visible != wantVis {
-				t.Fatalf("dist %g node %d: visible=(%v,%v), want %v", dist, i, fa.Instances[i].Visible, fb.Instances[i].Visible, wantVis)
+			if !fa.Draws[i].Hidden != wantVis || !fb.Draws[i].Hidden != wantVis {
+				t.Fatalf("dist %g node %d: visible=(%v,%v), want %v", dist, i, !fa.Draws[i].Hidden, !fb.Draws[i].Hidden, wantVis)
 			}
-			if wantVis && (len(fa.Geometry[i].Indices) != wantIdx[wantTier] || len(fb.Geometry[i].Indices) != wantIdx[wantTier]) {
-				t.Fatalf("dist %g node %d: indices=(%d,%d), want %d", dist, i, len(fa.Geometry[i].Indices), len(fb.Geometry[i].Indices), wantIdx[wantTier])
+			if wantVis && (len(fa.Draws[i].Geometry.Indices) != wantIdx[wantTier] || len(fb.Draws[i].Geometry.Indices) != wantIdx[wantTier]) {
+				t.Fatalf("dist %g node %d: indices=(%d,%d), want %d", dist, i, len(fa.Draws[i].Geometry.Indices), len(fb.Draws[i].Geometry.Indices), wantIdx[wantTier])
 			}
 		}
 
@@ -738,12 +738,12 @@ func TestSceneSetLODReferenceBounds(t *testing.T) {
 		t.Helper()
 		f, err := s.Frame(camAt(x), 64, 64)
 		check(t, err)
-		for i, in := range f.Instances {
+		for i, in := range f.Draws {
 			if in.Node == id {
-				if !in.Visible {
+				if in.Hidden {
 					return color.RGBA{}
 				}
-				return f.Geometry[i].Boxes[0].Color
+				return f.Draws[i].Geometry.Boxes[0].Color
 			}
 		}
 		t.Fatalf("node %d missing from frame", id)
@@ -835,7 +835,7 @@ func TestSceneSetLODReferenceBoundsResetsHysteresis(t *testing.T) {
 		c.Projection = Perspective
 		f, err := s.Frame(c.LookAt(nt3dmath.Vec3{X: -(dist + 1)}, nt3dmath.Vec3{}), 64, 64)
 		check(t, err)
-		return f.Geometry[0].Boxes[0].Color
+		return f.Draws[0].Geometry.Boxes[0].Color
 	}
 	// Start inside the near tier, then step into the deadband (20, 22]: the
 	// hysteresis memory keeps tier 0.

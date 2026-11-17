@@ -345,7 +345,7 @@ func TestToonShadowSoftnessSmoothsStreetWithoutBlurringCelBands(t *testing.T) {
 
 func TestToonShadowIsTwoToned(t *testing.T) {
 	f := blendScene(t, &shadowLit, quad(.4, .3, white, nil, false))
-	f.Geometry[0].Material = &Material{Toon: ToonStyle{Bands: 2}}
+	f.Draws[0].Geometry.Material = &Material{Toon: ToonStyle{Bands: 2}}
 	img := softwareRender(f)
 	sx, sy := pixel(f, nt3dmath.Vec3{X: -1.3, Z: -1})
 	lx, ly := pixel(f, nt3dmath.Vec3{X: 1.5, Z: -1})
@@ -404,10 +404,11 @@ func toonBands(t *testing.T, s *Scene) map[NodeID]int {
 	t.Helper()
 	f := frame(t, s)
 	bands := map[NodeID]int{}
-	for i, g := range f.Geometry {
-		bands[f.Instances[i].Node] = -1
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
+		bands[f.Draws[i].Node] = -1
 		if g.Material != nil {
-			bands[f.Instances[i].Node] = g.Material.Toon.Bands
+			bands[f.Draws[i].Node] = g.Material.Toon.Bands
 		}
 	}
 	return bands
@@ -470,15 +471,15 @@ func TestSetToonPreservesBuffersAndPose(t *testing.T) {
 	if s.nodes[id].deformation == nil || s.nodes[id].geometryRevision != rev {
 		t.Fatal("toon replaced mesh/deformation")
 	}
-	if m := old.Geometry[0].Material; m != nil && m.Toon.on() {
+	if m := old.Draws[0].Geometry.Material; m != nil && m.Toon.on() {
 		t.Fatal("toon changed an old snapshot")
 	}
 	next := frame(t, s)
-	if &next.Geometry[0].Indices[0] != &old.Geometry[0].Indices[0] {
+	if &next.Draws[0].Geometry.Indices[0] != &old.Draws[0].Geometry.Indices[0] {
 		t.Fatal("toon copied the index buffer")
 	}
 	check(t, s.SetTransform(joint, nt3dmath.Translation(nt3dmath.Vec3{Z: .2})))
-	if posed := frame(t, s); posed.Geometry[0].Material == nil || posed.Geometry[0].Material.Toon != style {
+	if posed := frame(t, s); posed.Draws[0].Geometry.Material == nil || posed.Draws[0].Geometry.Material.Toon != style {
 		t.Fatal("deformation lost toon")
 	}
 }

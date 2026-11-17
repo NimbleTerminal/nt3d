@@ -99,14 +99,14 @@ func TestCullMatchesUnculled(t *testing.T) {
 	}
 	// The point past the edge is kept: its 8-pixel disc reaches into the
 	// frame, as the GPU draws it. A small one is culled.
-	point := len(f.Geometry) - 2
+	point := len(f.Draws) - 2
 	if !f.drawn(1)[point] {
 		t.Fatal("the overhanging point was culled")
 	}
 	small := f
-	small.Geometry = append([]Geometry(nil), f.Geometry...)
-	small.Geometry[point].Points = []Point{f.Geometry[point].Points[0]}
-	small.Geometry[point].Points[0].Radius = 2
+	small.Draws = append([]Draw(nil), f.Draws...)
+	small.Draws[point].Geometry.Points = []Point{f.Draws[point].Geometry.Points[0]}
+	small.Draws[point].Geometry.Points[0].Radius = 2
 	if small.drawn(1)[point] {
 		t.Fatal("a point wholly outside was drawn")
 	}

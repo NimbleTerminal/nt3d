@@ -203,7 +203,7 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 					}
 					hasAnyMesh = true
 					if len(n.VariantMaterials) > 0 {
-						vm, e := cloneAndValidateMap(lg, n.VariantMaterials)
+						vm, e := cloneAndValidateMap(lg.Geometry, n.VariantMaterials)
 						if e != nil {
 							return nil, e
 						}
@@ -212,7 +212,7 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 						}
 					}
 					if t < len(n.LODVariantMaterials) && len(n.LODVariantMaterials[t]) > 0 {
-						vm, e := cloneAndValidateMap(lg, n.LODVariantMaterials[t])
+						vm, e := cloneAndValidateMap(lg.Geometry, n.LODVariantMaterials[t])
 						if e != nil {
 							return nil, e
 						}
@@ -234,7 +234,7 @@ func (a *SceneAsset) Instantiate(s *Scene, parent NodeID, name string) (out *Ani
 				var defaultMat *Material
 				switch {
 				case hasShared:
-					baseGeom = n.Shared.geometry
+					baseGeom = n.Shared.geometry.Geometry
 					defaultMat = cloneMaterial(n.Shared.geometry.Material)
 				case hasGeom && len(n.Geometry.Indices) > 0:
 					baseGeom = *n.Geometry
@@ -378,7 +378,7 @@ func (s *Scene) SetMaterialVariant(root NodeID, variant string) error {
 		if b.defaultShared != nil && n.shared == nil && n.deformation == nil && len(n.lod) == 0 {
 			cand := b.defaultShared.geometry
 			cand.Material = cloneMaterial(target)
-			if vertexMaterialEqual(b.defaultShared.geometry, cand) {
+			if vertexMaterialEqual(b.defaultShared.geometry.Geometry, cand.Geometry) {
 				if err := s.SetNodeShared(b.node, b.defaultShared); err != nil {
 					return err
 				}
@@ -419,7 +419,7 @@ func (s *Scene) applyLODVariantBinding(id NodeID, n *sceneNode, b *variantBindin
 			cand := sg.geometry
 			cand.Material = cloneMaterial(target)
 			cand.Outline = lg.Outline
-			if vertexMaterialEqual(sg.geometry, cand) {
+			if vertexMaterialEqual(sg.geometry.Geometry, cand.Geometry) {
 				cand.retainKeys = lg.retainKeys
 				cand.lodTierPlusOne = t + 1
 				if n.lod[t].shared == nil {
@@ -437,11 +437,11 @@ func (s *Scene) applyLODVariantBinding(id NodeID, n *sceneNode, b *variantBindin
 		g := *lg
 		g.Material = cloneMaterial(target)
 		if target != nil && target.NormalMap != nil && len(g.Tangents) == 0 {
-			generateTangentsOnUpload(&g)
+			generateTangentsOnUpload(&g.Geometry)
 		}
-		if !vertexMaterialEqual(*lg, g) {
+		if !vertexMaterialEqual(lg.Geometry, g.Geometry) {
 			g.meshUpdate = nil
-			g.meshCert = newMeshCertificate(&g, lg.splitOutlines())
+			g.meshCert = newMeshCertificate(&g.Geometry, lg.splitOutlines(&lg.Geometry))
 			n.lod[t].shared = nil
 			n.lod[t].geometryRevision = nextRevision.Add(1)
 			n.lod[t].pickIndex = nil

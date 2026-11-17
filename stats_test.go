@@ -187,15 +187,9 @@ func TestFrameStatsInvalidFramesReturnZero(t *testing.T) {
 	if (Frame{}).Stats() != (FrameStats{}) {
 		t.Fatal("zero Frame should report zero FrameStats")
 	}
-	bad := Frame{
-		Width:     64,
-		Height:    64,
-		Matrix:    nt3dmath.Identity(),
-		Geometry:  []Geometry{{}},
-		Instances: []Instance{{}, {}}, // mismatched length
-	}
+	bad := Frame{Width: 64, Height: 64, Matrix: nt3dmath.Identity(), Draws: drawsOf(Geometry{}), DynamicLines: make([]Vertex, 3)}
 	if bad.Stats() != (FrameStats{}) {
-		t.Fatal("mismatched Instances should report zero FrameStats")
+		t.Fatal("an odd number of line vertices should report zero FrameStats")
 	}
 }
 

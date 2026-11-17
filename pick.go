@@ -52,7 +52,8 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 	best := float32(math.Inf(1))
 	var hit *Hit
 	drawn := f.drawn(1)
-	for i, g := range f.Geometry {
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
 		inst := instance(f, i)
 		if !drawn[i] || edgeOn(g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue // Edge-on geometry shows only at silhouettes; the surface beneath is picked.
@@ -286,15 +287,15 @@ type bvhSlot struct {
 // build far longer, which a click should not wait for. Small meshes and
 // frames that do not show the node's current geometry are never indexed.
 func (s *Scene) pickIndex(f Frame, i int) *meshBVH {
-	g := &f.Geometry[i]
-	if s == nil || s.noPickIndex || g.Displacement != nil || len(g.Indices)/3 < bvhLinear || len(f.GeometryRevisions) != len(f.Geometry) {
+	g := &f.Draws[i].Geometry
+	if s == nil || s.noPickIndex || g.Displacement != nil || len(g.Indices)/3 < bvhLinear || f.Draws[i].Revision == 0 {
 		return nil
 	}
 	n := s.nodes[instance(f, i).Node]
 	if n == nil || n.noPickIndex {
 		return nil
 	}
-	geometry, slot := n.pickTarget(f.GeometryRevisions[i])
+	geometry, slot := n.pickTarget(f.Draws[i].Revision)
 	if geometry == nil {
 		return nil
 	}
@@ -353,7 +354,7 @@ func (s *Scene) WarmPickIndices() <-chan struct{} {
 				if l.shared != nil {
 					slot = &l.shared.pick
 				}
-				warm(l.geometry, slot)
+				warm(&l.geometry.Geometry, slot)
 			}
 			continue
 		}
@@ -361,7 +362,7 @@ func (s *Scene) WarmPickIndices() <-chan struct{} {
 		if n.shared != nil {
 			slot = &n.shared.pick
 		}
-		warm(n.geometry, slot)
+		warm(&n.geometry.Geometry, slot)
 	}
 	if len(waits) == 0 {
 		return closed
@@ -414,7 +415,8 @@ func rayHitsMeshBounds(r nt3dmath.Ray, b nt3dmath.AABB) bool {
 
 func (s *Scene) hasUnindexedLargeMesh(f Frame) bool {
 	drawn := f.drawn(1)
-	for i, g := range f.Geometry {
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
 		if !drawn[i] || len(g.Indices)/3 < bvhLinear || edgeOn(g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue
 		}
@@ -422,10 +424,10 @@ func (s *Scene) hasUnindexedLargeMesh(f Frame) bool {
 			return true
 		}
 		n := s.nodes[instance(f, i).Node]
-		if n == nil || n.noPickIndex || s.noPickIndex || len(f.GeometryRevisions) != len(f.Geometry) {
+		if n == nil || n.noPickIndex || s.noPickIndex || f.Draws[i].Revision == 0 {
 			return true
 		}
-		_, slot := n.pickTarget(f.GeometryRevisions[i])
+		_, slot := n.pickTarget(f.Draws[i].Revision)
 		if slot == nil || *slot == nil || (*slot).index.Load() == nil {
 			return true
 		}
@@ -442,7 +444,8 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 	best := float32(math.Inf(1))
 	var hit *Hit
 	drawn := f.drawn(1)
-	for i, g := range f.Geometry {
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
 		inst := instance(f, i)
 		if !drawn[i] || edgeOn(g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue

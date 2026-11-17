@@ -18,18 +18,18 @@ func TestSceneGeometryRevisions(t *testing.T) {
 	check(t, s.SetTransform(a, nt3dmath.Translation(nt3dmath.Vec3{X: .5})))
 	check(t, s.SetVisible(a, false))
 	moved := frame(t, s)
-	for i := range old.Geometry {
-		if old.GeometryRevisions[i] != moved.GeometryRevisions[i] {
+	for i := range old.Draws {
+		if old.Draws[i].Revision != moved.Draws[i].Revision {
 			t.Fatal("transform/visibility invalidated geometry")
 		}
 	}
 	check(t, s.SetNodeGeometry(b, pointGeometry()))
 	updated := frame(t, s)
-	if updated.GeometryRevisions[0] != old.GeometryRevisions[0] || updated.GeometryRevisions[1] == old.GeometryRevisions[1] {
+	if updated.Draws[0].Revision != old.Draws[0].Revision || updated.Draws[1].Revision == old.Draws[1].Revision {
 		t.Fatal("geometry revisions not independent")
 	}
 	check(t, s.Remove(a))
-	if f := frame(t, s); f.GeometryRevisions[0] != updated.GeometryRevisions[1] {
+	if f := frame(t, s); f.Draws[0].Revision != updated.Draws[1].Revision {
 		t.Fatal("removal invalidated survivor")
 	}
 	tex := testTexture(t, color.RGBA{255, 0, 0, 255})
@@ -39,17 +39,16 @@ func TestSceneGeometryRevisions(t *testing.T) {
 	before := frame(t, s)
 	check(t, s.SetTexture("b", testTexture(t, color.RGBA{0, 255, 0, 255})))
 	after := frame(t, s)
-	if before.GeometryRevisions[0] != after.GeometryRevisions[0] || before.Geometry[0].Material.Texture != tex {
+	if before.Draws[0].Revision != after.Draws[0].Revision || before.Draws[0].Geometry.Material.Texture != tex {
 		t.Fatal("texture edit invalidated mesh or mutated snapshot")
 	}
 	bad := after
-	bad.GeometryRevisions = []uint64{1, 2}
+	bad.Draws = append(append([]Draw(nil), after.Draws...), after.Draws[0])
 	if err := validateFrame(bad); err == nil {
-		t.Fatal("accepted mismatched revision metadata")
+		t.Fatal("accepted two cached draws of one node")
 	}
-	bad = after
-	bad.Instances = append([]Instance(nil), after.Instances...)
-	bad.Instances[0].Node = Root
+	bad.Draws = append([]Draw(nil), after.Draws...)
+	bad.Draws[0].Node = Root
 	if err := validateFrame(bad); err == nil {
 		t.Fatal("accepted missing cache identity")
 	}

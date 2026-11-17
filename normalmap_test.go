@@ -34,19 +34,19 @@ func TestNormalMapShading(t *testing.T) {
 	if lit.R < 180 {
 		t.Fatalf("normal map did not tilt toward light: %v", lit)
 	}
-	f.Geometry[0].Material.NormalStrength = 0
+	f.Draws[0].Geometry.Material.NormalStrength = 0
 	if c := at(softwareRender(f), 40, 40); c.R != 0 {
 		t.Fatalf("zero strength did not restore geometric normal: %v", c)
 	}
-	f.Geometry[0].Material.NormalStrength = 1
-	for i := range f.Geometry[0].UV {
-		f.Geometry[0].UV[i].U = 1 - f.Geometry[0].UV[i].U
+	f.Draws[0].Geometry.Material.NormalStrength = 1
+	for i := range f.Draws[0].Geometry.UV {
+		f.Draws[0].Geometry.UV[i].U = 1 - f.Draws[0].Geometry.UV[i].U
 	}
 	if c := at(softwareRender(f), 40, 40); c.R > 3 {
 		t.Fatalf("mirrored tangent ignored: %v", c)
 	}
-	for i := range f.Geometry[0].UV {
-		f.Geometry[0].UV[i] = UV{}
+	for i := range f.Draws[0].Geometry.UV {
+		f.Draws[0].Geometry.UV[i] = UV{}
 	}
 	if c := at(softwareRender(f), 40, 40); c.R != 0 {
 		t.Fatalf("degenerate UV fallback: %v", c)
@@ -72,7 +72,7 @@ func TestNormalMapDataAndOwnership(t *testing.T) {
 			t.Fatalf("normal data gamma/alpha corruption at mip %v: %v", lod, c)
 		}
 	}
-	g := normalFrame(t).Geometry[0]
+	g := normalFrame(t).Draws[0].Geometry
 	g.Material.NormalMap = testTexture(t, white)
 	if g.Validate() == nil {
 		t.Fatal("accepted color texture in normal slot")
@@ -85,7 +85,7 @@ func TestNormalMapDataAndOwnership(t *testing.T) {
 }
 func TestNormalMapReplacement(t *testing.T) {
 	s := NewScene()
-	g := normalFrame(t).Geometry[0]
+	g := normalFrame(t).Draws[0].Geometry
 	_, err := s.SetGeometry("mesh", g)
 	check(t, err)
 	before, err := s.Frame(DefaultCamera(), 80, 80)
@@ -94,14 +94,14 @@ func TestNormalMapReplacement(t *testing.T) {
 	check(t, s.SetNormalMap("mesh", next))
 	after, err := s.Frame(DefaultCamera(), 80, 80)
 	check(t, err)
-	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision || before.Geometry[0].Material.NormalMap == next {
+	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision || before.Draws[0].Geometry.Material.NormalMap == next {
 		t.Fatal("normal replacement invalidated geometry or mutated snapshot")
 	}
 }
 
 func TestIndependentNormalUV(t *testing.T) {
 	f := normalFrame(t)
-	g := &f.Geometry[0]
+	g := &f.Draws[0].Geometry
 	g.NormalUV = append([]UV(nil), g.UV...)
 	for i := range g.NormalUV {
 		g.NormalUV[i].U = 1 - g.NormalUV[i].U

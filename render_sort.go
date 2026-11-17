@@ -293,7 +293,7 @@ func (g *gpuRenderer) encodeSort(dev *wgpu.Device, encoder *wgpu.CommandEncoder,
 	}
 	slots := make([]sortSlot, len(plan.slots))
 	for slot, gi := range plan.slots {
-		n := len(f.Geometry[gi].Points)
+		n := len(f.Draws[gi].Geometry.Points)
 		var points *wgpu.Buffer
 		if gi < len(g.nodes) && g.nodes[gi] != nil {
 			points = g.nodes[gi].batches[0].buffer

@@ -34,9 +34,9 @@ func hierarchyLines(t *testing.T, d *demo) []nt3d.Vertex {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, inst := range f.Instances {
+	for i, inst := range f.Draws {
 		if inst.Name == "hierarchy" {
-			return f.Geometry[i].Lines
+			return f.Draws[i].Geometry.Lines
 		}
 	}
 	t.Fatal("no hierarchy node")
@@ -50,9 +50,9 @@ func nodeColor(t *testing.T, d *demo, name string) color.RGBA {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, inst := range f.Instances {
+	for i, inst := range f.Draws {
 		if inst.Name == name {
-			return f.Geometry[i].Boxes[0].Color
+			return f.Draws[i].Geometry.Boxes[0].Color
 		}
 	}
 	t.Fatalf("no node %q", name)

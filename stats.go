@@ -5,9 +5,9 @@ package nt3d
 // FrameStats summarizes what renderers draw for a Frame after visibility,
 // frustum culling, shared-geometry instancing, and splat budgeting.
 type FrameStats struct {
-	// Instances is the total number of geometry entries in Frame (len(Frame.Geometry)).
+	// Instances is the total number of geometry entries in Frame (len(Frame.Draws)).
 	Instances int
-	// VisibleInstances is the number of entries whose Instance.Visible is true
+	// VisibleInstances is the number of draws that are not Hidden
 	// (after Scene.SetVisible, Scene.SetLOD distance cutoffs, and billboard depth checks).
 	VisibleInstances int
 	// DrawnInstances is the number of non-empty visible entries that remain after
@@ -48,13 +48,10 @@ func geometryTriangles(g *Geometry) int {
 
 // Stats reports the instances, batches, and primitives that renderers select
 // for drawing from f, using the same visibility, frustum-culling, batching, and
-// splat-budget rules as WebGPU and Software. A frame with invalid dimensions or
-// mismatched slices reports zeros.
+// splat-budget rules as WebGPU and Software. A frame with invalid dimensions
+// reports zeros.
 func (f Frame) Stats() FrameStats {
 	if f.Width < 1 || f.Height < 1 ||
-		(len(f.Instances) != 0 && len(f.Instances) != len(f.Geometry)) ||
-		(len(f.Shared) != 0 && len(f.Shared) != len(f.Geometry)) ||
-		(len(f.GeometryRevisions) != 0 && (len(f.GeometryRevisions) != len(f.Geometry) || len(f.Instances) != len(f.Geometry))) ||
 		!validFloat(f.Matrix[:]...) ||
 		len(f.DynamicLines)%2 != 0 {
 		return FrameStats{}
@@ -69,26 +66,26 @@ func (f Frame) Stats() FrameStats {
 	}
 	drawn := f.drawn(1)
 	stats := FrameStats{
-		Instances: len(f.Geometry),
+		Instances: len(f.Draws),
 		Lines:     len(f.DynamicLines) / 2,
 	}
 	var batches map[batchKey]struct{}
 	nonAlphaPoints := 0
 	hasAlphaPoints := false
-	for i := range f.Geometry {
+	for i := range f.Draws {
 		if instance(f, i).Visible {
 			stats.VisibleInstances++
 		}
 		if !drawn[i] {
 			continue
 		}
-		geom := &f.Geometry[i]
+		geom := &f.Draws[i].Geometry
 		if !hasPrimitives(geom) {
 			continue
 		}
 		stats.DrawnInstances++
-		if geom.lodTierPlusOne > 0 {
-			tier := min(geom.lodTierPlusOne-1, len(stats.LODTierInstances)-1)
+		if at := f.Draws[i].state.lodTierPlusOne; at > 0 {
+			tier := min(at-1, len(stats.LODTierInstances)-1)
 			stats.LODTierInstances[tier]++
 		}
 		stats.Triangles += geometryTriangles(geom)

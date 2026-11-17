@@ -53,7 +53,7 @@ func TestGaussianSoftwareAndSort(t *testing.T) {
 	f := flatFrame(80, 80, g)
 	a := softwareRender(f)
 	g.Points[0], g.Points[1] = g.Points[1], g.Points[0]
-	f.Geometry[0] = g
+	f.Draws[0].Geometry = g
 	b := softwareRender(f)
 	for y := range 80 {
 		for x := range 80 {
@@ -81,7 +81,7 @@ func TestGaussianWireframeCenters(t *testing.T) {
 	check(t, err)
 	g.PointStyle = PointStyle{}
 	g.Points[0].Radius = 1
-	f.Geometry[0] = g
+	f.Draws[0].Geometry = g
 	points, err := RenderWireframe(f, 40, 20)
 	check(t, err)
 	if gaussian != points {
@@ -166,12 +166,12 @@ func TestPointUpdateDropsClusters(t *testing.T) {
 	s := NewScene()
 	id, err := s.SetGeometry("splats", g)
 	check(t, err)
-	if frame(t, s).Geometry[0].Clusters == nil {
+	if frame(t, s).Draws[0].Geometry.Clusters == nil {
 		t.Fatal("SetGeometry dropped the clusters")
 	}
 	update := []Point{g.Points[3]}
 	check(t, s.UpdateNodePoints(id, 3, update, g.Bounds))
-	if frame(t, s).Geometry[0].Clusters != nil {
+	if frame(t, s).Draws[0].Geometry.Clusters != nil {
 		t.Fatal("UpdateNodePoints kept the clusters")
 	}
 
@@ -179,7 +179,8 @@ func TestPointUpdateDropsClusters(t *testing.T) {
 	check(t, err)
 	check(t, s.SetNodePoints(id, g.Points, g.Bounds))
 	f := frame(t, s)
-	for _, fg := range f.Geometry {
+	for di := range f.Draws {
+		fg := f.Draws[di].Geometry
 		if fg.Clusters != nil {
 			t.Fatal("SetNodePoints kept the clusters")
 		}

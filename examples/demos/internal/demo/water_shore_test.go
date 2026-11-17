@@ -42,7 +42,7 @@ func TestWaterShoreModesAndSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := len(f.Geometry)
+	before := len(f.Draws)
 	for range 2 {
 		if _, err := d.waterKey("m"); err != nil {
 			t.Fatal(err)
@@ -57,8 +57,8 @@ func TestWaterShoreModesAndSize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(f.Geometry) != before || len(d.water.tiles) != 4 {
-			t.Fatal("size toggle leaked nodes", len(f.Geometry), before)
+		if len(f.Draws) != before || len(d.water.tiles) != 4 {
+			t.Fatal("size toggle leaked nodes", len(f.Draws), before)
 		}
 	}
 }

@@ -65,19 +65,19 @@ func TestSharedGeometry(t *testing.T) {
 	}
 	f := frame(t, s)
 	index := map[NodeID]int{}
-	for i, inst := range f.Instances {
+	for i, inst := range f.Draws {
 		index[inst.Node] = i
 	}
 	ia, ib, ic := index[a], index[b], index[c]
-	if f.Shared[ia] == 0 || f.Shared[ia] != f.Shared[ib] || f.Shared[ic] != 0 {
-		t.Fatalf("shared marks %v", f.Shared)
+	if f.Draws[ia].Shared == 0 || f.Draws[ia].Shared != f.Draws[ib].Shared || f.Draws[ic].Shared != 0 {
+		t.Fatalf("shared marks %v, %v, %v", f.Draws[ia].Shared, f.Draws[ib].Shared, f.Draws[ic].Shared)
 	}
-	if &f.Geometry[ia].Vertices[0] != &f.Geometry[ib].Vertices[0] {
+	if &f.Draws[ia].Geometry.Vertices[0] != &f.Draws[ib].Geometry.Vertices[0] {
 		t.Fatal("shared nodes hold copies")
 	}
 	// A node's own geometry ends its sharing.
 	check(t, s.SetNodeGeometry(b, ball))
-	if f = frame(t, s); f.Shared[index[b]] != 0 {
+	if f = frame(t, s); f.Draws[index[b]].Shared != 0 {
 		t.Fatal("own geometry still shared")
 	}
 }
@@ -109,7 +109,7 @@ func TestSharedGeometryRendersAsCopies(t *testing.T) {
 	other := testTexture(t, color.RGBA{200, 0, 0, 255})
 	check(t, s.SetTexture("b", other))
 	f := frame(t, s)
-	if f.Shared[0] != f.Shared[1] || f.Geometry[0].Material.Texture != tex || f.Geometry[1].Material.Texture != other {
+	if f.Draws[0].Shared != f.Draws[1].Shared || f.Draws[0].Geometry.Material.Texture != tex || f.Draws[1].Geometry.Material.Texture != other {
 		t.Fatal("a node's texture leaked to the shared geometry")
 	}
 }

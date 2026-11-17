@@ -48,32 +48,32 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	pbrMat.Metallic = .1 // Caller mutation must not leak.
 
 	afterUniform := frame(t, s)
-	for idx, inst := range afterUniform.Instances {
+	for idx, inst := range afterUniform.Draws {
 		switch inst.Name {
 		case "pts":
-			if afterUniform.Geometry[idx].Material != nil {
+			if afterUniform.Draws[idx].Geometry.Material != nil {
 				t.Fatal("point node acquired material")
 			}
 		case "in-shared":
-			m := afterUniform.Geometry[idx].Material
+			m := afterUniform.Draws[idx].Geometry.Material
 			if m == nil || m.Metallic != .8 || !m.EnvironmentReflect {
 				t.Fatalf("in-shared material not updated: %+v", m)
 			}
-			if afterUniform.Shared[idx] == 0 || afterUniform.GeometryRevisions[idx] != before.GeometryRevisions[idx] {
+			if afterUniform.Draws[idx].Shared == 0 || afterUniform.Draws[idx].Revision != before.Draws[idx].Revision {
 				t.Fatal("instance-only SetMaterial broke SharedGeometry")
 			}
 		case "out-shared":
-			if afterUniform.Geometry[idx].Material != nil {
+			if afterUniform.Draws[idx].Geometry.Material != nil {
 				t.Fatal("node outside subtree was modified")
 			}
 		case "lod":
-			m := afterUniform.Geometry[idx].Material
+			m := afterUniform.Draws[idx].Geometry.Material
 			if m == nil || m.Metallic != .8 {
 				t.Fatalf("LOD tier material not updated: %+v", m)
 			}
 		}
 	}
-	if before.Geometry[1].Material != nil {
+	if before.Draws[1].Geometry.Material != nil {
 		t.Fatal("previous Frame snapshot was mutated")
 	}
 
@@ -81,14 +81,14 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	// cleanly while leaving out-shared on sg!
 	check(t, s.SetMaterial(group, &Material{Transparent: true, Specular: .4}))
 	afterTrans := frame(t, s)
-	for idx, inst := range afterTrans.Instances {
+	for idx, inst := range afterTrans.Draws {
 		switch inst.Name {
 		case "in-shared":
-			if !afterTrans.Geometry[idx].Material.Transparent || afterTrans.Shared[idx] != 0 {
+			if !afterTrans.Draws[idx].Geometry.Material.Transparent || afterTrans.Draws[idx].Shared != 0 {
 				t.Fatal("transparent transition did not detach shared geometry")
 			}
 		case "out-shared":
-			if afterTrans.Shared[idx] == 0 || afterTrans.Geometry[idx].Material != nil {
+			if afterTrans.Draws[idx].Shared == 0 || afterTrans.Draws[idx].Geometry.Material != nil {
 				t.Fatal("out-shared was disturbed")
 			}
 		}
@@ -111,8 +111,8 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 		t.Fatal("expected error applying textured material to UV-less mesh")
 	}
 	afterErr := frame(t, s)
-	for idx, inst := range afterErr.Instances {
-		if inst.Name == "in-shared" && !afterErr.Geometry[idx].Material.Transparent {
+	for idx, inst := range afterErr.Draws {
+		if inst.Name == "in-shared" && !afterErr.Draws[idx].Geometry.Material.Transparent {
 			t.Fatal("failed SetMaterial partially mutated sibling")
 		}
 	}
@@ -120,8 +120,8 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	// Clearing material with nil restores default shading across the subtree.
 	check(t, s.SetMaterial(group, nil))
 	afterNil := frame(t, s)
-	for idx, inst := range afterNil.Instances {
-		if inst.Name == "in-shared" && afterNil.Geometry[idx].Material != nil {
+	for idx, inst := range afterNil.Draws {
+		if inst.Name == "in-shared" && afterNil.Draws[idx].Geometry.Material != nil {
 			t.Fatal("nil SetMaterial did not clear material")
 		}
 	}
@@ -151,7 +151,7 @@ func TestSetMaterialOnDeformedMesh(t *testing.T) {
 	check(t, s.SetMaterial(id, &Material{NormalMap: nmap, NormalStrength: 1, Specular: .5}))
 	f := frame(t, s)
 	check(t, validateFrame(f))
-	if f.Geometry[0].Material == nil || f.Geometry[0].Material.NormalMap != nmap || len(f.Geometry[0].Tangents) != len(g.Vertices) {
+	if f.Draws[0].Geometry.Material == nil || f.Draws[0].Geometry.Material.NormalMap != nmap || len(f.Draws[0].Geometry.Tangents) != len(g.Vertices) {
 		t.Fatal("deformed mesh did not receive normal map and generated tangents")
 	}
 }
@@ -294,24 +294,24 @@ func TestSceneAssetMaterialVariants(t *testing.T) {
 
 	f := frame(t, s)
 	var sharedBodyID uint64
-	for idx, inst := range f.Instances {
+	for idx, inst := range f.Draws {
 		switch inst.Name {
 		case "carA/0:Body":
-			if f.Geometry[idx].Material.BaseColor != taxiMat.BaseColor || f.Shared[idx] == 0 {
-				t.Fatalf("carA body expected shared Taxi material, got mat=%+v shared=%d", f.Geometry[idx].Material, f.Shared[idx])
+			if f.Draws[idx].Geometry.Material.BaseColor != taxiMat.BaseColor || f.Draws[idx].Shared == 0 {
+				t.Fatalf("carA body expected shared Taxi material, got mat=%+v shared=%d", f.Draws[idx].Geometry.Material, f.Draws[idx].Shared)
 			}
-			sharedBodyID = f.Shared[idx]
+			sharedBodyID = f.Draws[idx].Shared
 		case "carB/0:Body":
-			if f.Geometry[idx].Material.BaseColor != policeMat.BaseColor || f.Shared[idx] != sharedBodyID {
-				t.Fatalf("carB body did not share geometry with carA: shared=%d want=%d", f.Shared[idx], sharedBodyID)
+			if f.Draws[idx].Geometry.Material.BaseColor != policeMat.BaseColor || f.Draws[idx].Shared != sharedBodyID {
+				t.Fatalf("carB body did not share geometry with carA: shared=%d want=%d", f.Draws[idx].Shared, sharedBodyID)
 			}
 		case "carC/0:Body":
-			if f.Geometry[idx].Material.BaseColor != (color.RGBA{}) || f.Shared[idx] != sharedBodyID {
-				t.Fatalf("carC body did not remain default shared: mat=%+v shared=%d", f.Geometry[idx].Material, f.Shared[idx])
+			if f.Draws[idx].Geometry.Material.BaseColor != (color.RGBA{}) || f.Draws[idx].Shared != sharedBodyID {
+				t.Fatalf("carC body did not remain default shared: mat=%+v shared=%d", f.Draws[idx].Geometry.Material, f.Draws[idx].Shared)
 			}
 		case "carB/1:Lightbar":
-			if f.Geometry[idx].Material.Emissive != lightbarMat.Emissive {
-				t.Fatalf("carB lightbar did not activate on Police: %+v", f.Geometry[idx].Material)
+			if f.Draws[idx].Geometry.Material.Emissive != lightbarMat.Emissive {
+				t.Fatalf("carB lightbar did not activate on Police: %+v", f.Draws[idx].Geometry.Material)
 			}
 		}
 	}
@@ -319,25 +319,25 @@ func TestSceneAssetMaterialVariants(t *testing.T) {
 	// Switching carB from Police -> Taxi resets unmapped Lightbar back to default material!
 	check(t, s.SetMaterialVariant(carB.Root, "Taxi"))
 	f2 := frame(t, s)
-	for idx, inst := range f2.Instances {
-		if inst.Name == "carB/1:Lightbar" && f2.Geometry[idx].Material.Emissive != (color.RGBA{}) {
-			t.Fatalf("unmapped Lightbar did not reset to default on Taxi: %+v", f2.Geometry[idx].Material)
+	for idx, inst := range f2.Draws {
+		if inst.Name == "carB/1:Lightbar" && f2.Draws[idx].Geometry.Material.Emissive != (color.RGBA{}) {
+			t.Fatalf("unmapped Lightbar did not reset to default on Taxi: %+v", f2.Draws[idx].Geometry.Material)
 		}
 	}
 
 	// Switching carA to Glass (Transparent) detaches carA's Body cleanly, then switching back to "" rejoins SharedGeometry!
 	check(t, s.SetMaterialVariant(carA.Root, "Glass"))
 	fGlass := frame(t, s)
-	for idx, inst := range fGlass.Instances {
-		if inst.Name == "carA/0:Body" && (!fGlass.Geometry[idx].Material.Transparent || fGlass.Shared[idx] != 0) {
+	for idx, inst := range fGlass.Draws {
+		if inst.Name == "carA/0:Body" && (!fGlass.Draws[idx].Geometry.Material.Transparent || fGlass.Draws[idx].Shared != 0) {
 			t.Fatal("expected transparent variant to detach SharedGeometry")
 		}
 	}
 	check(t, s.SetMaterialVariant(carA.Root, ""))
 	fReset := frame(t, s)
-	for idx, inst := range fReset.Instances {
-		if inst.Name == "carA/0:Body" && (fReset.Shared[idx] != sharedBodyID || fReset.Geometry[idx].Material.BaseColor != (color.RGBA{})) {
-			t.Fatalf("reset to default did not reattach SharedGeometry: shared=%d want=%d", fReset.Shared[idx], sharedBodyID)
+	for idx, inst := range fReset.Draws {
+		if inst.Name == "carA/0:Body" && (fReset.Draws[idx].Shared != sharedBodyID || fReset.Draws[idx].Geometry.Material.BaseColor != (color.RGBA{})) {
+			t.Fatalf("reset to default did not reattach SharedGeometry: shared=%d want=%d", fReset.Draws[idx].Shared, sharedBodyID)
 		}
 	}
 

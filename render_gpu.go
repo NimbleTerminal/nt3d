@@ -998,12 +998,12 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 			}
 			if i == 4 {
 				for _, d := range g.draws {
-					if !transparent(&f.Geometry[d.index]) {
+					if !transparent(&f.Draws[d.index].Geometry) {
 						g.drawOutline(pass, f, d)
 					}
 				}
 				for _, d := range g.draws {
-					if !transparent(&f.Geometry[d.index]) && !transmitting(&f.Geometry[d.index]) {
+					if !transparent(&f.Draws[d.index].Geometry) && !transmitting(&f.Draws[d.index].Geometry) {
 						g.drawCrease(pass, f, d)
 					}
 				}
@@ -1028,7 +1028,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 					}
 					transmitted := false
 					for _, d := range g.draws {
-						geom := &f.Geometry[d.index]
+						geom := &f.Draws[d.index].Geometry
 						if !transmitting(geom) {
 							continue
 						}
@@ -1046,7 +1046,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 					}
 					if transmitted {
 						for _, d := range g.draws {
-							if transmitting(&f.Geometry[d.index]) {
+							if transmitting(&f.Draws[d.index].Geometry) {
 								g.drawCrease(pass, f, d)
 							}
 						}
@@ -1097,7 +1097,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 			}
 			if i == 2 {
 				for _, d := range g.draws {
-					geom := &f.Geometry[d.index]
+					geom := &f.Draws[d.index].Geometry
 					if !mapped(*geom) || transparent(geom) || transmitting(geom) || d.geom.batches[7].count == 0 {
 						continue
 					}
@@ -1119,8 +1119,8 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 			for _, d := range g.draws {
 				b := d.geom.batches[i]
 				switch {
-				case b.count == 0 || i == 1 && (mapped(f.Geometry[d.index]) || transparent(&f.Geometry[d.index]) || transmitting(&f.Geometry[d.index])) || i == 0 && blendedPoints(&f.Geometry[d.index]):
-				case i == 0 && f.Geometry[d.index].PointStyle.Texture != nil:
+				case b.count == 0 || i == 1 && (mapped(f.Draws[d.index].Geometry) || transparent(&f.Draws[d.index].Geometry) || transmitting(&f.Draws[d.index].Geometry)) || i == 0 && blendedPoints(&f.Draws[d.index].Geometry):
+				case i == 0 && f.Draws[d.index].Geometry.PointStyle.Texture != nil:
 					g.drawSprite(pass, f, d)
 				case i == 1:
 					g.setScenePipeline(pass, g.pipelines[1])
@@ -1138,7 +1138,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 // drawBlended draws a transparent mesh, its outline then back faces then
 // front faces, or additive points, unsorted.
 func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
-	geom := &f.Geometry[d.index]
+	geom := &f.Draws[d.index].Geometry
 	if transparent(geom) {
 		g.drawOutline(pass, f, d)
 		for side := range 2 {
@@ -1191,7 +1191,7 @@ func (g *gpuRenderer) resolveSortedRuns(f Frame) {
 		d := g.draws[g.blendDraw[index]]
 		run := sortedRun{d: d}
 		if d.geom.batches[0].count > 0 {
-			style := f.Geometry[d.index].PointStyle
+			style := f.Draws[d.index].Geometry.PointStyle
 			if style.Texture != nil {
 				run.pipeline = g.spritePipelines[style.Blend]
 				run.texture = g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].spriteBind
@@ -1779,7 +1779,7 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 	if err != nil {
 		return err
 	}
-	if err = writeTransform(dev, g.transforms, Instance{World: nt3dmath.Identity(), Visible: true}, nil); err != nil {
+	if err = writeTransform(dev, g.transforms, placement{World: nt3dmath.Identity(), Visible: true}, nil); err != nil {
 		g.transforms.Release()
 		g.transforms = nil
 	}
@@ -1793,7 +1793,7 @@ func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuD
 
 // The high four vertex bits select a shadow face. Ordinary draws use zero.
 func (g *gpuRenderer) drawTexturedOffset(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, first uint32) {
-	geom := &f.Geometry[d.index]
+	geom := &f.Draws[d.index].Geometry
 	pass.SetBindGroup(0, d.set.binds[7], nil)
 	mk := g.materialKey(geom.Material, f.anisotropy())
 	pass.SetBindGroup(2, g.materialBinds[mk], nil)

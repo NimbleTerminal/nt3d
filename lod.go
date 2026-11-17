@@ -53,7 +53,7 @@ func (f Frame) planLOD(plan *blendPlan) lodPlan {
 	wants := make([][]uint32, len(plan.slots)) // Per clustered slot, per cluster; 0 for culled.
 	fixed, wanted := 0, 0
 	for k, gi := range plan.slots {
-		g := &f.Geometry[gi]
+		g := &f.Draws[gi].Geometry
 		lod.resident += len(g.Points)
 		if g.Clusters == nil || budget < 0 {
 			lod.slots[k].selected = len(g.Points)
@@ -61,7 +61,7 @@ func (f Frame) planLOD(plan *blendPlan) lodPlan {
 			continue
 		}
 		m := f.Matrix.Mul(instance(f, gi).World)
-		pad := overhang(g)
+		pad := overhang(g, &f.Draws[gi].state)
 		clusters := g.Clusters.Clusters
 		want := make([]uint32, len(clusters))
 		for i, c := range clusters {
@@ -81,7 +81,7 @@ func (f Frame) planLOD(plan *blendPlan) lodPlan {
 		slot := &lod.slots[k]
 		slot.ranges = []lodRange{}
 		var out uint32
-		for i, c := range f.Geometry[gi].Clusters.Clusters {
+		for i, c := range f.Draws[gi].Geometry.Clusters.Clusters {
 			n := wants[k][i]
 			if n == 0 {
 				continue

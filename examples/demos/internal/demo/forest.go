@@ -370,12 +370,9 @@ func (d *demo) captureForest(f *nt3d.Frame) {
 	fs := d.forest
 	st := f.Stats()
 	drawn, batches, triangles := st.DrawnInstances, st.Batches, st.Triangles
-	for i, inst := range f.Instances {
-		if inst.Node == fs.ground {
-			gs := (nt3d.Frame{
-				Width: f.Width, Height: f.Height, Matrix: f.Matrix, Cull: f.Cull,
-				Geometry: f.Geometry[i : i+1], Instances: f.Instances[i : i+1],
-			}).Stats()
+	for i := range f.Draws {
+		if f.Draws[i].Node == fs.ground {
+			gs := (nt3d.Frame{Width: f.Width, Height: f.Height, Matrix: f.Matrix, Cull: f.Cull, Draws: f.Draws[i : i+1]}).Stats()
 			drawn -= gs.DrawnInstances
 			batches -= gs.Batches
 			triangles -= gs.Triangles

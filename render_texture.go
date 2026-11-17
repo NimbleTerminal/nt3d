@@ -366,7 +366,8 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 	var spriteKeys []textureKey
 	needTextured := false
 	aniso := f.anisotropy()
-	for _, geom := range f.Geometry {
+	for di := range f.Draws {
+		geom := f.Draws[di].Geometry
 		var keys []textureKey
 		if mapped(geom) && len(geom.Indices) > 0 {
 			m := materialOrZero(geom.Material)
@@ -454,7 +455,8 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 		}
 	}
 	usedBinds := make(map[materialBindKey]bool)
-	for _, geom := range f.Geometry {
+	for di := range f.Draws {
+		geom := f.Draws[di].Geometry
 		if mapped(geom) && len(geom.Indices) > 0 {
 			mk := g.materialKey(geom.Material, aniso)
 			usedBinds[mk] = true
@@ -499,7 +501,7 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 // drawSprite draws a geometry's sprites unsorted: opaque or additive. Its
 // points bind with the empty run at offset 0 of the run table.
 func (g *gpuRenderer) drawSprite(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
-	style := f.Geometry[d.index].PointStyle
+	style := f.Draws[d.index].Geometry.PointStyle
 	g.setScenePipeline(pass, g.spritePipelines[style.Blend])
 	pass.SetBindGroup(0, d.set.binds[0], noRunOffset)
 	pass.SetBindGroup(2, g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].spriteBind, nil)

@@ -28,7 +28,8 @@ func TestCloudBuildsAndDrawsEveryPointUnclustered(t *testing.T) {
 	if n != 100_000 {
 		t.Fatalf("%d points, want 100,000", n)
 	}
-	for _, g := range f.Geometry {
+	for di := range f.Draws {
+		g := f.Draws[di].Geometry
 		if len(g.Points) > nt3d.MaxPoints {
 			t.Fatalf("a geometry holds %d points", len(g.Points))
 		}
@@ -98,7 +99,8 @@ func TestCloudRepresentativesForFarClusters(t *testing.T) {
 	if n != len(cs.sel.Picks) {
 		t.Fatalf("%d points for %d far clusters", n, len(cs.sel.Picks))
 	}
-	for _, g := range f.Geometry {
+	for di := range f.Draws {
+		g := f.Draws[di].Geometry
 		for _, p := range g.Points {
 			if p.Radius < 1 || p.Radius > 32 {
 				t.Fatalf("representative radius %v", p.Radius)

@@ -378,7 +378,7 @@ func TestSceneAssetLODMaterialVariantsAndCombine(t *testing.T) {
 	check(t, s.SetMaterialVariant(inst.Root, "Weathered"))
 	fWeathered, err := s.Frame(camAt(5), 160, 120)
 	check(t, err)
-	if fWeathered.Shared[0] != 0 || fWeathered.Geometry[0].Material.BaseColor != weathered.BaseColor {
+	if fWeathered.Draws[0].Shared != 0 || fWeathered.Draws[0].Geometry.Material.BaseColor != weathered.BaseColor {
 		t.Fatal("expected Weathered variant to generate tangents and apply weathered BaseColor")
 	}
 
@@ -386,28 +386,28 @@ func TestSceneAssetLODMaterialVariantsAndCombine(t *testing.T) {
 	check(t, s.SetMaterialVariant(inst.Root, "Taxi"))
 	fTaxiNear, err := s.Frame(camAt(5), 160, 120)
 	check(t, err)
-	if fTaxiNear.Shared[0] == 0 || fTaxiNear.Geometry[0].Material.BaseColor != taxi0.BaseColor {
+	if fTaxiNear.Draws[0].Shared == 0 || fTaxiNear.Draws[0].Geometry.Material.BaseColor != taxi0.BaseColor {
 		t.Fatalf("expected tier 0 to rejoin SharedGeometry with taxi0 BaseColor, got shared=%d col=%v",
-			fTaxiNear.Shared[0], fTaxiNear.Geometry[0].Material.BaseColor)
+			fTaxiNear.Draws[0].Shared, fTaxiNear.Draws[0].Geometry.Material.BaseColor)
 	}
 	fTaxiFar, err := s.Frame(camAt(40), 160, 120)
 	check(t, err)
-	if fTaxiFar.Shared[0] == 0 || fTaxiFar.Geometry[0].Material.BaseColor != taxi1.BaseColor {
+	if fTaxiFar.Draws[0].Shared == 0 || fTaxiFar.Draws[0].Geometry.Material.BaseColor != taxi1.BaseColor {
 		t.Fatalf("expected tier 1 to use remapped taxi1 BaseColor, got shared=%d col=%v",
-			fTaxiFar.Shared[0], fTaxiFar.Geometry[0].Material.BaseColor)
+			fTaxiFar.Draws[0].Shared, fTaxiFar.Draws[0].Geometry.Material.BaseColor)
 	}
 
 	// Switch to "Police" -> unmapped on tier 0 (reverts to default white), mapped on tier 1 (police1 blue)!
 	check(t, s.SetMaterialVariant(inst.Root, "Police"))
 	fPoliceNear, err := s.Frame(camAt(5), 160, 120)
 	check(t, err)
-	if fPoliceNear.Geometry[0].Material.BaseColor != (color.RGBA{255, 255, 255, 255}) {
-		t.Fatalf("expected unmapped tier 0 to revert to default white, got %v", fPoliceNear.Geometry[0].Material.BaseColor)
+	if fPoliceNear.Draws[0].Geometry.Material.BaseColor != (color.RGBA{255, 255, 255, 255}) {
+		t.Fatalf("expected unmapped tier 0 to revert to default white, got %v", fPoliceNear.Draws[0].Geometry.Material.BaseColor)
 	}
 	fPoliceFar, err := s.Frame(camAt(40), 160, 120)
 	check(t, err)
-	if fPoliceFar.Geometry[0].Material.BaseColor != police1.BaseColor {
-		t.Fatalf("expected tier 1 Police BaseColor, got %v", fPoliceFar.Geometry[0].Material.BaseColor)
+	if fPoliceFar.Draws[0].Geometry.Material.BaseColor != police1.BaseColor {
+		t.Fatalf("expected tier 1 Police BaseColor, got %v", fPoliceFar.Draws[0].Geometry.Material.BaseColor)
 	}
 }
 

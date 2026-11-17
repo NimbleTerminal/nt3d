@@ -54,9 +54,11 @@ func (c meshCertificate) certifies(g *Geometry) bool {
 		sameSlice(g.Tangents, c.tangents)
 }
 
-func (g Geometry) splitOutlines() bool {
-	if g.meshCert.certifiedSplit && sameSlice(g.Vertices, g.meshCert.vertices) {
-		return g.meshCert.splitOutlines
+// splitOutlines reports whether g's outline needs vertices that share a
+// position joined: what its certificate recorded, or true when it has none.
+func (st *geometryState) splitOutlines(g *Geometry) bool {
+	if st.meshCert.certifiedSplit && sameSlice(g.Vertices, st.meshCert.vertices) {
+		return st.meshCert.splitOutlines
 	}
 	return true
 }
@@ -124,7 +126,7 @@ func (s *Scene) UpdateNodeVertices(id NodeID, first int, vertices []Vertex, boun
 		copy(g.Vertices[first:], vertices)
 	}
 	if len(old.Tangents) > 0 {
-		if tangents, err := vertexTangents(g); err == nil {
+		if tangents, err := vertexTangents(g.Geometry); err == nil {
 			g.Tangents = tangents
 		} else {
 			g.Tangents = slices.Clone(old.Tangents)
@@ -144,7 +146,7 @@ func (s *Scene) UpdateNodeVertices(id NodeID, first int, vertices []Vertex, boun
 	g.restBounds = bounds
 	g.Bounds = padGeometryBounds(bounds, len(g.Vertices) > 0, g.Displacement.MaxDisplacement())
 	g.meshUpdate = &meshUpdate{revision: s.stateRevision}
-	g.meshCert = newMeshCertificate(&g, old.splitOutlines())
+	g.meshCert = newMeshCertificate(&g.Geometry, old.splitOutlines(&old.Geometry))
 	n.geometry, n.pickIndex = &g, nil
 	return nil
 }
@@ -188,7 +190,7 @@ func (s *Scene) SetNodeVerticesWithTangents(id NodeID, vertices []Vertex, tangen
 	g.restBounds = bounds
 	g.Bounds = padGeometryBounds(bounds, len(g.Vertices) > 0, g.Displacement.MaxDisplacement())
 	g.meshUpdate = &meshUpdate{revision: s.stateRevision}
-	g.meshCert = newMeshCertificate(&g, old.splitOutlines())
+	g.meshCert = newMeshCertificate(&g.Geometry, old.splitOutlines(&old.Geometry))
 	n.geometry, n.pickIndex = &g, nil
 	return nil
 }

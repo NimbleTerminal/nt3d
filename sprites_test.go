@@ -94,7 +94,7 @@ func TestSpritePickingAndUpdatedBounds(t *testing.T) {
 	if hit == nil || hit.Position != p.Position {
 		t.Fatal("moved point not picked")
 	}
-	if f.Geometry[0].Bounds != bounds || !f.drawn(1)[0] {
+	if f.Draws[0].Geometry.Bounds != bounds || !f.drawn(1)[0] {
 		t.Fatal("updated bounds culled visible point")
 	}
 }

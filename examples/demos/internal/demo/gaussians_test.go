@@ -11,7 +11,7 @@ func TestGaussianSample(t *testing.T) {
 		t.Fatal(err)
 	}
 	count, f := pointCount(t, d.scene)
-	if count != 576 || len(f.Geometry[0].GaussianSH) != 4*count || f.Geometry[0].PointStyle.Shape != nt3d.GaussianPoint {
+	if count != 576 || len(f.Draws[0].Geometry.GaussianSH) != 4*count || f.Draws[0].Geometry.PointStyle.Shape != nt3d.GaussianPoint {
 		t.Fatal("sample not loaded as Gaussians")
 	}
 	if _, err := nt3d.RenderSoftware(f); err != nil {
@@ -32,7 +32,7 @@ func TestGaussianSHControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, f := pointCount(t, d.scene)
-	if !f.Geometry[0].PointStyle.SHDCOnly || len(f.Geometry[0].GaussianSH) != 576*4 {
+	if !f.Draws[0].Geometry.PointStyle.SHDCOnly || len(f.Draws[0].Geometry.GaussianSH) != 576*4 {
 		t.Fatal("DC toggle discarded coefficients")
 	}
 }

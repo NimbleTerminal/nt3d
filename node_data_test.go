@@ -2,8 +2,8 @@ package nt3d
 
 import "testing"
 
-// placement stands for what an application knows about a node it placed.
-type placement struct {
+// record stands for what an application knows about a node it placed.
+type record struct {
 	kit  string
 	slot int
 }
@@ -18,7 +18,7 @@ func TestNodeDataTravelsWithTheNode(t *testing.T) {
 	if data, err := s.NodeData(id); err != nil || data != nil {
 		t.Fatalf("a new node's data is %v, %v; want nil", data, err)
 	}
-	want := placement{kit: "harbor", slot: 3}
+	want := record{kit: "harbor", slot: 3}
 	check(t, s.SetNodeData(id, want))
 
 	if data, err := s.NodeData(id); err != nil || data != want {
@@ -30,8 +30,8 @@ func TestNodeDataTravelsWithTheNode(t *testing.T) {
 	camera := DefaultCamera()
 	f, err := s.Frame(camera, 320, 240)
 	check(t, err)
-	if len(f.Instances) != 1 || f.Instances[0].Data != want {
-		t.Fatalf("frame instances %+v, want one with data %v", f.Instances, want)
+	if len(f.Draws) != 1 || f.Draws[0].Data != want {
+		t.Fatalf("frame has %d draws, the first with data %v; want one with data %v", len(f.Draws), f.Draws[0].Data, want)
 	}
 	if hit := s.Pick(camera, f, 160, 120, 0); hit == nil || hit.Data != want {
 		t.Fatalf("picked %+v, want a hit with data %v", hit, want)
@@ -54,8 +54,8 @@ func TestNodeDataIsSnapshotByFrames(t *testing.T) {
 	if s.Revision() == rev {
 		t.Fatal("new node data left the scene's revision unchanged")
 	}
-	if f.Instances[0].Data != "first" {
-		t.Fatalf("an earlier frame's data became %v", f.Instances[0].Data)
+	if f.Draws[0].Data != "first" {
+		t.Fatalf("an earlier frame's data became %v", f.Draws[0].Data)
 	}
 }
 

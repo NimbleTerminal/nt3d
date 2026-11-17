@@ -210,9 +210,9 @@ func verifyCompiledLODAsset(t *testing.T, compiled *SceneAsset, bias, hyst float
 		if tierSum > st.DrawnInstances {
 			t.Fatalf("LODTierInstances sum %d > DrawnInstances %d", tierSum, st.DrawnInstances)
 		}
-		for i := range f.Geometry {
-			if err := f.Geometry[i].Validate(); err != nil {
-				t.Fatalf("Frame.Geometry[%d]: %v", i, err)
+		for i := range f.Draws {
+			if err := f.Draws[i].Geometry.Validate(); err != nil {
+				t.Fatalf("Frame.Draws[%d].Geometry: %v", i, err)
 			}
 		}
 	}

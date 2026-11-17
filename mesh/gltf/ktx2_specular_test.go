@@ -1023,11 +1023,11 @@ func TestGLTFKHRMaterialsSpecularVariantsAndValidation(t *testing.T) {
 	// Default [1,1,1], 1.0 leaves SpecularColor zero.
 	f0, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
-	if f0.Geometry[0].Material.SpecularColor != (color.RGBA{}) || f0.Geometry[0].Material.SpecularIntensity != 0 {
-		t.Fatalf("expected zero SpecularColor on default specular, got %+v", f0.Geometry[0].Material)
+	if f0.Draws[0].Geometry.Material.SpecularColor != (color.RGBA{}) || f0.Draws[0].Geometry.Material.SpecularIntensity != 0 {
+		t.Fatalf("expected zero SpecularColor on default specular, got %+v", f0.Draws[0].Geometry.Material)
 	}
-	if len(f0.Shared) != 2 || f0.Shared[0] == 0 || f0.Shared[0] != f0.Shared[1] {
-		t.Fatalf("expected shared SharedGeometry ID across 2 instances, got %v", f0.Shared)
+	if len(f0.Draws) != 2 || f0.Draws[0].Shared == 0 || f0.Draws[0].Shared != f0.Draws[1].Shared {
+		t.Fatalf("expected shared SharedGeometry ID across 2 instances, got %d draws", len(f0.Draws))
 	}
 
 	// Switch instance A to MatteChalk and instance B to CopperCoat: SharedGeometry stays shared!
@@ -1035,14 +1035,14 @@ func TestGLTFKHRMaterialsSpecularVariantsAndValidation(t *testing.T) {
 	check(t, s.SetMaterialVariant(instB.Root, "CopperCoat"))
 	f1, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
-	if len(f1.Shared) != 2 || f1.Shared[0] != f0.Shared[0] || f1.Shared[1] != f0.Shared[0] {
-		t.Fatalf("SetMaterialVariant with KHR_materials_specular broke SharedGeometry sharing: %v", f1.Shared)
+	if len(f1.Draws) != 2 || f1.Draws[0].Shared != f0.Draws[0].Shared || f1.Draws[1].Shared != f0.Draws[0].Shared {
+		t.Fatalf("SetMaterialVariant with KHR_materials_specular broke SharedGeometry sharing: %d, %d", f1.Draws[0].Shared, f1.Draws[1].Shared)
 	}
 
 	check(t, s.SetMaterialVariant(instA.Root, "GrazingRim"))
 	f2, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
-	if got := f2.Geometry[0].Material.SpecularColor; got != (color.RGBA{A: 204}) {
+	if got := f2.Draws[0].Geometry.Material.SpecularColor; got != (color.RGBA{A: 204}) {
 		t.Fatalf("GrazingRim SpecularColor = %v, want {0 0 0 204}", got)
 	}
 

@@ -18,7 +18,7 @@ func flatFrame(w, h int, geometry ...Geometry) Frame {
 	f := Frame{Width: w, Height: h, Matrix: nt3dmath.Identity(), Linear: true, Background: color.RGBA{0, 0, 0, 255}, Lighting: even}
 	for _, g := range geometry {
 		g.Bounds = GeometryBounds(g)
-		f.Geometry = append(f.Geometry, g)
+		f.Draws = append(f.Draws, Draw{Geometry: g})
 	}
 	return f
 }

@@ -31,7 +31,7 @@ if err := scene.SetTransform(group, nt3dmath.RotationZ(.4)); err != nil { panic(
 - `SetVisible` hides or shows a node and everything under it.
 - `Remove` deletes a node and everything under it.
 - `Node(id)` returns a copy of a node's details.
-- `SetNodeData(id, v)` attaches a value of your own to a node: the record it stands for, a key, a pointer to whatever placed it. nt3d never looks inside. It comes back from `NodeData(id)`, in `Node.Data`, in each frame's `Instance.Data`, and in a pick's `Hit.Data`, so a drawn or picked node leads straight to your record. Use it instead of encoding facts into the node's name and parsing them back out.
+- `SetNodeData(id, v)` attaches a value of your own to a node: the record it stands for, a key, a pointer to whatever placed it. nt3d never looks inside. It comes back from `NodeData(id)`, in `Node.Data`, in each frame's `Draw.Data`, and in a pick's `Hit.Data`, so a drawn or picked node leads straight to your record. Use it instead of encoding facts into the node's name and parsing them back out.
 
 Node IDs are stable and never reused, so an ID you hold either still means the same node or means nothing.
 

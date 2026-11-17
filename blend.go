@@ -28,8 +28,8 @@ func (f Frame) blendOrder(drawn []bool) []int {
 		depth float32
 	}
 	var entries []entry
-	for i := range f.Geometry {
-		g := &f.Geometry[i]
+	for i := range f.Draws {
+		g := &f.Draws[i].Geometry
 		if !drawn[i] || !transparent(g) && !blendedPoints(g) {
 			continue
 		}
@@ -91,7 +91,7 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 	near, far := float32(math.Inf(1)), float32(math.Inf(-1))
 	spans := make([][2]float32, len(order)) // Each geometry's clip depth range over its bounds corners.
 	for o, gi := range order {
-		g := &f.Geometry[gi]
+		g := &f.Draws[gi].Geometry
 		m := f.Matrix.Mul(instance(f, gi).World)
 		b := blendBounds(g)
 		for c := range 8 {
@@ -120,7 +120,7 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 		plan.near, plan.far = near, max(far, near)
 	}
 	for o, gi := range order {
-		g := &f.Geometry[gi]
+		g := &f.Draws[gi].Geometry
 		if blendedPoints(g) && g.PointStyle.Blend == AlphaBlend {
 			plan.slots = append(plan.slots, gi)
 			// Clip depth is affine in position, so points in the bounds fall
@@ -155,8 +155,8 @@ func hasOITWork(f Frame, drawn []bool) bool {
 	if !f.OIT {
 		return false
 	}
-	for i := range f.Geometry {
-		if drawn[i] && transparent(&f.Geometry[i]) {
+	for i := range f.Draws {
+		if drawn[i] && transparent(&f.Draws[i].Geometry) {
 			return true
 		}
 	}

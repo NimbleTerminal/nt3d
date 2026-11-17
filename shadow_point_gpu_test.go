@@ -45,8 +45,8 @@ func TestGPUPointShadows(t *testing.T) {
 		f.Eye = rotation.Point(f.Eye)
 		f.Forward = rotation.Point(f.Forward)
 		f.Lighting.Lights[0].Position = rotation.Point(f.Lighting.Lights[0].Position)
-		for j := range f.Geometry {
-			f.Instances[j].World = rotation.Mul(f.Instances[j].World)
+		for j := range f.Draws {
+			f.Draws[j].World = rotation.Mul(f.Draws[j].World)
 		}
 		t.Run(string(rune('0'+i)), func(t *testing.T) { assertShadowParity(t, r, f) })
 	}
@@ -69,8 +69,8 @@ func TestGPUPointShadows(t *testing.T) {
 func TestGPUFixedDropFloor(t *testing.T) {
 	f := pointShadowScene(t)
 	f.Lighting.Lights[0].Shadows = false
-	f.Geometry[1].DropShadow = DropShadow{Strength: .7, Radius: 1, FixedFloor: true, FloorZ: -1}
-	f.Instances[1].World = nt3dmath.Translation(nt3dmath.Vec3{X: .5, Z: .7})
+	f.Draws[1].Geometry.DropShadow = DropShadow{Strength: .7, Radius: 1, FixedFloor: true, FloorZ: -1}
+	f.Draws[1].World = nt3dmath.Translation(nt3dmath.Vec3{X: .5, Z: .7})
 	r := NewGPURenderer()
 	defer r.Close()
 	assertShadowParity(t, r, f)

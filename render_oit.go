@@ -141,8 +141,8 @@ func (g *gpuRenderer) prepareOIT(dev *wgpu.Device, f Frame, drawn []bool) error 
 	needMesh, needTex := false, false
 	var needOutline [2]bool
 	var needCrease [2]bool
-	for i := range f.Geometry {
-		geom := &f.Geometry[i]
+	for i := range f.Draws {
+		geom := &f.Draws[i].Geometry
 		if !drawn[i] || !transparent(geom) {
 			continue
 		}
@@ -360,7 +360,7 @@ func (g *gpuRenderer) encodeOITPass(f Frame, encoder *wgpu.CommandEncoder, depth
 	g.shared.mu.Unlock()
 
 	for _, d := range g.draws {
-		geom := &f.Geometry[d.index]
+		geom := &f.Draws[d.index].Geometry
 		if !transparent(geom) {
 			continue
 		}

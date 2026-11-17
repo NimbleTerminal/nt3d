@@ -60,13 +60,13 @@ func TestGaussianSHOwnershipClippingAndMerge(t *testing.T) {
 	check(t, err)
 	first := frame(t, s)
 	g.GaussianSH[0][0] = 99
-	if first.Geometry[0].GaussianSH[0][0] == 99 {
+	if first.Draws[0].Geometry.GaussianSH[0][0] == 99 {
 		t.Fatal("scene retained caller coefficients")
 	}
 	var bounds nt3dmath.AABB
 	bounds.Include(nt3dmath.Vec3{X: .4, Y: -1, Z: 0})
 	bounds.Include(nt3dmath.Vec3{X: 1, Y: 1, Z: 1})
-	clipped := clipGeometry(first.Geometry[0], bounds)
+	clipped := clipGeometry(first.Draws[0].Geometry, bounds)
 	check(t, clipped.Validate())
 	if len(clipped.Points) != 1 || clipped.GaussianSH[2][1] != .7 {
 		t.Fatal("clipping lost coefficient alignment")
@@ -79,7 +79,7 @@ func TestGaussianSHOwnershipClippingAndMerge(t *testing.T) {
 	check(t, s.SetNodePoints(id, g.Points, GeometryBounds(g)))
 	updated := frame(t, s)
 	check(t, validateFrame(updated))
-	if updated.Geometry[0].GaussianSH[0][0] != first.Geometry[0].GaussianSH[0][0] {
+	if updated.Draws[0].Geometry.GaussianSH[0][0] != first.Draws[0].Geometry.GaussianSH[0][0] {
 		t.Fatal("point update lost SH")
 	}
 	bad := clipped

@@ -598,10 +598,10 @@ func TestGPUSortEdgeCases(t *testing.T) {
 	kept := randomCloud(rng, 300, .6)
 	for _, c := range []struct{ more, points int }{{0, 0}, {1, 1000}, {1, 5000}} {
 		f := flatFrame(80, 80, kept)
-		f.Shared = []uint64{1 << 50}
+		f.Draws[0].Shared = 1 << 50
 		for i := range c.more {
-			f.Geometry = append(f.Geometry, flatFrame(1, 1, randomCloud(rng, c.points, .6)).Geometry...)
-			f.Shared = append(f.Shared, 1<<50+uint64(c.points+i)) // A key for each geometry.
+			f.Draws = append(f.Draws, flatFrame(1, 1, randomCloud(rng, c.points, .6)).Draws...)
+			f.Draws[len(f.Draws)-1].Shared = 1<<50 + uint64(c.points+i) // A key for each geometry.
 		}
 		f.Matrix = alongX(.3)
 		if off := gpuOff(t, r, f); off > 12 {
@@ -631,7 +631,7 @@ func TestGPUSortEdgeCases(t *testing.T) {
 	} {
 		f = flatFrame(40, 40, randomCloud(rng, 500, .4))
 		f.Matrix = c.m
-		for _, p := range f.Geometry[0].Points {
+		for _, p := range f.Draws[0].Geometry.Points {
 			if _, _, z, w := c.m.Transform(p.Position); w > 0 && z >= 0 && z <= w || c.name != "in front of the near plane" && w > 0 {
 				t.Fatalf("%s: a splat at clip z %g, w %g", c.name, z, w)
 			}

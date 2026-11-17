@@ -219,7 +219,7 @@ func TestSetDisplacementBoundsPaddingLODAndDropShadowStability(t *testing.T) {
 	// DropShadow stays anchored to rest bounds rather than sinking by maxDisplacement.
 	f, err := s.Frame(DefaultCamera(), 64, 64)
 	check(t, err)
-	center, radius, _, ok := dropDisc(&f.Geometry[0], nt3dmath.Identity())
+	center, radius, _, ok := dropDisc(&f.Draws[0].Geometry, &f.Draws[0].state, nt3dmath.Identity())
 	if !ok || center.Z != -0.5 || radius != 1 {
 		t.Fatalf("dropDisc drifted under displacement padding: center=%v radius=%v ok=%v", center, radius, ok)
 	}
@@ -250,7 +250,7 @@ func TestSetDisplacementBoundsPaddingLODAndDropShadowStability(t *testing.T) {
 	nearCam.Distance = 2.5
 	fNear, err := lodScene.Frame(nearCam, 64, 64)
 	check(t, err)
-	if fNear.Geometry[0].Displacement != d1 || fNear.Geometry[0].Material == nil || fNear.Geometry[0].Material.Shader != ms {
+	if fNear.Draws[0].Geometry.Displacement != d1 || fNear.Draws[0].Geometry.Material == nil || fNear.Draws[0].Geometry.Material.Shader != ms {
 		t.Fatal("near LOD tier missing hooks")
 	}
 
@@ -258,7 +258,7 @@ func TestSetDisplacementBoundsPaddingLODAndDropShadowStability(t *testing.T) {
 	farCam.Distance = 9.0
 	fFar, err := lodScene.Frame(farCam, 64, 64)
 	check(t, err)
-	if fFar.Geometry[0].Displacement != d1 || fFar.Geometry[0].Material == nil || fFar.Geometry[0].Material.Shader != ms {
+	if fFar.Draws[0].Geometry.Displacement != d1 || fFar.Draws[0].Geometry.Material == nil || fFar.Draws[0].Geometry.Material.Shader != ms {
 		t.Fatal("far LOD tier missing hooks")
 	}
 }

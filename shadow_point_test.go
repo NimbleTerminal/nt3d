@@ -23,7 +23,7 @@ func TestPointShadowFacesAndSeams(t *testing.T) {
 	}
 	g.Bounds.Include(nt3dmath.Vec3{X: -3, Y: -3, Z: -3})
 	g.Bounds.Include(nt3dmath.Vec3{X: 3, Y: 3, Z: 3})
-	f := Frame{Geometry: []Geometry{g}, Lighting: Lighting{Lights: []Light{{Kind: PointLight, Shadows: true}}}}
+	f := Frame{Draws: drawsOf(g), Lighting: Lighting{Lights: []Light{{Kind: PointLight, Shadows: true}}}}
 	m := buildShadowMap(&f, []bool{true}, 128)
 	if m == nil || len(m.faces) != 6 {
 		t.Fatal("missing cube faces")
@@ -79,17 +79,17 @@ func TestFixedDropFloor(t *testing.T) {
 	}
 	g.DropShadow = DropShadow{Strength: .5, FixedFloor: true, FloorZ: -1}
 	world := nt3dmath.Translation(nt3dmath.Vec3{X: 3, Z: 5})
-	p, _, _, ok := dropDisc(&g, world)
+	p, _, _, ok := dropDisc(&g, &noState, world)
 	if !ok || p.X != 3 || p.Z != -1 {
 		t.Fatal("floor followed instance", p)
 	}
 	g.DropShadow.FloorZ = 0
-	p, _, _, _ = dropDisc(&g, world)
+	p, _, _, _ = dropDisc(&g, &noState, world)
 	if p.Z != 0 {
 		t.Fatal("zero floor not supported")
 	}
 	g.DropShadow.FixedFloor = false
-	p, _, _, _ = dropDisc(&g, world)
+	p, _, _, _ = dropDisc(&g, &noState, world)
 	if p.Z != 7 {
 		t.Fatal("automatic floor changed", p)
 	}

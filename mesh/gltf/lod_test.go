@@ -191,14 +191,14 @@ func TestMultiLODGLBCityPropFleetAndVariants(t *testing.T) {
 
 	// Every drawn instance must carry a non-zero SharedGeometry ID, with at most 3 distinct Shared IDs (one per tier!).
 	sharedIDs := map[uint64]bool{}
-	for i, inst := range frame.Instances {
-		if !inst.Visible {
+	for i, inst := range frame.Draws {
+		if inst.Hidden {
 			continue
 		}
-		if frame.Shared[i] == 0 {
+		if frame.Draws[i].Shared == 0 {
 			t.Fatalf("instance %d (%s) lost SharedGeometry instancing", i, inst.Name)
 		}
-		sharedIDs[frame.Shared[i]] = true
+		sharedIDs[frame.Draws[i].Shared] = true
 	}
 	if len(sharedIDs) != 3 {
 		t.Fatalf("expected exactly 3 distinct SharedGeometry buffers across 43 visible streetlights, got %d", len(sharedIDs))
@@ -311,7 +311,7 @@ f 1 2 3 4
 
 	f2, err := s.Frame(camAt(80), 120, 90)
 	check(t, err)
-	if f2.Stats().Triangles != 2 || f2.Shared[0] == 0 {
-		t.Fatalf("expected 2 shared tris from OBJ LOD2, got tris=%d shared=%d", f2.Stats().Triangles, f2.Shared[0])
+	if f2.Stats().Triangles != 2 || f2.Draws[0].Shared == 0 {
+		t.Fatalf("expected 2 shared tris from OBJ LOD2, got tris=%d shared=%d", f2.Stats().Triangles, f2.Draws[0].Shared)
 	}
 }

@@ -36,7 +36,7 @@ func TestOutlinePresenceAndDepth(t *testing.T) {
 	if at(outlined, 48, 48) != white {
 		t.Fatalf("hull covered the surface: %v", at(outlined, 48, 48))
 	}
-	f.Geometry[0].Outline.Width = 0
+	f.Draws[0].Geometry.Outline.Width = 0
 	_, plainDepth := softwareRenderDepth(f)
 	if coloredPixels(softwareRender(f), outlineInk) != 0 {
 		t.Fatal("disabled outline left pixels")
@@ -48,7 +48,7 @@ func TestOutlinePresenceAndDepth(t *testing.T) {
 	}
 	// An opaque screen-aligned pane in front of the entire object hides both
 	// its surface and its expanded contour, in either geometry order.
-	f.Geometry[0].Outline.Width = 3
+	f.Draws[0].Geometry.Outline.Width = 3
 	pane := quad(.95, .001, color.RGBA{20, 180, 40, 255}, &Material{Unlit: true}, false)
 	inv, ok := f.Matrix.InverseAffine()
 	if !ok {
@@ -60,10 +60,10 @@ func TestOutlinePresenceAndDepth(t *testing.T) {
 	pane.Bounds = GeometryBounds(pane)
 	for _, reverse := range []bool{false, true} {
 		occluded := f
-		occluded.Instances = nil
-		occluded.Geometry = []Geometry{f.Geometry[0], pane}
+		clearPlacements(&occluded)
+		occluded.Draws = drawsOf(f.Draws[0].Geometry, pane)
 		if reverse {
-			occluded.Geometry[0], occluded.Geometry[1] = occluded.Geometry[1], occluded.Geometry[0]
+			occluded.Draws[0].Geometry, occluded.Draws[1].Geometry = occluded.Draws[1].Geometry, occluded.Draws[0].Geometry
 		}
 		if n := coloredPixels(softwareRender(occluded), outlineInk); n != 0 {
 			t.Fatalf("%d outline pixels leaked over nearer pane", n)
@@ -79,7 +79,7 @@ func TestOutlineAlphaAndSupersampling(t *testing.T) {
 		if n := coloredPixels(img, outlineInk); n < 100 {
 			t.Fatalf("supersample %d lost contour: %d", ss, n)
 		}
-		f.Geometry[0].Outline.Width = 0
+		f.Draws[0].Geometry.Outline.Width = 0
 		plain := softwareRender(f)
 		// The silhouette grows about three output pixels, independent of SS.
 		bounds := func(img image.Image) image.Rectangle {
@@ -100,7 +100,7 @@ func TestOutlineAlphaAndSupersampling(t *testing.T) {
 	}
 	for _, transparent := range []bool{false, true} {
 		f := outlineFrame(t)
-		g := &f.Geometry[0]
+		g := &f.Draws[0].Geometry
 		g.Material = &Material{Unlit: true, Texture: testTexture(t, color.RGBA{}), Cutout: !transparent, Transparent: transparent}
 		outlined := softwareRender(f).(*image.RGBA)
 		g.Outline.Width = 0
@@ -129,11 +129,11 @@ func TestOutlineValidationAndCulling(t *testing.T) {
 	g.Outline.Width = 4
 	f := flatFrame(100, 100, g)
 	f.Cull = true
-	f.Instances = []Instance{{Visible: true, World: nt3dmath.Translation(nt3dmath.Vec3{X: 1.05})}}
+	placeAlone(&f, nt3dmath.Translation(nt3dmath.Vec3{X: 1.05}))
 	if !f.drawn(1)[0] {
 		t.Fatal("culled hull reaching into viewport")
 	}
-	f.Geometry[0].Outline.Width = 0
+	f.Draws[0].Geometry.Outline.Width = 0
 	if f.drawn(1)[0] {
 		t.Fatal("test mesh should be outside without hull")
 	}
@@ -142,7 +142,7 @@ func TestOutlineValidationAndCulling(t *testing.T) {
 func TestOutlineWorldUnitsAndSplitNormals(t *testing.T) {
 	// A world-unit outline shrinks with perspective distance.
 	near := outlineFrame(t)
-	near.Geometry[0].Outline = OutlineStyle{Width: .08, Color: outlineInk, Units: WorldUnits}
+	near.Draws[0].Geometry.Outline = OutlineStyle{Width: .08, Color: outlineInk, Units: WorldUnits}
 	camNear := DefaultCamera()
 	camNear.Projection, camNear.Distance = Perspective, 2.5
 	near.Matrix, near.Perspective = camNear.Matrix(1), true
@@ -175,14 +175,14 @@ func TestOutlineWorldUnitsAndSplitNormals(t *testing.T) {
 		}
 	}
 	// Smooth sphere has no split normals at shared positions.
-	sphere := outlineFrame(t).Geometry[0]
+	sphere := outlineFrame(t).Draws[0].Geometry
 	if outlineNormals(sphere.Vertices) != nil {
 		t.Fatal("smooth sphere reported split outline normals")
 	}
 }
 
 func TestMergeOutlineStyle(t *testing.T) {
-	g := outlineFrame(t).Geometry[0]
+	g := outlineFrame(t).Draws[0].Geometry
 	merged, err := MergeGeometry(g, g)
 	check(t, err)
 	if merged.Outline != g.Outline {
@@ -204,12 +204,12 @@ func TestSetOutlinePreservesPoseAndSnapshots(t *testing.T) {
 	if s.nodes[id].deformation == nil || s.nodes[id].geometryRevision != rev {
 		t.Fatal("outline replaced mesh/deformation")
 	}
-	if old.Geometry[0].Outline.Width != 0 {
+	if old.Draws[0].Geometry.Outline.Width != 0 {
 		t.Fatal("outline changed old snapshot")
 	}
 	check(t, s.SetTransform(joint, nt3dmath.Translation(nt3dmath.Vec3{Z: .2})))
 	next := frame(t, s)
-	if next.Geometry[0].Outline != style {
+	if next.Draws[0].Geometry.Outline != style {
 		t.Fatal("deformation lost outline")
 	}
 	before := s.Revision()
@@ -221,7 +221,7 @@ func TestSetOutlinePreservesPoseAndSnapshots(t *testing.T) {
 		t.Fatal("accepted missing node")
 	}
 	check(t, s.SetOutline(id, OutlineStyle{}))
-	if frame(t, s).Geometry[0].Outline.Width != 0 {
+	if frame(t, s).Draws[0].Geometry.Outline.Width != 0 {
 		t.Fatal("disable ignored")
 	}
 }

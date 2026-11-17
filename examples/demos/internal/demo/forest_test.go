@@ -42,14 +42,14 @@ func TestForestShadow(t *testing.T) {
 				t.Fatal("decorator mutated shared lighting")
 			}
 			trees := 0
-			for i, inst := range f.Instances {
+			for i, inst := range f.Draws {
 				want := strength
 				if inst.Name == "ground" {
 					want = 0
 				} else {
 					trees++
 				}
-				if f.Geometry[i].DropShadow.Strength != want {
+				if f.Draws[i].Geometry.DropShadow.Strength != want {
 					t.Fatalf("step %d: %s", step, inst.Name)
 				}
 			}

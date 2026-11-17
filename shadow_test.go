@@ -87,7 +87,7 @@ func TestFitShadowKeepsWinding(t *testing.T) {
 		if !ok {
 			t.Fatal(dir)
 		}
-		q := f.Geometry[0] // The floor: vertices 0, 1, 2 are its first CCW triangle.
+		q := f.Draws[0].Geometry // The floor: vertices 0, 1, 2 are its first CCW triangle.
 		var x, y [3]float32
 		for k := range 3 {
 			x[k], y[k], _ = v.mapCoords(q.Vertices[q.Indices[k]].Position)
@@ -103,7 +103,7 @@ func TestFitShadowStraightDownAndNoBounds(t *testing.T) {
 	if _, ok := fitShadow(&f, f.drawn(1), 64); !ok {
 		t.Fatal("vertical light should fit")
 	}
-	f.Geometry[0].Bounds = nt3dmath.AABB{}
+	f.Draws[0].Geometry.Bounds = nt3dmath.AABB{}
 	if _, ok := fitShadow(&f, f.drawn(1), 64); ok {
 		t.Fatal("no bounds, no fit")
 	}
@@ -115,9 +115,9 @@ func TestFitShadowDrawnWorldBoundsAndPadding(t *testing.T) {
 		g.Bounds.Include(vertex.Position)
 	}
 	lighting := Lighting{Lights: []Light{{Kind: PointLight}, {Direction: nt3dmath.Vec3{Z: 1}, Shadows: true}}}
-	f := Frame{Geometry: []Geometry{g, g}, Lighting: lighting, Instances: []Instance{
-		{World: nt3dmath.Translation(nt3dmath.Vec3{X: 10, Z: 4}), Visible: true},
-		{World: nt3dmath.Translation(nt3dmath.Vec3{X: 100}), Visible: true},
+	f := Frame{Lighting: lighting, Draws: []Draw{
+		{Geometry: g, World: nt3dmath.Translation(nt3dmath.Vec3{X: 10, Z: 4})},
+		{Geometry: g, World: nt3dmath.Translation(nt3dmath.Vec3{X: 100})},
 	}}
 	v, ok := fitShadow(&f, []bool{true, false}, 100)
 	if !ok || v.light != 1 || newRig(&f).shadowLight != 1 {
@@ -159,7 +159,7 @@ func TestSoftwareShadowFalls(t *testing.T) {
 }
 func TestSoftwareShadowNeedsNoOtherPosition(t *testing.T) {
 	f := blendScene(t, &shadowLit, quad(.4, .3, white, nil, false))
-	if f.Fog.on() || f.Geometry[1].Material != nil || newRig(&f).points {
+	if f.Fog.on() || f.Draws[1].Geometry.Material != nil || newRig(&f).points {
 		t.Fatal("scene requires only shadow positions")
 	}
 	img := softwareRender(f)
@@ -221,9 +221,9 @@ func TestSoftwareShadowClipsDepth(t *testing.T) {
 	f := blendScene(t, &shadowLit, quad(.4, .3, white, nil, false))
 	wall := quad(3, -5, white, nil, false) // Below the floor, outside the fit, which the floor's bounds end at z -1.
 	wall.Bounds = nt3dmath.AABB{}
-	f.Geometry = append(f.Geometry, wall)
-	f.Instances = append(f.Instances, Instance{World: nt3dmath.Identity(), Visible: true})
-	f.GeometryRevisions, f.Shared = nil, nil
+	f.Draws = append(f.Draws, Draw{Geometry: wall})
+	clearRevisions(&f)
+	clearShared(&f)
 	m := buildShadowMap(&f, f.drawn(1), 256)
 	for _, d := range m.depth {
 		if d < 0 || d > 1 {
@@ -285,7 +285,7 @@ func twoTexel(t *testing.T) *Texture {
 func glassScene(t *testing.T) Frame {
 	t.Helper()
 	f := blendScene(t, &shadowLit, quad(.4, .3, white, nil, false), quad(3, -.5, color.RGBA{255, 255, 255, 128}, &Material{Transparent: true}, false))
-	f.Geometry[0].Material = &Material{Unlit: true}
+	f.Draws[0].Geometry.Material = &Material{Unlit: true}
 	return f
 }
 
@@ -371,12 +371,12 @@ func TestDropDisc(t *testing.T) {
 	g := Geometry{Boxes: []Box{{Min: nt3dmath.Vec3{X: -1, Y: -.5, Z: 2}, Size: nt3dmath.Vec3{X: 2, Y: 1, Z: 3}}}}
 	g.Bounds = GeometryBounds(g)
 	g.DropShadow = DropShadow{Strength: .3}
-	c, r, s, ok := dropDisc(&g, nt3dmath.Translation(nt3dmath.Vec3{X: 10}))
+	c, r, s, ok := dropDisc(&g, &noState, nt3dmath.Translation(nt3dmath.Vec3{X: 10}))
 	if !ok || c != (nt3dmath.Vec3{X: 10, Y: 0, Z: 2}) || r != 1 || s != .3 {
 		t.Fatalf("%v %v %v %v", c, r, s, ok)
 	}
 	g.DropShadow.Radius = 4
-	if _, r, _, _ = dropDisc(&g, nt3dmath.Identity()); r != 4 {
+	if _, r, _, _ = dropDisc(&g, &noState, nt3dmath.Identity()); r != 4 {
 		t.Fatal(r)
 	}
 }
@@ -384,8 +384,8 @@ func TestDropShadowNeedsBounds(t *testing.T) {
 	g := quad(.4, .3, white, nil, false)
 	f := blendScene(t, nil, g)
 	plain := softwareRender(f)
-	f.Geometry[1].DropShadow = DropShadow{Strength: 1}
-	f.Geometry[1].Bounds = nt3dmath.AABB{}
+	f.Draws[1].Geometry.DropShadow = DropShadow{Strength: 1}
+	f.Draws[1].Geometry.Bounds = nt3dmath.AABB{}
 	if !bytes.Equal(softwareRender(f).(*image.RGBA).Pix, plain.(*image.RGBA).Pix) {
 		t.Fatal("a disc without bounds")
 	}
@@ -407,8 +407,8 @@ func TestDropShadowCrossesNearPlane(t *testing.T) {
 	check(t, err)
 	f.Lighting = even
 	plain := f
-	plain.Geometry = slices.Clone(f.Geometry)
-	plain.Geometry[1].DropShadow = DropShadow{}
+	plain.Draws = slices.Clone(f.Draws)
+	plain.Draws[1].Geometry.DropShadow = DropShadow{}
 	if bytes.Equal(softwareRender(f).(*image.RGBA).Pix, softwareRender(plain).(*image.RGBA).Pix) {
 		t.Fatal("no disc drawn")
 	}

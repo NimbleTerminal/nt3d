@@ -171,13 +171,13 @@ func (a *SceneAsset) Bounds() (b nt3dmath.AABB) {
 		case len(n.LOD) > 0:
 			for _, lvl := range n.LOD {
 				if lvl.Shared != nil {
-					includeGeom(lvl.Shared.geometry, w)
+					includeGeom(lvl.Shared.geometry.Geometry, w)
 				} else if hasPrimitives(&lvl.Geometry) || lvl.Geometry.Billboard != nil {
 					includeGeom(lvl.Geometry, w)
 				}
 			}
 		case n.Shared != nil:
-			includeGeom(n.Shared.geometry, w)
+			includeGeom(n.Shared.geometry.Geometry, w)
 		case n.Geometry != nil:
 			includeGeom(*n.Geometry, w)
 		}
@@ -197,7 +197,7 @@ func (a *SceneAsset) Triangles() (total int) {
 			for _, lvl := range n.LOD {
 				var g *Geometry
 				if lvl.Shared != nil {
-					g = &lvl.Shared.geometry
+					g = &lvl.Shared.geometry.Geometry
 				} else {
 					g = &lvl.Geometry
 				}
@@ -207,7 +207,7 @@ func (a *SceneAsset) Triangles() (total int) {
 				}
 			}
 		case n.Shared != nil:
-			total += geometryTriangles(&n.Shared.geometry)
+			total += geometryTriangles(&n.Shared.geometry.Geometry)
 		case n.Geometry != nil:
 			total += geometryTriangles(n.Geometry)
 		}
@@ -895,7 +895,7 @@ func populateAlignedLODLevel(lvl *LODLevel, e *lodPrim, slotLocal, invSlot nt3dm
 	}
 	delta := invSlot.Mul(e.relLocal)
 	if e.shared != nil {
-		tg, err := TransformGeometry(e.shared.geometry, delta)
+		tg, err := TransformGeometry(e.shared.geometry.Geometry, delta)
 		if err != nil {
 			return err
 		}

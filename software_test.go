@@ -44,7 +44,7 @@ func TestRenderSoftware(t *testing.T) {
 	}
 	// Where nothing is drawn, depth is +Inf.
 	bare := blendScene(t, nil)
-	bare.Geometry, bare.Instances, bare.GeometryRevisions, bare.Shared = nil, nil, nil, nil
+	bare.Draws = nil
 	r, err := RenderSoftware(bare)
 	check(t, err)
 	for _, d := range r.Depth {

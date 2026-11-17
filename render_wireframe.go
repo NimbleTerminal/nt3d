@@ -67,7 +67,8 @@ func wireRender(f Frame, cols, rows int) string {
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
 		drawLine(cellFrame, f.DynamicLines[i].Position, f.DynamicLines[i+1].Position, f.DynamicLines[i].Color, false)
 	}
-	for gi, g := range f.Geometry {
+	for gi := range f.Draws {
+		g := f.Draws[gi].Geometry
 		if !depth.drawn[gi] || edgeOn(g) || g.Billboard != nil && (g.Billboard.Text != "" || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue
 		}
@@ -150,7 +151,8 @@ func wireRender(f Frame, cols, rows int) string {
 	// Text uses terminal graphemes, depth-tested per occupied cell. Its own
 	// textured quad is omitted from wire depth: transparent glyph gaps must
 	// not become a solid rectangular occluder in this fallback.
-	for gi, g := range f.Geometry {
+	for gi := range f.Draws {
+		g := f.Draws[gi].Geometry
 		b := g.Billboard
 		if b == nil || b.Text == "" || !depth.drawn[gi] || len(g.Vertices) == 0 || g.Vertices[0].Color.A == 0 {
 			continue

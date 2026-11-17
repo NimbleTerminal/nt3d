@@ -28,7 +28,7 @@ func TestGPUReflections(t *testing.T) {
 					f.Forward = nt3dmath.Vec3{Z: -1}
 					f.Eye = nt3dmath.Vec3{Z: 3}
 					f.Perspective = perspective
-					f.Geometry[0].Material.Reflectivity = .3
+					f.Draws[0].Geometry.Material.Reflectivity = .3
 					got, err := r.Render(f)
 					check(t, err)
 					want := softwareRender(f)
@@ -62,21 +62,21 @@ func TestGPUShaderNormalMaps(t *testing.T) {
 		check(t, err)
 		f := normalFrame(t)
 		f.Revision = uint64(i + 1)
-		f.Geometry[0].Material.NormalMap = tex
-		for j := range f.Geometry[0].UV {
-			f.Geometry[0].UV[j].U = f.Geometry[0].UV[j].U*3 - 1
+		f.Draws[0].Geometry.Material.NormalMap = tex
+		for j := range f.Draws[0].Geometry.UV {
+			f.Draws[0].Geometry.UV[j].U = f.Draws[0].Geometry.UV[j].U*3 - 1
 		}
 		f.Environment = testEnvironment(t)
-		f.Geometry[0].Material.Reflectivity = .2
+		f.Draws[0].Geometry.Material.Reflectivity = .2
 		f.Forward = nt3dmath.Vec3{Z: -1}
 		if i == 0 {
 			saved = f
 		}
 		for _, repeat := range []bool{false, true} {
 			// Independent snapshots avoid mutating saved frame materials.
-			f.Geometry = append([]Geometry(nil), f.Geometry...)
-			m := *f.Geometry[0].Material
-			f.Geometry[0].Material = &m
+			f.Draws = append([]Draw(nil), f.Draws...)
+			m := *f.Draws[0].Geometry.Material
+			f.Draws[0].Geometry.Material = &m
 			m.NormalRepeat = repeat
 			revision++
 			f.Revision = revision
@@ -116,10 +116,10 @@ func TestGPUEnvironmentReflectBackgroundOnly(t *testing.T) {
 				f.Eye = nt3dmath.Vec3{Z: 3}
 				f.Perspective = true
 				if pbr {
-					f.Geometry[0].Material = &Material{PBR: true, Metallic: .9, Roughness: .1, EnvironmentReflect: envRefl}
+					f.Draws[0].Geometry.Material = &Material{PBR: true, Metallic: .9, Roughness: .1, EnvironmentReflect: envRefl}
 				} else {
-					f.Geometry[0].Material.Reflectivity = .6
-					f.Geometry[0].Material.EnvironmentReflect = envRefl
+					f.Draws[0].Geometry.Material.Reflectivity = .6
+					f.Draws[0].Geometry.Material.EnvironmentReflect = envRefl
 				}
 				got, err := r.Render(f)
 				check(t, err)

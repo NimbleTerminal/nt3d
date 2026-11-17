@@ -28,7 +28,7 @@ func TestEnvironmentReflectionFresnel(t *testing.T) {
 	f := normalFrame(t)
 	f.Forward = nt3dmath.Vec3{Z: -1}
 	f.Environment = e
-	m := f.Geometry[0].Material
+	m := f.Draws[0].Geometry.Material
 	m.NormalStrength = 0
 	m.Reflectivity = 1
 	f.Lighting = Lighting{}
@@ -41,7 +41,7 @@ func TestEnvironmentReflectionFresnel(t *testing.T) {
 	}
 	for _, v := range []float32{-1, 2, float32(math.NaN())} {
 		m.Reflectivity = v
-		if err := f.Geometry[0].Validate(); err == nil {
+		if err := f.Draws[0].Geometry.Validate(); err == nil {
 			t.Fatal("accepted reflection", v)
 		}
 	}
@@ -72,7 +72,7 @@ func TestEnvironmentReflectBackgroundOnly(t *testing.T) {
 	matte.Environment = sky
 	matte.EnvironmentBackgroundOnly = true
 	matte.Lighting = Lighting{}
-	matte.Geometry[0].Material = &Material{}
+	matte.Draws[0].Geometry.Material = &Material{}
 	if c := at(softwareRender(matte), 40, 40); c.R != 0 || c.G != 0 || c.B != 0 {
 		t.Fatalf("matte surface received diffuse sky light under EnvironmentBackgroundOnly: %v", c)
 	}
@@ -81,15 +81,15 @@ func TestEnvironmentReflectBackgroundOnly(t *testing.T) {
 	// EnvironmentBackgroundOnly, while EnvironmentReflect: true reflects the sky
 	// without enabling diffuse SH!
 	waterOff := matte
-	waterOff.Geometry = append([]Geometry(nil), matte.Geometry...)
-	waterOff.Geometry[0].Material = &Material{Reflectivity: 1}
+	waterOff.Draws = append([]Draw(nil), matte.Draws...)
+	waterOff.Draws[0].Geometry.Material = &Material{Reflectivity: 1}
 	if c := at(softwareRender(waterOff), 40, 40); c.R != 0 {
 		t.Fatalf("expected reflections off without EnvironmentReflect, got %v", c)
 	}
 
 	waterOn := matte
-	waterOn.Geometry = append([]Geometry(nil), matte.Geometry...)
-	waterOn.Geometry[0].Material = &Material{Reflectivity: 1, EnvironmentReflect: true}
+	waterOn.Draws = append([]Draw(nil), matte.Draws...)
+	waterOn.Draws[0].Geometry.Material = &Material{Reflectivity: 1, EnvironmentReflect: true}
 	if c := at(softwareRender(waterOn), 40, 40); c.R < 200 {
 		t.Fatalf("EnvironmentReflect did not sample sky under EnvironmentBackgroundOnly: %v", c)
 	}
@@ -97,11 +97,11 @@ func TestEnvironmentReflectBackgroundOnly(t *testing.T) {
 	// PBR mirror metal with EnvironmentReflect: true also samples prefiltered
 	// specular IBL while keeping diffuse SH off.
 	pbrOff := matte
-	pbrOff.Geometry = append([]Geometry(nil), matte.Geometry...)
-	pbrOff.Geometry[0].Material = &Material{PBR: true, Metallic: 1, Roughness: .05}
+	pbrOff.Draws = append([]Draw(nil), matte.Draws...)
+	pbrOff.Draws[0].Geometry.Material = &Material{PBR: true, Metallic: 1, Roughness: .05}
 	pbrOn := matte
-	pbrOn.Geometry = append([]Geometry(nil), matte.Geometry...)
-	pbrOn.Geometry[0].Material = &Material{PBR: true, Metallic: 1, Roughness: .05, EnvironmentReflect: true}
+	pbrOn.Draws = append([]Draw(nil), matte.Draws...)
+	pbrOn.Draws[0].Geometry.Material = &Material{PBR: true, Metallic: 1, Roughness: .05, EnvironmentReflect: true}
 	if at(softwareRender(pbrOn), 40, 40).R <= at(softwareRender(pbrOff), 40, 40).R+100 {
 		t.Fatal("PBR EnvironmentReflect did not reflect sky under EnvironmentBackgroundOnly")
 	}

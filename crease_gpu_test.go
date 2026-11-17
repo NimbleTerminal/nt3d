@@ -69,7 +69,7 @@ func TestGPUCreaseFollowsInstances(t *testing.T) {
 		nt3dmath.Translation(nt3dmath.Vec3{X: -.8}),
 		nt3dmath.Translation(nt3dmath.Vec3{X: .6}).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 2, Y: 1, Z: 1})))
 	gpu := creaseGPUOnce(t, f)
-	for i := range f.Geometry {
+	for i := range f.Draws {
 		for _, mid := range cornerEdges(f, i, false) {
 			if !inked(f, gpu, mid) {
 				t.Fatalf("instance %d has no GPU crease line at %v", i, mid)
@@ -154,14 +154,14 @@ func TestGPUCreaseSharedAngles(t *testing.T) {
 	place("blunt", .7, 50)
 	f := creaseFrame(t, s)
 	gpu, sw := creaseGPUOnce(t, f), softwareRender(f)
-	for i := range f.Geometry {
+	for i := range f.Draws {
 		// The hinge's own edge, and a border, which every angle lines.
-		fold := f.Instances[i].World.Point(nt3dmath.Vec3{Y: .5})
-		border := f.Instances[i].World.Point(nt3dmath.Vec3{X: -1, Y: .5})
-		want := f.Instances[i].Node == sharp
+		fold := f.Draws[i].World.Point(nt3dmath.Vec3{Y: .5})
+		border := f.Draws[i].World.Point(nt3dmath.Vec3{X: -1, Y: .5})
+		want := f.Draws[i].Node == sharp
 		for name, img := range map[string]image.Image{"GPU": gpu, "software": sw} {
 			if inked(f, img, fold) != want || !inked(f, img, border) {
-				t.Fatalf("%s node %d: fold line %v (want %v), border line %v", name, f.Instances[i].Node, inked(f, img, fold), want, inked(f, img, border))
+				t.Fatalf("%s node %d: fold line %v (want %v), border line %v", name, f.Draws[i].Node, inked(f, img, fold), want, inked(f, img, border))
 			}
 		}
 	}
@@ -170,7 +170,7 @@ func TestGPUCreaseSharedAngles(t *testing.T) {
 func TestGPUCreaseOffIsUnchanged(t *testing.T) {
 	f := outlineFrame(t)
 	plain := creaseGPUOnce(t, f)
-	f.Geometry[0].Outline.Crease = 30
+	f.Draws[0].Geometry.Outline.Crease = 30
 	f.Revision++
 	if with := creaseGPUOnce(t, f); !bytes.Equal(plain.Pix, with.Pix) {
 		t.Fatal("a crease angle changed a GPU mesh without crease edges")
@@ -202,7 +202,7 @@ func TestGPUCreaseInstancedDraw(t *testing.T) {
 	if len(r.draws) != 1 || r.draws[0].count != 3 {
 		t.Fatalf("%d draws; want one of three instances", len(r.draws))
 	}
-	for i := range f.Geometry {
+	for i := range f.Draws {
 		for _, mid := range cornerEdges(f, i, false) {
 			if !inked(f, gpu, mid) {
 				t.Fatalf("instance %d has no crease line at %v", i, mid)
@@ -399,7 +399,7 @@ func TestGPUCreaseDeformingMatchesSoftware(t *testing.T) {
 		t.Fatalf("expected 1 instanced draw of 2 cubes, got %d draws", len(instR.draws))
 	}
 	instSW := softwareRender(instF)
-	for i := range instF.Geometry {
+	for i := range instF.Draws {
 		for _, mid := range cornerEdges(instF, i, false) {
 			shifted := mid.Add(nt3dmath.Vec3{X: .35})
 			if !inked(instF, instGPU, shifted) {

@@ -43,7 +43,7 @@ func TestEnvironmentSnapshotAndBounds(t *testing.T) {
 	}
 	f, err := s.Frame(DefaultCamera(), 32, 24)
 	check(t, err)
-	if len(f.Geometry) != 0 || s.Pick(DefaultCamera(), f, 16, 12, 1) != nil {
+	if len(f.Draws) != 0 || s.Pick(DefaultCamera(), f, 16, 12, 1) != nil {
 		t.Fatal("environment is pickable geometry")
 	}
 	s.SetEnvironment(nil)

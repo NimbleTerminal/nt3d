@@ -15,11 +15,11 @@ func TestGPUOutlines(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			f := outlineFrame(t)
 			// Manual revisions give each test's altered geometry a distinct cache key.
-			f.GeometryRevisions = nil
-			f.Instances = nil
-			f.Shared = nil
+			clearRevisions(&f)
+			clearPlacements(&f)
+			clearShared(&f)
 			f.Revision = uint64(i + 1)
-			g := &f.Geometry[0]
+			g := &f.Draws[0].Geometry
 			switch kind {
 			case "lit":
 				g.Material.Unlit = false
@@ -65,7 +65,7 @@ func TestGPUOutlines(t *testing.T) {
 				}
 				*g = box
 			case "transform":
-				f.Instances = []Instance{{World: nt3dmath.RotationZ(.6).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: .9, Y: 1.2, Z: .6})), Visible: true}}
+				placeAlone(&f, nt3dmath.RotationZ(.6).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: .9, Y: 1.2, Z: .6})))
 			case "supersample":
 				f.Supersample = 2
 			case "encoded":
@@ -79,7 +79,7 @@ func TestGPUOutlines(t *testing.T) {
 					pane.Vertices[j].Position = inv.Point(pane.Vertices[j].Position)
 				}
 				pane.Bounds = GeometryBounds(pane)
-				f.Geometry = append(f.Geometry, pane)
+				f.Draws = append(f.Draws, Draw{Geometry: pane})
 			}
 			got, err := r.Render(f)
 			check(t, err)
@@ -106,7 +106,7 @@ func TestGPUOutlineDeformation(t *testing.T) {
 	s := NewScene()
 	joint, err := s.Add(Root, "joint")
 	check(t, err)
-	base := outlineFrame(t).Geometry[0]
+	base := outlineFrame(t).Draws[0].Geometry
 	id, err := s.SetGeometry("ball", base)
 	check(t, err)
 	influences := make([]Influence, len(base.Vertices))
@@ -127,8 +127,8 @@ func TestGPUOutlineDeformation(t *testing.T) {
 		got, err := gpu.Render(f)
 		check(t, err)
 		cpu := f
-		cpu.Geometry = append([]Geometry(nil), f.Geometry...)
-		cpu.Geometry[0].posed = nil
+		cpu.Draws = append([]Draw(nil), f.Draws...)
+		cpu.Draws[0].state.posed = nil
 		want, err := reference.Render(cpu)
 		check(t, err)
 		diff := 0

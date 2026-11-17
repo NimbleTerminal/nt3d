@@ -92,13 +92,13 @@ func TestWaveTileApplyPreservesSceneTopology(t *testing.T) {
 	check(t, tiles[0].Apply(s, id))
 	f1, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
-	if f0.GeometryRevisions[0] != f1.GeometryRevisions[0] {
+	if f0.Draws[0].Revision != f1.Draws[0].Revision {
 		t.Fatal("WaveTile.Apply changed geometryRevision")
 	}
-	if &f0.Geometry[0].Indices[0] != &f1.Geometry[0].Indices[0] {
+	if &f0.Draws[0].Geometry.Indices[0] != &f1.Draws[0].Geometry.Indices[0] {
 		t.Fatal("WaveTile.Apply cloned static indices")
 	}
-	if f0.Geometry[0].Vertices[40].Position == f1.Geometry[0].Vertices[40].Position {
+	if f0.Draws[0].Geometry.Vertices[40].Position == f1.Draws[0].Geometry.Vertices[40].Position {
 		t.Fatal("WaveTile.Apply did not advance wave vertices")
 	}
 }

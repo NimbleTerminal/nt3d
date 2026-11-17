@@ -38,10 +38,10 @@ func testSSAOLighting(t *testing.T, render func(Frame) (image.Image, error)) {
 			f := cornerSSAOFrame(t)
 			f.Complete = true
 			f.Lighting = tc.light
-			for i := range f.Geometry {
-				f.Geometry[i].Material = &tc.material
+			for i := range f.Draws {
+				f.Draws[i].Geometry.Material = &tc.material
 				if tc.material.ORMMap != nil {
-					f.Geometry[i].UV = make([]UV, len(f.Geometry[i].Vertices))
+					f.Draws[i].Geometry.UV = make([]UV, len(f.Draws[i].Geometry.Vertices))
 				}
 			}
 			before, err := render(f)

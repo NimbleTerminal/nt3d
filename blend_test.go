@@ -106,7 +106,7 @@ func TestPlanBlend(t *testing.T) {
 	if _, err := big.planBlend(big.drawn(1)); err == nil {
 		t.Error("planned more alpha geometries than slots")
 	}
-	big.Geometry = big.Geometry[:maxBlendSlots]
+	big.Draws = big.Draws[:maxBlendSlots]
 	if plan, err := big.planBlend(big.drawn(1)); err != nil || len(plan.slots) != maxBlendSlots {
 		t.Errorf("%d slots, error %v", len(plan.slots), err)
 	}
@@ -157,10 +157,10 @@ func TestPlanBlend(t *testing.T) {
 	}{{"culled", true, false}, {"computed bounds", false, true}, {"untrusted bounds", false, false}} {
 		f := spanned
 		f.Cull = c.cull
-		f.Geometry = slices.Clone(spanned.Geometry)
+		f.Draws = slices.Clone(spanned.Draws)
 		if c.clear {
-			for i := range f.Geometry {
-				f.Geometry[i].Bounds = nt3dmath.AABB{}
+			for i := range f.Draws {
+				f.Draws[i].Geometry.Bounds = nt3dmath.AABB{}
 			}
 		}
 		plan, err := f.planBlend(f.drawn(1))
@@ -176,13 +176,13 @@ func TestPlanBlend(t *testing.T) {
 				}
 				continue
 			}
-			b := blendBounds(&f.Geometry[gi])
+			b := blendBounds(&f.Draws[gi].Geometry)
 			_, _, zNear, _ := f.Matrix.Transform(b.Max)
 			_, _, zFar, _ := f.Matrix.Transform(b.Min)
 			if want := [2]int{max(0, plan.sliceOf(zFar)-1), min(blendSlices-1, plan.sliceOf(zNear)+1)}; span != want || span[1]-span[0] > blendSlices/2 {
 				t.Errorf("%s: slot %d spans %v, want %v", c.name, slot, span, want)
 			}
-			for _, p := range f.Geometry[gi].Points {
+			for _, p := range f.Draws[gi].Geometry.Points {
 				_, _, z, _ := f.Matrix.Transform(p.Position)
 				if s := plan.sliceOf(z); s < span[0] || s > span[1] {
 					t.Errorf("%s: slot %d point in slice %d outside %v", c.name, slot, s, span)

@@ -25,7 +25,8 @@ func TestShapesOutlineToggle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, g := range f.Geometry {
+		for di := range f.Draws {
+			g := f.Draws[di].Geometry
 			if (g.Outline.Width > 0) != on {
 				t.Fatal("outline toggle lost a shape")
 			}

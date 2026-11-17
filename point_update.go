@@ -93,7 +93,7 @@ func (s *Scene) UpdateNodePoints(id NodeID, first int, points []Point, bounds nt
 		previous = old.pointUpdate.revision
 	}
 	s.changed(false, false)
-	g.pointUpdate = &pointUpdate{s.stateRevision, previous, first, first + len(points), g.Points, g.PointStyle, newSHCertificate(&g)}
+	g.pointUpdate = &pointUpdate{s.stateRevision, previous, first, first + len(points), g.Points, g.PointStyle, newSHCertificate(&g.Geometry)}
 	g.Bounds = bounds
 	n.geometry, n.pickIndex = &g, nil
 	return nil
@@ -113,11 +113,13 @@ func certifies(points, validated []Point, style, validatedStyle PointStyle) bool
 	return len(points) == len(validated) && (len(points) == 0 || &points[0] == &validated[0]) && style == validatedStyle
 }
 
-func validateFrameGeometry(g Geometry) error {
+// validateFrameGeometry checks a draw's geometry, skipping what st certifies
+// the scene checked when it stored these same arrays.
+func validateFrameGeometry(g Geometry, st *geometryState) error {
 	// Scene-owned arrays are immutable by contract. Public Geometry.Validate
 	// still checks every point; manually constructed frames have no certificate.
 	n := len(g.Points)
-	u, c := g.pointUpdate, g.stored
+	u, c := st.pointUpdate, st.stored
 	stored := c != nil && certifies(g.Points, c.points, g.PointStyle, c.style)
 	if stored || u != nil && n > 0 && certifies(g.Points, u.points, g.PointStyle, u.style) {
 		certified := stored && c.sh.certifies(&g) || !stored && u.sh.certifies(&g)
@@ -138,5 +140,5 @@ func validateFrameGeometry(g Geometry) error {
 		}
 		g.Clusters = nil
 	}
-	return validateGeometryCert(g, g.meshCert.certifies(&g))
+	return validateGeometryCert(g, st.meshCert.certifies(&g))
 }

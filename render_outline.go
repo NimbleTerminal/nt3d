@@ -44,8 +44,8 @@ func creaseNeedsMaterialBind(g *Geometry) bool {
 // reuse the surface buffers, instance transforms, texture bindings, and skin
 // compute pass.
 func (g *gpuRenderer) prepareOutlines(dev *wgpu.Device, f Frame) error {
-	for i := range f.Geometry {
-		geom := &f.Geometry[i]
+	for i := range f.Draws {
+		geom := &f.Draws[i].Geometry
 		if geom.Outline.Width == 0 || len(geom.Indices) == 0 {
 			continue
 		}
@@ -137,7 +137,7 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 const maxCreaseAngles = 4
 
 func creaseKeyForDraw(f Frame, d gpuDraw) (creaseUploadKey, uint64, creaseDisplaceState) {
-	geom := &f.Geometry[d.index]
+	geom := &f.Draws[d.index].Geometry
 	var flags uint32
 	if geom.Material != nil && geom.Material.Repeat {
 		flags |= 1
@@ -153,8 +153,8 @@ func creaseKeyForDraw(f Frame, d gpuDraw) (creaseUploadKey, uint64, creaseDispla
 		cutBits = math.Float32bits(geom.Material.threshold())
 	}
 	var poseRev uint64
-	if geom.posed != nil {
-		poseRev = geom.posed.revision
+	if posed := f.Draws[d.index].state.posed; posed != nil {
+		poseRev = posed.revision
 	}
 	var disp creaseDisplaceState
 	if geom.Displacement != nil && !displaceOnGPU {
@@ -177,7 +177,7 @@ func creaseKeyForDraw(f Frame, d gpuDraw) (creaseUploadKey, uint64, creaseDispla
 func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
 	g.creaseFrame++
 	for _, d := range g.draws {
-		geom := &f.Geometry[d.index]
+		geom := &f.Draws[d.index].Geometry
 		if !creased(geom) {
 			continue
 		}
@@ -274,7 +274,7 @@ func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
 // drawCrease draws a creased mesh's crease lines for a draw's instances, six
 // vertices a segment.
 func (g *gpuRenderer) drawCrease(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
-	geom := &f.Geometry[d.index]
+	geom := &f.Draws[d.index].Geometry
 	if !creased(geom) {
 		return
 	}
@@ -300,7 +300,7 @@ func (g *gpuRenderer) drawCrease(pass *wgpu.RenderPassEncoder, f Frame, d gpuDra
 }
 
 func (g *gpuRenderer) drawCreaseOIT(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, creasePipes [2]*wgpu.RenderPipeline) {
-	geom := &f.Geometry[d.index]
+	geom := &f.Draws[d.index].Geometry
 	if !creased(geom) {
 		return
 	}
@@ -341,7 +341,7 @@ func outlinePipelineKind(g *Geometry) int {
 }
 
 func (g *gpuRenderer) drawOutline(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
-	geom := &f.Geometry[d.index]
+	geom := &f.Draws[d.index].Geometry
 	if geom.Outline.Width == 0 || len(geom.Indices) == 0 {
 		return
 	}

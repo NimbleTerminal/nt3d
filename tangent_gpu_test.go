@@ -7,12 +7,12 @@ import "testing"
 // Tangents a scene generates at upload shade alike on the GPU and in software.
 func TestGPUGeneratedTangents(t *testing.T) {
 	s := NewScene()
-	_, err := s.SetGeometry("mesh", normalFrame(t).Geometry[0])
+	_, err := s.SetGeometry("mesh", normalFrame(t).Draws[0].Geometry)
 	check(t, err)
 	f, err := s.Frame(DefaultCamera(), 80, 80)
 	check(t, err)
 	f.Lighting = normalFrame(t).Lighting
-	if len(f.Geometry[0].Tangents) != 4 {
+	if len(f.Draws[0].Geometry.Tangents) != 4 {
 		t.Fatal("scene did not generate tangents")
 	}
 	r := &gpuRenderer{}

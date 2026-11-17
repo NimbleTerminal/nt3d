@@ -196,7 +196,8 @@ func TestGPULODPointUpdateDropsOrder(t *testing.T) {
 		check(t, err)
 		_, err = r.Render(f)
 		check(t, err)
-		for i, g := range f.Geometry {
+		for i := range f.Draws {
+			g := f.Draws[i].Geometry
 			if len(g.Points) == 4096 {
 				return r.nodes[i]
 			}

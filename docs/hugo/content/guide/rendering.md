@@ -19,7 +19,7 @@ img, mode, err := nt3d.Snapshot(frame, nt3d.WebGPU, gpu)
 
 ## Frames
 
-A frame is a snapshot: the geometry, world transforms, and visibility of the scene at the moment you took it. It never changes afterwards. To update the picture, change the scene and take a new frame; old frames stay valid, and can even be rendered again. This is what lets rendering run on another goroutine while you keep editing.
+A frame is a snapshot of the scene at the moment you took it: `Frame.Draws` holds one `Draw` for each node that has geometry, in the order they are drawn, and each `Draw` carries its `Geometry`, its `World` transform, whether it is `Hidden`, and the `Node`, `Name`, and `Data` it came from. It never changes afterwards. To update the picture, change the scene and take a new frame; old frames stay valid, and can even be rendered again. This is what lets rendering run on another goroutine while you keep editing.
 
 Frames skip what the camera can't see. Every renderer, and picking, passes over a node whose bounds lie wholly outside the view. The picture is the same, but in a field of spheres seen from inside, software frames drew about 2.8× faster and wireframe 3.5×. The GPU keeps the skipped nodes' buffers for when they come back.
 
@@ -179,9 +179,24 @@ SSAO attenuates indirect diffuse and environment reflections; direct lights, emi
 
 ## Building frames by hand
 
-Most programs should use `Scene.Frame`. If you build frames yourself, keep the geometry immutable, give one `Instance` per geometry (or none, for identity transforms), and change `Revision` when geometry changes and `TextureRevision` when textures do.
+Most programs should use `Scene.Frame`. A frame built by hand is a list of draws, and a draw needs only its geometry:
 
-For the GPU to cache node by node, also supply `GeometryRevisions`, one per geometry, and unique nonzero `Instance.Node` identities; change a node's revision when its geometry or material changes. Without them, any change re-uploads the whole frame. Revisions must not collide with other frames sent to the same renderer, which `Scene` takes care of across scenes. If you edit the geometry of a frame a scene made, update its revisions too, or clear `GeometryRevisions` and change `Revision`.
+```go
+frame := nt3d.Frame{
+    Width: 640, Height: 480, Matrix: camera.Matrix(640.0 / 480),
+    Lighting: nt3d.DefaultLighting(),
+    Draws: []nt3d.Draw{
+        {Geometry: ground},                                  // where it lies
+        {Geometry: marker, World: nt3dmath.Translation(at)}, // moved
+    },
+}
+```
+
+Keep the geometry immutable, and change `Revision` when geometry changes and `TextureRevision` when textures do. A zero `World` is the identity, and a draw is shown unless it is `Hidden`.
+
+For the GPU to cache draw by draw, give each one a nonzero `Revision` and a `Node` that is nonzero and its alone; change a draw's revision when its geometry or material changes. Without them, any change re-uploads the whole frame. Revisions must not collide with other frames sent to the same renderer, which `Scene` takes care of across scenes.
+
+A frame a scene made is yours to edit before it is rendered: hide or show a draw, move it, drop it, add your own. Each of the scene's draws also carries what the scene knows about its geometry (that it was checked when stored, which part changed last), so to draw *different* geometry in a draw's place, replace the whole `Draw` with one holding the new geometry, and change `Revision`, rather than assigning to its `Geometry`.
 
 Hand-built frames don't cull unless you set `Frame.Cull`, and then each geometry's `Bounds` must contain it.
 

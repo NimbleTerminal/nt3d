@@ -244,41 +244,41 @@ func TestKHRMaterialsVariantsVehicleFleet(t *testing.T) {
 	// and Lightbar is opaque emissive ONLY on Police and invisible (Transparent alpha 0) on the rest.
 	var bodySharedID uint64
 	tireCount := 0
-	for idx, inst := range f.Instances {
-		mat := f.Geometry[idx].Material
+	for idx, inst := range f.Draws {
+		mat := f.Draws[idx].Geometry.Material
 		switch {
 		case strings.HasPrefix(inst.Name, "car-0/") && strings.HasSuffix(inst.Name, ":Car"):
 			// Each Car has 3 primitives in order: Body (node index 2), Tires (3), Lightbar (4).
 		}
 		switch inst.Name {
 		case "car-0/2:Car": // Default white body
-			if f.Shared[idx] == 0 || mat == nil || mat.BaseColor != (color.RGBA{}) {
-				t.Fatalf("default body unexpected: shared=%d mat=%+v", f.Shared[idx], mat)
+			if f.Draws[idx].Shared == 0 || mat == nil || mat.BaseColor != (color.RGBA{}) {
+				t.Fatalf("default body unexpected: shared=%d mat=%+v", f.Draws[idx].Shared, mat)
 			}
-			bodySharedID = f.Shared[idx]
-			if len(f.Geometry[idx].UV) == 0 || len(f.Geometry[idx].Tangents) == 0 {
+			bodySharedID = f.Draws[idx].Shared
+			if len(f.Draws[idx].Geometry.UV) == 0 || len(f.Draws[idx].Geometry.Tangents) == 0 {
 				t.Fatal("base SharedGeometry did not pre-populate UVs and Tangents for textured/normal-mapped variants")
 			}
 		case "car-1/2:Car": // Taxi body
-			if f.Shared[idx] != bodySharedID || mat.Clearcoat != 1 || mat.BaseColor.R < 220 || mat.BaseColor.G < 180 || mat.BaseColor.B > 80 {
-				t.Fatalf("Taxi body unexpected: shared=%d (want %d) mat=%+v", f.Shared[idx], bodySharedID, mat)
+			if f.Draws[idx].Shared != bodySharedID || mat.Clearcoat != 1 || mat.BaseColor.R < 220 || mat.BaseColor.G < 180 || mat.BaseColor.B > 80 {
+				t.Fatalf("Taxi body unexpected: shared=%d (want %d) mat=%+v", f.Draws[idx].Shared, bodySharedID, mat)
 			}
 		case "car-2/2:Car": // Police body (textured)
 			if mat.Texture == nil || mat.Tint {
 				t.Fatalf("Police body unexpected: mat=%+v", mat)
 			}
 		case "car-3/2:Car": // Red metallic body
-			if f.Shared[idx] != bodySharedID || mat.Metallic != .8 || mat.BaseColor.R < 200 || mat.BaseColor.G > 80 {
-				t.Fatalf("Red body unexpected: shared=%d (want %d) mat=%+v", f.Shared[idx], bodySharedID, mat)
+			if f.Draws[idx].Shared != bodySharedID || mat.Metallic != .8 || mat.BaseColor.R < 200 || mat.BaseColor.G > 80 {
+				t.Fatalf("Red body unexpected: shared=%d (want %d) mat=%+v", f.Draws[idx].Shared, bodySharedID, mat)
 			}
 		case "car-4/2:Car": // Weathered body (Texture + NormalMap + ORMMap)
-			if mat.Texture == nil || mat.NormalMap == nil || mat.ORMMap == nil || len(f.Geometry[idx].Tangents) == 0 {
-				t.Fatalf("Weathered body missing maps or tangents: mat=%+v tangents=%d", mat, len(f.Geometry[idx].Tangents))
+			if mat.Texture == nil || mat.NormalMap == nil || mat.ORMMap == nil || len(f.Draws[idx].Geometry.Tangents) == 0 {
+				t.Fatalf("Weathered body missing maps or tangents: mat=%+v tangents=%d", mat, len(f.Draws[idx].Geometry.Tangents))
 			}
 		case "car-0/3:Car", "car-1/3:Car", "car-2/3:Car", "car-3/3:Car", "car-4/3:Car": // Unmapped Tires
 			tireCount++
-			if f.Shared[idx] == 0 || mat == nil || mat.Roughness != .92 {
-				t.Fatalf("unmapped tire altered on %s: shared=%d mat=%+v", inst.Name, f.Shared[idx], mat)
+			if f.Draws[idx].Shared == 0 || mat == nil || mat.Roughness != .92 {
+				t.Fatalf("unmapped tire altered on %s: shared=%d mat=%+v", inst.Name, f.Draws[idx].Shared, mat)
 			}
 		case "car-2/4:Car": // Police active lightbar
 			if mat.Transparent || mat.EmissiveIntensity != 3 {
@@ -413,8 +413,8 @@ func TestKHRMaterialsVariantsMorphAndMirroredNodes(t *testing.T) {
 	check(t, sMorph.SetMaterialVariant(rootMorph, "Cobalt"))
 	fMorph, err := sMorph.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
-	if len(fMorph.Geometry) != 1 || fMorph.Geometry[0].Material == nil || fMorph.Geometry[0].Material.BaseColor.B < 200 {
-		t.Fatalf("morphed mesh did not receive Cobalt variant: %+v", fMorph.Geometry)
+	if len(fMorph.Draws) != 1 || fMorph.Draws[0].Geometry.Material == nil || fMorph.Draws[0].Geometry.Material.BaseColor.B < 200 {
+		t.Fatalf("morphed mesh did not receive Cobalt variant: %d draws", len(fMorph.Draws))
 	}
 
 	// 2. Static mirrored node (negative-determinant scale folded by staticReflections) with KHR_materials_variants.
@@ -446,12 +446,13 @@ func TestKHRMaterialsVariantsMorphAndMirroredNodes(t *testing.T) {
 	check(t, sMirror.SetMaterialVariant(rootMirror, "Gold"))
 	fMirror, err := sMirror.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
-	if len(fMirror.Geometry) != 2 {
-		t.Fatalf("expected 2 door instances, got %d", len(fMirror.Geometry))
+	if len(fMirror.Draws) != 2 {
+		t.Fatalf("expected 2 door instances, got %d", len(fMirror.Draws))
 	}
-	for i, g := range fMirror.Geometry {
-		if fMirror.Shared[i] == 0 || g.Material == nil || g.Material.BaseColor.R < 240 || g.Material.BaseColor.B > 140 {
-			t.Fatalf("door %d (%s) did not keep SharedGeometry + Gold variant: shared=%d mat=%+v", i, fMirror.Instances[i].Name, fMirror.Shared[i], g.Material)
+	for i := range fMirror.Draws {
+		g := fMirror.Draws[i].Geometry
+		if fMirror.Draws[i].Shared == 0 || g.Material == nil || g.Material.BaseColor.R < 240 || g.Material.BaseColor.B > 140 {
+			t.Fatalf("door %d (%s) did not keep SharedGeometry + Gold variant: shared=%d mat=%+v", i, fMirror.Draws[i].Name, fMirror.Draws[i].Shared, g.Material)
 		}
 	}
 }

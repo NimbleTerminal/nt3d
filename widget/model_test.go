@@ -78,7 +78,7 @@ func TestSceneEditsAndResize(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("scene change not scheduled")
 	}
-	if next := m.frame(); old.Revision != next.Revision || next.Instances[0].World[12] != .2 {
+	if next := m.frame(); old.Revision != next.Revision || next.Draws[0].World[12] != .2 {
 		t.Fatal("transform update")
 	}
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 20})
@@ -443,7 +443,7 @@ func TestCameraOriginParityInWidget(t *testing.T) {
 	}
 	// Camera eye in camera-relative frame space must sit near (0, 0, 0), so the
 	// sphere at relative (0, +3.4, 0) projects cleanly onto the screen center.
-	cx, cy, cz, cw := r.frame.Matrix.Transform(r.frame.Instances[0].World.Point(nt3dmath.Vec3{}))
+	cx, cy, cz, cw := r.frame.Matrix.Transform(r.frame.Draws[0].World.Point(nt3dmath.Vec3{}))
 	if cw <= 0 || math.Abs(float64(cx/cw)) > 1e-4 || math.Abs(float64(cy/cw)) > 1e-4 || cz <= 0 || cz >= cw {
 		t.Fatalf("sphere center did not project to screen center in widget frame: clip=(%g,%g,%g,%g)", cx, cy, cz, cw)
 	}

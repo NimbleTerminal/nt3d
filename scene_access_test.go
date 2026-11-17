@@ -17,7 +17,7 @@ func TestSceneTransmissionAndAttenuation(t *testing.T) {
 	if !closeRGB(got, color.RGBA{240, 180, 120, 255}, 1) {
 		t.Fatal("zero extinction must transmit floor", got)
 	}
-	f.Geometry[1].Material.Absorption = nt3dmath.Vec3{X: 2, Y: 1, Z: .2}
+	f.Draws[1].Geometry.Material.Absorption = nt3dmath.Vec3{X: 2, Y: 1, Z: .2}
 	got = at(softwareRender(f), 32, 24)
 	want := color.RGBA{A: 255}
 	values := []*uint8{&want.R, &want.G, &want.B}
@@ -30,7 +30,7 @@ func TestSceneTransmissionAndAttenuation(t *testing.T) {
 	if !closeRGB(got, want, 1) {
 		t.Fatal("Beer-Lambert mismatch", got, want)
 	}
-	f.Geometry[0], f.Geometry[1] = f.Geometry[1], f.Geometry[0]
+	f.Draws[0].Geometry, f.Draws[1].Geometry = f.Draws[1].Geometry, f.Draws[0].Geometry
 	if other := at(softwareRender(f), 32, 24); other != got {
 		t.Fatal("submission order changed transmission", other, got)
 	}
@@ -43,15 +43,15 @@ func TestSoftParticlesUseTransmissiveDepth(t *testing.T) {
 	f := transmissionFrame()
 	particle := Geometry{Points: []Point{{Position: nt3dmath.Vec3{Z: .25}, Radius: 5, Color: color.RGBA{255, 255, 255, 255}}}, PointStyle: PointStyle{Blend: AlphaBlend, SoftDistance: .1}}
 	particle.Bounds = GeometryBounds(particle)
-	f.Geometry = append(f.Geometry, particle)
+	f.Draws = append(f.Draws, Draw{Geometry: particle})
 	soft := at(softwareRender(f), 32, 24)
-	f.Geometry[2].PointStyle.SoftDistance = 0
+	f.Draws[2].Geometry.PointStyle.SoftDistance = 0
 	hard := at(softwareRender(f), 32, 24)
 	if soft.R >= hard.R || soft.B >= hard.B || soft.B <= 120 {
 		t.Fatal("particle did not fade at water", soft, hard)
 	}
-	f.Geometry[2].PointStyle.SoftDistance = .1
-	f.Geometry[2].Points[0].Position.Z = .3
+	f.Draws[2].Geometry.PointStyle.SoftDistance = .1
+	f.Draws[2].Geometry.Points[0].Position.Z = .3
 	if got := at(softwareRender(f), 32, 24); !closeRGB(got, color.RGBA{240, 180, 120, 255}, 1) {
 		t.Fatal("contact must fade to zero", got)
 	}
@@ -112,14 +112,14 @@ func refractionFrame(foreground bool) Frame {
 			occluder.Vertices[i].Position.X += .5
 		}
 		occluder.Bounds = GeometryBounds(occluder)
-		f.Geometry = append(f.Geometry, occluder)
+		f.Draws = append(f.Draws, Draw{Geometry: occluder})
 	}
 	return f
 }
 func TestRefractionDistortionAndForegroundRejection(t *testing.T) {
 	f := refractionFrame(false)
 	distorted := at(softwareRender(f), 29, 24)
-	f.Geometry[1].Material.Refraction = 0
+	f.Draws[1].Geometry.Material.Refraction = 0
 	clear := at(softwareRender(f), 29, 24)
 	if distorted.R >= clear.R || distorted.B <= clear.B {
 		t.Fatal("normal did not distort the scene", distorted, clear)
@@ -134,7 +134,7 @@ func TestTransmissionDoesNotCastOpaqueShadow(t *testing.T) {
 	f := blendScene(t, nil, quad(1, 0, color.RGBA{255, 255, 255, 255}, &Material{Transmission: 1}, false))
 	f.Lighting = Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{X: 1, Z: 1}, Shadows: true}}}
 	a := buildShadowMap(&f, f.drawn(1), 64)
-	f.Geometry[1].Material = &Material{Transparent: true}
+	f.Draws[1].Geometry.Material = &Material{Transparent: true}
 	b := buildShadowMap(&f, f.drawn(1), 64)
 	if a == nil || b == nil || !slices.Equal(a.depth, b.depth) {
 		t.Fatal("transmission cast an opaque shadow")

@@ -26,8 +26,8 @@ func drawnNames(t *testing.T, s *Scene) []string {
 	t.Helper()
 	f, err := s.Frame(DefaultCamera(), 32, 32)
 	check(t, err)
-	names := make([]string, len(f.Instances))
-	for i, in := range f.Instances {
+	names := make([]string, len(f.Draws))
+	for i, in := range f.Draws {
 		names[i] = in.Name
 	}
 	return names
@@ -110,8 +110,8 @@ func TestDrawOrderFollowsTheTree(t *testing.T) {
 	wantDrawn(t, s, "a", "c", "d")
 }
 
-// A frame's slices stay entry for entry in step however its nodes are ordered.
-func TestDrawOrderKeepsFrameSlicesInStep(t *testing.T) {
+// A node's draw moves whole: its geometry, revision, and sharing go with it.
+func TestDrawOrderMovesWholeDraws(t *testing.T) {
 	s, ids := drawOrderScene(t, "a", "b", "c")
 	box, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
 	check(t, err)
@@ -124,21 +124,23 @@ func TestDrawOrderKeepsFrameSlicesInStep(t *testing.T) {
 	check(t, s.SetNodeDrawOrder(ids["a"], DrawOrder{Layer: 1}))
 	after, err := s.Frame(DefaultCamera(), 32, 32)
 	check(t, err)
-	if n := len(after.Instances); n != 3 || len(after.Geometry) != n || len(after.GeometryRevisions) != n || len(after.Shared) != n {
-		t.Fatalf("frame slices have %d, %d, %d, %d entries, want 3 each", len(after.Instances), len(after.Geometry), len(after.GeometryRevisions), len(after.Shared))
+	if len(after.Draws) != 3 {
+		t.Fatalf("frame has %d draws, want 3", len(after.Draws))
 	}
-	for i, in := range after.Instances {
-		j := slices.IndexFunc(before.Instances, func(b Instance) bool { return b.Node == in.Node })
+	for i := range after.Draws {
+		now := &after.Draws[i]
+		j := slices.IndexFunc(before.Draws, func(b Draw) bool { return b.Node == now.Node })
 		if j < 0 {
-			t.Fatalf("%s is not in the frame made before", in.Name)
+			t.Fatalf("%s is not in the frame made before", now.Name)
 		}
-		if after.GeometryRevisions[i] != before.GeometryRevisions[j] || after.Shared[i] != before.Shared[j] ||
-			len(after.Geometry[i].Points) != len(before.Geometry[j].Points) || len(after.Geometry[i].Vertices) != len(before.Geometry[j].Vertices) {
-			t.Fatalf("%s moved from %d to %d without its geometry, revision, and sharing", in.Name, j, i)
+		was := &before.Draws[j]
+		if now.Revision != was.Revision || now.Shared != was.Shared ||
+			len(now.Geometry.Points) != len(was.Geometry.Points) || len(now.Geometry.Vertices) != len(was.Geometry.Vertices) {
+			t.Fatalf("%s moved from %d to %d without its geometry, revision, and sharing", now.Name, j, i)
 		}
 	}
-	if after.Instances[2].Name != "a" || after.Shared[0] == 0 {
-		t.Fatalf("frame draws %v with sharing %v, want a last and b, the shared one, first", drawnNames(t, s), after.Shared)
+	if after.Draws[2].Name != "a" || after.Draws[0].Shared == 0 {
+		t.Fatalf("frame draws %v, want a last and b, the shared one, first", drawnNames(t, s))
 	}
 }
 

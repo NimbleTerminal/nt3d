@@ -82,7 +82,7 @@ func TestSoftwareEdgeOn(t *testing.T) {
 	}
 	// Wireframe and picking leave edge-on geometry out.
 	s := NewScene()
-	g := f.Geometry[0]
+	g := f.Draws[0].Geometry
 	_, err := s.SetGeometry("fin", g)
 	check(t, err)
 	camera := DefaultCamera()

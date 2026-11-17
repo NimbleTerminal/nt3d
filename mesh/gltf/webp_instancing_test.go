@@ -283,12 +283,12 @@ func TestGLTFSceneAssetSharedGeometryAndCityInstancing(t *testing.T) {
 	if stats := cityFrame.Stats(); stats.DrawnInstances != 12 || stats.Batches != 1 {
 		t.Fatalf("expected 12 city props in 1 shared batch, got %+v", stats)
 	}
-	firstShared := cityFrame.Shared[0]
+	firstShared := cityFrame.Draws[0].Shared
 	if firstShared == 0 {
-		t.Fatal("expected nonzero Frame.Shared ID on instantiated glTF prop")
+		t.Fatal("expected nonzero Draw.Shared ID on instantiated glTF prop")
 	}
-	for i, id := range cityFrame.Shared {
-		if id != firstShared {
+	for i := range cityFrame.Draws {
+		if id := cityFrame.Draws[i].Shared; id != firstShared {
 			t.Fatalf("instance %d has Shared ID %d, want %d", i, id, firstShared)
 		}
 	}

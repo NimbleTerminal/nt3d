@@ -24,16 +24,16 @@ func TestPointUpdatesPreserveSnapshots(t *testing.T) {
 	check(t, s.UpdateNodePoints(id, 1, update, pointBounds()))
 	after := frame(t, s)
 	update[0].Radius = 20
-	if before.Geometry[0].Points[1].Radius != 3 || after.Geometry[0].Points[1].Radius != 4 {
+	if before.Draws[0].Geometry.Points[1].Radius != 3 || after.Draws[0].Geometry.Points[1].Radius != 4 {
 		t.Fatal("snapshot or input ownership")
 	}
-	if &before.Geometry[0].Vertices[0] != &after.Geometry[0].Vertices[0] || before.GeometryRevisions[0] != after.GeometryRevisions[0] {
+	if &before.Draws[0].Geometry.Vertices[0] != &after.Draws[0].Geometry.Vertices[0] || before.Draws[0].Revision != after.Draws[0].Revision {
 		t.Fatal("unrelated mesh rebuilt")
 	}
-	if after.Geometry[0].Bounds != pointBounds() {
+	if after.Draws[0].Geometry.Bounds != pointBounds() {
 		t.Fatal("bounds recomputed")
 	}
-	if after.Geometry[0].pointUpdate.first != 1 || after.Geometry[0].pointUpdate.end != 2 {
+	if after.Draws[0].state.pointUpdate.first != 1 || after.Draws[0].state.pointUpdate.end != 2 {
 		t.Fatal("changed range")
 	}
 	check(t, validateFrame(after))
@@ -50,7 +50,7 @@ func TestPointUpdatesPreserveSnapshots(t *testing.T) {
 	if s.UpdateNodePoints(id, 0, update, nt3dmath.AABB{}) == nil {
 		t.Fatal("accepted unknown bounds")
 	}
-	if frame(t, s).Geometry[0].Points[1].Radius != 4 {
+	if frame(t, s).Draws[0].Geometry.Points[1].Radius != 4 {
 		t.Fatal("failed update mutated geometry")
 	}
 }
@@ -97,12 +97,13 @@ func TestStoredGeometryCertificate(t *testing.T) {
 	f, err := s.Frame(DefaultCamera(), 40, 40)
 	check(t, err)
 	gi := -1
-	for i, g := range f.Geometry {
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
 		if g.Clusters != nil {
 			gi = i
 		}
 	}
-	if gi < 0 || f.Geometry[gi].stored == nil {
+	if gi < 0 || f.Draws[gi].state.stored == nil {
 		t.Fatal("the scene's frame carries no certified cloud")
 	}
 	if err := validateFrame(f); err != nil {
@@ -116,20 +117,20 @@ func TestStoredGeometryCertificate(t *testing.T) {
 		t.Fatal("a hand-built frame with a NaN point passed")
 	}
 
-	points := slices.Clone(f.Geometry[gi].Points)
+	points := slices.Clone(f.Draws[gi].Geometry.Points)
 	points[3].Position.X = nan
 	swapped := f
-	swapped.Geometry = slices.Clone(f.Geometry)
-	swapped.Geometry[gi].Points = points
+	swapped.Draws = slices.Clone(f.Draws)
+	swapped.Draws[gi].Geometry.Points = points
 	if validateFrame(swapped) == nil {
 		t.Fatal("a frame copy with other points holding a NaN passed")
 	}
 
-	set := *f.Geometry[gi].Clusters
+	set := *f.Draws[gi].Geometry.Clusters
 	set.Clusters = slices.Clone(set.Clusters)
 	set.Clusters[0].First++
-	swapped.Geometry = slices.Clone(f.Geometry)
-	swapped.Geometry[gi].Clusters = &set
+	swapped.Draws = slices.Clone(f.Draws)
+	swapped.Draws[gi].Geometry.Clusters = &set
 	if validateFrame(swapped) == nil {
 		t.Fatal("a frame copy with a non-tiling cluster set passed")
 	}

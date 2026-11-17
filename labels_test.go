@@ -30,18 +30,18 @@ func TestLabelProjectionAndSharing(t *testing.T) {
 			cam := Camera{Alpha: 25, Beta: 40, Distance: distance, Projection: projection}
 			f, err := s.Frame(cam, 320, 200)
 			check(t, err)
-			if f.Shared[0] != f.Shared[1] || f.GeometryRevisions[0] != f.GeometryRevisions[1] {
+			if f.Draws[0].Shared != f.Draws[1].Shared || f.Draws[0].Revision != f.Draws[1].Revision {
 				t.Fatal("label instances lost sharing")
 			}
-			for i := range f.Geometry {
-				m := f.Matrix.Mul(f.Instances[i].World)
+			for i := range f.Draws {
+				m := f.Matrix.Mul(f.Draws[i].World)
 				_, y0, _, _ := m.Project(g.Vertices[0].Position, 320, 200)
 				_, y1, _, _ := m.Project(g.Vertices[3].Position, 320, 200)
 				if math.Abs(float64(y0-y1-20)) > .001 {
 					t.Fatalf("pixel height: %v", y0-y1)
 				}
 			}
-			if f.Instances[0].World.Point(nt3dmath.Vec3{}).Z != .5 {
+			if f.Draws[0].World.Point(nt3dmath.Vec3{}).Z != .5 {
 				t.Fatal("lost parent transform")
 			}
 		}
@@ -105,7 +105,7 @@ func TestLabelCullingAndSnapshot(t *testing.T) {
 	check(t, err)
 	_, err = s.SetLabel("label", Label{Text: "NEW", Pixels: true})
 	check(t, err)
-	if old.Geometry[0].Billboard.Text != "OLD" {
+	if old.Draws[0].Geometry.Billboard.Text != "OLD" {
 		t.Fatal("snapshot mutated")
 	}
 	for _, position := range []nt3dmath.Vec3{{X: 4}, {X: 5}, {X: -500}, {Y: 500}} {
@@ -131,7 +131,7 @@ func TestLabelCullingAndSnapshot(t *testing.T) {
 	check(t, s.SetTransform(id, m))
 	f, err := s.Frame(cam, 160, 120)
 	check(t, err)
-	if f.Instances[0].World != m {
+	if f.Draws[0].World != m {
 		t.Fatal("fixed label changed orientation")
 	}
 	if s.Pick(cam, f, 80, 60, 0) != nil {
@@ -179,7 +179,7 @@ func TestLabelBoundsAndCutout(t *testing.T) {
 	g.Billboard.Text = "mutated"
 	f, err = s.Frame(cam, 160, 120)
 	check(t, err)
-	if f.Geometry[0].Billboard.Text != "original" {
+	if f.Draws[0].Geometry.Billboard.Text != "original" {
 		t.Fatal("billboard metadata aliases caller")
 	}
 }

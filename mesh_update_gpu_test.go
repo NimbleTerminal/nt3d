@@ -50,8 +50,8 @@ func TestGPUMeshUpdatesInPlaceAndSnapshotReplay(t *testing.T) {
 	// Displace vertices & tangents across multiple frames; GPU reuses the single
 	// uploaded buffer in place without allocating new gpuGeometry entries.
 	bounds := meshTestBounds()
-	verts := slices.Clone(f0.Geometry[0].Vertices)
-	tans := slices.Clone(f0.Geometry[0].Tangents)
+	verts := slices.Clone(f0.Draws[0].Geometry.Vertices)
+	tans := slices.Clone(f0.Draws[0].Geometry.Tangents)
 	for step := 1; step <= 3; step++ {
 		for i := range verts {
 			verts[i].Position.Z = float32(step) * .18 * (1 - abs(verts[i].Position.X))
@@ -108,7 +108,7 @@ func TestGPUMeshUpdatesInvalidateCreasesAcrossSessionViews(t *testing.T) {
 
 	check(t, v1.Render(f0, GPUTarget{Color: view1, Format: format, Width: 80, Height: 80}))
 
-	moved := slices.Clone(f0.Geometry[0].Vertices)
+	moved := slices.Clone(f0.Draws[0].Geometry.Vertices)
 	for i := range moved {
 		moved[i].Position.Z += .9
 	}
@@ -167,7 +167,7 @@ func TestGPUSetMaterialSharedGeometryParity(t *testing.T) {
 	f, err := s.Frame(cam, 96, 96)
 	check(t, err)
 	f.EnvironmentBackgroundOnly = true
-	if f.Shared[0] == 0 || f.Shared[0] != f.Shared[1] {
+	if f.Draws[0].Shared == 0 || f.Draws[0].Shared != f.Draws[1].Shared {
 		t.Fatal("SharedGeometry was unnecessarily detached by instance-level SetMaterial")
 	}
 

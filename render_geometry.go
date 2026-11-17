@@ -14,7 +14,7 @@ import (
 
 // Manual frames retain their frame-wide revision/index contract. Scene frames
 // use stable node identities and independent geometry revisions, and shared
-// geometry (Frame.Shared) its own identity, whatever nodes show it.
+// geometry (Draw.Shared) its own identity, whatever nodes show it.
 type geometryKey struct {
 	node     NodeID
 	revision uint64
@@ -249,14 +249,15 @@ type gpuDraw struct {
 }
 
 func frameGeometryKey(f Frame, i int) geometryKey {
-	if p := f.Geometry[i].posed; p != nil {
+	d := &f.Draws[i]
+	if p := d.state.posed; p != nil {
 		return geometryKey{shared: p.identity}
 	}
-	if len(f.Shared) != 0 && f.Shared[i] != 0 {
-		return geometryKey{shared: f.Shared[i]}
+	if d.Shared != 0 {
+		return geometryKey{shared: d.Shared}
 	}
-	if len(f.GeometryRevisions) != 0 {
-		return geometryKey{node: f.Instances[i].Node, revision: f.GeometryRevisions[i]}
+	if d.Revision != 0 {
+		return geometryKey{node: d.Node, revision: d.Revision}
 	}
 	return geometryKey{revision: f.Revision, index: i, manual: true}
 }
@@ -269,14 +270,16 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 	if g.geometries == nil {
 		g.geometries = make(map[geometryKey]*gpuGeometry)
 	}
-	keys := make([]geometryKey, len(f.Geometry))
-	used := make(map[geometryKey]bool, len(f.Geometry))
-	retainLOD := len(f.GeometryRevisions) != 0 || len(f.Shared) != 0
-	for i := range f.Geometry {
+	keys := make([]geometryKey, len(f.Draws))
+	used := make(map[geometryKey]bool, len(f.Draws))
+	// A frame that names its geometry, by node or as shared, keeps the other
+	// levels of detail of what it draws uploaded.
+	retainLOD := slices.ContainsFunc(f.Draws, func(d Draw) bool { return d.Revision != 0 || d.Shared != 0 })
+	for i := range f.Draws {
 		keys[i] = frameGeometryKey(f, i)
 		used[keys[i]] = true
 		if retainLOD {
-			for _, k := range f.Geometry[i].retainKeys {
+			for _, k := range f.Draws[i].state.retainKeys {
 				used[k] = true
 			}
 		}
@@ -308,8 +311,9 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 	}
 	var groups []*group
 	byKey := map[groupKey]*group{}
-	g.nodes = make([]*gpuGeometry, len(f.Geometry))
-	for i, geom := range f.Geometry {
+	g.nodes = make([]*gpuGeometry, len(f.Draws))
+	for i := range f.Draws {
+		geom, st := f.Draws[i].Geometry, &f.Draws[i].state
 		node := g.geometries[keys[i]]
 		if node == nil && g.shared != nil {
 			g.shared.mu.Lock()
@@ -334,7 +338,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		}
 		if node == nil {
 			node = &gpuGeometry{}
-			for kind, data := range geometryData(geom) {
+			for kind, data := range geometryData(geom, st) {
 				record := 48
 				if kind == 0 {
 					record = pointRecord
@@ -347,12 +351,12 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			if extended(geom) {
 				node.batches[7].count = uint32(len(geom.Indices))
 			}
-			if geom.pointUpdate != nil {
-				node.pointRevision = geom.pointUpdate.revision
+			if st.pointUpdate != nil {
+				node.pointRevision = st.pointUpdate.revision
 			}
-			if geom.meshUpdate != nil {
-				node.meshRevision = geom.meshUpdate.revision
-				node.creasesRev = geom.meshUpdate.revision
+			if st.meshUpdate != nil {
+				node.meshRevision = st.meshUpdate.revision
+				node.creasesRev = st.meshUpdate.revision
 			}
 			if err := g.uploadData(dev, &node.sh, gaussianSHData(&geom), 4); err != nil {
 				node.release(nil)
@@ -421,7 +425,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				g.shared.mu.Unlock()
 			}
 			if node.batches[slot].buffer == nil {
-				data, _ := appendMeshRecords(nil, nil, geom)
+				data, _ := appendMeshRecords(nil, nil, geom, st)
 				if err := g.uploadData(dev, &node.batches[slot], data, 48); err != nil {
 					return err
 				}
@@ -450,7 +454,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				return err
 			}
 		}
-		u := geom.pointUpdate
+		u := st.pointUpdate
 		revision := uint64(0)
 		if u != nil {
 			revision = u.revision
@@ -460,12 +464,12 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			if u != nil && node.pointRevision == u.previous {
 				first, end = u.first, u.end
 			}
-			data := geometryData(Geometry{Points: geom.Points[first:end], PointStyle: geom.PointStyle})[0]
+			data := geometryData(Geometry{Points: geom.Points[first:end], PointStyle: geom.PointStyle}, &noState)[0]
 			if err := dev.Queue().WriteBuffer(node.batches[0].buffer, uint64(first*pointRecord), data); err != nil {
 				return err
 			}
 			if geom.DropShadow.Strength > 0 {
-				data := geometryData(Geometry{Bounds: geom.Bounds, DropShadow: geom.DropShadow})[8]
+				data := geometryData(Geometry{Bounds: geom.Bounds, DropShadow: geom.DropShadow}, &noState)[8]
 				if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, data); err != nil {
 					return err
 				}
@@ -482,7 +486,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			}
 			node.pointRevision = revision
 		}
-		mu := geom.meshUpdate
+		mu := st.meshUpdate
 		meshRev := uint64(0)
 		if mu != nil {
 			meshRev = mu.revision
@@ -496,7 +500,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			if mapped(geom) {
 				slot = 7
 			}
-			g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, geom)
+			g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, geom, st)
 			if err := dev.Queue().WriteBuffer(node.batches[slot].buffer, 0, g.meshScratch); err != nil {
 				return err
 			}
@@ -504,20 +508,20 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				unmapped := geom
 				unmapped.Material = nil
 				unmapped.Displacement = nil
-				g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, unmapped)
+				g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, unmapped, st)
 				if err := dev.Queue().WriteBuffer(node.batches[1].buffer, 0, g.meshScratch); err != nil {
 					return err
 				}
 			} else if slot == 1 && node.batches[7].buffer != nil && !extended(geom) {
 				mappedGeom := geom
 				mappedGeom.Displacement = &VertexDisplacement{}
-				g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, mappedGeom)
+				g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, mappedGeom, st)
 				if err := dev.Queue().WriteBuffer(node.batches[7].buffer, 0, g.meshScratch); err != nil {
 					return err
 				}
 			}
 			if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() && node.batches[8].buffer != nil {
-				if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, dropShadowData(&geom)); err != nil {
+				if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, dropShadowData(&geom, st)); err != nil {
 					return err
 				}
 			}
@@ -532,7 +536,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		if !drawn[i] {
 			continue
 		}
-		if transparent(&f.Geometry[i]) || blendedPoints(&f.Geometry[i]) {
+		if transparent(&f.Draws[i].Geometry) || blendedPoints(&f.Draws[i].Geometry) {
 			groups = append(groups, &group{keys[i], []int{i}, true})
 			continue
 		}
@@ -576,7 +580,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			return err
 		}
 		// Alpha points draw from the frame's sort when it runs.
-		geom := &f.Geometry[grp.members[0]]
+		geom := &f.Draws[grp.members[0]].Geometry
 		sorted := grp.blended && g.plan.points > 0 && blendedPoints(geom) && geom.PointStyle.Blend == AlphaBlend
 		if err := g.bindPoints(dev, node, set, sorted); err != nil {
 			return err
@@ -713,16 +717,16 @@ func pbrParams(m *Material, linear bool) ([4]float32, float32) {
 func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) error {
 	states := make([]transformState, len(members))
 	for k, i := range members {
-		m := f.Geometry[i].Material
+		m := f.Draws[i].Geometry.Material
 		states[k].world = instance(f, i).World
-		states[k].optics = opticalParams(m, f.Geometry[i].PointStyle)
+		states[k].optics = opticalParams(m, f.Draws[i].Geometry.PointStyle)
 		var specPacked float32
 		states[k].pbr, specPacked = pbrParams(m, f.Linear)
 		states[k].coat = coatParams(m)
 		states[k].sheen = sheenParams(m, f.Linear)
 		em := emissiveFactor(m, f.Linear)
 		states[k].emissive = [4]float32{em[0], em[1], em[2], specPacked}
-		states[k].outline = f.Geometry[i].Outline
+		states[k].outline = f.Draws[i].Geometry.Outline
 		states[k].unlit = m != nil && m.Unlit
 		states[k].toon = toonParams(m)
 		if m != nil && m.Specular > 0 && !m.Unlit {
@@ -732,11 +736,11 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 			states[k].reflectivity = m.Reflectivity
 			states[k].envReflect = m.EnvironmentReflect
 		}
-		if mapped(f.Geometry[i]) {
+		if mapped(f.Draws[i].Geometry) {
 			states[k].procedural = baseMap(m).shader != ""
 		}
-		if extended(f.Geometry[i]) {
-			states[k].extension = uint32(len(f.Geometry[i].Indices))
+		if extended(f.Draws[i].Geometry) {
+			states[k].extension = uint32(len(f.Draws[i].Geometry.Indices))
 		}
 	}
 	if slices.Equal(states, s.last) {
@@ -789,7 +793,7 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 	return appendFloats(data, pbr[0], pbr[1], pbr[2], pbr[3], emissive[0], emissive[1], emissive[2], emissive[3], coat[0], coat[1], coat[2], coat[3], sheen[0], sheen[1], sheen[2], sheen[3])
 }
 
-func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v Instance, m *Material) error {
+func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v placement, m *Material) error {
 	var specular, shininess, reflectivity float32
 	if m != nil && m.Specular > 0 && !m.Unlit {
 		specular, shininess = m.Specular, m.shininess()
@@ -845,7 +849,7 @@ func (g *gpuRenderer) uploadBatch(dev *wgpu.Device, b *gpuBatch, data []byte, tr
 	return nil
 }
 
-func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []UV) {
+func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry, st *geometryState) ([]byte, []UV) {
 	if len(geom.Indices) == 0 {
 		return dst, flowScratch
 	}
@@ -860,7 +864,7 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []U
 	}
 	blended := transparent(&geom)
 	var outlineCodes []uint32
-	if geom.posed == nil && geom.splitOutlines() {
+	if st.posed == nil && st.splitOutlines(&geom) {
 		outlineCodes = outlineNormals(geom.Vertices)
 	}
 	isMapped := mapped(geom)
@@ -962,7 +966,7 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry) ([]byte, []U
 	return dst, flowScratch
 }
 
-func geometryData(geom Geometry) (data [9][]byte) {
+func geometryData(geom Geometry, st *geometryState) (data [9][]byte) {
 	// Each record is twelve floats; each kind is sized once, so encoding
 	// allocates per kind rather than per record.
 	const record = 12 * 4
@@ -978,7 +982,7 @@ func geometryData(geom Geometry) (data [9][]byte) {
 		}
 	}
 	if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() {
-		data[8] = dropShadowData(&geom)
+		data[8] = dropShadowData(&geom, st)
 	}
 	// Each node binds one transform; records always reference its slot zero.
 	vertex := func(kind int, v Vertex, radius float32) {
@@ -998,7 +1002,7 @@ func geometryData(geom Geometry) (data [9][]byte) {
 		if mapped(geom) {
 			slot = 7
 		}
-		data[slot], _ = appendMeshRecords(nil, nil, geom)
+		data[slot], _ = appendMeshRecords(nil, nil, geom, st)
 	}
 	for _, b := range geom.Boxes {
 		vertex(2, Vertex{b.Min, b.Size, b.Color}, 1)
@@ -1140,8 +1144,8 @@ func shLayout(g *Geometry) (labelsAt, paletteAt int) {
 	return labelsAt, labelsAt + (2*len(g.Points)+3)&^3
 }
 
-func dropShadowData(g *Geometry) []byte {
-	bounds := dropShadowBounds(g)
+func dropShadowData(g *Geometry, st *geometryState) []byte {
+	bounds := dropShadowBounds(g, st)
 	a, b := bounds.Min, bounds.Max
 	fixed := float32(0)
 	if g.DropShadow.FixedFloor {

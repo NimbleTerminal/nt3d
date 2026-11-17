@@ -34,7 +34,7 @@ func TestHierarchyAndTransactions(t *testing.T) {
 	check(t, s.SetTransform(parent, nt3dmath.Translation(nt3dmath.Vec3{X: 2})))
 	check(t, s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{Y: 3})))
 	f := frame(t, s)
-	if p := f.Instances[0].World.Point(nt3dmath.Vec3{}); p != (nt3dmath.Vec3{X: 2, Y: 3}) {
+	if p := f.Draws[0].World.Point(nt3dmath.Vec3{}); p != (nt3dmath.Vec3{X: 2, Y: 3}) {
 		t.Fatal(p)
 	}
 	revision := s.Revision()
@@ -56,7 +56,7 @@ func TestHierarchyAndTransactions(t *testing.T) {
 	}
 	check(t, s.SetVisible(parent, false))
 	hidden := frame(t, s)
-	if hidden.Instances[0].Visible || s.Bounds().IsValid() {
+	if !hidden.Draws[0].Hidden || s.Bounds().IsValid() {
 		t.Fatal("hidden parent")
 	}
 	if hidden.Revision != f.Revision {
@@ -68,7 +68,7 @@ func TestHierarchyAndTransactions(t *testing.T) {
 	if moved.Revision != f.Revision {
 		t.Fatal("transform invalidated meshes")
 	}
-	if f.Instances[0].World[12] != 2 {
+	if f.Draws[0].World[12] != 2 {
 		t.Fatal("old frame mutated")
 	}
 	check(t, s.Remove(parent))
@@ -94,7 +94,7 @@ func TestGeometryAndTextureSnapshotOwnership(t *testing.T) {
 	g.Vertices[0].Position.X = 999
 	g.Indices[0] = 999
 	g.Material.Unlit = false
-	if before.Geometry[0].Vertices[0].Position.X == 999 || before.Geometry[0].Indices[0] == 999 || !before.Geometry[0].Material.Unlit {
+	if before.Draws[0].Geometry.Vertices[0].Position.X == 999 || before.Draws[0].Geometry.Indices[0] == 999 || !before.Draws[0].Geometry.Material.Unlit {
 		t.Fatal("caller storage retained")
 	}
 	green := testTexture(t, color.RGBA{0, 255, 0, 255})
@@ -103,10 +103,10 @@ func TestGeometryAndTextureSnapshotOwnership(t *testing.T) {
 	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision {
 		t.Fatal("wrong texture revisions")
 	}
-	if before.Geometry[0].Material.Texture == green || after.Geometry[0].Material.Texture != green {
+	if before.Draws[0].Geometry.Material.Texture == green || after.Draws[0].Geometry.Material.Texture != green {
 		t.Fatal("texture snapshot mutated")
 	}
-	if &before.Geometry[0].Vertices[0] != &after.Geometry[0].Vertices[0] {
+	if &before.Draws[0].Geometry.Vertices[0] != &after.Draws[0].Geometry.Vertices[0] {
 		t.Fatal("texture change copied mesh")
 	}
 	revision := s.Revision()
@@ -246,7 +246,7 @@ func TestSceneFrameAllocationsDoNotGrowWithNodes(t *testing.T) {
 		allocs := func(n int) float64 {
 			s := frameScene(t, n, origin)
 			return testing.AllocsPerRun(5, func() {
-				if f, err := s.Frame(camera, 200, 120); err != nil || len(f.Geometry) != n || len(f.Instances) != n || len(f.GeometryRevisions) != n || len(f.Shared) != n {
+				if f, err := s.Frame(camera, 200, 120); err != nil || len(f.Draws) != n {
 					t.Fatalf("frame of %d: %v", n, err)
 				}
 			})

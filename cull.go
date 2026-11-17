@@ -6,7 +6,7 @@ import "nimbleterminal.dev/nt3d/math"
 
 // overhang is how far, in render pixels, a geometry's screen-sized marks
 // (points, line widths, arrow heads) may reach past its bounds, plus one.
-func overhang(g *Geometry) float32 {
+func overhang(g *Geometry, st *geometryState) float32 {
 	r := g.Outline.Width
 	if g.Outline.Units == WorldUnits && g.Outline.Width > 0 {
 		r = 32 // As far as a world-unit outline reaches on screen.
@@ -16,7 +16,7 @@ func overhang(g *Geometry) float32 {
 	}
 	if g.PointStyle.Units == WorldUnits && len(g.Points) > 0 {
 		r = max(r, MaxPointPixels) // As far as a world radius reaches on screen.
-	} else if g.pointUpdate != nil {
+	} else if st.pointUpdate != nil {
 		r = max(r, 32) // Validated pixel points never exceed 32; avoid a frame scan.
 	} else {
 		for _, p := range g.Points {
@@ -80,13 +80,13 @@ func outside(b nt3dmath.AABB, m nt3dmath.Mat4, padX, padY float32) bool {
 // bounds reach into the view. Pixel sizes are scaled by scale, as a
 // supersampled software frame's are.
 func (f Frame) drawn(scale float32) []bool {
-	out := make([]bool, len(f.Geometry))
-	for i := range f.Geometry {
+	out := make([]bool, len(f.Draws))
+	for i := range f.Draws {
 		inst := instance(f, i)
 		out[i] = inst.Visible
-		g := &f.Geometry[i]
+		g := &f.Draws[i].Geometry
 		if out[i] && f.Cull && g.Bounds.IsValid() {
-			pad := overhang(g) * scale
+			pad := overhang(g, &f.Draws[i].state) * scale
 			out[i] = !outside(g.Bounds, f.Matrix.Mul(inst.World), 2*pad/float32(f.Width), 2*pad/float32(f.Height))
 		}
 	}

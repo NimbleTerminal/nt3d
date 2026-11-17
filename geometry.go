@@ -63,9 +63,14 @@ type DropShadow struct {
 	FloorZ     float32
 }
 
-// Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
-// Scene setters copy geometry; frame consumers must treat snapshots as read-only.
-type Geometry struct {
+// geometryState is what a scene knows about a geometry it stores, beyond what
+// the application wrote: that its arrays were checked when they were stored
+// (the certificates), which part of them changed last (the updates), how its
+// skin is posed, its bounds at rest, and where it sits among its node's
+// levels of detail. A frame carries it beside each geometry (Draw), so that
+// renderers can skip the checks and upload only what changed. Geometry in a
+// frame built by hand has none, and is checked and uploaded whole.
+type geometryState struct {
 	pointUpdate    *pointUpdate
 	meshUpdate     *meshUpdate
 	meshCert       meshCertificate
@@ -74,8 +79,25 @@ type Geometry struct {
 	retainKeys     []geometryKey
 	lodTierPlusOne int
 	restBounds     nt3dmath.AABB
-	Billboard      *Billboard          // Optional camera-facing transform, resolved by Scene.Frame.
-	Displacement   *VertexDisplacement // Optional vertex displacement shader + Go fallback for indexed triangles.
+}
+
+// noState is the state of geometry no scene vouches for.
+var noState geometryState
+
+// sceneGeometry is a geometry as a scene holds it: the application's data and
+// what the scene knows about it.
+type sceneGeometry struct {
+	Geometry
+	geometryState
+}
+
+// Geometry contains points, indexed triangles, boxes, line pairs, and arrow instances.
+// It is plain data, every field the application's to fill in: what a scene
+// works out about a geometry it stores is kept beside it, not inside it.
+// Scene setters copy geometry; frame consumers must treat snapshots as read-only.
+type Geometry struct {
+	Billboard    *Billboard          // Optional camera-facing transform, resolved by Scene.Frame.
+	Displacement *VertexDisplacement // Optional vertex displacement shader + Go fallback for indexed triangles.
 
 	// WireGrid optionally describes a row-major rectangular vertex lattice (NX, NY).
 	// Wireframe draws viewport-adaptive rows/columns instead of triangle edges.

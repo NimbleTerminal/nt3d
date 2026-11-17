@@ -19,10 +19,10 @@ func TestGPUSceneAccess(t *testing.T) {
 				f.Width, f.Height = size[0], size[1]
 				f.Linear = linear
 				f.Supersample = ss
-				f.Geometry[1].Material.Absorption = nt3dmath.Vec3{X: 2, Y: 1, Z: .2}
+				f.Draws[1].Geometry.Material.Absorption = nt3dmath.Vec3{X: 2, Y: 1, Z: .2}
 				p := Geometry{Points: []Point{{Position: nt3dmath.Vec3{Z: .25}, Radius: 6, Color: color.RGBA{255, 255, 255, 255}}}, PointStyle: PointStyle{Blend: AlphaBlend, SoftDistance: .1}}
 				p.Bounds = GeometryBounds(p)
-				f.Geometry = append(f.Geometry, p)
+				f.Draws = append(f.Draws, Draw{Geometry: p})
 				img, err := r.Render(f)
 				check(t, err)
 				soft := softwareRender(f)

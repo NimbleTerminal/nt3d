@@ -40,14 +40,14 @@ func TestGPULightMap(t *testing.T) {
 			f.Linear = linear
 			f.Complete = true
 			f.ReflectionProbes = []ReflectionProbe{testProbe(t, color.NRGBA{50, 80, 120, 255})}
-			f.Geometry[0].NormalUV = append([]UV(nil), f.Geometry[0].UV...)
-			for i := range f.Geometry[0].LightMapUV {
-				uv := &f.Geometry[0].LightMapUV[i]
+			f.Draws[0].Geometry.NormalUV = append([]UV(nil), f.Draws[0].Geometry.UV...)
+			for i := range f.Draws[0].Geometry.LightMapUV {
+				uv := &f.Draws[0].Geometry.LightMapUV[i]
 				uv.U = 1 - uv.U
 				uv.V = .2 + uv.V*.6
 			}
 			if mat.NormalMap == nil {
-				f.Geometry[0].UV = nil
+				f.Draws[0].Geometry.UV = nil
 			}
 			gpu, err := r.Render(f)
 			check(t, err)
@@ -90,7 +90,7 @@ func TestGPULightMap(t *testing.T) {
 	f.MSAA = false
 	f.Supersample = 1
 	f.PostProcess = PostProcess{}
-	f.Geometry[0].Vertices[0].Position.Z = -.3
+	f.Draws[0].Geometry.Vertices[0].Position.Z = -.3
 	f.Revision++
 	gpu, err := r.Render(f)
 	check(t, err)
@@ -102,7 +102,7 @@ func TestGPULightMap(t *testing.T) {
 func TestGPULightMapSharedBindings(t *testing.T) {
 	a := testLightMap(t, [3]float32{2, 0, 0})
 	b := testLightMap(t, [3]float32{0, 2, 0})
-	g := lightMapFrame(&Material{LightMap: a}).Geometry[0]
+	g := lightMapFrame(&Material{LightMap: a}).Draws[0].Geometry
 	shared, err := NewSharedGeometry(g)
 	check(t, err)
 	s := NewScene()

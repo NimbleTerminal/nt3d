@@ -187,25 +187,25 @@ func TestSHPalettePointUpdates(t *testing.T) {
 	check(t, s.SetNodePoints(id, moved, GeometryBounds(g)))
 	f, err := s.Frame(DefaultCamera(), 40, 40)
 	check(t, err)
-	if h := f.Geometry[0]; h.GaussianSHPalette == nil || len(h.GaussianSHLabels) != 50 {
+	if h := f.Draws[0].Geometry; h.GaussianSHPalette == nil || len(h.GaussianSHLabels) != 50 {
 		t.Fatal("a same-count update dropped the palette")
 	}
-	check(t, validateFrameGeometry(f.Geometry[0]))
+	check(t, validateFrameGeometry(f.Draws[0].Geometry, &f.Draws[0].state))
 	// A partial range update keeps them too.
 	check(t, s.UpdateNodePoints(id, 10, moved[10:20], GeometryBounds(g)))
 	f, err = s.Frame(DefaultCamera(), 40, 40)
 	check(t, err)
-	if h := f.Geometry[0]; h.GaussianSHPalette == nil || len(h.GaussianSHLabels) != 50 || len(h.GaussianSH) != 50 {
+	if h := f.Draws[0].Geometry; h.GaussianSHPalette == nil || len(h.GaussianSHLabels) != 50 || len(h.GaussianSH) != 50 {
 		t.Fatal("a range update dropped the palette")
 	}
-	check(t, validateFrameGeometry(f.Geometry[0]))
+	check(t, validateFrameGeometry(f.Draws[0].Geometry, &f.Draws[0].state))
 	// A count change is refused, leaving the SH state as it was.
 	if s.SetNodePoints(id, moved[:20], GeometryBounds(g)) == nil {
 		t.Fatal("a count change was accepted")
 	}
 	f, err = s.Frame(DefaultCamera(), 40, 40)
 	check(t, err)
-	if h := f.Geometry[0]; h.GaussianSHPalette == nil || len(h.GaussianSHLabels) != 50 {
+	if h := f.Draws[0].Geometry; h.GaussianSHPalette == nil || len(h.GaussianSHLabels) != 50 {
 		t.Fatal("a refused update changed SH state")
 	}
 }
@@ -216,7 +216,7 @@ func TestSHPaletteFrameCertificate(t *testing.T) {
 	bad := g
 	bad.GaussianSHLabels = slices.Clone(g.GaussianSHLabels)
 	bad.GaussianSHLabels[9] = 4
-	if validateFrameGeometry(bad) == nil {
+	if validateFrameGeometry(bad, &noState) == nil {
 		t.Fatal("an uncertified label past the palette was accepted")
 	}
 	// A stored geometry is certified only while its palette keeps its size.
@@ -224,9 +224,9 @@ func TestSHPaletteFrameCertificate(t *testing.T) {
 	id, err := s.SetGeometry("cloud", g)
 	check(t, err)
 	stored := *s.nodes[id].geometry
-	check(t, validateFrameGeometry(stored))
+	check(t, validateFrameGeometry(stored.Geometry, &stored.geometryState))
 	stored.GaussianSHPalette = &SHPalette{Degree: 3, Coefficients: g.GaussianSHPalette.Coefficients[:30]}
-	if validateFrameGeometry(stored) == nil {
+	if validateFrameGeometry(stored.Geometry, &stored.geometryState) == nil {
 		t.Fatal("a shrunken palette was accepted for stored labels")
 	}
 	// Clipping everything away leaves a valid empty geometry.

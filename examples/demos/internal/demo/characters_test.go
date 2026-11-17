@@ -168,10 +168,11 @@ func TestCharacterOutlineToggle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(f.Geometry) == 0 {
+		if len(f.Draws) == 0 {
 			t.Fatal("missing character")
 		}
-		for _, g := range f.Geometry {
+		for di := range f.Draws {
+			g := f.Draws[di].Geometry
 			if (g.Outline.Width > 0) != on {
 				t.Fatal("character lost outline setting")
 			}

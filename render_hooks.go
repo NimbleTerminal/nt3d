@@ -589,8 +589,8 @@ func (g *gpuRenderer) ensureHookShadowPipeline(dev *wgpu.Device, prog *gpuHookPr
 func (g *gpuRenderer) prepareHooks(dev *wgpu.Device, f Frame, drawn []bool) error {
 	usedUniforms := make(map[hookUniformKey]bool)
 	needHooks := false
-	for i := range f.Geometry {
-		geom := &f.Geometry[i]
+	for i := range f.Draws {
+		geom := &f.Draws[i].Geometry
 		if !drawn[i] || len(geom.Indices) == 0 || !hasShaderHook(*geom) {
 			continue
 		}
@@ -622,8 +622,8 @@ func (g *gpuRenderer) prepareHooks(dev *wgpu.Device, f Frame, drawn []bool) erro
 		g.hookBinds = make(map[hookUniformKey]*gpuHookBind)
 	}
 
-	for i := range f.Geometry {
-		geom := &f.Geometry[i]
+	for i := range f.Draws {
+		geom := &f.Draws[i].Geometry
 		if !drawn[i] || len(geom.Indices) == 0 {
 			continue
 		}

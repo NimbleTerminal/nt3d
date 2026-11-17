@@ -54,7 +54,7 @@ func TestDirectTextureOutputMatchesFloatPath(t *testing.T) {
 			f := outlineFrame(t)
 			f.Linear = linear
 			f.Supersample = 2
-			g := &f.Geometry[0]
+			g := &f.Draws[0].Geometry
 			g.Outline.Width = 0
 			g.Material = &Material{Texture: tex, Unlit: true, Repeat: true}
 			for i := range g.Vertices {
@@ -130,9 +130,9 @@ func TestDirectTextureMovingCamera(t *testing.T) {
 		f.Linear = false
 		f.Anisotropy = 4
 		direct := softwareRender(f).(*image.RGBA)
-		m := *f.Geometry[0].Material
+		m := *f.Draws[0].Geometry.Material
 		m.Tint = true
-		f.Geometry[0].Material = &m
+		f.Draws[0].Geometry.Material = &m
 		reference := softwareRender(f).(*image.RGBA)
 		if !bytes.Equal(direct.Pix, reference.Pix) {
 			t.Fatalf("camera %v: interpolated white changed output", camera.Beta)

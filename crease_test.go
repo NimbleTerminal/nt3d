@@ -195,7 +195,7 @@ func TestCreasedEligibility(t *testing.T) {
 	}
 	s, _, _ := animationSkinScene(t)
 	check(t, s.SetOutline(Root, style))
-	if f := frame(t, s); f.Geometry[0].Outline != style || !creased(&f.Geometry[0]) {
+	if f := frame(t, s); f.Draws[0].Geometry.Outline != style || !creased(&f.Draws[0].Geometry) {
 		t.Fatal("a deformed mesh skipped crease lines")
 	}
 }
@@ -232,7 +232,7 @@ func creaseFrame(t *testing.T, s *Scene) Frame {
 // cornerEdges are the midpoints, in world space, of the three edges that
 // meet at the corner of f's instance i nearest the viewer (or farthest).
 func cornerEdges(f Frame, i int, farthest bool) (mids []nt3dmath.Vec3) {
-	world := f.Instances[i].World
+	world := f.Draws[i].World
 	var corner nt3dmath.Vec3
 	best := float32(math.Inf(1))
 	for _, sx := range []float32{-.25, .25} {
@@ -292,8 +292,8 @@ func TestCreaseZeroIsUnchanged(t *testing.T) {
 	// A smooth sphere has no crease edges: asking for them changes nothing.
 	f := outlineFrame(t)
 	plain := softwareRender(f).(*image.RGBA)
-	f.Geometry[0].Outline.Crease = 30
-	if !creased(&f.Geometry[0]) {
+	f.Draws[0].Geometry.Outline.Crease = 30
+	if !creased(&f.Draws[0].Geometry) {
 		t.Fatal("the sphere is not eligible")
 	}
 	if with := softwareRender(f).(*image.RGBA); !bytes.Equal(plain.Pix, with.Pix) {
@@ -316,7 +316,7 @@ func TestCreaseLinesFollowInstances(t *testing.T) {
 		nt3dmath.Translation(nt3dmath.Vec3{X: -.8}),
 		nt3dmath.Translation(nt3dmath.Vec3{X: .6}).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 2, Y: 1, Z: 1})))
 	img := softwareRender(f)
-	for i := range f.Geometry {
+	for i := range f.Draws {
 		for _, mid := range cornerEdges(f, i, false) {
 			if !inked(f, img, mid) {
 				t.Fatalf("instance %d has no crease line at %v", i, mid)
@@ -383,7 +383,7 @@ func creaseTransmissiveScene(t *testing.T) (Frame, int) {
 	cubeNode, err := s.SetGeometry("glass", cube)
 	check(t, err)
 	f := creaseFrame(t, s)
-	for i, inst := range f.Instances {
+	for i, inst := range f.Draws {
 		if inst.Node == cubeNode {
 			return f, i
 		}
@@ -638,11 +638,11 @@ func TestCreaseSharedAngles(t *testing.T) {
 	check(t, s.SetOutline(b, OutlineStyle{Width: 2, Color: outlineInk}))
 	f := creaseFrame(t, s)
 	img := softwareRender(f)
-	for i := range f.Geometry {
-		want := f.Instances[i].Node == a
+	for i := range f.Draws {
+		want := f.Draws[i].Node == a
 		for _, mid := range cornerEdges(f, i, false) {
 			if inked(f, img, mid) != want {
-				t.Fatalf("node %d: crease line %v at %v", f.Instances[i].Node, !want, mid)
+				t.Fatalf("node %d: crease line %v at %v", f.Draws[i].Node, !want, mid)
 			}
 		}
 	}
@@ -669,7 +669,7 @@ func TestCreaseCacheBounded(t *testing.T) {
 	meshes := len(creaseCache.entries)
 	creaseCache.Unlock()
 	for i := range 50 {
-		f.Geometry[0].Outline.Crease = float32(20 + i)
+		f.Draws[0].Geometry.Outline.Crease = float32(20 + i)
 		softwareRender(f)
 	}
 	creaseCache.Lock()
@@ -681,7 +681,7 @@ func TestCreaseCacheBounded(t *testing.T) {
 	// Flipping between two angles extracts nothing more.
 	before := creaseExtractions.Load()
 	for _, c := range []float32{69, 68, 69, 68} {
-		f.Geometry[0].Outline.Crease = c
+		f.Draws[0].Geometry.Outline.Crease = c
 		softwareRender(f)
 	}
 	if n := creaseExtractions.Load() - before; n != 0 {

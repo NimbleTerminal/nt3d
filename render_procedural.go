@@ -199,7 +199,8 @@ func (g *gpuRenderer) prepareProcedural(dev *wgpu.Device, f Frame) error {
 		g.procedural = make(map[proceduralKey]*proceduralTexture)
 	}
 	used := make(map[proceduralKey]bool)
-	for _, geom := range f.Geometry {
+	for di := range f.Draws {
+		geom := f.Draws[di].Geometry
 		if mapped(geom) && len(geom.Indices) > 0 {
 			m := materialOrZero(geom.Material)
 			for _, key := range []proceduralKey{

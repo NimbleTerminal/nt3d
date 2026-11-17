@@ -14,7 +14,7 @@ import (
 // tangentQuad is normalFrame's quad with an authored +X frame at each vertex.
 func tangentQuad(t *testing.T) Geometry {
 	t.Helper()
-	g := normalFrame(t).Geometry[0]
+	g := normalFrame(t).Draws[0].Geometry
 	for range g.Vertices {
 		g.Tangents = append(g.Tangents, Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1})
 	}
@@ -243,18 +243,18 @@ func TestGenerateTangentsSeamAndDegenerate(t *testing.T) {
 
 func TestSceneGeneratesTangents(t *testing.T) {
 	s := NewScene()
-	g := normalFrame(t).Geometry[0]
+	g := normalFrame(t).Draws[0].Geometry
 	_, err := s.SetGeometry("mesh", g)
 	check(t, err)
 	f := frame(t, s)
-	if len(f.Geometry[0].Tangents) != 4 || !nearVec(f.Geometry[0].Tangents[0].Direction, nt3dmath.Vec3{X: 1}, 1e-5) {
-		t.Fatalf("scene tangents %v", f.Geometry[0].Tangents)
+	if len(f.Draws[0].Geometry.Tangents) != 4 || !nearVec(f.Draws[0].Geometry.Tangents[0].Direction, nt3dmath.Vec3{X: 1}, 1e-5) {
+		t.Fatalf("scene tangents %v", f.Draws[0].Geometry.Tangents)
 	}
 	plain := cloneGeometry(g)
 	plain.Material.NormalMap = nil
 	_, err = s.SetGeometry("mesh", plain)
 	check(t, err)
-	if len(frame(t, s).Geometry[0].Tangents) != 0 {
+	if len(frame(t, s).Draws[0].Geometry.Tangents) != 0 {
 		t.Fatal("tangents generated without a normal map")
 	}
 	authored := tangentQuad(t)
@@ -263,7 +263,7 @@ func TestSceneGeneratesTangents(t *testing.T) {
 	}
 	_, err = s.SetGeometry("mesh", authored)
 	check(t, err)
-	if tan := frame(t, s).Geometry[0].Tangents[2]; tan != (Tangent{Direction: nt3dmath.Vec3{Y: 1}, W: -1}) {
+	if tan := frame(t, s).Draws[0].Geometry.Tangents[2]; tan != (Tangent{Direction: nt3dmath.Vec3{Y: 1}, W: -1}) {
 		t.Fatalf("authored tangent replaced: %v", tan)
 	}
 	saved := maxGeneratedIndices
@@ -271,7 +271,7 @@ func TestSceneGeneratesTangents(t *testing.T) {
 	t.Cleanup(func() { maxGeneratedIndices = saved })
 	_, err = s.SetGeometry("mesh", g)
 	check(t, err)
-	if len(frame(t, s).Geometry[0].Tangents) != 0 {
+	if len(frame(t, s).Draws[0].Geometry.Tangents) != 0 {
 		t.Fatal("tangents generated past the limit")
 	}
 	maxGeneratedIndices = saved
@@ -280,14 +280,14 @@ func TestSceneGeneratesTangents(t *testing.T) {
 	_, err = s.SetShared("shared", shared)
 	check(t, err)
 	f = frame(t, s)
-	if len(f.Geometry[len(f.Geometry)-1].Tangents) != 4 {
+	if len(f.Draws[len(f.Draws)-1].Geometry.Tangents) != 4 {
 		t.Fatal("shared geometry tangents not generated")
 	}
 }
 
 func TestAuthoredTangentShading(t *testing.T) {
 	f := normalFrame(t)
-	g := &f.Geometry[0]
+	g := &f.Draws[0].Geometry
 	for range g.Vertices {
 		g.Tangents = append(g.Tangents, Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1})
 	}
@@ -331,7 +331,7 @@ func TestAuthoredTangentShading(t *testing.T) {
 		g.Tangents[i] = Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1}
 	}
 	g.Material.NormalMap = testNormalMap(t, color.NRGBA{218, 128, 218, 255})
-	f.Instances = []Instance{{World: nt3dmath.RotationZ(math.Pi / 2), Visible: true}}
+	placeAlone(&f, nt3dmath.RotationZ(math.Pi/2))
 	if r := red(); r < 180 {
 		t.Fatalf("rotated frame did not follow the instance: %d", r)
 	}
@@ -352,7 +352,7 @@ func TestDeformedTangents(t *testing.T) {
 	check(t, s.SetTransform(joint, nt3dmath.RotationZ(math.Pi/2)))
 	f, err := s.Frame(DefaultCamera(), 80, 80)
 	check(t, err)
-	if tan := f.Geometry[0].Tangents[0]; !nearVec(tan.Direction, nt3dmath.Vec3{Y: 1}, 1e-5) || tan.W != 1 {
+	if tan := f.Draws[0].Geometry.Tangents[0]; !nearVec(tan.Direction, nt3dmath.Vec3{Y: 1}, 1e-5) || tan.W != 1 {
 		t.Fatalf("skinned tangent %v", tan)
 	}
 	f.Lighting = Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{Y: 1}}}}
@@ -369,7 +369,7 @@ func TestDeformedTangents(t *testing.T) {
 	check(t, s.SetDeformation(id, Deformation{Morphs: []MorphTarget{{Tangents: deltas}}, Weights: []float32{1}}))
 	f, err = s.Frame(DefaultCamera(), 80, 80)
 	check(t, err)
-	if tan := f.Geometry[1].Tangents[1]; !nearVec(tan.Direction, nt3dmath.Vec3{X: -1}, 1e-5) || tan.W != 1 {
+	if tan := f.Draws[1].Geometry.Tangents[1]; !nearVec(tan.Direction, nt3dmath.Vec3{X: -1}, 1e-5) || tan.W != 1 {
 		t.Fatalf("morphed tangent %v", tan)
 	}
 	wantError(t, s.SetDeformation(id, Deformation{Morphs: []MorphTarget{{Tangents: deltas[:3]}}}), "morph vertex count mismatch")

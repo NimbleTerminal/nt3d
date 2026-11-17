@@ -30,7 +30,7 @@ func TestProceduralHooksDemoToggleAndStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f0.Geometry[0].Displacement == nil || f0.Geometry[0].Material == nil || f0.Geometry[0].Material.Shader == nil {
+	if f0.Draws[0].Geometry.Displacement == nil || f0.Draws[0].Geometry.Material == nil || f0.Draws[0].Geometry.Material.Shader == nil {
 		t.Fatal("expected terrain geometry in procedural demo to carry both VertexDisplacement and MaterialShader")
 	}
 	if _, err := sw.Render(f0); err != nil {
@@ -42,7 +42,7 @@ func TestProceduralHooksDemoToggleAndStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f1.Geometry[0].Displacement.Time() <= f0.Geometry[0].Displacement.Time() {
+	if f1.Draws[0].Geometry.Displacement.Time() <= f0.Draws[0].Geometry.Displacement.Time() {
 		t.Fatal("expected Step to advance VertexDisplacement time via WithParameters")
 	}
 	if _, err := sw.Render(f1); err != nil {
@@ -55,7 +55,7 @@ func TestProceduralHooksDemoToggleAndStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fOff.Geometry[0].Displacement != nil || fOff.Geometry[0].Material.Shader != nil {
+	if fOff.Draws[0].Geometry.Displacement != nil || fOff.Draws[0].Geometry.Material.Shader != nil {
 		t.Fatal("expected 'w' key to clear shader hooks")
 	}
 	r.SendKey("w")
@@ -63,7 +63,7 @@ func TestProceduralHooksDemoToggleAndStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fOn.Geometry[0].Displacement == nil || fOn.Geometry[0].Material.Shader == nil {
+	if fOn.Draws[0].Geometry.Displacement == nil || fOn.Draws[0].Geometry.Material.Shader == nil {
 		t.Fatal("expected second 'w' key to restore shader hooks")
 	}
 }

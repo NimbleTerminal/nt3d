@@ -173,7 +173,7 @@ func TestORMMapAndSceneSetters(t *testing.T) {
 	s := NewScene()
 	em1 := testTexture(t, color.RGBA{200, 40, 10, 255})
 	em2 := testTexture(t, color.RGBA{20, 180, 220, 255})
-	g := fullOcc.Geometry[0]
+	g := fullOcc.Draws[0].Geometry
 	g.Material.Emissive = white
 	g.Material.EmissiveMap = em1
 	_, err := s.SetGeometry("mesh", g)
@@ -183,13 +183,13 @@ func TestORMMapAndSceneSetters(t *testing.T) {
 	check(t, s.SetORMMap("mesh", ormMetalSmooth))
 	mid, err := s.Frame(DefaultCamera(), 64, 64)
 	check(t, err)
-	if before.Revision != mid.Revision || before.TextureRevision == mid.TextureRevision || mid.Geometry[0].Material.ORMMap != ormMetalSmooth {
+	if before.Revision != mid.Revision || before.TextureRevision == mid.TextureRevision || mid.Draws[0].Geometry.Material.ORMMap != ormMetalSmooth {
 		t.Fatal("SetORMMap invalidated geometry revision or missed texture revision")
 	}
 	check(t, s.SetEmissiveMap("mesh", em2))
 	after, err := s.Frame(DefaultCamera(), 64, 64)
 	check(t, err)
-	if mid.Revision != after.Revision || mid.TextureRevision == after.TextureRevision || after.Geometry[0].Material.EmissiveMap != em2 {
+	if mid.Revision != after.Revision || mid.TextureRevision == after.TextureRevision || after.Draws[0].Geometry.Material.EmissiveMap != em2 {
 		t.Fatal("SetEmissiveMap invalidated geometry revision or missed texture revision")
 	}
 

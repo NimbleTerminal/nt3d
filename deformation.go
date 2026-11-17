@@ -37,7 +37,7 @@ type deformationState struct {
 	morphed         []Vertex
 	morphedTangents []Tangent
 	sourceRevision  uint64
-	base            Geometry
+	base            sceneGeometry // The undeformed mesh; of its state only restBounds is ever set.
 	definition      Deformation
 	palette         []nt3dmath.Mat4
 	weights         []float32
@@ -133,8 +133,7 @@ func (s *Scene) SetDeformation(id NodeID, d Deformation) error {
 	} else if len(d.Influences) > 0 {
 		return fmt.Errorf("nt3d: influences require a skeleton")
 	}
-	base := cloneGeometry(*n.geometry)
-	base.posed = nil
+	base := sceneGeometry{Geometry: cloneGeometry(n.geometry.Geometry)}
 	old := n.deformation
 	n.deformation = &deformationState{base: base, definition: d, revision: nextRevision.Add(1)}
 	if err := s.UpdateDeformations(); err != nil {
@@ -276,7 +275,7 @@ func (s *Scene) UpdateDeformations() error {
 				posed.Tangents[i] = tangent
 			}
 		}
-		posed.Bounds = GeometryBounds(posed)
+		posed.Bounds = GeometryBounds(posed.Geometry)
 		if err := posed.Validate(); err != nil {
 			return err
 		}
@@ -290,10 +289,11 @@ func (s *Scene) UpdateDeformations() error {
 			d.weights = []float32{}
 		}
 		d.palette = palette
+		stored := sceneGeometry{Geometry: posed.Geometry, geometryState: d.base.geometryState}
 		if len(palette) > 0 {
-			posed.posed = &posedGeometry{sourceRevision: d.sourceRevision, source: source, influences: def.Influences, palette: palette, identity: d.revision, revision: s.revision}
+			stored.posed = &posedGeometry{sourceRevision: d.sourceRevision, source: source.Geometry, influences: def.Influences, palette: palette, identity: d.revision, revision: s.revision}
 		}
-		n.geometry = &posed
+		n.geometry = &stored
 		n.shared = nil
 		n.pickIndex = nil
 		n.geometryRevision = s.revision

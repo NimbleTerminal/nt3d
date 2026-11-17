@@ -42,7 +42,7 @@ type sceneNode struct {
 	animationScale  nt3dmath.Vec3
 	deformation     *deformationState
 	Node
-	geometry         *Geometry
+	geometry         *sceneGeometry
 	shared           *SharedGeometry // When geometry is shared's.
 	geometryRevision uint64
 	pickIndex        *bvhSlot // Built for picking on demand, for this geometry.
@@ -237,7 +237,7 @@ func (s *Scene) NodeWorldPosition(id NodeID) ([3]float64, bool) {
 // SetNodeData attaches an application's own value to id: what the node stands
 // for, such as a record, a key, or a pointer to the object that placed it.
 // The scene never looks inside it. It comes back from NodeData, in Node.Data,
-// in the Instance.Data of every frame made afterwards, and in the Hit.Data of
+// in the Draw.Data of every frame made afterwards, and in the Hit.Data of
 // a pick, so a drawn or picked node leads straight to its record without the
 // record being written into the node's name. Nil removes it. Frames keep the
 // value they were made with, so treat what it points to as read-only.
@@ -425,27 +425,28 @@ func (s *Scene) SetNodeGeometry(id NodeID, g Geometry) error {
 	if !ok || id == Root {
 		return fmt.Errorf("nt3d: invalid geometry node %d", id)
 	}
-	g, err := prepareStoredGeometry(g)
+	stored, err := prepareStoredGeometry(g)
 	if err != nil {
 		return err
 	}
 	n.deformation, n.lod, n.lodBounds, n.lodRefBounds, n.lodRefNode, n.lodDispPad, n.lodEpoch, n.lodTier = nil, nil, nt3dmath.AABB{}, nt3dmath.AABB{}, 0, 0, 0, 0
-	n.geometry, n.shared, n.pickIndex = &g, nil, nil
+	n.geometry, n.shared, n.pickIndex = &stored, nil, nil
 	s.changed(true, true)
 	n.geometryRevision = s.revision
 	return nil
 }
 
-func prepareStoredGeometry(g Geometry) (Geometry, error) {
-	if err := g.Validate(); err != nil {
-		return Geometry{}, err
+// prepareStoredGeometry checks and copies an application's geometry, and
+// records what the check established.
+func prepareStoredGeometry(in Geometry) (sceneGeometry, error) {
+	if err := in.Validate(); err != nil {
+		return sceneGeometry{}, err
 	}
-	g = cloneGeometry(g)
-	g.posed = nil
-	g.Bounds, g.restBounds = geometryBoundsPair(g)
-	g.stored = &storedGeometry{g.Points, g.PointStyle, g.Clusters, newSHCertificate(&g)} // Validated above.
-	generateTangentsOnUpload(&g)
-	g.meshCert = newMeshCertificate(&g, hasDuplicatePositions(g.Vertices))
+	g := sceneGeometry{Geometry: cloneGeometry(in)}
+	g.Bounds, g.restBounds = geometryBoundsPair(g.Geometry)
+	g.stored = &storedGeometry{g.Points, g.PointStyle, g.Clusters, newSHCertificate(&g.Geometry)} // Validated above.
+	generateTangentsOnUpload(&g.Geometry)
+	g.meshCert = newMeshCertificate(&g.Geometry, hasDuplicatePositions(g.Vertices))
 	return g, nil
 }
 
@@ -457,24 +458,23 @@ func prepareStoredGeometry(g Geometry) (Geometry, error) {
 // else, make another and set it. Points, boxes, lines, and arrows are not
 // shared; they belong to each node's own geometry.
 type SharedGeometry struct {
-	geometry Geometry
+	geometry sceneGeometry
 	id       uint64
 	pick     *bvhSlot // Built for picking on demand.
 }
 
 // NewSharedGeometry checks and copies a triangle mesh for nodes to share.
-func NewSharedGeometry(g Geometry) (*SharedGeometry, error) {
-	if err := g.Validate(); err != nil {
+func NewSharedGeometry(in Geometry) (*SharedGeometry, error) {
+	if err := in.Validate(); err != nil {
 		return nil, err
 	}
-	if len(g.Points)+len(g.Boxes)+len(g.Lines)+len(g.Arrows) != 0 {
+	if len(in.Points)+len(in.Boxes)+len(in.Lines)+len(in.Arrows) != 0 {
 		return nil, errors.New("nt3d: shared geometry holds triangles only")
 	}
-	g = cloneGeometry(g)
-	g.posed = nil
-	g.Bounds, g.restBounds = geometryBoundsPair(g)
-	generateTangentsOnUpload(&g)
-	g.meshCert = newMeshCertificate(&g, hasDuplicatePositions(g.Vertices))
+	g := sceneGeometry{Geometry: cloneGeometry(in)}
+	g.Bounds, g.restBounds = geometryBoundsPair(g.Geometry)
+	generateTangentsOnUpload(&g.Geometry)
+	g.meshCert = newMeshCertificate(&g.Geometry, hasDuplicatePositions(g.Vertices))
 	return &SharedGeometry{geometry: g, id: nextRevision.Add(1)}, nil
 }
 
@@ -482,7 +482,7 @@ func NewSharedGeometry(g Geometry) (*SharedGeometry, error) {
 func (sg *SharedGeometry) Bounds() nt3dmath.AABB { return sg.geometry.Bounds }
 
 // Geometry returns a detached copy of the shared triangle mesh.
-func (sg *SharedGeometry) Geometry() Geometry { return cloneGeometry(sg.geometry) }
+func (sg *SharedGeometry) Geometry() Geometry { return cloneGeometry(sg.geometry.Geometry) }
 
 // SetShared makes a named node show shared geometry, creating the node
 // under Root if there is none, as SetGeometry does.
@@ -529,7 +529,7 @@ func (s *Scene) SetTexture(name string, t *Texture) error {
 	if len(n.lod) > 0 {
 		anyTextured, changed := false, false
 		for i := range n.lod {
-			if !textured(*n.lod[i].geometry) {
+			if !textured(n.lod[i].geometry.Geometry) {
 				continue
 			}
 			anyTextured = true
@@ -551,7 +551,7 @@ func (s *Scene) SetTexture(name string, t *Texture) error {
 		}
 		return nil
 	}
-	if !textured(*n.geometry) {
+	if !textured(n.geometry.Geometry) {
 		return errors.New("nt3d: texture replacement requires a valid texture and textured geometry")
 	}
 	if n.geometry.Material.Texture == t {
@@ -614,14 +614,14 @@ func (s *Scene) Bounds() (b nt3dmath.AABB) {
 		world := s.world(id)
 		if len(n.lod) > 0 {
 			for i := range n.lod {
-				if box := geometryWorldBounds(n.lod[i].geometry, world); box.IsValid() {
+				if box := geometryWorldBounds(&n.lod[i].geometry.Geometry, world); box.IsValid() {
 					b.Include(box.Min)
 					b.Include(box.Max)
 				}
 			}
 			continue
 		}
-		if box := geometryWorldBounds(n.geometry, world); box.IsValid() {
+		if box := geometryWorldBounds(&n.geometry.Geometry, world); box.IsValid() {
 			b.Include(box.Min)
 			b.Include(box.Max)
 		}

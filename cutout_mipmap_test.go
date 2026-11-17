@@ -229,7 +229,7 @@ func TestCutoutShaderTextureIsFullSize(t *testing.T) {
 	shader, err := NewShaderTexture("fn nt3dTexture(uv: vec2<f32>) -> vec4<f32> { return vec4<f32>(1.0); }", strandImage(128, 8, 4))
 	check(t, err)
 	g := strandFloor(t, Material{}, 40)
-	g.Geometry[0].Material.Texture = shader
+	g.Draws[0].Geometry.Material.Texture = shader
 	if !bytes.Equal(softwareRender(f).(*image.RGBA).Pix, softwareRender(g).(*image.RGBA).Pix) {
 		t.Fatal("a shader cutout differs from the same picture sampled full size")
 	}

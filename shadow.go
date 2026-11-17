@@ -47,7 +47,8 @@ func fitShadow(f *Frame, drawn []bool, size int) (v shadowView, ok bool) {
 	right := forward.Cross(up).Normalize()
 	up = right.Cross(forward)
 	var bounds nt3dmath.AABB
-	for i, g := range f.Geometry {
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
 		if !drawn[i] || !g.Bounds.IsValid() {
 			continue
 		}
@@ -131,7 +132,8 @@ func buildShadowFace(f *Frame, drawn []bool, view shadowView) *shadowMap {
 	for i := range m.depth {
 		m.depth[i] = 1
 	}
-	for gi, g := range f.Geometry {
+	for gi := range f.Draws {
+		g := f.Draws[gi].Geometry
 		if !drawn[gi] {
 			continue
 		}
@@ -308,19 +310,19 @@ func (m *shadowMap) visibilityFaceToon(pos, n, l nt3dmath.Vec3, clampEdge bool, 
 	return lit / total
 }
 
-func dropShadowBounds(g *Geometry) nt3dmath.AABB {
+func dropShadowBounds(g *Geometry, st *geometryState) nt3dmath.AABB {
 	if !g.Bounds.IsValid() {
 		return g.Bounds
 	}
-	if g.restBounds.IsValid() {
-		return g.restBounds
+	if st.restBounds.IsValid() {
+		return st.restBounds
 	}
 	return g.Bounds
 }
 
 // dropDisc derives a geometry instance's drop shadow from its world bounds.
-func dropDisc(g *Geometry, world nt3dmath.Mat4) (center nt3dmath.Vec3, radius, strength float32, ok bool) {
-	bounds := dropShadowBounds(g)
+func dropDisc(g *Geometry, st *geometryState, world nt3dmath.Mat4) (center nt3dmath.Vec3, radius, strength float32, ok bool) {
+	bounds := dropShadowBounds(g, st)
 	if g.DropShadow.Strength <= 0 || !bounds.IsValid() {
 		return
 	}
@@ -369,7 +371,8 @@ func fitSpotShadow(f *Frame, drawn []bool, index, size int) (v shadowView, ok bo
 	}
 	maxZ := float32(0)
 	found := false
-	for i, g := range f.Geometry {
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
 		if !drawn[i] || !g.Bounds.IsValid() {
 			continue
 		}
@@ -445,7 +448,8 @@ func fitShadows(f *Frame, drawn []bool, size int) []shadowView {
 	}
 	far := float32(0)
 	found := false
-	for i, g := range f.Geometry {
+	for i := range f.Draws {
+		g := f.Draws[i].Geometry
 		if !drawn[i] || !g.Bounds.IsValid() {
 			continue
 		}

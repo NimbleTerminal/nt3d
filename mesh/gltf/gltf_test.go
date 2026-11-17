@@ -416,7 +416,8 @@ func TestGLTFPBRAndExtensions(t *testing.T) {
 	fAsset, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
 	foundAssetCoatSheen := false
-	for _, g := range fAsset.Geometry {
+	for di := range fAsset.Draws {
+		g := fAsset.Draws[di].Geometry
 		if g.Material != nil && g.Material.Clearcoat == .95 && g.Material.SheenColor == wantSheen {
 			foundAssetCoatSheen = true
 		}
