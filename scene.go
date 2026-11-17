@@ -59,6 +59,7 @@ type sceneNode struct {
 // Mutations and Frame must run on one goroutine. Produced frames can be rendered
 // asynchronously while the scene is edited, provided readers do not mutate them.
 type Scene struct {
+	reflectionProbes                         []ReflectionProbe
 	environment                              *Environment
 	clips                                    map[NodeID][]AnimationClip
 	variants                                 map[NodeID]*variantInstance

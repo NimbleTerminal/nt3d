@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add authored local `ReflectionProbe` panoramas with capture positions,
+  influence boxes, and box-projected PBR, clearcoat, and classic reflections
+  on GPU and software. `Scene.SetReflectionProbes` snapshots up to four
+  ordered probes; uncovered surfaces retain environment lighting. LDR/HDR
+  textures share the existing environment cache and roughness filtering.
+
 - Extract internal Go/WGSL indirect-light sampling from material response,
   with premultiplied radiance and coverage composition for future local and
   screen-space sources. Preserve hemisphere, SH, GGX, clearcoat, and toon

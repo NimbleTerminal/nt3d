@@ -58,10 +58,10 @@ func TestIndirectFallbacks(t *testing.T) {
 	if got := r.indirectDiffuse(up, .5); got != (indirectSample{[3]float32{1, 2, 4}, 1}) {
 		t.Fatalf("diffuse: %+v", got)
 	}
-	if got := r.indirectSpecular(&Frame{}, up, 0, false, 1); got != (indirectSample{[3]float32{2, 4, 8}, 1}) {
+	if got := r.indirectSpecular(&Frame{}, nt3dmath.Vec3{}, up, 0, false, 1); got != (indirectSample{[3]float32{2, 4, 8}, 1}) {
 		t.Fatalf("smooth: %+v", got)
 	}
-	if got := r.indirectSpecular(&Frame{}, up, 1, false, 1); got != (indirectSample{[3]float32{1, 2, 4}, 1}) {
+	if got := r.indirectSpecular(&Frame{}, nt3dmath.Vec3{}, up, 1, false, 1); got != (indirectSample{[3]float32{1, 2, 4}, 1}) {
 		t.Fatalf("rough: %+v", got)
 	}
 	if got := r.indirectDiffuse(up, 0); got.coverage != 1 || got.radiance != ([3]float32{}) {
@@ -70,10 +70,10 @@ func TestIndirectFallbacks(t *testing.T) {
 	// Background-only environments are excluded unless the material opts in.
 	f := Frame{Environment: testSharpEnvironment(t), EnvironmentBackgroundOnly: true, Linear: true}
 	zero := lightRig{}
-	if got := zero.indirectSpecular(&f, nt3dmath.Vec3{X: 1}, 0, false, 1); got.radiance != ([3]float32{}) {
+	if got := zero.indirectSpecular(&f, nt3dmath.Vec3{}, nt3dmath.Vec3{X: 1}, 0, false, 1); got.radiance != ([3]float32{}) {
 		t.Fatal("background-only environment lit a material")
 	}
-	if got := zero.indirectSpecular(&f, nt3dmath.Vec3{X: 1}, 0, true, 1); got.radiance[0] <= 0 || got.coverage != 1 {
+	if got := zero.indirectSpecular(&f, nt3dmath.Vec3{}, nt3dmath.Vec3{X: 1}, 0, true, 1); got.radiance[0] <= 0 || got.coverage != 1 {
 		t.Fatal("explicit environment reflection lost")
 	}
 }

@@ -368,14 +368,14 @@ func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]floa
 
 	brdf := envBRDFApprox(f0, f90Base, specPacked > 0, roughness, nv)
 	sAO := specularAO(nv, ao, alpha)
-	specEnv := rig.indirectSpecular(f, reflected, roughness, m.EnvironmentReflect, sAO).radiance
+	specEnv := rig.indirectSpecular(f, p, reflected, roughness, m.EnvironmentReflect, sAO).radiance
 	for k := range specularOut {
 		specularOut[k] += specEnv[k] * brdf[k] * baseIndScale
 	}
 	if cc > 0 {
 		ccBRDF := envBRDFApprox([3]float32{.04, .04, .04}, 1, false, ccRough, ccNV)
 		ccSAO := specularAO(ccNV, ao, ccAlpha)
-		ccSpecEnv := rig.indirectSpecular(f, ccReflected, ccRough, m.EnvironmentReflect, ccSAO).radiance
+		ccSpecEnv := rig.indirectSpecular(f, p, ccReflected, ccRough, m.EnvironmentReflect, ccSAO).radiance
 		for k := range specularOut {
 			specularOut[k] += cc * ccSpecEnv[k] * ccBRDF[k]
 		}

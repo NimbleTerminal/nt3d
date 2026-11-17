@@ -28,15 +28,16 @@ var sceneShader string
 // Go declared ahead of it: maxLights sizes its lights, and maxPointPixels
 // clamps points in world units.
 func sceneShaderSource() string {
-	return fmt.Sprintf("const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\n", MaxLights, MaxPointPixels) + nt3dsh.WGSL() + defaultHookPreamble + sceneShader
+	return fmt.Sprintf("const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\nconst maxReflectionProbes: u32 = %du;\n", MaxLights, MaxPointPixels, MaxReflectionProbes) + nt3dsh.WGSL() + defaultHookPreamble + sceneShader
 }
 
 // uniformSize is the scene uniform's bytes: matrix, viewport, sky ambient
 // and light count, eye, forward, fog, fog color, ground ambient, and
 // MaxLights lights of three vec4s each, shadow matrix and lookup params,
 // nine diffuse environment coefficients, three sky camera basis vectors, and
-// six light-view matrices (one used for directional and spot lights).
-const uniformSize = 160 + 16 + MaxLights*48 + 80 + 192 + 6*64 + 64
+// six light-view matrices (one used for directional and spot lights), inverse
+// projection, and reflection probe positions/bounds (three vec4s per probe).
+const uniformSize = 160 + 16 + MaxLights*48 + 80 + 192 + 6*64 + 64 + MaxReflectionProbes*48
 
 type gpuBatch struct {
 	buffer *wgpu.Buffer
@@ -348,6 +349,7 @@ func (s *gpuShared) release() {
 }
 
 type gpuRenderer struct {
+	probeTextures          [MaxReflectionProbes]*gpuEnvironmentTexture
 	aoPrepassBinds         []*wgpu.BindGroup // Keep encoded prepass bindings alive through submission.
 	lightingAO             *wgpu.TextureView // Borrowed post texture; nil disables screen-space AO.
 	shared                 *gpuShared
@@ -496,7 +498,11 @@ func (g *gpuRenderer) setupDevice(dev *wgpu.Device) (err error) {
 	if err != nil {
 		return err
 	}
-	g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}, {Binding: 3, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 4, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 5, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}}})
+	lightingEntries := []gputypes.BindGroupLayoutEntry{{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2DArray}}, {Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 2, Visibility: wgpu.ShaderStageFragment, Sampler: &gputypes.SamplerBindingLayout{Type: gputypes.SamplerBindingTypeFiltering}}, {Binding: 3, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 4, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeDepth, ViewDimension: gputypes.TextureViewDimension2D}}, {Binding: 5, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}}}
+	for i := 0; i < MaxReflectionProbes; i++ {
+		lightingEntries = append(lightingEntries, gputypes.BindGroupLayoutEntry{Binding: uint32(6 + i), Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeFloat, ViewDimension: gputypes.TextureViewDimension2D}})
+	}
+	g.shadowLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{Entries: lightingEntries})
 	if err != nil {
 		return err
 	}
@@ -710,6 +716,9 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	if err = g.prepareEnvironment(dev, f); err != nil {
 		return err
 	}
+	if err = g.prepareReflectionProbes(dev, f.ReflectionProbes); err != nil {
+		return err
+	}
 	if err = g.prepareTarget(dev, f); err != nil {
 		return err
 	}
@@ -797,11 +806,14 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	}
 	right, up, forward := f.skyBasis()
 	for i, v := range []nt3dmath.Vec3{right, up, forward} {
-		aoEnabled := float32(0)
+		extra := float32(0)
 		if i == 0 && f.PostProcess.SSAO.on() {
-			aoEnabled = 1
+			extra = 1
 		}
-		ub = append(ub, floats(v.X, v.Y, v.Z, aoEnabled)...)
+		if i == 1 {
+			extra = float32(len(f.ReflectionProbes))
+		}
+		ub = append(ub, floats(v.X, v.Y, v.Z, extra)...)
 	}
 	for i := 0; i < 6; i++ {
 		var matrix nt3dmath.Mat4
@@ -812,6 +824,18 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	}
 	inverse, _ := inverseProjection(f.Matrix)
 	ub = append(ub, floats(inverse[:]...)...)
+	for i := 0; i < MaxReflectionProbes; i++ {
+		var record [12]float32
+		if i < len(f.ReflectionProbes) {
+			p := f.ReflectionProbes[i]
+			strength := p.Strength
+			if strength == 0 {
+				strength = 1
+			}
+			record = [12]float32{p.Position.X, p.Position.Y, p.Position.Z, strength, p.Bounds.Min.X, p.Bounds.Min.Y, p.Bounds.Min.Z, float32(p.Environment.specMipCount() - 1), p.Bounds.Max.X, p.Bounds.Max.Y, p.Bounds.Max.Z, 0}
+		}
+		ub = append(ub, floats(record[:]...)...)
+	}
 	if err = g.drawProcedural(dev, encoder); err != nil {
 		return err
 	}
@@ -1345,6 +1369,12 @@ func pointPipelineMS(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu
 }
 
 func (g *gpuRenderer) releaseResources() {
+	for i, t := range g.probeTextures {
+		if t != nil {
+			t.release()
+			g.probeTextures[i] = nil
+		}
+	}
 	g.reflection.release()
 	if g.environmentTexture != nil {
 		g.environmentTexture.release()

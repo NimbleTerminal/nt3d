@@ -116,3 +116,55 @@ glass—still reflect the sky panorama without illuminating land by diffuse SH.
 Without an environment, reflectivity has no effect.
 
 This is a distant-sky reflection that does not reflect nearby geometry. On classic materials (`PBR: false`), reflections sample the sharp base panorama while `Shininess` controls direct highlights; on [PBR materials](../materials/#metallicroughness-pbr-and-orm-maps), `Roughness` samples a six-level GGX-prefiltered mip chain of the LDR or `.hdr` panorama.
+
+## Local reflection probes
+
+Use an authored panorama to anchor reflections to a room rather than to the
+faraway sky. Each `ReflectionProbe` has a capture `Position`, an axis-aligned
+`Bounds` box, an `Environment` image, and optional `Strength` (zero means 1).
+The position must be strictly inside the box. The panorama uses the same
+orientation and LDR/HDR loaders as a sky.
+
+```go
+roomHDR, err := os.ReadFile("room.hdr") // panorama captured at the position below
+if err != nil {
+    return err
+}
+roomImage, err := nt3d.NewHDREnvironment(roomHDR)
+if err != nil {
+    return err
+}
+var room nt3dmath.AABB // import nt3dmath "nimbleterminal.dev/nt3d/math"
+room.Include(nt3dmath.Vec3{X: -4, Y: -3, Z: 0})
+room.Include(nt3dmath.Vec3{X: 4, Y: 3, Z: 3})
+if err := scene.SetReflectionProbes([]nt3d.ReflectionProbe{{
+    Environment: roomImage,
+    Position:    nt3dmath.Vec3{Z: 1.5},
+    Bounds:      room,
+}}); err != nil {
+    return err
+}
+```
+
+Both WebGPU and software intersect the reflected ray from the surface with the
+box, then sample the panorama in the direction from the capture position to
+that intersection. This corrects the main parallax error as objects or the
+camera move through a rectangular room. PBR and clearcoat use roughness-filtered
+samples; classic `Material.Reflectivity` uses the sharp image.
+
+Probes supply specular light only: they do not replace the visible sky, add
+diffuse light, or capture geometry automatically. They work without a global
+environment and are independent of `EnvironmentBackgroundOnly` and
+`EnvironmentStrength`. Their radiance replaces the indirect specular fallback
+inside the box; outside all boxes the existing hemisphere/environment fallback
+remains. Material response and ambient occlusion still apply.
+
+There are at most `MaxReflectionProbes` (currently four) per frame. In overlapping
+boxes the first probe in the list wins. Box edges have a hard transition;
+overlap blending is not implemented yet. Use `scene.SetReflectionProbes(nil)`
+to remove probes. Setters and `scene.ReflectionProbes()` copy the list, and old
+frames retain their probes. Refresh a static widget after changing the scene.
+
+Scene probe positions and bounds are in world coordinates. `Scene.Frame`
+converts them relative to `Camera.Origin`. To override `Frame.ReflectionProbes`
+directly, supply coordinates in that frame's space, like `Frame.Eye`.

@@ -78,10 +78,13 @@ type Frame struct {
 	DynamicLineWidth float32  // Render pixels for DynamicLines; zero defaults to 1.
 	Overlays         []OverlayRect
 	CellText         []CellText
+	// ReflectionProbes supplies local specular light, in priority order.
+	// Positions and bounds are frame-relative; Scene.Frame snapshots and converts them.
+	ReflectionProbes []ReflectionProbe
 	// Environment supplies a distant sky, diffuse light, and material reflections.
 	// Nil preserves the solid Background. EnvironmentStrength scales the light;
-	// zero means 1. EnvironmentBackgroundOnly disables diffuse light and
-	// reflections unless a Material sets EnvironmentReflect.
+	// zero means 1. EnvironmentBackgroundOnly disables its diffuse light and
+	// reflections unless a Material sets EnvironmentReflect. Local probes are independent.
 	Environment               *Environment
 	EnvironmentStrength       float32
 	EnvironmentBackgroundOnly bool
@@ -183,6 +186,7 @@ func (s *Scene) Frame(camera Camera, width, height int) (Frame, error) {
 	relCam.Origin = [3]float64{}
 
 	f := Frame{Width: width, Height: height, Revision: s.revision, TextureRevision: s.textureRevision, Environment: s.environment, Background: color.RGBA{235, 238, 242, 255}, Lighting: DefaultLighting(), Origin: frameOrigin, Cull: true, Linear: true, SplatBudget: s.splatBudget}
+	f.ReflectionProbes = s.reflectionProbesRelative(frameOrigin)
 	if lights := s.sceneLightsRelative(Root, frameOrigin); len(lights) > 0 {
 		f.Lighting.Lights = lights
 	}
@@ -394,6 +398,9 @@ func validateFrame(f Frame) error {
 	}
 	if !validFloat(f.EnvironmentStrength) || f.EnvironmentStrength < 0 || (f.Environment != nil && (!f.Environment.valid() || !finiteVec(f.Forward))) {
 		return fmt.Errorf("nt3d: invalid environment")
+	}
+	if err := validReflectionProbes(f.ReflectionProbes); err != nil {
+		return err
 	}
 	if !validLighting(f.Lighting) {
 		return fmt.Errorf("nt3d: lighting needs at most %d lights of known kinds, finite, with nonnegative intensity and range, directional and spot lights a direction, and spot lights valid cone angles", MaxLights)

@@ -289,7 +289,7 @@ func meshOnlySceneShader() string {
 
 func hookShaderSource(displaceSrc, materialSrc string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\n", MaxLights, MaxPointPixels)
+	fmt.Fprintf(&b, "const maxLights: u32 = %du;\nconst maxPointPixels: f32 = %d.0;\nconst maxReflectionProbes: u32 = %du;\n", MaxLights, MaxPointPixels, MaxReflectionProbes)
 	b.WriteString(nt3dsh.WGSL())
 	b.WriteString(hookCommonHeader)
 	if displaceSrc != "" {

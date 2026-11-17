@@ -161,7 +161,7 @@ func (g *gpuRenderer) acquireEnvironmentTexture(dev *wgpu.Device, e *Environment
 	if err != nil {
 		return nil, err
 	}
-	t := &gpuEnvironmentTexture{texture: tex, view: view, sampler: sampler}
+	t := &gpuEnvironmentTexture{texture: tex, view: view, sampler: sampler, key: e}
 	if g.shared != nil {
 		g.shared.mu.Lock()
 		t.shared = g.shared

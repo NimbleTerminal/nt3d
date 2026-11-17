@@ -4,8 +4,13 @@
 @group(1) @binding(3) var sceneColor: texture_2d<f32>;
 @group(1) @binding(4) var sceneDepth: texture_depth_2d;
 @group(1) @binding(5) var screenAO: texture_2d<f32>;
+@group(1) @binding(6) var probeMap0: texture_2d<f32>;
+@group(1) @binding(7) var probeMap1: texture_2d<f32>;
+@group(1) @binding(8) var probeMap2: texture_2d<f32>;
+@group(1) @binding(9) var probeMap3: texture_2d<f32>;
+struct ReflectionProbe { position:vec4<f32>, minimum:vec4<f32>, maximum:vec4<f32> };
 struct Light { a: vec4<f32>, b: vec4<f32>, c: vec4<f32> };
-struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,9>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6>, inverse:mat4x4<f32> };
+struct Uniforms { matrix: mat4x4<f32>, viewport: vec4<f32>, sky: vec4<f32>, eye: vec4<f32>, forward: vec4<f32>, fog: vec4<f32>, fogColor: vec4<f32>, ground: vec4<f32>, lights: array<Light, maxLights>, shadow: mat4x4<f32>, shadowParams: vec4<f32>, environment: array<vec4<f32>,9>, skyRight: vec4<f32>, skyUp: vec4<f32>, skyForward: vec4<f32>, pointShadows: array<mat4x4<f32>,6>, inverse:mat4x4<f32>, probes:array<ReflectionProbe,maxReflectionProbes> };
 struct Item { a: vec4<f32>, b: vec4<f32>, color: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var<storage, read> items: array<Item>;
@@ -211,7 +216,41 @@ fn indirectToonDiffuse(visibility:f32)->IndirectSample {
  if u.viewport.w>0.5 {c+=max(vec3<f32>(0.0),u.environment[0].rgb*0.2820948);}
  return indirectOccluded(indirectCovered(c,1.0),visibility);
 }
-fn indirectSpecular(direction:vec3<f32>,roughness:f32,envRefl:bool,visibility:f32)->IndirectSample {
+// Scalar axis tests avoid zero division and dynamic vector indexing.
+fn probeExitDistance(point:f32,direction:f32,minimum:f32,maximum:f32)->f32 {
+ if direction>0.0 {return (maximum-point)/direction;}
+ if direction<0.0 {return (minimum-point)/direction;}
+ return 3.402823e38;
+}
+// Box projection is only defined inside the influence volume. Pick the first
+// containing probe, preserving authored priority without overlap blending.
+fn localReflection(point:vec3<f32>,direction:vec3<f32>,roughness:f32)->IndirectSample {
+ if dot(direction,direction)==0.0 {return IndirectSample(vec3<f32>(0.0),0.0);}
+ for(var i=0u;i<min(maxReflectionProbes,u32(u.skyUp.w));i++) {
+  let probe=u.probes[i];
+  if probe.position.w<=0.0 || any(point<probe.minimum.xyz) || any(point>probe.maximum.xyz) {continue;}
+  let dx=probeExitDistance(point.x,direction.x,probe.minimum.x,probe.maximum.x);
+  let dy=probeExitDistance(point.y,direction.y,probe.minimum.y,probe.maximum.y);
+  let dz=probeExitDistance(point.z,direction.z,probe.minimum.z,probe.maximum.z);
+  let distance=min(dx,min(dy,dz));
+  let corrected=normalize(point+direction*distance-probe.position.xyz);
+  let uv=vec2<f32>(atan2(corrected.y,corrected.x)/6.28318530718+0.5,acos(clamp(corrected.z,-1.0,1.0))/3.14159265359);
+  let level=roughness*probe.minimum.w;
+  var sky=vec3<f32>(0.0);
+  switch i {
+   case 0u: {sky=textureSampleLevel(probeMap0,reflectionSampler,uv,level).rgb;}
+   case 1u: {sky=textureSampleLevel(probeMap1,reflectionSampler,uv,level).rgb;}
+   case 2u: {sky=textureSampleLevel(probeMap2,reflectionSampler,uv,level).rgb;}
+   default: {sky=textureSampleLevel(probeMap3,reflectionSampler,uv,level).rgb;}
+  }
+  if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
+  return indirectCovered(sky*probe.position.w,1.0);
+ }
+ return IndirectSample(vec3<f32>(0.0),0.0);
+}
+fn indirectSpecular(point:vec3<f32>,direction:vec3<f32>,roughness:f32,envRefl:bool,visibility:f32)->IndirectSample {
+ let local=indirectOccluded(localReflection(point,direction,roughness),visibility);
+ if local.coverage>=1.0 {return local;}
  let t=mix(direction.z*0.5+0.5,0.5,roughness*roughness);
  var c=mix(u.ground.rgb,u.sky.rgb,t);
  if envRefl {
@@ -220,15 +259,17 @@ fn indirectSpecular(direction:vec3<f32>,roughness:f32,envRefl:bool,visibility:f3
   if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
   c+=sky*u.ground.w;
  }
- return indirectOccluded(indirectCovered(c,1.0),visibility);
+ return indirectOver(local,indirectOccluded(indirectCovered(c,1.0),visibility));
 }
 // The classic reflection model uses sharp level-zero radiance, no hemisphere.
-fn indirectReflection(direction:vec3<f32>,visibility:f32)->IndirectSample {
+fn indirectReflection(point:vec3<f32>,direction:vec3<f32>,envRefl:bool,visibility:f32)->IndirectSample {
+ let local=indirectOccluded(localReflection(point,direction,0.0),visibility);
+ if local.coverage>=1.0 || !envRefl {return local;}
  let half=0.5/f32(textureDimensions(reflectionMap).y);
  let uv=vec2<f32>(atan2(direction.y,direction.x)/6.28318530718+0.5,clamp(acos(clamp(direction.z,-1.0,1.0))/3.14159265359,half,1.0-half));
  var sky=textureSampleLevel(reflectionMap,reflectionSampler,uv,0.0).rgb;
  if u.viewport.z<0.5 {sky=select(1.055*pow(sky,vec3<f32>(1.0/2.4))-0.055,sky*12.92,sky<=vec3<f32>(0.0031308));}
- return indirectOccluded(indirectCovered(sky*u.ground.w,1.0),visibility);
+ return indirectOver(local,indirectOccluded(indirectCovered(sky*u.ground.w,1.0),visibility));
 }
 // illuminate is the light reaching a surface with unit normal n at p:
 // ambient, from ground to sky as n turns up, and each light's diffuse.
@@ -436,12 +477,12 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     let envF90=select(clamp(50.0*max(f0.r,max(f0.g,f0.b)),0.0,1.0),clamp(f90Base,0.0,1.0),specPacked>0.5);
     let brdf=envBRDF(f0,envF90,roughness,nv);
     let sAO=pbrSpecularAO(nv,ao,alpha);
-    let specEnv=indirectSpecular(reflected,roughness,envRefl,sAO).radiance;
+    let specEnv=indirectSpecular(o.world,reflected,roughness,envRefl,sAO).radiance;
     specOut+=specEnv*brdf*baseIndScale;
     if cc>0.0 {
      let ccBRDF=envBRDF(vec3<f32>(0.04),1.0,ccRough,ccNV);
      let ccSAO=pbrSpecularAO(ccNV,ao,ccAlpha);
-     let ccSpecEnv=indirectSpecular(ccReflected,ccRough,envRefl,ccSAO).radiance;
+     let ccSpecEnv=indirectSpecular(o.world,ccReflected,ccRough,envRefl,ccSAO).radiance;
      specOut+=ccSpecEnv*ccBRDF*cc;
     }
     let oneMinusA2=1.0-a2;let ccOneMinusA2=1.0-ccA2;
@@ -507,12 +548,12 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
     c*=illuminate(n,o.world,normalize(o.normal));
    }
    if o.optics.x>0.0 {c=transmit(o,c,n);}
-   if o.absorption.w>0.0 && envRefl {
+   if o.absorption.w>0.0 {
     let rn=select(n,-n,dot(n,view)<0.0);
     let reflected=reflect(-view,rn);
-    let sky=indirectReflection(reflected,surfaceAO(o.world)).radiance;
+    let sample=indirectReflection(o.world,reflected,envRefl,surfaceAO(o.world));
     let fresnel=o.absorption.w+(1.0-o.absorption.w)*pow(1.0-clamp(dot(rn,view),0.0,1.0),5.0);
-    c=mix(c,sky,fresnel);
+    c=c*(1.0-fresnel*sample.coverage)+sample.radiance*fresnel;
    }
    if o.spec.x>0.0 {
     let specGeom=normalize(o.normal);

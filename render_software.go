@@ -329,7 +329,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		if normalMapped && !framed {
 			tangent, bitangent = normalBasis(a, b, c)
 		}
-		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && f.Environment != nil && (!f.EnvironmentBackgroundOnly || material.EnvironmentReflect)
+		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && (len(f.ReflectionProbes) > 0 || f.Environment != nil && (!f.EnvironmentBackgroundOnly || material.EnvironmentReflect))
 		specular := !pbr && material != nil && material.Specular > 0 && !material.Unlit
 		hasNormals := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
 		lit := hasNormals && (material == nil || !material.Unlit) && !hull
@@ -543,7 +543,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 								transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
 							}
 							if reflective {
-								reflectEnvironmentAO(&rgb, f.Environment, material.Reflectivity, f.EnvironmentStrength, n, f.viewAt(p), linear, 1-rig.screenOcclusion)
+								reflectSceneEnvironment(&rgb, &f, p, material.Reflectivity, n, f.viewAt(p), material.EnvironmentReflect, 1-rig.screenOcclusion)
 							}
 							if specular {
 								var s [3]float32

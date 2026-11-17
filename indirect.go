@@ -80,10 +80,15 @@ func (r *lightRig) indirectToonDiffuse(visibility float32) indirectSample {
 	return coveredIndirect(c, 1).occluded(visibility)
 }
 
-// indirectSpecular samples the complete hemisphere + GGX environment fallback.
+// indirectSpecular selects a local probe before the complete hemisphere + GGX
+// environment fallback.
 // Roughness determines the incoming-light filter; the caller still owns the
 // BRDF, specular-occlusion heuristic, and base/clearcoat energy conservation.
-func (r *lightRig) indirectSpecular(f *Frame, direction nt3dmath.Vec3, roughness float32, environmentReflect bool, visibility float32) indirectSample {
+func (r *lightRig) indirectSpecular(f *Frame, point, direction nt3dmath.Vec3, roughness float32, environmentReflect bool, visibility float32) indirectSample {
+	local := localReflection(f, point, direction, roughness, true).occluded(visibility)
+	if local.coverage == 1 {
+		return local
+	}
 	t := direction.Z*.5 + .5
 	t += (.5 - t) * (roughness * roughness)
 	c := [3]float32{r.ground[0] + (r.sky[0]-r.ground[0])*t, r.ground[1] + (r.sky[1]-r.ground[1])*t, r.ground[2] + (r.sky[2]-r.ground[2])*t}
@@ -101,7 +106,7 @@ func (r *lightRig) indirectSpecular(f *Frame, direction nt3dmath.Vec3, roughness
 			c[k] += v * strength
 		}
 	}
-	return coveredIndirect(c, 1).occluded(visibility)
+	return local.over(coveredIndirect(c, 1).occluded(visibility))
 }
 
 // indirectReflection preserves the classic material's sharp level-zero

@@ -106,7 +106,15 @@ func (g *gpuRenderer) sceneLightingBind(dev *wgpu.Device, depth *wgpu.TextureVie
 	if ao == nil {
 		ao = g.screen.colorView
 	}
-	return dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.shadowLayout, Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: depth}, {Binding: 1, TextureView: r.view}, {Binding: 2, Sampler: r.sampler}, {Binding: 3, TextureView: g.screen.colorView}, {Binding: 4, TextureView: g.screen.depthView}, {Binding: 5, TextureView: ao}}})
+	entries := []wgpu.BindGroupEntry{{Binding: 0, TextureView: depth}, {Binding: 1, TextureView: r.view}, {Binding: 2, Sampler: r.sampler}, {Binding: 3, TextureView: g.screen.colorView}, {Binding: 4, TextureView: g.screen.depthView}, {Binding: 5, TextureView: ao}}
+	for i, t := range g.probeTextures {
+		view := r.view
+		if t != nil {
+			view = t.view
+		}
+		entries = append(entries, wgpu.BindGroupEntry{Binding: uint32(6 + i), TextureView: view})
+	}
+	return dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: g.shadowLayout, Entries: entries})
 }
 
 // bindLightingAO refreshes both shadow variants without owning the AO texture.
