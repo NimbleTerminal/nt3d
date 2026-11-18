@@ -5,7 +5,11 @@ move to Done with their commit; git history has the details.
 
 ## Next
 
-Nothing queued; the sections below are the open work.
+- [ ] **Release the API changes, then move the applications onto them.**
+  Everything under Unreleased in `CHANGELOG.md` is breaking: `Frame.Draws`,
+  plain `Geometry`, degrees, node addressing, camera validation, and the
+  grouped `Material`. newlock.city and nebula build against a tagged release,
+  so they follow the tag.
 
 ## Rendering
 
@@ -62,6 +66,21 @@ Nothing queued; the sections below are the open work.
 
 ## Robustness
 
+- [ ] **Split the software renderer's triangle function.** One function of
+  about 1,100 lines in `render_software.go` draws every mesh, with the
+  lighting models, maps, and blend modes all inline; nothing in it can be
+  tested or read on its own. Decide with it whether the non-linear lighting
+  mode it carries is still wanted.
+- [ ] **Check glTF decoding against files from other encoders.** The KTX2
+  and meshopt tests read fixtures nt3d's own test code wrote, so a shared
+  misreading of the formats would pass. Fixtures from `gltfpack` or
+  `toktx` would settle it.
+- [ ] **A strength faded to zero comes back at full.** A zero `Intensity` or
+  `Strength` means 1, so code that animates one down to exactly zero gets
+  the default on the last step. `Light.Off`, `Ambient.Off`,
+  `ReflectionProbe.Off`, `PBR.NoOcclusion`, and `PBR.Specular.Off` say none,
+  but the caller has to set them; `Material.BaseColor` has the same shape
+  for transparent black.
 - [ ] **Test a real GPU running out of memory**; failure reporting is only
   tested with a fake renderer.
 ## Web demos
@@ -77,6 +96,13 @@ Nothing queued; the sections below are the open work.
 
 ## Housekeeping
 
+- [ ] **Per-view copies of the GPU pipelines are kept in step by hand.**
+  Each `gpuRenderer` copies the shared pipelines so it can read them without
+  the lock; a field added to one and not the other is caught by nothing.
+- [ ] **Older per-node scene methods lack the `SetNode` prefix**
+  (`SetTransform`, `SetVisible`, `SetLOD`, `SetDeformation`,
+  `SetMorphWeights`). They take a `NodeID` like the rest; only the name
+  differs from the convention.
 - [ ] **Re-record the cloud poster** with `task tapes -- cloud`; `web/assets/cloud.png`
   is a `--snapshot` of the demo for now.
 - [ ] **Report the shader translator bug upstream**: WGSL functions named
@@ -85,6 +111,20 @@ Nothing queued; the sections below are the open work.
 
 ## Done
 
+- **`Material` grouped by feature, with its lighting model explicit**:
+  `Shading` and `Alpha` say what kind of surface it is, and `Phong`, `PBR`,
+  `Normal`, `Emission`, `Transmission`, and `Toon` are groups that are off
+  while zero. Nothing switches the model by being set, and a group for
+  another model is an error.
+- **Wrong input is an error, not a correction**: `Camera.Validate` and
+  `Material.Validate`, returned by the scene as `Geometry.Validate` is.
+  `FuzzCamera` holds that `Camera.Valid` always satisfies `Validate` and that
+  an accepted camera draws.
+- **One way to address a node**: scene methods take a `NodeID`, a method that
+  reaches a subtree is `ApplyX`, and only `Find` and the create-or-replace
+  shortcuts take a name. A test holds it.
+- **Degrees for every angle on a camera or light**, under names that say what
+  they measure, and flags that say "none" where zero means the default.
 - **No terminal UI stack in the engine**: the wireframe renderer uses
   `nimbleterminal.dev/ntcanvas/grid` (ntcanvas v0.2.0), so the root package and
   `water`, `fur`, `mesh`, `clod`, `cam`, `sh`, `aabbtree`, and `math` no longer
