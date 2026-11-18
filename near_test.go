@@ -50,7 +50,7 @@ func nearScene(t *testing.T) (Frame, color.RGBA) {
 	_, err = s.SetGeometry("floor", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha, camera.Distance = Perspective, 8, 2
+	camera.Projection, camera.Elevation, camera.Distance = Perspective, 8, 2
 	f, err := s.Frame(camera, 160, 120)
 	check(t, err)
 	return f, floor

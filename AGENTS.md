@@ -16,6 +16,9 @@ packages and files and explains what holds the three renderers together.
   patch onto each frame, or encode into node names.
 - **`Geometry` is plain data.** No unexported fields; a test enforces it. What
   the scene learns about a geometry travels beside it in the `Draw`.
+- **Angles on cameras and lights are degrees,** named for what they measure
+  (`Elevation`, `Azimuth`, `FOV`, `InnerAngle`). Package `math` takes
+  radians, as Go's `math` does. Convert where a file's radians come in.
 - **A zero value should draw something sensible.** `Draw{Geometry: g}` alone
   draws `g`. Prefer `Hidden`-style flags, where zero is the usual case.
 - **The engine links no terminal UI.** Only `widget` imports Bubble Tea; a

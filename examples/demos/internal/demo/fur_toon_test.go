@@ -110,8 +110,8 @@ func TestFurToonToggle(t *testing.T) {
 
 	// Verify built-in PostProcess effects and AA cycling in fur.
 	press('e') // "studio"
-	if d.view.Effects() != effects[1].post || !strings.Contains(d.furView("VIEW"), "· studio ·") {
-		t.Fatalf("fur studio effect not applied: %+v / %q", d.view.Effects(), d.furView("VIEW"))
+	if d.view.PostProcess() != effects[1].post || !strings.Contains(d.furView("VIEW"), "· studio ·") {
+		t.Fatalf("fur studio effect not applied: %+v / %q", d.view.PostProcess(), d.furView("VIEW"))
 	}
 	press('x') // 1x -> 4x MSAA
 	if !d.view.MSAA() || !strings.Contains(d.furView("VIEW"), "4× MSAA") {

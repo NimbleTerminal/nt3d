@@ -131,7 +131,7 @@ if len(cameras) > 0 {
 }
 ```
 
-Call `NodeCamera` again after sampling animation to follow its motion. The returned `Camera` is a detached snapshot, with `Pose` holding its orientation and position (-Z forward, +Y up). It preserves roll, vertical `YFOV` in radians, optional fixed `AspectRatio`, clipping planes, and orthographic `Xmag`/`Ymag` half extents. An omitted perspective far plane stays infinite. Node scale does not scale the lens. Normal viewport aspect is used when the file omits perspective aspect.
+Call `NodeCamera` again after sampling animation to follow its motion. The returned `Camera` is a detached snapshot, with `Pose` holding its orientation and position (-Z forward, +Y up). It preserves roll, vertical `FOV` (in degrees; the file's radians are converted), optional fixed `AspectRatio`, clipping planes, and orthographic `Xmag`/`Ymag` half extents. An omitted perspective far plane stays infinite. Node scale does not scale the lens. Normal viewport aspect is used when the file omits perspective aspect.
 
 These are generic APIs: procedural sources can call `SetNodeCamera`, or set `AssetNode.Camera`. The ordinary orbit camera retains its defaults. Orbit/automatic rotation returns an authored view to orbit orientation; pan and zoom retain its roll. Picking rays and perspective skies use the same lens and orientation as rendering.
 

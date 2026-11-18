@@ -137,13 +137,13 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		switch v.String() {
 		case "left", "h":
-			m.camera.Beta -= 5
+			m.camera.Azimuth -= 5
 		case "right", "l":
-			m.camera.Beta += 5
+			m.camera.Azimuth += 5
 		case "up", "k":
-			m.camera.Alpha += 5
+			m.camera.Elevation += 5
 		case "down", "j":
-			m.camera.Alpha -= 5
+			m.camera.Elevation -= 5
 		case "+", "=":
 			m.camera.Distance *= .9
 		case "-", "_":

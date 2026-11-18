@@ -11,7 +11,7 @@ import (
 
 // cloudView is what a camera at the given distance sees of a 200×150 frame.
 func cloudView(distance float64) nt3dclod.View {
-	c := nt3d.Camera{Alpha: 30, Beta: 40, Distance: distance, Projection: nt3d.Perspective, ResumeAfter: 1}
+	c := nt3d.Camera{Elevation: 30, Azimuth: 40, Distance: distance, Projection: nt3d.Perspective, ResumeAfter: 1}
 	return nt3dclod.View{Matrix: c.Matrix(200. / 150), Eye: c.Eye(), Perspective: true, Width: 200, Height: 150, Margin: cloudMargin}
 }
 

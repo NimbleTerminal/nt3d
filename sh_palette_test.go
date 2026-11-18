@@ -170,7 +170,7 @@ func TestSHPaletteOperations(t *testing.T) {
 		t.Fatal("different palettes were not expanded")
 	}
 	// Clone shares the palette and copies labels.
-	cl := cloneGeometry(g)
+	cl := g.Clone()
 	if cl.GaussianSHPalette != g.GaussianSHPalette || &cl.GaussianSHLabels[0] == &g.GaussianSHLabels[0] || !slices.Equal(cl.GaussianSHLabels, g.GaussianSHLabels) {
 		t.Fatal("clone")
 	}

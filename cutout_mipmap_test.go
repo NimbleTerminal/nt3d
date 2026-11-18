@@ -167,7 +167,7 @@ func strandFloor(t *testing.T, m Material, beta float64) Frame {
 	_, err = s.SetGeometry("floor", floor)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha, camera.Beta, camera.Distance = Perspective, 35, beta, 2.5
+	camera.Projection, camera.Elevation, camera.Azimuth, camera.Distance = Perspective, 35, beta, 2.5
 	f, err := s.Frame(camera, 160, 120)
 	check(t, err)
 	f.Background = color.RGBA{0, 0, 0, 255}

@@ -10,7 +10,7 @@ func TestAuthoredCameraProjectionAndRays(t *testing.T) {
 	for _, projection := range []Projection{Perspective, Orthographic} {
 		c := DefaultCamera()
 		c.Projection = projection
-		c.YFOV = math.Pi / 2
+		c.FOV = 90
 		c.Near = .2
 		c.Far = 20
 		c.AspectRatio = 2
@@ -50,7 +50,7 @@ func TestCameraSnapshotsAndRemoval(t *testing.T) {
 	check(t, err)
 	id, err := s.Add(p, "camera")
 	check(t, err)
-	check(t, s.SetNodeCamera(id, Camera{Projection: Perspective, YFOV: 1, Near: .1, Far: 20}))
+	check(t, s.SetNodeCamera(id, Camera{Projection: Perspective, FOV: 180 / math.Pi, Near: .1, Far: 20}))
 	c, err := s.NodeCamera(id)
 	check(t, err)
 	check(t, s.SetTransform(p, nt3dmath.Translation(nt3dmath.Vec3{X: 2})))

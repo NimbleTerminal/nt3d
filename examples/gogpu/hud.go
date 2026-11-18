@@ -217,7 +217,7 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 				lighting.envName(), lighting.rigName(), lighting.sunAzimuth, lighting.sunElevation, shadowStr)
 		}
 		fmt.Fprintf(&b, "Cam: el %.0f deg az %.0f deg dist %.2f   AA: %s   Post: %s   PiP: %s   Load: %s\n",
-			cam.Alpha, cam.Beta, cam.Distance, formatAAStatus(effMSAA, ss), postStr, pipStr, loadStr)
+			cam.Elevation, cam.Azimuth, cam.Distance, formatAAStatus(effMSAA, ss), postStr, pipStr, loadStr)
 		if v.selectedHit != nil {
 			pos, _ := v.pickWorldPos()
 			name := v.selectedHit.Name
@@ -305,7 +305,7 @@ func (h *hudOverlay) formatText(v *viewerState, cam nt3d.Camera, lighting *studi
 			lighting.envName(), rigLabel, lighting.sunAzimuth, lighting.sunElevation, shadowStr)
 	}
 	fmt.Fprintf(&b, "Cam: el %.0f deg az %.0f deg dist %.2f   AA: %s   OIT: %s   Post: %s   PiP: %s   Load: %s\n",
-		cam.Alpha, cam.Beta, cam.Distance, formatAAStatus(msaa, supersample), oitStr, postStr, pipStr, loadStr)
+		cam.Elevation, cam.Azimuth, cam.Distance, formatAAStatus(msaa, supersample), oitStr, postStr, pipStr, loadStr)
 
 	if v.selectedHit != nil {
 		pos, _ := v.pickWorldPos()

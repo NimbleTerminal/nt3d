@@ -42,7 +42,7 @@ func TestPickThroughCutout(t *testing.T) {
 			backID, err := s.SetGeometry("back", back)
 			check(t, err)
 			camera := DefaultCamera()
-			camera.Projection, camera.Alpha = Perspective, 89
+			camera.Projection, camera.Elevation = Perspective, 89
 			f, err := s.Frame(camera, 120, 120)
 			check(t, err)
 			f.Lighting = even
@@ -118,7 +118,7 @@ func TestPickCutoutMatchesPixels(t *testing.T) {
 	backID, err := s.SetGeometry("back", back)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha = Perspective, 89
+	camera.Projection, camera.Elevation = Perspective, 89
 	f, err := s.Frame(camera, 120, 120)
 	check(t, err)
 	f.Lighting = even

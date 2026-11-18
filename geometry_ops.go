@@ -26,7 +26,7 @@ func TransformGeometry(g Geometry, m nt3dmath.Mat4) (Geometry, error) {
 		return Geometry{}, errors.New("nt3d: boxes accept only scale and translation")
 	}
 	normals := inverse.Transpose()
-	g = cloneGeometry(g)
+	g = g.Clone()
 	g.Clusters = nil
 	if len(g.GaussianSH) > 0 {
 		g.GaussianSHTransform = gaussianSHMatrix(&g).Mul(inverse)
@@ -292,7 +292,7 @@ func rebuildMesh(g Geometry, normal func(face, corner int) nt3dmath.Vec3) (Geome
 		lightMapUV       UV
 		tangent          Tangent
 	}
-	out := cloneGeometry(g)
+	out := g.Clone()
 	out.WireGrid = [2]int{}
 	out.Vertices, out.UV, out.NormalUV, out.LightMapUV, out.Tangents = nil, nil, nil, nil, nil
 	out.Indices = make([]uint32, 0, len(g.Indices))

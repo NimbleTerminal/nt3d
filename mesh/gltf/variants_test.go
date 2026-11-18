@@ -307,7 +307,7 @@ func TestKHRMaterialsVariantsVehicleFleet(t *testing.T) {
 	check(t, sSingle.SetVisible(tiresNode, false))
 
 	topCam := nt3d.DefaultCamera()
-	topCam.Alpha, topCam.Beta, topCam.Distance = 90, 89.9, 1.8
+	topCam.Elevation, topCam.Azimuth, topCam.Distance = 90, 89.9, 1.8
 	sampleCenter := func(variant string) color.RGBA {
 		check(t, sSingle.SetMaterialVariant(solo.Root, variant))
 		fr, err := sSingle.Frame(topCam, 48, 48)

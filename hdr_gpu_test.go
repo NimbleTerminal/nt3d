@@ -43,7 +43,7 @@ func TestGPUHDREnvironmentSkyBloomAndIBLParity(t *testing.T) {
 	// Look toward +X so the HDR sun is directly visible in the upper/right sky while
 	// the chrome sphere sits on the left reflecting the HDR panorama.
 	cam := DefaultCamera()
-	cam.Alpha, cam.Beta, cam.Distance = 180, 0, 3.2
+	cam.Elevation, cam.Azimuth, cam.Distance = 180, 0, 3.2
 	f, err := s.Frame(cam, 128, 80)
 	check(t, err)
 	f.Linear = true

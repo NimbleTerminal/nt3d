@@ -158,7 +158,7 @@ func TestSetMaterialOnDeformedMesh(t *testing.T) {
 
 func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 	cam := DefaultCamera()
-	cam.Alpha, cam.Beta, cam.Distance = 90, 0, 2.2
+	cam.Elevation, cam.Azimuth, cam.Distance = 90, 0, 2.2
 
 	// 1. Untextured PBR surface with BaseColor matches vertex-baked color in both linear and sRGB frames.
 	tint := color.RGBA{230, 175, 30, 255}
@@ -198,7 +198,7 @@ func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 	_, err := sTex.SetGeometry("quad", q)
 	check(t, err)
 	topCam := DefaultCamera()
-	topCam.Alpha, topCam.Beta, topCam.Distance = 90, 89.9, 2.0
+	topCam.Elevation, topCam.Azimuth, topCam.Distance = 90, 89.9, 2.0
 	fTex, err := sTex.Frame(topCam, 48, 48)
 	check(t, err)
 	px := at(softwareRender(fTex), 24, 24)

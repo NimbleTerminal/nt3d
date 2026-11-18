@@ -73,7 +73,7 @@ func TestPostPresetsAndFrameBuilder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := v.scene.SetNodeLight(ln, nt3d.Light{Kind: nt3d.SpotLight, Intensity: 2.0, InnerCone: 0.2, OuterCone: 0.5}); err != nil {
+	if err := v.scene.SetNodeLight(ln, nt3d.Light{Kind: nt3d.SpotLight, Intensity: 2.0, InnerAngle: 0.2 * 180 / math.Pi, OuterAngle: 0.5 * 180 / math.Pi}); err != nil {
 		t.Fatal(err)
 	}
 	lighting.overrideInDemo = false
@@ -197,7 +197,7 @@ func TestViewerLoadModelSceneVariantsAndMultiLOD(t *testing.T) {
 			v.hasLOD, v.lodAuto, v.variants, v.totalTriangles)
 	}
 
-	cam := nt3d.Camera{Target: nt3dmath.Vec3{}, Distance: 3.0, Beta: -90, Near: 0.1, Far: 100, Projection: nt3d.Perspective}
+	cam := nt3d.Camera{Target: nt3dmath.Vec3{}, Distance: 3.0, Azimuth: -90, Near: 0.1, Far: 100, Projection: nt3d.Perspective}
 	f0, err := v.buildFrame(cam, 120, 90, false, 1)
 	if err != nil {
 		t.Fatal(err)

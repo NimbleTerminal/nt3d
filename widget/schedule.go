@@ -193,7 +193,7 @@ func (m *Model) schedule() tea.Cmd {
 	resolutionCmd := m.resolution()
 	f := m.frame()
 	geometry := m.pic.RasterGeometry()
-	id, seq, renderMode, r, cols, rows, fallBack, post := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height, m.gpuFailure == FallBackOnGPUFailure, m.postProcess
+	id, seq, renderMode, r, cols, rows, fallBack, post := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height, m.gpuFailure == FallBackOnGPUFailure, m.imageFilter
 	return tea.Batch(resolutionCmd, func() tea.Msg {
 		start := time.Now()
 		var img image.Image

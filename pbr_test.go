@@ -381,7 +381,7 @@ func TestPBRClearcoatGeometricNormalAndIBL(t *testing.T) {
 	ballID, err := s.SetGeometry("ball", dullBall)
 	check(t, err)
 	cam := DefaultCamera()
-	cam.Alpha, cam.Beta, cam.Distance = 90, 0, 2.2
+	cam.Elevation, cam.Azimuth, cam.Distance = 90, 0, 2.2
 	fDull, err := s.Frame(cam, 80, 80)
 	check(t, err)
 	fDull.Lighting = Lighting{}
@@ -434,7 +434,7 @@ func TestPBRSheenAndToonCoatSheen(t *testing.T) {
 		_, err = s.SetGeometry("ball", ball)
 		check(t, err)
 		cam := DefaultCamera()
-		cam.Alpha, cam.Beta, cam.Distance = 0, 0, 2.4
+		cam.Elevation, cam.Azimuth, cam.Distance = 0, 0, 2.4
 		f, err := s.Frame(cam, 96, 96)
 		check(t, err)
 		f.Linear = true
@@ -492,7 +492,7 @@ func TestPBRSheenAndToonCoatSheen(t *testing.T) {
 		_, err = s.SetGeometry("ball", ball)
 		check(t, err)
 		cam := DefaultCamera()
-		cam.Alpha, cam.Beta, cam.Distance = 0, 0, 2.4
+		cam.Elevation, cam.Azimuth, cam.Distance = 0, 0, 2.4
 		f, err := s.Frame(cam, 80, 80)
 		check(t, err)
 		f.Linear = true
@@ -570,7 +570,7 @@ func TestPBRDielectricSpecularColorAndIntensity(t *testing.T) {
 		id, err := s.SetGeometry("ball", ball)
 		check(t, err)
 		cam := DefaultCamera()
-		cam.Alpha, cam.Beta, cam.Distance = 0, 0, 2.4
+		cam.Elevation, cam.Azimuth, cam.Distance = 0, 0, 2.4
 		f0, err := s.Frame(cam, 96, 96)
 		check(t, err)
 		rev := f0.Revision

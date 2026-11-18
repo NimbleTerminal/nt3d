@@ -123,7 +123,7 @@ func TestPlanBlend(t *testing.T) {
 		slab[i] = Point{Position: nt3dmath.Vec3{X: rng.Float32()*10 - 5, Y: rng.Float32()*10 - 5, Z: rng.Float32()*2 - 1}, Radius: 1, Color: white}
 	}
 	inside := flatFrame(64, 36, styled(PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend}, slab...))
-	inside.Matrix = Camera{Projection: Perspective, Distance: 3, Alpha: 10, Beta: 30}.Matrix(16. / 9)
+	inside.Matrix = Camera{Projection: Perspective, Distance: 3, Elevation: 10, Azimuth: 30}.Matrix(16. / 9)
 	plan, err = inside.planBlend(inside.drawn(1))
 	check(t, err)
 	if plan.near < 0 || plan.far <= plan.near {

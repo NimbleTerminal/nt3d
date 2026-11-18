@@ -180,7 +180,7 @@ func TestHDREnvironmentSkyBloomSpecularIBLAndWireframe(t *testing.T) {
 
 	// Beta = 180 places eye at (-Distance, 0, 0) looking straight along +X at the sun!
 	cam := DefaultCamera()
-	cam.Alpha, cam.Beta, cam.Distance = 0, 180, 3
+	cam.Elevation, cam.Azimuth, cam.Distance = 0, 180, 3
 	f, err := s.Frame(cam, 64, 48)
 	check(t, err)
 	f.Linear = true

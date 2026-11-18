@@ -35,7 +35,7 @@ func checkerFloor(t *testing.T, full bool) Frame {
 	_, err = s.SetGeometry("floor", floor)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha, camera.Distance = Perspective, 12, 2
+	camera.Projection, camera.Elevation, camera.Distance = Perspective, 12, 2
 	f, err := s.Frame(camera, 160, 120)
 	check(t, err)
 	return f

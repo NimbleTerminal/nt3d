@@ -261,7 +261,7 @@ func (r *recordRenderer) Close() error { return nil }
 func TestSupersampleAndPostProcess(t *testing.T) {
 	r := &recordRenderer{}
 	marked := func(img *image.RGBA) { img.Pix[0] = 200 }
-	m := New(scene(t), 30, 10, WithRenderer(r), WithSupersample(3), WithPostProcess(marked))
+	m := New(scene(t), 30, 10, WithRenderer(r), WithSupersample(3), WithImageFilter(marked))
 	defer m.Close()
 	m.started = true
 	msg := m.schedule()().(rendered)
@@ -273,7 +273,7 @@ func TestSupersampleAndPostProcess(t *testing.T) {
 		t.Fatalf("post-process not applied: %T", msg.frame)
 	}
 	// Software frames are not supersampled, but are post-processed.
-	soft := New(scene(t), 30, 10, WithRenderMode(Software), WithSupersample(3), WithPostProcess(marked))
+	soft := New(scene(t), 30, 10, WithRenderMode(Software), WithSupersample(3), WithImageFilter(marked))
 	defer soft.Close()
 	soft.started = true
 	msg = soft.schedule()().(rendered)
@@ -298,10 +298,10 @@ func TestMSAAAndEffects(t *testing.T) {
 		Bloom:    nt3d.Bloom{Strength: 0.6, Threshold: 0.8},
 		SSAO:     nt3d.SSAO{Strength: 0.5},
 	}
-	m := New(scene(t), 30, 10, WithRenderer(r), WithMSAA(true), WithEffects(fx))
+	m := New(scene(t), 30, 10, WithRenderer(r), WithMSAA(true), WithPostProcess(fx))
 	defer m.Close()
-	if !m.MSAA() || m.Effects() != fx {
-		t.Fatalf("initial MSAA=%v Effects=%+v", m.MSAA(), m.Effects())
+	if !m.MSAA() || m.PostProcess() != fx {
+		t.Fatalf("initial MSAA=%v Effects=%+v", m.MSAA(), m.PostProcess())
 	}
 	m.started = true
 	_ = m.schedule()().(rendered)
@@ -310,9 +310,9 @@ func TestMSAAAndEffects(t *testing.T) {
 	}
 	m.SetMSAA(false)
 	fx2 := nt3d.PostProcess{Vignette: 0.25}
-	m.SetEffects(fx2)
-	if m.MSAA() || m.Effects() != fx2 {
-		t.Fatalf("updated MSAA=%v Effects=%+v", m.MSAA(), m.Effects())
+	m.SetPostProcess(fx2)
+	if m.MSAA() || m.PostProcess() != fx2 {
+		t.Fatalf("updated MSAA=%v Effects=%+v", m.MSAA(), m.PostProcess())
 	}
 	_, _, err := m.Snapshot(32, 16)
 	if err != nil || r.frame.MSAA || r.frame.PostProcess != fx2 {
@@ -327,10 +327,10 @@ func TestOITAndSceneLightsDefaultVsOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.SetNodeLight(lightNode, nt3d.Light{
-		Kind:      nt3d.SpotLight,
-		Intensity: 2.5,
-		InnerCone: 0.2,
-		OuterCone: 0.5,
+		Kind:       nt3d.SpotLight,
+		Intensity:  2.5,
+		InnerAngle: 0.2 * 180 / math.Pi,
+		OuterAngle: 0.5 * 180 / math.Pi,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -392,9 +392,9 @@ func TestAutoRotateFollowsTime(t *testing.T) {
 	start := time.Now()
 	m.lastInput = start.Add(-time.Hour)
 	turn := func(at time.Time) float64 {
-		before := m.camera.Beta
+		before := m.camera.Azimuth
 		m.Update(tick{id: m.id, generation: m.wake, at: at})
-		return m.camera.Beta - before
+		return m.camera.Azimuth - before
 	}
 	turn(start)
 	if got := turn(start.Add(200 * time.Millisecond)); math.Abs(got-6) > 1e-9 {

@@ -120,7 +120,7 @@ func (d *demo) stepSample(step int) tea.Cmd {
 
 func (d *demo) frameSample() tea.Cmd {
 	camera := d.view.Camera()
-	camera.Beta = samples[d.models.index].beta
+	camera.Azimuth = samples[d.models.index].beta
 	return tea.Batch(d.view.SetCamera(camera), d.view.Fit())
 }
 

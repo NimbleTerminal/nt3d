@@ -27,7 +27,7 @@ func TestLabelProjectionAndSharing(t *testing.T) {
 		check(t, s.SetTransform(parent, nt3dmath.Translation(nt3dmath.Vec3{Z: .5})))
 		check(t, s.SetTransform(b, nt3dmath.Translation(nt3dmath.Vec3{Z: -.5})))
 		for _, distance := range []float64{3.4, 7} {
-			cam := Camera{Alpha: 25, Beta: 40, Distance: distance, Projection: projection}
+			cam := Camera{Elevation: 25, Azimuth: 40, Distance: distance, Projection: projection}
 			f, err := s.Frame(cam, 320, 200)
 			check(t, err)
 			if f.Draws[0].Shared != f.Draws[1].Shared || f.Draws[0].Revision != f.Draws[1].Revision {

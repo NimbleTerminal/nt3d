@@ -55,7 +55,7 @@ const (
 
 // toonCamera looks at the actors from the street's end, buildings behind.
 func toonCamera(c *nt3d.Camera) {
-	c.Alpha, c.Beta, c.Distance, c.Projection = 20, -35, 48, nt3d.Perspective
+	c.Elevation, c.Azimuth, c.Distance, c.Projection = 20, -35, 48, nt3d.Perspective
 	c.Target = nt3dmath.Vec3{Z: toonActorHeight / 2}
 }
 

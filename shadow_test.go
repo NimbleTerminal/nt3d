@@ -402,7 +402,7 @@ func TestDropShadowCrossesNearPlane(t *testing.T) {
 	_, err = s.SetGeometry("g", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha, camera.Beta, camera.Distance = Perspective, 1, 0, 2
+	camera.Projection, camera.Elevation, camera.Azimuth, camera.Distance = Perspective, 1, 0, 2
 	f, err := s.Frame(camera, 80, 80)
 	check(t, err)
 	f.Lighting = even

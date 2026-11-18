@@ -36,7 +36,7 @@ func blendScene(t *testing.T, light *Lighting, geometries ...Geometry) Frame {
 		check(t, err)
 	}
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha = Perspective, 89
+	camera.Projection, camera.Elevation = Perspective, 89
 	f, err := s.Frame(camera, 80, 80)
 	check(t, err)
 	f.Lighting = even

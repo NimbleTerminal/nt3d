@@ -134,11 +134,11 @@ func TestGPUSelectionMatchesCPU(t *testing.T) {
 	}
 	views := []nt3dclod.View{}
 	for _, d := range []float64{3, 9, 30, .5} {
-		c := nt3d.Camera{Alpha: 20, Beta: 35, Distance: d, Projection: nt3d.Perspective, ResumeAfter: 1}
+		c := nt3d.Camera{Elevation: 20, Azimuth: 35, Distance: d, Projection: nt3d.Perspective, ResumeAfter: 1}
 		views = append(views, view(c, 160, 100, 2))
 	}
 	for _, d := range []float64{6, 20} {
-		views = append(views, view(nt3d.Camera{Alpha: 20, Beta: 35, Distance: d, ResumeAfter: 1}, 160, 100, 0))
+		views = append(views, view(nt3d.Camera{Elevation: 20, Azimuth: 35, Distance: d, ResumeAfter: 1}, 160, 100, 0))
 	}
 	withDevice(t, func(dev *wgpu.Device) error {
 		g, err := nt3dclod.NewGPU(dev)
@@ -174,7 +174,7 @@ func TestGPUEmptyAndResize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := view(nt3d.Camera{Alpha: 20, Beta: 35, Distance: 5, Projection: nt3d.Perspective, ResumeAfter: 1}, 100, 100, 1)
+	v := view(nt3d.Camera{Elevation: 20, Azimuth: 35, Distance: 5, Projection: nt3d.Perspective, ResumeAfter: 1}, 100, 100, 1)
 	withDevice(t, func(dev *wgpu.Device) error {
 		g, err := nt3dclod.NewGPU(dev)
 		if err != nil {

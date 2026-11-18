@@ -138,8 +138,8 @@ func TestGPUVertexDisplacementSoftwareParityInstancingShadowsOutlineAndPick(t *t
 
 	cam := DefaultCamera()
 	cam.Projection = Perspective
-	cam.Alpha = 38
-	cam.Beta = 30
+	cam.Elevation = 38
+	cam.Azimuth = 30
 	cam.Distance = 4.8
 
 	lighting := Lighting{
@@ -243,8 +243,8 @@ func TestGPUVertexDisplacementSoftwareParityInstancingShadowsOutlineAndPick(t *t
 		check(t, sInst.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: float32(i) * 0.85})))
 	}
 	camInst := DefaultCamera()
-	camInst.Alpha = 28
-	camInst.Beta = 20
+	camInst.Elevation = 28
+	camInst.Azimuth = 20
 	camInst.Distance = 5.8
 
 	// Render first BEFORE SetDisplacement so batches[1] is uploaded first!
@@ -306,8 +306,8 @@ func TestGPUMaterialShaderSoftwareParityCutoutOITUnlitAndCombined(t *testing.T) 
 	check(t, err)
 
 	cam := DefaultCamera()
-	cam.Alpha = 35
-	cam.Beta = 28
+	cam.Elevation = 35
+	cam.Azimuth = 28
 	cam.Distance = 4.2
 	fCombo, err := sCombo.Frame(cam, 128, 96)
 	check(t, err)
@@ -407,8 +407,8 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
 	check(t, err)
 
 	camCut := DefaultCamera()
-	camCut.Alpha = 42
-	camCut.Beta = 32
+	camCut.Elevation = 42
+	camCut.Azimuth = 32
 	camCut.Distance = 4.4
 	fCut, err := sCut.Frame(camCut, 128, 96)
 	check(t, err)

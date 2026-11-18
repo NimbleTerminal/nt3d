@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- **Breaking: every angle set on a camera or a light is in degrees, under a
+  name that says what it is.** Orbit angles were in degrees under Greek
+  letters while the field of view and spot cones were in radians.
+
+  | Before | After |
+  | --- | --- |
+  | `Camera.Alpha` (degrees) | `Camera.Elevation` (degrees) |
+  | `Camera.Beta` (degrees) | `Camera.Azimuth` (degrees) |
+  | `Camera.YFOV` (radians, zero is π/4) | `Camera.FOV` (degrees, zero is 45) |
+  | `Light.InnerCone`, `OuterCone` (radians) | `Light.InnerAngle`, `OuterAngle` (degrees, zero outer is 45) |
+
+  The renames are what make this safe: code that still sets the old fields
+  fails to compile instead of meaning another angle. Multiply a radian value
+  by `180 / math.Pi`. `nt3dmath`'s functions keep radians, as Go's `math`
+  does, and glTF cameras and lights, which store radians, are converted when
+  read.
+
+- `Geometry.Clone` returns a copy that can be edited without touching the
+  original: every slice, the material, and the billboard are copied, and what
+  a geometry only points at and never changes is shared. A test walks
+  `Geometry`'s fields, so one added later cannot be left out.
+- **Breaking: `nt3dwidget` options are named for what they take.** The
+  option that took an `nt3d.PostProcess` was called `WithEffects`, and
+  `WithPostProcess` took an image function.
+
+  | Before | After |
+  | --- | --- |
+  | `WithEffects(pp)`, `SetEffects(pp)`, `Effects()` | `WithPostProcess(pp)`, `SetPostProcess(pp)`, `PostProcess()` |
+  | `WithPostProcess(fn)`, `SetPostProcess(fn)` | `WithImageFilter(fn)`, `SetImageFilter(fn)` |
+
+  The two old meanings of `WithPostProcess` take different types, so code
+  that still means the function fails to compile rather than misbehaving.
+
 - Math written two and three times over now lives once in `nt3dmath`, which
   gains a float64 family beside the float32 one:
   - `Vec3d`, `Quatd`, and `Mat4d`, with `TRSd`, for transforms that carry
@@ -143,7 +176,7 @@
     `SetEnvironment` sets the look's `Environment`. Light positions are world
     space and follow `Camera.Origin`. `nt3dwidget` draws the scene's look
     unless it was given a setting of its own (`WithBackground`, `SetFog`,
-    `SetLighting`, `WithEffects`, and the rest).
+    `SetLighting`, `WithPostProcess`, and the rest).
 
 - Fix two decoder panics on malformed files. A glTF/GLB document with `null`
   in any array of objects (materials, scenes, cameras, mesh primitives,

@@ -101,7 +101,7 @@ func TestLightMapUVOperations(t *testing.T) {
 		g.LightMapUV[i].U = 1 - g.UV[i].U
 	}
 	check(t, g.Validate())
-	clone := cloneGeometry(g)
+	clone := g.Clone()
 	clone.LightMapUV[0].U = 7
 	if g.LightMapUV[0].U == 7 {
 		t.Fatal("UV alias")

@@ -160,8 +160,8 @@ func (d *demo) stepAnimationClip(step int) tea.Cmd {
 }
 func (d *demo) frameAnimatedSample() tea.Cmd {
 	camera := nt3d.DefaultCamera()
-	camera.Beta = d.animatedSamples.samples[d.animatedSamples.index].beta
-	camera.Alpha = 15
+	camera.Azimuth = d.animatedSamples.samples[d.animatedSamples.index].beta
+	camera.Elevation = 15
 	first := d.view.SetCamera(camera)
 	fit := d.view.Fit()
 	camera = d.view.Camera()

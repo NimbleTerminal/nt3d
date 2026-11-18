@@ -17,8 +17,8 @@ func TestGPUEnvironment(t *testing.T) {
 		for _, projection := range []Projection{Orthographic, Perspective} {
 			camera.Projection = projection
 			if projection == Perspective {
-				camera.Alpha = 89
-				camera.Beta = 180
+				camera.Elevation = 89
+				camera.Azimuth = 180
 			}
 			f, err := s.Frame(camera, 80, 60)
 			check(t, err)

@@ -105,8 +105,8 @@ func main() {
 	}
 
 	camera := nt3d.DefaultCamera()
-	camera.Alpha = 22
-	camera.Beta = -38
+	camera.Elevation = 22
+	camera.Azimuth = -38
 	camera.Distance = 3.2
 
 	title := "NT3D + GoGPU (19 Interactive Demos & 3D Viewer)"
@@ -255,8 +255,8 @@ func main() {
 			w, h = lastFrame.Width, lastFrame.Height
 		}
 		camera = nt3d.DefaultCamera()
-		camera.Alpha = 22
-		camera.Beta = -38
+		camera.Elevation = 22
+		camera.Azimuth = -38
 		camera.Distance = 3.2
 		if viewer.fitBounds.IsValid() && h > 0 {
 			camera = camera.Fit(viewer.fitBounds, float64(w)/float64(h))
@@ -405,8 +405,8 @@ func main() {
 			lighting.overrideInDemo = false
 			lighting.applyEnvironment(viewer)
 			camera = nt3d.DefaultCamera()
-			camera.Alpha = 22
-			camera.Beta = -38
+			camera.Elevation = 22
+			camera.Azimuth = -38
 			camera.Distance = 3.2
 			if len(files) > 0 && viewer.fitBounds.IsValid() && h > 0 {
 				camera = camera.Fit(viewer.fitBounds, float64(w)/float64(h))
@@ -935,8 +935,8 @@ func main() {
 					return
 				}
 				topCam := camera
-				topCam.Alpha = 78
-				topCam.Beta = camera.Beta + 90
+				topCam.Elevation = 78
+				topCam.Azimuth = camera.Azimuth + 90
 				f, err := viewer.buildFrame(topCam, int(w), int(h), msaa, supersample)
 				if err != nil {
 					return
@@ -1087,8 +1087,8 @@ func main() {
 				margin := 16
 				pipRect := image.Rect(int(w)-pipW-margin, margin, int(w)-margin, margin+pipH)
 				topCam := camera
-				topCam.Alpha = 78
-				topCam.Beta = camera.Beta + 90
+				topCam.Elevation = 78
+				topCam.Azimuth = camera.Azimuth + 90
 				if pipFrame, err := viewer.buildFrame(topCam, pipW, pipH, msaa, 1); err == nil {
 					lighting.applyFrameLighting(&pipFrame, viewer)
 					lighting.applyFramePost(&pipFrame, viewer.runner != nil)

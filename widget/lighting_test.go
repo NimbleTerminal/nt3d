@@ -77,7 +77,7 @@ func TestSceneLookReachesWidget(t *testing.T) {
 
 	fog, effects := nt3d.Fog{Near: 1, Far: 3}, nt3d.PostProcess{Vignette: .5}
 	m.SetFog(fog)
-	m.SetEffects(effects)
+	m.SetPostProcess(effects)
 	m.SetBackground(color.RGBA{200, 0, 0, 255})
 	m.SetLighting(nt3d.DefaultLighting())
 	f = m.frame()
@@ -89,7 +89,7 @@ func TestSceneLookReachesWidget(t *testing.T) {
 func TestWidgetOptionsStandOverSceneLook(t *testing.T) {
 	s := scene(t)
 	s.SetLook(nt3d.Look{Background: color.RGBA{10, 20, 30, 255}, PostProcess: nt3d.PostProcess{Exposure: 1.5}})
-	m := New(s, 20, 8, WithBackground(color.RGBA{0, 200, 0, 255}), WithEffects(nt3d.PostProcess{Vignette: .5}))
+	m := New(s, 20, 8, WithBackground(color.RGBA{0, 200, 0, 255}), WithPostProcess(nt3d.PostProcess{Vignette: .5}))
 	defer m.Close()
 	f := m.frame()
 	if f.Background != (color.RGBA{0, 200, 0, 255}) || f.PostProcess != (nt3d.PostProcess{Vignette: .5}) {

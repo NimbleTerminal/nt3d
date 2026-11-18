@@ -96,7 +96,7 @@ func TestGLTFKHRLightsPunctualSceneAndTransforms(t *testing.T) {
 
 	spot := lights[0]
 	if spot.Kind != nt3d.SpotLight || spot.Intensity != 3.5 || spot.Range != 15 ||
-		math.Abs(float64(spot.InnerCone-0.2)) > 1e-5 || math.Abs(float64(spot.OuterCone-0.6)) > 1e-5 {
+		math.Abs(float64(spot.InnerAngle)-0.2*180/math.Pi) > 1e-4 || math.Abs(float64(spot.OuterAngle)-0.6*180/math.Pi) > 1e-4 {
 		t.Fatalf("unexpected decoded spot light: %+v", spot)
 	}
 	if !near(spot.Position, nt3dmath.Vec3{X: 1, Y: -2, Z: 3}) || !near(spot.Direction, nt3dmath.Vec3{Y: 1}) {

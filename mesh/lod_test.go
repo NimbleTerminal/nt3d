@@ -97,7 +97,7 @@ f 1 2 3
 	cam := nt3d.Camera{
 		Target:     nt3dmath.Vec3{},
 		Distance:   10,
-		Beta:       -90, // Eye at (0, -10, 0) looking +Y
+		Azimuth:    -90, // Eye at (0, -10, 0) looking +Y
 		Near:       0.1,
 		Far:        300,
 		Projection: nt3d.Perspective,

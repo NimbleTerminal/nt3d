@@ -19,7 +19,7 @@ func TestGPUCloudRenders(t *testing.T) {
 		if _, err := d.stepCloud(); err != nil {
 			t.Fatal(err)
 		}
-		f, err := d.scene.Frame(nt3d.Camera{Alpha: 30, Beta: 40, Distance: distance, Projection: nt3d.Perspective}, 128, 96)
+		f, err := d.scene.Frame(nt3d.Camera{Elevation: 30, Azimuth: 40, Distance: distance, Projection: nt3d.Perspective}, 128, 96)
 		if err != nil {
 			t.Fatal(err)
 		}

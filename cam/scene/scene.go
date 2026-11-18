@@ -26,7 +26,7 @@ import (
 // camera-to-world rotation) so nt3d.Scene.Frame and nt3d.Scene.Pick subtract the camera
 // position in float64 before float32 matrix construction, avoiding precision
 // jitter even at geographic (ENU/UTM) coordinates. Orbit fields (Target,
-// Distance, Alpha, Beta) are also initialized along the viewing ray so
+// Distance, Elevation, Azimuth) are also initialized along the viewing ray so
 // interactive mouse Orbit/Pan handoff works seamlessly from the current pose.
 func CameraFromState(state nt3dcam.CameraState) nt3d.Camera {
 	rot := state.Rot.Normalize()
@@ -59,12 +59,12 @@ func CameraFromState(state nt3dcam.CameraState) nt3d.Camera {
 	c := nt3d.Camera{
 		Origin:      [3]float64{state.Pos.X, state.Pos.Y, state.Pos.Z},
 		Pose:        pose,
-		YFOV:        fov,
+		FOV:         fov * 180 / math.Pi, // A camera state holds radians.
 		Near:        state.Near,
 		Far:         state.Far,
 		Distance:    dist,
-		Alpha:       alpha,
-		Beta:        beta,
+		Elevation:   alpha,
+		Azimuth:     beta,
 		Target:      nt3dmath.Vec3{X: float32(f.X * dist), Y: float32(f.Y * dist), Z: float32(f.Z * dist)},
 		Projection:  nt3d.Perspective,
 		ResumeAfter: 2,
@@ -79,7 +79,7 @@ func StateFromCamera(c nt3d.Camera) nt3dcam.CameraState {
 	c = c.Valid()
 	eye64 := c.WorldEye()
 	r, u, f := c.Basis()
-	fov := c.YFOV
+	fov := c.FOV * math.Pi / 180
 	if fov <= 0 {
 		fov = nt3dcam.DefaultFovY
 	}

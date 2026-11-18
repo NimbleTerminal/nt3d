@@ -51,7 +51,7 @@ func benchGeometry(t *testing.T, g Geometry) (float64, int) {
 	_, err := s.SetGeometry("slab", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Projection, camera.Target, camera.Distance, camera.Alpha, camera.Beta = Perspective, nt3dmath.Vec3{}, 3, 10, 30
+	camera.Projection, camera.Target, camera.Distance, camera.Elevation, camera.Azimuth = Perspective, nt3dmath.Vec3{}, 3, 10, 30
 	f, err := s.Frame(camera, 640, 360)
 	check(t, err)
 	r := &gpuRenderer{}

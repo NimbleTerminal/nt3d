@@ -78,7 +78,7 @@ type Model struct {
 	msaa                              bool
 	oit                               bool
 	effects                           nt3d.PostProcess
-	postProcess                       func(*image.RGBA)
+	imageFilter                       func(*image.RGBA)
 	shown                             []time.Time   // When frames were shown, over the last second.
 	renderTime                        time.Duration // The last frame's render.
 }
@@ -129,19 +129,20 @@ func WithOIT(enabled bool) Option {
 	return func(m *Model) { m.oit = enabled }
 }
 
-// WithEffects configures built-in post-processing (SSAO, HDR bloom, exposure,
-// tone mapping, and vignette) applied to rendered frames and snapshots before
-// overlays and any custom WithPostProcess callback.
-func WithEffects(pp nt3d.PostProcess) Option {
+// WithPostProcess sets the widget's own nt3d.PostProcess (SSAO, HDR bloom,
+// exposure, tone mapping, and vignette), which stands over the scene's look.
+// It is applied to rendered frames and snapshots before overlays and any
+// WithImageFilter function.
+func WithPostProcess(pp nt3d.PostProcess) Option {
 	return func(m *Model) { m.effects, m.effectsSet = pp, true }
 }
 
-// WithPostProcess runs fn on each rendered image, GPU or software, before it
-// is shown, and on snapshots. fn may change the pixels in place; it runs on
-// the render goroutine, one frame at a time, so it must not touch state the
-// update goroutine changes without synchronization. Wireframe text is not
-// passed to it.
-func WithPostProcess(fn func(*image.RGBA)) Option { return func(m *Model) { m.postProcess = fn } }
+// WithImageFilter runs fn on each rendered image, GPU or software, before it
+// is shown, and on snapshots: a blur, a dither, a readout drawn in Go. fn may
+// change the pixels in place; it runs on the render goroutine, one frame at a
+// time, so it must not touch state the update goroutine changes without
+// synchronization. Wireframe text is not passed to it.
+func WithImageFilter(fn func(*image.RGBA)) Option { return func(m *Model) { m.imageFilter = fn } }
 
 // WithGPUFailure chooses what a GPU render failure does.
 func WithGPUFailure(p GPUFailure) Option { return func(m *Model) { m.gpuFailure = p } }
@@ -270,18 +271,18 @@ func (m *Model) SetOIT(enabled bool) tea.Cmd {
 	return m.changed(false)
 }
 
-// Effects returns the built-in post-processing configuration; see WithEffects.
-func (m *Model) Effects() nt3d.PostProcess { return m.effects }
+// PostProcess returns the widget's own post-processing; see WithPostProcess.
+func (m *Model) PostProcess() nt3d.PostProcess { return m.effects }
 
-// SetEffects updates the built-in post-processing configuration and schedules a render.
-func (m *Model) SetEffects(pp nt3d.PostProcess) tea.Cmd {
+// SetPostProcess sets the widget's own post-processing and schedules a render.
+func (m *Model) SetPostProcess(pp nt3d.PostProcess) tea.Cmd {
 	m.effects, m.effectsSet = pp, true
 	return m.changed(false)
 }
 
-// SetPostProcess replaces the post-processing function; nil removes it.
-func (m *Model) SetPostProcess(fn func(*image.RGBA)) tea.Cmd {
-	m.postProcess = fn
+// SetImageFilter replaces the function WithImageFilter set; nil removes it.
+func (m *Model) SetImageFilter(fn func(*image.RGBA)) tea.Cmd {
+	m.imageFilter = fn
 	return m.changed(false)
 }
 
@@ -419,7 +420,7 @@ func (m *Model) Snapshot(w, h int) (image.Image, RenderMode, error) {
 	}
 	m.dress(&f)
 	img, mode, err := nt3d.Snapshot(f, m.requestedRenderMode, m.renderer)
-	return postProcessed(img, m.postProcess), mode, err
+	return postProcessed(img, m.imageFilter), mode, err
 }
 
 // Keep stops the widget for good while leaving its last presented frame on

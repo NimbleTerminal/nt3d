@@ -132,7 +132,7 @@ type camPathScene struct {
 }
 
 func camPathDirectorCamera(c *nt3d.Camera) {
-	c.Alpha, c.Beta, c.Distance, c.Projection = 28, -52, 26, nt3d.Perspective
+	c.Elevation, c.Azimuth, c.Distance, c.Projection = 28, -52, 26, nt3d.Perspective
 	c.Target = nt3dmath.Vec3{Z: 2.2}
 }
 

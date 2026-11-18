@@ -140,7 +140,7 @@ func TestPickLineOnSurface(t *testing.T) {
 			check(t, err)
 		}
 		camera := DefaultCamera()
-		camera.Projection, camera.Alpha = Perspective, 89
+		camera.Projection, camera.Elevation = Perspective, 89
 		f, err := s.Frame(camera, 200, 200)
 		check(t, err)
 		for _, x := range []float32{-.4, -.1, .2, .45} {

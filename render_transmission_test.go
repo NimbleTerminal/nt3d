@@ -78,7 +78,7 @@ func TestGPURefractionAndForeground(t *testing.T) {
 		check(t, err)
 		c := DefaultCamera()
 		c.Projection = projection
-		c.Alpha = 60
+		c.Elevation = 60
 		f, err := s.Frame(c, 80, 60)
 		check(t, err)
 		f.Lighting = even

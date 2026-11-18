@@ -173,7 +173,7 @@ func TestMultiLODGLBCityPropFleetAndVariants(t *testing.T) {
 	cam := nt3d.Camera{
 		Target:     nt3dmath.Vec3{},
 		Distance:   10,
-		Beta:       -90, // Eye=(0, -10, 0) looking down +Y avenue
+		Azimuth:    -90, // Eye=(0, -10, 0) looking down +Y avenue
 		Near:       0.5,
 		Far:        400,
 		Projection: nt3d.Perspective,
@@ -290,7 +290,7 @@ f 1 2 3 4
 		return nt3d.Camera{
 			Target:     nt3dmath.Vec3{},
 			Distance:   dist,
-			Beta:       -90,
+			Azimuth:    -90,
 			Near:       0.1,
 			Far:        300,
 			Projection: nt3d.Perspective,

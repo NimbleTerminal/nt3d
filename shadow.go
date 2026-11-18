@@ -397,7 +397,7 @@ func fitSpotShadow(f *Frame, drawn []bool, index, size int) (v shadowView, ok bo
 		far = min(far, light.Range)
 	}
 	near := far * 1e-4
-	outer := min(float64(light.outerCone()), math.Pi*.495)
+	outer := min(light.outerRadians(), math.Pi*.495)
 	tanHalf := float32(math.Tan(outer)) * (1 + 2/float32(size))
 	cot := 1 / max(tanHalf, 1e-4)
 	up := nt3dmath.Vec3{Z: 1}

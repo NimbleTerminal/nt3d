@@ -1145,22 +1145,22 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		camera.Distance = 5.5
 	case sceneMipmaps:
 		// Low over the floor, so it runs to the horizon.
-		camera.Alpha, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
 	case sceneForest:
-		camera.Alpha, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
 	case sceneRoom:
 		roomCamera(&camera)
 	case sceneLights:
-		camera.Alpha, camera.Distance, camera.Projection = 30, 5.5, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 30, 5.5, nt3d.Perspective
 	case sceneParticles:
-		camera.Alpha, camera.Distance, camera.Projection = 14, 4.6, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 14, 4.6, nt3d.Perspective
 		camera.Target = nt3dmath.Vec3{Z: .9}
 	case sceneCloud:
-		camera.Alpha, camera.Distance, camera.Projection = 32, 9, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 32, 9, nt3d.Perspective
 	case sceneWater:
-		camera.Alpha, camera.Beta, camera.Distance, camera.Projection = 27, 35, 11, nt3d.Perspective
+		camera.Elevation, camera.Azimuth, camera.Distance, camera.Projection = 27, 35, 11, nt3d.Perspective
 	case sceneAABB:
-		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
 	case sceneToon:
 		toonCamera(&camera)
 	case sceneCamPath:
@@ -1187,7 +1187,7 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		}
 	case sceneFur:
 		camera := d.view.Camera()
-		camera.Beta = 30
+		camera.Azimuth = 30
 		d.view.SetCamera(camera)
 		d.view.Fit()
 		if !*msaa {
@@ -1208,8 +1208,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 				if d.fur != nil {
 					d.fur.effect = i
 				}
-				d.view.SetEffects(e.post)
-				d.view.SetPostProcess(e.apply)
+				d.view.SetPostProcess(e.post)
+				d.view.SetImageFilter(e.apply)
 				break
 			}
 		}

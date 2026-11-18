@@ -685,7 +685,7 @@ func collectSubtreeLODPrims(a *SceneAsset, children [][]int, dynamic []bool, roo
 			}
 			var gcopy *Geometry
 			if n.Geometry != nil {
-				gc := cloneGeometry(*n.Geometry)
+				gc := n.Geometry.Clone()
 				gcopy = &gc
 			}
 			out = append(out, lodPrim{
@@ -1007,7 +1007,7 @@ func cloneAssetNode(n AssetNode) AssetNode {
 		cp.Light = &lt
 	}
 	if n.Geometry != nil {
-		g := cloneGeometry(*n.Geometry)
+		g := n.Geometry.Clone()
 		cp.Geometry = &g
 	}
 	if len(n.LOD) > 0 {
@@ -1015,7 +1015,7 @@ func cloneAssetNode(n AssetNode) AssetNode {
 		for i, l := range n.LOD {
 			cp.LOD[i] = l
 			if l.Shared == nil && !isZeroGeometry(l.Geometry) {
-				cp.LOD[i].Geometry = cloneGeometry(l.Geometry)
+				cp.LOD[i].Geometry = l.Geometry.Clone()
 			}
 		}
 	}

@@ -120,11 +120,11 @@ func TestDirectTextureMovingCamera(t *testing.T) {
 	_, err := s.SetGeometry("map", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Alpha = 55
+	camera.Elevation = 55
 	camera.Distance = 3.4
 	camera.Projection = Perspective
 	for i := 0; i < 144; i++ {
-		camera.Beta = -90 + float64(i)*5
+		camera.Azimuth = -90 + float64(i)*5
 		f, err := s.Frame(camera, 320, 160)
 		check(t, err)
 		f.Linear = false
@@ -135,7 +135,7 @@ func TestDirectTextureMovingCamera(t *testing.T) {
 		f.Draws[0].Geometry.Material = &m
 		reference := softwareRender(f).(*image.RGBA)
 		if !bytes.Equal(direct.Pix, reference.Pix) {
-			t.Fatalf("camera %v: interpolated white changed output", camera.Beta)
+			t.Fatalf("camera %v: interpolated white changed output", camera.Azimuth)
 		}
 	}
 }

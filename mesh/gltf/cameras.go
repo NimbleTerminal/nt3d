@@ -29,7 +29,7 @@ func (d *gltfDecoder) camera(index int) (*nt3d.Camera, error) {
 		if p == nil || !finite(p.Yfov, p.Znear) || p.Yfov <= 0 || p.Yfov >= math.Pi || p.Znear <= 0 {
 			return nil, fmt.Errorf("nt3dmesh: invalid perspective camera")
 		}
-		c.Projection, c.YFOV, c.Near = nt3d.Perspective, p.Yfov, p.Znear
+		c.Projection, c.FOV, c.Near = nt3d.Perspective, p.Yfov*180/math.Pi, p.Znear // The file holds radians.
 		if p.Zfar != nil {
 			c.Far = *p.Zfar
 			if !finite(c.Far) || c.Far <= c.Near {

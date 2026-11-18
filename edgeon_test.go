@@ -33,7 +33,7 @@ func materialScene(t *testing.T, m Material, normal nt3dmath.Vec3, c color.RGBA)
 	_, err = s.SetGeometry("quad", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha = Perspective, 89
+	camera.Projection, camera.Elevation = Perspective, 89
 	f, err := s.Frame(camera, 120, 120)
 	check(t, err)
 	f.Lighting = even // Even light: color is the texture's.
@@ -86,7 +86,7 @@ func TestSoftwareEdgeOn(t *testing.T) {
 	_, err := s.SetGeometry("fin", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha = Perspective, 89
+	camera.Projection, camera.Elevation = Perspective, 89
 	frame, err := s.Frame(camera, 120, 120)
 	check(t, err)
 	if s.Pick(camera, frame, 60, 60, 0) != nil {

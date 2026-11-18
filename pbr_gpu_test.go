@@ -194,7 +194,7 @@ func TestGPUPBREnvironmentIBLAndSessionSharing(t *testing.T) {
 	check(t, s.SetTransform(nRough, nt3dmath.Translation(nt3dmath.Vec3{X: .8})))
 
 	cam := DefaultCamera()
-	cam.Alpha, cam.Beta, cam.Distance = 0, -90, 3.4
+	cam.Elevation, cam.Azimuth, cam.Distance = 0, -90, 3.4
 	f, err := s.Frame(cam, 128, 72)
 	check(t, err)
 	f.Lighting = Lighting{} // Pure environment IBL
@@ -323,7 +323,7 @@ func TestGPUClearcoatIBLAndSetMaterialParity(t *testing.T) {
 	check(t, err)
 
 	cam := DefaultCamera()
-	cam.Alpha, cam.Beta, cam.Distance = 90, 0, 2.4
+	cam.Elevation, cam.Azimuth, cam.Distance = 90, 0, 2.4
 	f0, err := s.Frame(cam, 96, 96)
 	check(t, err)
 	f0.Linear = true
@@ -420,7 +420,7 @@ func TestGPUBaseColorAndMaterialVariantsParity(t *testing.T) {
 	check(t, s.SetTransform(c2.Root, nt3dmath.Translation(nt3dmath.Vec3{X: 1.35})))
 
 	cam := DefaultCamera()
-	cam.Alpha, cam.Beta, cam.Distance = 90, 12, 4.4
+	cam.Elevation, cam.Azimuth, cam.Distance = 90, 12, 4.4
 	lighting := Lighting{
 		Ambient: Ambient{Sky: color.RGBA{95, 110, 135, 255}, Ground: color.RGBA{45, 40, 35, 255}, Intensity: .55},
 		Lights: []Light{

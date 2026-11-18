@@ -133,7 +133,7 @@ func (s *Scene) SetDeformation(id NodeID, d Deformation) error {
 	} else if len(d.Influences) > 0 {
 		return fmt.Errorf("nt3d: influences require a skeleton")
 	}
-	base := sceneGeometry{Geometry: cloneGeometry(n.geometry.Geometry)}
+	base := sceneGeometry{Geometry: n.geometry.Geometry.Clone()}
 	old := n.deformation
 	n.deformation = &deformationState{base: base, definition: d, revision: nextRevision.Add(1)}
 	if err := s.UpdateDeformations(); err != nil {

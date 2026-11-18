@@ -87,7 +87,7 @@ func TestEnvironmentSkyOrientation(t *testing.T) {
 	if !bytes.Equal(original.Pix, softwareRender(moved).(*image.RGBA).Pix) {
 		t.Fatal("sky moved with translation/zoom")
 	}
-	camera.Beta += 90
+	camera.Azimuth += 90
 	rotated, err := s.Frame(camera, 64, 48)
 	check(t, err)
 	if bytes.Equal(original.Pix, softwareRender(rotated).(*image.RGBA).Pix) {

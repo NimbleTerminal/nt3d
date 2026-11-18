@@ -30,8 +30,8 @@ func TestCameraProjectionAndRay(t *testing.T) {
 
 func TestOrthoDistanceAndCellAspect(t *testing.T) {
 	c := DefaultCamera()
-	c.Alpha = 0
-	c.Beta = 0
+	c.Elevation = 0
+	c.Azimuth = 0
 	a := c.RayFromCell(4, 2, 5, 5, 8, 16)
 	b := c.RayFromCell(4, 2, 5, 5, 16, 16)
 	if math.Abs(float64(b.Origin.Sub(c.Target).Y)) < math.Abs(float64(a.Origin.Sub(c.Target).Y))*1.9 {
@@ -166,7 +166,7 @@ func TestCameraForwardAndBasis(t *testing.T) {
 	orbit := DefaultCamera().LookAt(nt3dmath.Vec3{X: 6, Y: -3, Z: 4}, nt3dmath.Vec3{X: 1, Y: 2, Z: 1})
 	posed := DefaultCamera()
 	posed.Pose = nt3dmath.Translation(nt3dmath.Vec3{X: -2, Y: 5, Z: 3}).Mul(nt3dmath.RotationZ(.7)).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 2, Y: 3, Z: 4}))
-	invalid := Camera{Alpha: math.NaN(), Beta: math.Inf(1), Distance: -1}
+	invalid := Camera{Elevation: math.NaN(), Azimuth: math.Inf(1), Distance: -1}
 
 	for name, c := range map[string]Camera{"orbit": orbit, "posed": posed, "invalid": invalid} {
 		r, u, f := c.Basis()

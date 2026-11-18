@@ -40,7 +40,7 @@ func TestGPUMeshUpdatesInPlaceAndSnapshotReplay(t *testing.T) {
 	id, err := s.SetGeometry("water", base)
 	check(t, err)
 
-	cam := Camera{Alpha: 38, Beta: 0, Distance: 2.4, Projection: Perspective}
+	cam := Camera{Elevation: 38, Azimuth: 0, Distance: 2.4, Projection: Perspective}
 	f0, err := s.Frame(cam, 80, 80)
 	check(t, err)
 	got0, err := r.Render(f0)
@@ -99,7 +99,7 @@ func TestGPUMeshUpdatesInvalidateCreasesAcrossSessionViews(t *testing.T) {
 	id, err := s.SetGeometry("box", cube)
 	check(t, err)
 
-	cam := Camera{Alpha: 32, Beta: 38, Distance: 3.0, Projection: Perspective}
+	cam := Camera{Elevation: 32, Azimuth: 38, Distance: 3.0, Projection: Perspective}
 	f0, err := s.Frame(cam, 80, 80)
 	check(t, err)
 	format := gputypes.TextureFormatRGBA8Unorm
@@ -162,7 +162,7 @@ func TestGPUSetMaterialSharedGeometryParity(t *testing.T) {
 	}))
 	check(t, s.SetMaterial(backID, &Material{PBR: true, Metallic: .2, Roughness: .35}))
 
-	cam := Camera{Alpha: 10, Beta: 0, Distance: 2.5, Projection: Perspective}
+	cam := Camera{Elevation: 10, Azimuth: 0, Distance: 2.5, Projection: Perspective}
 	f, err := s.Frame(cam, 96, 96)
 	check(t, err)
 	f.EnvironmentBackgroundOnly = true

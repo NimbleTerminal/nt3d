@@ -118,7 +118,7 @@ func TestSharedGeometryRendersAsCopies(t *testing.T) {
 func TestSharedGeometryPicking(t *testing.T) {
 	s, ids, sg := grid(t, 3, .5, true)
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha = Perspective, 89
+	camera.Projection, camera.Elevation = Perspective, 89
 	f, err := s.Frame(camera, 300, 300)
 	check(t, err)
 	for _, id := range ids {

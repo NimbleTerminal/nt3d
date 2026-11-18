@@ -41,7 +41,7 @@ func TestStaticHierarchyAndCamera(t *testing.T) {
 		}
 		c, err := s.NodeCamera(cameras[0])
 		check(t, err)
-		if !near(c.Eye(), nt3dmath.Vec3{X: 2, Y: -9, Z: 3}) || c.YFOV != math.Pi/3 || c.AspectRatio != 1.5 || c.Far != 0 {
+		if !near(c.Eye(), nt3dmath.Vec3{X: 2, Y: -9, Z: 3}) || math.Abs(c.FOV-60) > 1e-9 || c.AspectRatio != 1.5 || c.Far != 0 {
 			t.Fatalf("camera %+v", c)
 		}
 		node, _ := s.Node(cameras[0])

@@ -6,6 +6,7 @@ package nt3d
 
 import (
 	"image/color"
+	"math"
 	"testing"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
@@ -42,8 +43,8 @@ func TestGPUSpotLightAndPerspectiveShadowParity(t *testing.T) {
 		Projection: Perspective,
 		Target:     nt3dmath.Vec3{Z: -0.6},
 		Distance:   4.8,
-		Alpha:      25,
-		Beta:       -38,
+		Elevation:  25,
+		Azimuth:    -38,
 	}
 	f, err := s.Frame(cam, 112, 88)
 	check(t, err)
@@ -53,25 +54,25 @@ func TestGPUSpotLightAndPerspectiveShadowParity(t *testing.T) {
 		Ambient: Ambient{Sky: color.RGBA{60, 70, 90, 255}, Ground: color.RGBA{30, 28, 25, 255}, Intensity: 0.18},
 		Lights: []Light{
 			{
-				Kind:      SpotLight,
-				Position:  nt3dmath.Vec3{X: -1.4, Y: -1.0, Z: 2.2},
-				Direction: nt3dmath.Vec3{X: 1.4, Y: 1.0, Z: -2.8}.Normalize(),
-				Color:     color.RGBA{255, 235, 205, 255},
-				Intensity: 3.2,
-				Range:     12,
-				InnerCone: 0.22,
-				OuterCone: 0.52,
-				Shadows:   true,
+				Kind:       SpotLight,
+				Position:   nt3dmath.Vec3{X: -1.4, Y: -1.0, Z: 2.2},
+				Direction:  nt3dmath.Vec3{X: 1.4, Y: 1.0, Z: -2.8}.Normalize(),
+				Color:      color.RGBA{255, 235, 205, 255},
+				Intensity:  3.2,
+				Range:      12,
+				InnerAngle: 0.22 * 180 / math.Pi,
+				OuterAngle: 0.52 * 180 / math.Pi,
+				Shadows:    true,
 			},
 			{
-				Kind:      SpotLight,
-				Position:  nt3dmath.Vec3{X: 1.8, Y: -0.6, Z: 1.8},
-				Direction: nt3dmath.Vec3{X: -1.8, Y: 0.6, Z: -2.4}.Normalize(),
-				Color:     color.RGBA{95, 175, 255, 255},
-				Intensity: 1.6,
-				Range:     10,
-				InnerCone: 0.18,
-				OuterCone: 0.45,
+				Kind:       SpotLight,
+				Position:   nt3dmath.Vec3{X: 1.8, Y: -0.6, Z: 1.8},
+				Direction:  nt3dmath.Vec3{X: -1.8, Y: 0.6, Z: -2.4}.Normalize(),
+				Color:      color.RGBA{95, 175, 255, 255},
+				Intensity:  1.6,
+				Range:      10,
+				InnerAngle: 0.18 * 180 / math.Pi,
+				OuterAngle: 0.45 * 180 / math.Pi,
 			},
 		},
 	}

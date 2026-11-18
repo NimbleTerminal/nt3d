@@ -25,11 +25,11 @@ func orientationTriadEndpoints(f *nt3d.Frame, camera nt3d.Camera) (cx, cy float3
 	cx, cy = float32(f.Width-46), 46
 	const arm = 28.0
 	rotCam := nt3d.Camera{
-		Alpha:    camera.Alpha,
-		Beta:     camera.Beta,
-		Distance: 4.0,
-		Near:     0.1,
-		Far:      10.0,
+		Elevation: camera.Elevation,
+		Azimuth:   camera.Azimuth,
+		Distance:  4.0,
+		Near:      0.1,
+		Far:       10.0,
 	}
 	m := rotCam.Matrix(1)
 	ox, oy, _, _ := m.Transform(nt3dmath.Vec3{})
@@ -132,22 +132,22 @@ func snapCameraToAxis(cam nt3d.Camera, axis int) (nt3d.Camera, string) {
 	cam.Pose = nt3dmath.Mat4{}
 	switch axis {
 	case +1:
-		cam.Alpha, cam.Beta = 0, 0
+		cam.Elevation, cam.Azimuth = 0, 0
 		return cam, "+X (Right)"
 	case -1:
-		cam.Alpha, cam.Beta = 0, 180
+		cam.Elevation, cam.Azimuth = 0, 180
 		return cam, "-X (Left)"
 	case +2:
-		cam.Alpha, cam.Beta = 0, 90
+		cam.Elevation, cam.Azimuth = 0, 90
 		return cam, "+Y (Back)"
 	case -2:
-		cam.Alpha, cam.Beta = 0, -90
+		cam.Elevation, cam.Azimuth = 0, -90
 		return cam, "-Y (Front)"
 	case +3:
-		cam.Alpha, cam.Beta = 89, -90
+		cam.Elevation, cam.Azimuth = 89, -90
 		return cam, "+Z (Top)"
 	case -3:
-		cam.Alpha, cam.Beta = -89, -90
+		cam.Elevation, cam.Azimuth = -89, -90
 		return cam, "-Z (Bottom)"
 	default:
 		return cam, ""

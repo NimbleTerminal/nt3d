@@ -110,7 +110,7 @@ func TestIndependentNormalUV(t *testing.T) {
 	if c := at(softwareRender(f), 40, 40); c.R > 3 {
 		t.Fatal("independent normal UV ignored", c)
 	}
-	clone := cloneGeometry(*g)
+	clone := g.Clone()
 	clone.NormalUV[0].U = 7
 	if g.NormalUV[0].U == 7 {
 		t.Fatal("normal UV slice aliased")

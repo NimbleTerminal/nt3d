@@ -15,7 +15,7 @@ import (
 
 // camera looks from +X toward the origin: its right is +Y, its up +Z.
 func camera(projection nt3d.Projection, distance float64) nt3d.Camera {
-	return nt3d.Camera{Alpha: 0, Beta: 0, Distance: distance, Projection: projection, ResumeAfter: 1}
+	return nt3d.Camera{Elevation: 0, Azimuth: 0, Distance: distance, Projection: projection, ResumeAfter: 1}
 }
 
 // view is c's view of a width×height frame, with margin pixels of slack.
@@ -222,7 +222,7 @@ func BenchmarkSelect1M(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	v := view(nt3d.Camera{Alpha: 25, Beta: 40, Distance: 7, Projection: nt3d.Perspective, ResumeAfter: 1}, 960, 640, 2)
+	v := view(nt3d.Camera{Elevation: 25, Azimuth: 40, Distance: 7, Projection: nt3d.Perspective, ResumeAfter: 1}, 960, 640, 2)
 	var out nt3dclod.Selection
 	b.ResetTimer()
 	for b.Loop() {

@@ -425,7 +425,7 @@ func prepareStoredGeometry(in Geometry) (sceneGeometry, error) {
 	if err := in.Validate(); err != nil {
 		return sceneGeometry{}, err
 	}
-	g := sceneGeometry{Geometry: cloneGeometry(in)}
+	g := sceneGeometry{Geometry: in.Clone()}
 	g.Bounds, g.restBounds = geometryBoundsPair(g.Geometry)
 	g.stored = &storedGeometry{g.Points, g.PointStyle, g.Clusters, newSHCertificate(&g.Geometry)} // Validated above.
 	generateTangentsOnUpload(&g.Geometry)
@@ -454,7 +454,7 @@ func NewSharedGeometry(in Geometry) (*SharedGeometry, error) {
 	if len(in.Points)+len(in.Boxes)+len(in.Lines)+len(in.Arrows) != 0 {
 		return nil, errors.New("nt3d: shared geometry holds triangles only")
 	}
-	g := sceneGeometry{Geometry: cloneGeometry(in)}
+	g := sceneGeometry{Geometry: in.Clone()}
 	g.Bounds, g.restBounds = geometryBoundsPair(g.Geometry)
 	generateTangentsOnUpload(&g.Geometry)
 	g.meshCert = newMeshCertificate(&g.Geometry, hasDuplicatePositions(g.Vertices))
@@ -465,7 +465,7 @@ func NewSharedGeometry(in Geometry) (*SharedGeometry, error) {
 func (sg *SharedGeometry) Bounds() nt3dmath.AABB { return sg.geometry.Bounds }
 
 // Geometry returns a detached copy of the shared triangle mesh.
-func (sg *SharedGeometry) Geometry() Geometry { return cloneGeometry(sg.geometry.Geometry) }
+func (sg *SharedGeometry) Geometry() Geometry { return sg.geometry.Geometry.Clone() }
 
 // SetShared makes a named node show shared geometry, creating the node
 // under Root if there is none, as SetGeometry does.

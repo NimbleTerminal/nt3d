@@ -489,8 +489,8 @@ func TestGPUSessionSubViewportAndSplitScreen(t *testing.T) {
 	wants := make([]image.Image, len(panes))
 	for i, p := range panes {
 		cam := DefaultCamera()
-		cam.Alpha = p.alpha
-		cam.Beta = p.beta
+		cam.Elevation = p.alpha
+		cam.Azimuth = p.beta
 		f, err := scene.Frame(cam, p.rect.Dx(), p.rect.Dy())
 		check(t, err)
 		f.Background = p.bg
@@ -699,14 +699,14 @@ func TestGPUSessionNewViewSharesResources(t *testing.T) {
 	targetTex, targetView := createHostTarget(t, dev, fullW, fullH, format)
 
 	camFront := DefaultCamera()
-	camFront.Alpha = 18
-	camFront.Beta = -30
+	camFront.Elevation = 18
+	camFront.Azimuth = -30
 	fFront, err := scene.Frame(camFront, paneW, paneH)
 	check(t, err)
 
 	camTop := DefaultCamera()
-	camTop.Alpha = 78
-	camTop.Beta = 60
+	camTop.Elevation = 78
+	camTop.Azimuth = 60
 	fTop, err := scene.Frame(camTop, paneW, paneH)
 	check(t, err)
 
@@ -838,8 +838,8 @@ func TestGPUSessionReadDepthAndPick(t *testing.T) {
 	check(t, s.SetTransform(cubeID, nt3dmath.Translation(nt3dmath.Vec3{X: 1.4, Y: 0, Z: 0})))
 
 	cam := DefaultCamera()
-	cam.Alpha = 20
-	cam.Beta = -35
+	cam.Elevation = 20
+	cam.Azimuth = -35
 	cam.Distance = 3.6
 
 	const w, h = 160, 120
@@ -931,8 +931,8 @@ func TestGPUSessionRenderToImage(t *testing.T) {
 	check(t, err)
 
 	cam := DefaultCamera()
-	cam.Alpha = 20
-	cam.Beta = -35
+	cam.Elevation = 20
+	cam.Azimuth = -35
 
 	reusable := image.NewNRGBA(image.Rect(0, 0, 96, 72))
 	if err := sess.RenderToImageInto(Frame{Width: 96, Height: 72}, nil); err == nil {
@@ -943,7 +943,7 @@ func TestGPUSessionRenderToImage(t *testing.T) {
 	}
 
 	for step := range 3 {
-		cam.Beta = float64(-35 + step*45)
+		cam.Azimuth = float64(-35 + step*45)
 		f, err := s.Frame(cam, 96, 72)
 		check(t, err)
 		f.Supersample = 2

@@ -37,7 +37,7 @@ func GenerateTangents(g Geometry) (Geometry, error) {
 	if err != nil {
 		return Geometry{}, err
 	}
-	g = cloneGeometry(g)
+	g = g.Clone()
 	g.Tangents = tangents
 	return g, nil
 }

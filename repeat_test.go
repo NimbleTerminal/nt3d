@@ -55,7 +55,7 @@ func repeatScene(t *testing.T, repeat bool) Frame {
 	_, err = s.SetGeometry("quad", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Alpha, camera.Beta = 89, -90
+	camera.Elevation, camera.Azimuth = 89, -90
 	f, err := s.Frame(camera, 240, 160)
 	check(t, err)
 	return f

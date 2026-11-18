@@ -127,7 +127,7 @@ func TestCullMatchesUnculled(t *testing.T) {
 	// The view moved after Scene.Frame, as the widget's display aspect moves
 	// it, is the one culled against.
 	wide := f
-	wide.Matrix = (Camera{Alpha: 25, Beta: 40, Distance: 1.5, Projection: Perspective}).Matrix(3)
+	wide.Matrix = (Camera{Elevation: 25, Azimuth: 40, Distance: 1.5, Projection: Perspective}).Matrix(3)
 	wideOff := wide
 	wideOff.Cull = false
 	if !bytes.Equal(softwareRender(wide).(*image.RGBA).Pix, softwareRender(wideOff).(*image.RGBA).Pix) {

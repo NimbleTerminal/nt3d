@@ -377,7 +377,7 @@ func robot() error {
 		return err
 	}
 	camera := nt3d.DefaultCamera()
-	camera.Alpha, camera.Beta = 15, -70
+	camera.Elevation, camera.Azimuth = 15, -70
 	camera = camera.Fit(s.Bounds(), 1)
 	f, err := s.Frame(camera, 320, 320)
 	if err != nil {

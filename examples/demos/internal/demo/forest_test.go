@@ -75,7 +75,7 @@ func TestForestLOD(t *testing.T) {
 
 		frameAt := func(dist float64, cull bool) (drawn, batches, tris int) {
 			cam := nt3d.DefaultCamera()
-			cam.Alpha, cam.Distance, cam.Projection = 24, dist, nt3d.Perspective
+			cam.Elevation, cam.Distance, cam.Projection = 24, dist, nt3d.Perspective
 			f, err := d.scene.Frame(cam, 80, 48)
 			if err != nil {
 				t.Fatal(err)
@@ -145,7 +145,7 @@ func TestForestLODKeyAndStatus(t *testing.T) {
 	}
 	d.fog = false
 	cam := nt3d.DefaultCamera()
-	cam.Alpha, cam.Distance, cam.Projection = 24, 9, nt3d.Perspective
+	cam.Elevation, cam.Distance, cam.Projection = 24, 9, nt3d.Perspective
 	session := picture.NewTerminalSession(picture.TerminalOptions{Kitty: picture.KittyCapabilityUnsupported})
 	defer session.Close()
 	d.view = nt3dwidget.New(d.scene, 20, 8, nt3dwidget.WithCamera(cam), nt3dwidget.WithRenderMode(nt3d.Software), nt3dwidget.WithTerminalSession(session), nt3dwidget.WithFrameDecorator(d.decorate))

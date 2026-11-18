@@ -42,7 +42,16 @@ func lerpRGBA(a, b color.RGBA, t float64) color.RGBA {
 	mix := func(x, y uint8) uint8 { return uint8(float64(x)*(1-t) + float64(y)*t + .5) }
 	return color.RGBA{mix(a.R, b.R), mix(a.G, b.G), mix(a.B, b.B), mix(a.A, b.A)}
 }
-func cloneGeometry(g Geometry) Geometry {
+
+// Clone returns a copy of g that can be changed without changing g: every
+// slice is copied, and so are the Material and Billboard. What a geometry
+// only points at and never changes, its textures, shaders, Displacement,
+// Clusters, and GaussianSHPalette, is shared.
+//
+// A scene clones what it is given, so Clone is for an application that keeps
+// geometry of its own to edit, or hands a geometry from a frame back to a
+// scene after changing it.
+func (g Geometry) Clone() Geometry {
 	g.Points = slices.Clone(g.Points)
 	g.GaussianSH = slices.Clone(g.GaussianSH)
 	g.GaussianSHLabels = slices.Clone(g.GaussianSHLabels)

@@ -178,7 +178,7 @@ func TestPickTransformedPrimitives(t *testing.T) {
 			transform := nt3dmath.Translation(nt3dmath.Vec3{X: .4, Y: .1}).Mul(nt3dmath.RotationZ(.7)).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: 1.4, Y: .8, Z: 2}))
 			check(t, s.SetTransform(id, transform))
 			camera := DefaultCamera()
-			camera.Alpha = 70
+			camera.Elevation = 70
 			f, err := s.Frame(camera, 320, 240)
 			check(t, err)
 			x, y, _, ok := f.Matrix.Project(transform.Point(nt3dmath.Vec3{}), 320, 240)

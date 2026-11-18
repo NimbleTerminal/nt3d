@@ -104,8 +104,9 @@ func (d *gltfDecoder) decodeLights() error {
 			if !validCoordinate(float32(inner)) || !validCoordinate(float32(outer)) || inner < 0 || outer <= 0 || outer >= math.Pi/2 || inner >= outer {
 				return errors.New("nt3dmesh: invalid KHR_lights_punctual spot cone")
 			}
-			out.InnerCone = float32(inner)
-			out.OuterCone = float32(outer)
+			// The file holds radians.
+			out.InnerAngle = float32(inner * 180 / math.Pi)
+			out.OuterAngle = float32(outer * 180 / math.Pi)
 		}
 
 		d.lights = append(d.lights, punctualLight{name: src.Name, light: out})

@@ -43,7 +43,7 @@ func lodOrtho(geometry ...Geometry) Frame {
 
 // lodPerspective is a 400×400 perspective view of the cube from distance on +X.
 func lodPerspective(distance float64, geometry ...Geometry) Frame {
-	cam := Camera{Projection: Perspective, Beta: 0, Distance: distance, Near: .1, Far: 1000}
+	cam := Camera{Projection: Perspective, Azimuth: 0, Distance: distance, Near: .1, Far: 1000}
 	f := Frame{Width: 400, Height: 400, Matrix: cam.Matrix(1), Cull: true, Perspective: true}
 	f.Eye, _, _, f.Forward = cam.basis()
 	f.Draws = drawsOf(geometry...)
@@ -304,7 +304,7 @@ func TestLODProjectedRadiusRows(t *testing.T) {
 	}
 
 	cam := DefaultCamera()
-	cam.Projection, cam.Alpha, cam.Beta = Perspective, 45, 45
+	cam.Projection, cam.Elevation, cam.Azimuth = Perspective, 45, 45
 	m := cam.Matrix(float32(width) / height)
 	if row := math.Sqrt(float64(m[3]*m[3] + m[7]*m[7] + m[11]*m[11])); math.Abs(row-1) > 1e-5 {
 		t.Fatalf("orbit camera's w row has length %v", row)

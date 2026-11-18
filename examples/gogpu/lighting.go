@@ -448,15 +448,15 @@ func (l *studioLighting) applyFrameLighting(f *nt3d.Frame, v *viewerState) {
 			pos := nt3dmath.Vec3{X: 1.85 * float32(math.Cos(a)), Y: 1.85 * float32(math.Sin(a)), Z: 1.75}
 			aim := nt3dmath.Vec3{Z: 0.1}
 			f.Lighting.Lights = append(f.Lighting.Lights, nt3d.Light{
-				Kind:      nt3d.SpotLight,
-				Position:  pos,
-				Direction: aim.Sub(pos).Normalize(),
-				Color:     spotColors[i],
-				Intensity: intensities[i],
-				Range:     5.5,
-				InnerCone: 0.20,
-				OuterCone: 0.48,
-				Shadows:   i == 0 && l.shadows,
+				Kind:       nt3d.SpotLight,
+				Position:   pos,
+				Direction:  aim.Sub(pos).Normalize(),
+				Color:      spotColors[i],
+				Intensity:  intensities[i],
+				Range:      5.5,
+				InnerAngle: 11.5,
+				OuterAngle: 27.5,
+				Shadows:    i == 0 && l.shadows,
 			})
 		}
 	case 3: // Orbiting RGB

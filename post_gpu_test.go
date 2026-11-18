@@ -141,7 +141,7 @@ func TestGPUMSAAAllPipelinesAndSession(t *testing.T) {
 	env, err := NewEnvironment(pano)
 	check(t, err)
 
-	cam := Camera{Distance: 3.0, Alpha: 85, Beta: -90, Projection: Perspective}
+	cam := Camera{Distance: 3.0, Elevation: 85, Azimuth: -90, Projection: Perspective}
 	f, err := s.Frame(cam, 96, 96)
 	check(t, err)
 	f.Environment = env
@@ -276,7 +276,7 @@ func TestGPUSessionPostProcessViewportAndLoad(t *testing.T) {
 
 	// Fill full target with solid green using a base frame.
 	bgScene := NewScene()
-	cam := Camera{Distance: 3, Alpha: 89, Beta: -90, Projection: Perspective}
+	cam := Camera{Distance: 3, Elevation: 89, Azimuth: -90, Projection: Perspective}
 	bgFrame, err := bgScene.Frame(cam, 128, 128)
 	check(t, err)
 	bgFrame.Background = color.RGBA{20, 180, 40, 255}

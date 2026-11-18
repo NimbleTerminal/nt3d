@@ -38,7 +38,7 @@ func cutoutScene(t *testing.T, cutout bool) (Frame, color.RGBA, color.RGBA) {
 	_, err = s.SetGeometry("front", quad(.4, .8, &Material{Texture: texture, Unlit: true, Cutout: cutout}, color.RGBA{}))
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Alpha = 89
+	camera.Elevation = 89
 	f, err := s.Frame(camera, 160, 160)
 	check(t, err)
 	return f, front, back
@@ -92,7 +92,7 @@ func rampScene(t *testing.T, threshold float32) (Frame, color.RGBA) {
 	_, err = s.SetGeometry("ramp", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Alpha = 89
+	camera.Elevation = 89
 	f, err := s.Frame(camera, 160, 160)
 	check(t, err)
 	return f, front

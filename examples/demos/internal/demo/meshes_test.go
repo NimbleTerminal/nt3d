@@ -551,7 +551,7 @@ func TestMeshesGLTFVariantsAndMultiLOD(t *testing.T) {
 			d.meshes.hasLOD, d.meshes.lodMode, d.meshes.maxLODTiers, d.meshes.triangles)
 	}
 
-	cam := nt3d.Camera{Target: nt3dmath.Vec3{}, Distance: 3.0, Beta: -90, Near: 0.1, Far: 100, Projection: nt3d.Perspective}
+	cam := nt3d.Camera{Target: nt3dmath.Vec3{}, Distance: 3.0, Azimuth: -90, Near: 0.1, Far: 100, Projection: nt3d.Perspective}
 	f0, err := d.scene.Frame(cam, 96, 72)
 	if err != nil {
 		t.Fatal(err)

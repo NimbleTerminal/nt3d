@@ -202,8 +202,8 @@ func (d *demo) aaLabel() string {
 func (d *demo) cycleEffect() tea.Cmd {
 	d.fur.effect = (d.fur.effect + 1) % len(effects)
 	e := effects[d.fur.effect]
-	_ = d.view.SetEffects(e.post)
-	return d.view.SetPostProcess(e.apply)
+	_ = d.view.SetPostProcess(e.post)
+	return d.view.SetImageFilter(e.apply)
 }
 
 func (d *demo) furView(content string) string {

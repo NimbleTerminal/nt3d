@@ -153,7 +153,7 @@ func TestNodePickIndexing(t *testing.T) {
 	check(t, err)
 	check(t, s.SetNodePickIndexing(b, false))
 	camera := DefaultCamera()
-	camera.Alpha, camera.Beta = 89, -90
+	camera.Elevation, camera.Azimuth = 89, -90
 	f, err := s.Frame(camera, 320, 240)
 	check(t, err)
 	// Pick each sphere at its projected center.
@@ -243,8 +243,8 @@ func TestFrameUnproject(t *testing.T) {
 	for _, proj := range []Projection{Perspective, Orthographic} {
 		cam := DefaultCamera()
 		cam.Projection = proj
-		cam.Alpha = 25
-		cam.Beta = -40
+		cam.Elevation = 25
+		cam.Azimuth = -40
 		cam.Distance = 3.5
 		f, err := s.Frame(cam, 640, 480)
 		check(t, err)

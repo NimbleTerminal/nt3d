@@ -161,7 +161,7 @@ func TestGPUToonFlatFloorEdgeIsAntialiased(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
 	camera := DefaultCamera()
-	camera.Projection, camera.Alpha = Perspective, 89
+	camera.Projection, camera.Elevation = Perspective, 89
 	s := NewScene()
 	_, err := s.SetGeometry("floor", quad(3, -1, white, &Material{Toon: ToonStyle{Bands: 2}}, false))
 	check(t, err)

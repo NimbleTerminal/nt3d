@@ -206,22 +206,22 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 	case sceneDynamic:
 		camera.Distance = 5.5
 	case sceneMipmaps:
-		camera.Alpha, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 8, 2.6, nt3d.Perspective
 	case sceneForest:
-		camera.Alpha, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 24, 9, nt3d.Perspective
 	case sceneRoom:
 		roomCamera(&camera)
 	case sceneLights:
-		camera.Alpha, camera.Distance, camera.Projection = 30, 5.5, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 30, 5.5, nt3d.Perspective
 	case sceneParticles:
-		camera.Alpha, camera.Distance, camera.Projection = 14, 4.6, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 14, 4.6, nt3d.Perspective
 		camera.Target = nt3dmath.Vec3{Z: .9}
 	case sceneCloud:
-		camera.Alpha, camera.Distance, camera.Projection = 32, 9, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 32, 9, nt3d.Perspective
 	case sceneWater:
-		camera.Alpha, camera.Beta, camera.Distance, camera.Projection = 27, 35, 11, nt3d.Perspective
+		camera.Elevation, camera.Azimuth, camera.Distance, camera.Projection = 27, 35, 11, nt3d.Perspective
 	case sceneAABB:
-		camera.Alpha, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
+		camera.Elevation, camera.Distance, camera.Projection = 30, 15, nt3d.Perspective
 	case sceneToon:
 		toonCamera(&camera)
 	case sceneCamPath:
@@ -251,7 +251,7 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		}
 	case sceneFur:
 		cam := d.view.Camera()
-		cam.Beta = 30
+		cam.Azimuth = 30
 		d.view.SetCamera(cam)
 		d.view.Fit()
 		d.view.SetSupersample(2)
@@ -404,7 +404,7 @@ func (r *Runner) Effects() nt3d.PostProcess {
 	if r == nil || r.d == nil || r.d.view == nil {
 		return nt3d.PostProcess{}
 	}
-	return r.d.view.Effects()
+	return r.d.view.PostProcess()
 }
 
 // SetEffects sets the active demo's built-in PostProcess settings.
@@ -412,7 +412,7 @@ func (r *Runner) SetEffects(p nt3d.PostProcess) {
 	if r == nil || r.d == nil || r.d.view == nil {
 		return
 	}
-	r.d.view.SetEffects(p)
+	r.d.view.SetPostProcess(p)
 }
 
 // Animating reports whether the demo's simulation/animation loop is running.
@@ -564,7 +564,7 @@ func (r *Runner) Frame(camera nt3d.Camera, w, h int) (nt3d.Frame, error) {
 	}
 	f.MSAA = r.d.view.MSAA()
 	f.Supersample = r.d.view.Supersample()
-	f.PostProcess = r.d.view.Effects()
+	f.PostProcess = r.d.view.PostProcess()
 	r.d.decorate(&f)
 	return f, nil
 }

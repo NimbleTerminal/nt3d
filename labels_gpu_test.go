@@ -35,7 +35,7 @@ func TestGPULabels(t *testing.T) {
 	if uploads != 1 || textures != 5 {
 		t.Fatalf("shared label uploaded %d meshes, %d textures", uploads, textures)
 	}
-	cam.Beta = 20
+	cam.Azimuth = 20
 	f, err = s.Frame(cam, 320, 240)
 	check(t, err)
 	_, err = r.Render(f)

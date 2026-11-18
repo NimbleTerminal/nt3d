@@ -24,7 +24,7 @@ func edgeScene(t *testing.T, supersample int) Frame {
 	_, err := s.SetGeometry("edge", g)
 	check(t, err)
 	camera := DefaultCamera()
-	camera.Alpha, camera.Beta = 89, -90
+	camera.Elevation, camera.Azimuth = 89, -90
 	f, err := s.Frame(camera, 120, 120)
 	check(t, err)
 	f.Background = color.RGBA{255, 255, 255, 255}

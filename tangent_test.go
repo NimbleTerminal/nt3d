@@ -59,7 +59,7 @@ func TestTangentValidation(t *testing.T) {
 
 func TestTangentMeshOps(t *testing.T) {
 	g := tangentQuad(t)
-	clone := cloneGeometry(g)
+	clone := g.Clone()
 	clone.Tangents[0].W = -1
 	if g.Tangents[0].W != 1 {
 		t.Fatal("tangents aliased by clone")
@@ -81,7 +81,7 @@ func TestTangentMeshOps(t *testing.T) {
 	if len(merged.Tangents) != 8 {
 		t.Fatalf("merge kept %d tangents", len(merged.Tangents))
 	}
-	bare := cloneGeometry(g)
+	bare := g.Clone()
 	bare.Tangents = nil
 	merged, err = MergeGeometry(g, bare)
 	check(t, err)
@@ -250,7 +250,7 @@ func TestSceneGeneratesTangents(t *testing.T) {
 	if len(f.Draws[0].Geometry.Tangents) != 4 || !nearVec(f.Draws[0].Geometry.Tangents[0].Direction, nt3dmath.Vec3{X: 1}, 1e-5) {
 		t.Fatalf("scene tangents %v", f.Draws[0].Geometry.Tangents)
 	}
-	plain := cloneGeometry(g)
+	plain := g.Clone()
 	plain.Material.NormalMap = nil
 	_, err = s.SetGeometry("mesh", plain)
 	check(t, err)

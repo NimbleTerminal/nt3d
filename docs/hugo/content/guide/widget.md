@@ -39,12 +39,12 @@ A click sends your program a `PickMsg` saying what was hit; see [Picking](../pic
 ## Options
 
 - `WithRenderMode` chooses WebGPU, software, or wireframe; `SetRenderMode` changes it.
-- `WithCamera` sets the view. The widget draws the scene in the scene's own [look](../rendering/#how-it-looks) (`Scene.SetLook`): background, lighting, fog, and effects. `WithBackground`, `SetBackground`, `SetLighting`, `SetFog`, `WithEffects`, and `SetEffects` give the widget a setting of its own, which then stands over the scene's for this widget only. Until `SetLighting` is called, any visible `SetNodeLight` / glTF `KHR_lights_punctual` lights on the scene are used automatically.
+- `WithCamera` sets the view. The widget draws the scene in the scene's own [look](../rendering/#how-it-looks) (`Scene.SetLook`): background, lighting, fog, and effects. `WithBackground`, `SetBackground`, `SetLighting`, `SetFog`, `WithPostProcess`, and `SetPostProcess` give the widget a setting of its own, which then stands over the scene's for this widget only. Until `SetLighting` is called, any visible `SetNodeLight` / glTF `KHR_lights_punctual` lights on the scene are used automatically.
 - `WithOIT(true)` and `SetOIT` enable Weighted Blended [order-independent transparency](../rendering/#how-it-looks) (`Frame.OIT`) on WebGPU and software (ignored in wireframe).
 - `WithMSAA(true)` and `SetMSAA` enable 4× hardware multisampling on WebGPU (ignored in software and wireframe).
 - `WithSupersample(n)` and `SetSupersample` render GPU frames at `1..4×` resolution and box-filter down. Software frames aren't supersampled during interactive updates, since they're already trading resolution for speed (`Snapshot` honors both `Supersample` and complete-frame effects).
-- `WithEffects(nt3d.PostProcess{...})` and `SetEffects` run the built-in HDR [post-processing chain](../rendering/#how-it-looks) (`SSAO`, `Bloom`, `Exposure`, `ToneMap`, `Vignette`) on the GPU with tiered CPU software fallbacks.
-- `WithPostProcess(fn)` and `SetPostProcess` run a custom Go callback `fn(*image.RGBA)` on every raster frame after rendering (and after `WithEffects`): custom blurs, dithering, or readouts are ordinary Go on the render goroutine, one frame at a time. The [fur](../demos/#fur) and [lights](../demos/#lights) demos show AA and post-processing presets (`x`, `e`, `p`).
+- `WithPostProcess(nt3d.PostProcess{...})` and `SetPostProcess` run the built-in HDR [post-processing chain](../rendering/#how-it-looks) (`SSAO`, `Bloom`, `Exposure`, `ToneMap`, `Vignette`) on the GPU with tiered CPU software fallbacks.
+- `WithImageFilter(fn)` and `SetImageFilter` run a function of your own, `fn(*image.RGBA)`, on every raster frame after rendering (and after post-processing): custom blurs, dithering, or readouts are ordinary Go on the render goroutine, one frame at a time. The [fur](../demos/#fur) and [lights](../demos/#lights) demos show AA and post-processing presets (`x`, `e`, `p`).
 - `WithFrameDecorator(fn)` adds [decorations](../rendering/#decorations) to each frame.
 
 ## When rendering is slow or fails

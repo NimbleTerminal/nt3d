@@ -86,7 +86,7 @@ func makeLODTestMesh(t *testing.T, tris int, col color.RGBA) *SharedGeometry {
 func poseCameraAt(eye nt3dmath.Vec3) Camera {
 	return Camera{
 		Pose:       nt3dmath.Translation(eye),
-		YFOV:       2.0,
+		FOV:        2.0 * 180 / math.Pi,
 		Near:       0.1,
 		Far:        500,
 		Projection: Perspective,
@@ -255,7 +255,7 @@ func TestSceneAssetWithLODMultiPartSynchronizedBounds(t *testing.T) {
 		return Camera{
 			Target:     nt3dmath.Vec3{},
 			Distance:   float64(x),
-			Beta:       0, // Eye along +X looking toward origin
+			Azimuth:    0, // Eye along +X looking toward origin
 			Near:       0.1,
 			Far:        500,
 			Projection: Perspective,

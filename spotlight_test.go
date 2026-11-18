@@ -33,14 +33,14 @@ func TestSpotLightConeFalloffRangeAndValidation(t *testing.T) {
 		Linear: true,
 		Lighting: Lighting{
 			Lights: []Light{{
-				Kind:      SpotLight,
-				Position:  nt3dmath.Vec3{Z: 2},
-				Direction: nt3dmath.Vec3{Z: -1},
-				Color:     white,
-				Intensity: 1,
-				Range:     10,
-				InnerCone: inner,
-				OuterCone: outer,
+				Kind:       SpotLight,
+				Position:   nt3dmath.Vec3{Z: 2},
+				Direction:  nt3dmath.Vec3{Z: -1},
+				Color:      white,
+				Intensity:  1,
+				Range:      10,
+				InnerAngle: inner * 180 / math.Pi,
+				OuterAngle: outer * 180 / math.Pi,
 			}},
 		},
 	}
@@ -75,7 +75,7 @@ func TestSpotLightConeFalloffRangeAndValidation(t *testing.T) {
 
 	for _, okLight := range []Light{
 		{Kind: SpotLight, Position: nt3dmath.Vec3{Z: 2}, Direction: nt3dmath.Vec3{Z: -1}},
-		{Kind: SpotLight, Position: nt3dmath.Vec3{Z: 2}, Direction: nt3dmath.Vec3{Z: -1}, InnerCone: .3, OuterCone: .3},
+		{Kind: SpotLight, Position: nt3dmath.Vec3{Z: 2}, Direction: nt3dmath.Vec3{Z: -1}, InnerAngle: .3 * 180 / math.Pi, OuterAngle: .3 * 180 / math.Pi},
 	} {
 		if !validLighting(Lighting{Lights: []Light{okLight}}) {
 			t.Fatalf("expected valid spotlight %+v", okLight)
@@ -84,10 +84,10 @@ func TestSpotLightConeFalloffRangeAndValidation(t *testing.T) {
 
 	for _, bad := range []Light{
 		{Kind: SpotLight, Position: nt3dmath.Vec3{Z: 2}},
-		{Kind: SpotLight, Direction: nt3dmath.Vec3{Z: -1}, InnerCone: -0.1, OuterCone: 0.4},
-		{Kind: SpotLight, Direction: nt3dmath.Vec3{Z: -1}, InnerCone: 0.6, OuterCone: 0.4},
-		{Kind: SpotLight, Direction: nt3dmath.Vec3{Z: -1}, OuterCone: float32(math.Pi / 2)},
-		{Kind: SpotLight, Direction: nt3dmath.Vec3{Z: -1}, OuterCone: float32(math.NaN())},
+		{Kind: SpotLight, Direction: nt3dmath.Vec3{Z: -1}, InnerAngle: -0.1 * 180 / math.Pi, OuterAngle: 0.4 * 180 / math.Pi},
+		{Kind: SpotLight, Direction: nt3dmath.Vec3{Z: -1}, InnerAngle: 0.6 * 180 / math.Pi, OuterAngle: 0.4 * 180 / math.Pi},
+		{Kind: SpotLight, Direction: nt3dmath.Vec3{Z: -1}, OuterAngle: 90},
+		{Kind: SpotLight, Direction: nt3dmath.Vec3{Z: -1}, OuterAngle: float32(math.NaN()) * 180 / math.Pi},
 		{Kind: LightKind(99), Direction: nt3dmath.Vec3{Z: -1}},
 		{Kind: SpotLight, Position: nt3dmath.Vec3{Z: float32(math.Inf(1))}, Direction: nt3dmath.Vec3{Z: -1}},
 	} {
@@ -115,8 +115,8 @@ func TestSpotLightPerspectiveShadows(t *testing.T) {
 		Projection: Perspective,
 		Target:     nt3dmath.Vec3{Z: -0.6},
 		Distance:   4.8,
-		Alpha:      32,
-		Beta:       35,
+		Elevation:  32,
+		Azimuth:    35,
 	}
 	f, err := s.Frame(cam, 96, 96)
 	check(t, err)
@@ -124,15 +124,15 @@ func TestSpotLightPerspectiveShadows(t *testing.T) {
 	f.Lighting = Lighting{
 		Ambient: Ambient{Sky: white, Ground: white, Intensity: 0.05},
 		Lights: []Light{{
-			Kind:      SpotLight,
-			Position:  nt3dmath.Vec3{X: -1.4, Y: -1.0, Z: 2.2},
-			Direction: nt3dmath.Vec3{X: 1.4, Y: 1.0, Z: -2.8}.Normalize(),
-			Color:     white,
-			Intensity: 2.8,
-			Range:     12,
-			InnerCone: 0.25,
-			OuterCone: 0.58,
-			Shadows:   true,
+			Kind:       SpotLight,
+			Position:   nt3dmath.Vec3{X: -1.4, Y: -1.0, Z: 2.2},
+			Direction:  nt3dmath.Vec3{X: 1.4, Y: 1.0, Z: -2.8}.Normalize(),
+			Color:      white,
+			Intensity:  2.8,
+			Range:      12,
+			InnerAngle: 0.25 * 180 / math.Pi,
+			OuterAngle: 0.58 * 180 / math.Pi,
+			Shadows:    true,
 		}},
 	}
 
@@ -180,13 +180,13 @@ func TestSceneNodeLightsAndHierarchyTransforms(t *testing.T) {
 	spotNode, err := s.Add(rig, "key-spot")
 	check(t, err)
 	check(t, s.SetNodeLight(spotNode, Light{
-		Kind:      SpotLight,
-		Color:     color.RGBA{255, 220, 180, 255},
-		Intensity: 2.5,
-		Range:     12,
-		InnerCone: 0.2,
-		OuterCone: 0.5,
-		Shadows:   true,
+		Kind:       SpotLight,
+		Color:      color.RGBA{255, 220, 180, 255},
+		Intensity:  2.5,
+		Range:      12,
+		InnerAngle: 0.2 * 180 / math.Pi,
+		OuterAngle: 0.5 * 180 / math.Pi,
+		Shadows:    true,
 	}))
 
 	dirNode, err := s.Add(Root, "rim-dir")

@@ -25,8 +25,9 @@ func (p Projection) String() string {
 	return "ortho"
 }
 
-// Camera uses degrees for Alpha (elevation) and Beta (azimuth). Distance and
-// Target use scene world units. The default camera suits a scene centered
+// Camera's angles are in degrees: Elevation, Azimuth, and FOV, as every angle
+// set on a camera or a light is. (Package nt3dmath's functions take radians,
+// as Go's math does.) Distance and Target use scene world units. The default camera suits a scene centered
 // at the origin with a longest extent of roughly two units; Fit frames any
 // other. Unless explicitly overridden, clipping planes scale with Distance,
 // so a scene in millimeters or meters draws as well as one in units.
@@ -40,8 +41,9 @@ type Camera struct {
 	// Pose optionally supplies a camera-to-world transform (relative to Origin):
 	// local -Z is forward, +Y is up. Zero retains the orbit camera. Scale is ignored.
 	Pose nt3dmath.Mat4
-	// YFOV is vertical perspective FOV in radians; zero means pi/4.
-	YFOV float64
+	// FOV is a perspective camera's vertical field of view, in degrees, below
+	// 180; zero means 45.
+	FOV float64
 	// AspectRatio overrides viewport aspect when positive.
 	AspectRatio float64
 	// Near and Far independently override automatic clipping when positive.
@@ -49,12 +51,16 @@ type Camera struct {
 	// Orthographic cameras with explicit Far allow Near == 0.
 	Near, Far float64
 	// Xmag and Ymag are orthographic half extents; both zero use Distance.
-	Xmag, Ymag            float64
-	Alpha, Beta, Distance float64
-	Target                nt3dmath.Vec3
-	Projection            Projection
-	AutoRotate            bool
-	ResumeAfter           float64 // idle seconds before rotation resumes after input
+	Xmag, Ymag float64
+	// Elevation is the angle of the orbit camera above the horizon, in
+	// degrees, kept within ±89. Azimuth is its angle around the Z axis, in
+	// degrees, counted from +X toward +Y. Distance is how far it is from
+	// Target, in world units.
+	Elevation, Azimuth, Distance float64
+	Target                       nt3dmath.Vec3
+	Projection                   Projection
+	AutoRotate                   bool
+	ResumeAfter                  float64 // idle seconds before rotation resumes after input
 }
 
 // Distance is kept within this range. Near and far planes are this fraction
@@ -68,18 +74,18 @@ const (
 
 // DefaultCamera returns a Camera initialized with some typical default values.
 func DefaultCamera() Camera {
-	return Camera{Alpha: 25, Beta: 40, Distance: 3.4, ResumeAfter: 2}
+	return Camera{Elevation: 25, Azimuth: 40, Distance: 3.4, ResumeAfter: 2}
 }
 
 func (c Camera) valid() Camera {
-	if !nt3dmath.IsFinite(c.Alpha) {
-		c.Alpha = 25
+	if !nt3dmath.IsFinite(c.Elevation) {
+		c.Elevation = 25
 	}
-	if !nt3dmath.IsFinite(c.Beta) {
-		c.Beta = 40
+	if !nt3dmath.IsFinite(c.Azimuth) {
+		c.Azimuth = 40
 	}
-	c.Alpha = math.Max(-89, math.Min(89, c.Alpha))
-	c.Beta = math.Mod(c.Beta, 360)
+	c.Elevation = math.Max(-89, math.Min(89, c.Elevation))
+	c.Azimuth = math.Mod(c.Azimuth, 360)
 	if !nt3dmath.IsFinite(c.Distance) || c.Distance <= 0 {
 		c.Distance = 3.4
 	}
@@ -96,8 +102,8 @@ func (c Camera) valid() Camera {
 	if _, ok := c.Pose.InverseAffine(); c.Pose != (nt3dmath.Mat4{}) && (!ok || c.Pose.Determinant3() <= 0) {
 		c.Pose = nt3dmath.Mat4{}
 	}
-	if !nt3dmath.IsFinite(c.YFOV) || c.YFOV < 0 || c.YFOV >= math.Pi {
-		c.YFOV = 0
+	if !nt3dmath.IsFinite(c.FOV) || c.FOV < 0 || c.FOV >= 180 {
+		c.FOV = 0
 	}
 	if !nt3dmath.IsFinite(c.AspectRatio) || c.AspectRatio < 0 {
 		c.AspectRatio = 0
@@ -128,8 +134,8 @@ func (c Camera) relativeTo(origin [3]float64) Camera {
 }
 
 func (c Camera) halfFOV() float64 {
-	if c.YFOV > 0 {
-		return c.YFOV / 2
+	if c.FOV > 0 {
+		return c.FOV * math.Pi / 360
 	}
 	return halfFOV
 }
@@ -152,7 +158,7 @@ func (c Camera) basis() (eye, right, up, forward nt3dmath.Vec3) {
 		right = forward.Cross(c.Pose.Direction(nt3dmath.Vec3{Y: 1})).Normalize()
 		up = right.Cross(forward)
 	} else {
-		a, b := c.Alpha*math.Pi/180, c.Beta*math.Pi/180
+		a, b := c.Elevation*math.Pi/180, c.Azimuth*math.Pi/180
 		eye = c.Target.Add(nt3dmath.Vec3{X: float32(c.Distance * math.Cos(a) * math.Cos(b)), Y: float32(c.Distance * math.Cos(a) * math.Sin(b)), Z: float32(c.Distance * math.Sin(a))})
 		forward = c.Target.Sub(eye).Normalize()
 		right = forward.Cross(nt3dmath.Vec3{Z: 1}).Normalize()
@@ -239,11 +245,12 @@ func (c Camera) ray(x, y float32, cols, rows, cw, ch int) nt3dmath.Ray {
 // Valid returns a sanitized camera.
 func (c Camera) Valid() Camera { return c.valid() }
 
-// Orbit returns the camera rotated by azimuth and elevation degrees.
+// Orbit returns the camera turned about its target: azimuth is added to
+// Azimuth and elevation to Elevation, both in degrees.
 func (c Camera) Orbit(azimuth, elevation float64) Camera {
 	c.Pose = nt3dmath.Mat4{}
-	c.Beta += azimuth
-	c.Alpha += elevation
+	c.Azimuth += azimuth
+	c.Elevation += elevation
 	return c.valid()
 }
 
@@ -351,8 +358,8 @@ func (c Camera) LookAt(eye, target nt3dmath.Vec3) Camera {
 	c.Origin = [3]float64{}
 	c.Pose = nt3dmath.Mat4{}
 	c.Target, c.Distance = target, distance
-	c.Alpha = math.Asin(float64(d.Z)/distance) * 180 / math.Pi
-	c.Beta = math.Atan2(float64(d.Y), float64(d.X)) * 180 / math.Pi
+	c.Elevation = math.Asin(float64(d.Z)/distance) * 180 / math.Pi
+	c.Azimuth = math.Atan2(float64(d.Y), float64(d.X)) * 180 / math.Pi
 	return c.valid()
 }
 
@@ -368,8 +375,8 @@ func (c Camera) LookDirection(eye, forward nt3dmath.Vec3) Camera {
 	}
 	c.Origin = [3]float64{}
 	c.Pose = nt3dmath.Mat4{}
-	c.Alpha = -math.Asin(float64(forward.Z)/length) * 180 / math.Pi
-	c.Beta = math.Atan2(-float64(forward.Y), -float64(forward.X)) * 180 / math.Pi
+	c.Elevation = -math.Asin(float64(forward.Z)/length) * 180 / math.Pi
+	c.Azimuth = math.Atan2(-float64(forward.Y), -float64(forward.X)) * 180 / math.Pi
 	c = c.valid()
 	// Compute the target from the clamped orientation to keep the eye fixed.
 	c.Target = nt3dmath.Vec3{}

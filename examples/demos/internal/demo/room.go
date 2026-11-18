@@ -30,7 +30,7 @@ type roomScene struct {
 }
 
 func roomCamera(c *nt3d.Camera) {
-	c.Alpha, c.Beta, c.Distance, c.Projection = 20, -75, 7.5, nt3d.Perspective
+	c.Elevation, c.Azimuth, c.Distance, c.Projection = 20, -75, 7.5, nt3d.Perspective
 	c.Target = nt3dmath.Vec3{Z: .8}
 }
 

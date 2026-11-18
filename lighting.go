@@ -38,18 +38,18 @@ const (
 	// PointLight shines from Position in every direction, fading with
 	// distance.
 	PointLight
-	// SpotLight shines from Position along Direction within OuterCone,
-	// fading with distance like a PointLight and smoothly from InnerCone to
-	// OuterCone.
+	// SpotLight shines from Position along Direction within OuterAngle,
+	// fading with distance like a PointLight and smoothly from InnerAngle to
+	// OuterAngle.
 	SpotLight
 )
 
 // MaxLights is the most lights a frame's Lighting may have.
 const MaxLights = 8
 
-// defaultSpotOuterCone is the default OuterCone half-angle (45 degrees) when
-// a SpotLight leaves OuterCone zero.
-const defaultSpotOuterCone = math.Pi / 4
+// defaultSpotOuterAngle is the outer half-angle, in degrees, of a SpotLight
+// that leaves OuterAngle zero.
+const defaultSpotOuterAngle = 45
 
 // Light is a directional, point, or spot light. Color is sRGB; zero (alpha
 // zero) means white. Intensity scales it; zero means 1. A point or spot light
@@ -58,19 +58,20 @@ const defaultSpotOuterCone = math.Pi / 4
 //
 // For DirectionalLight, Direction points toward the light and is required.
 // For SpotLight, Direction is the aim vector the beam shines along from
-// Position (required), OuterCone is the outer cone half-angle in radians in
-// (0, π/2) (zero means π/4), and InnerCone is the full-strength inner cone
-// half-angle in [0, OuterCone].
+// Position (required), OuterAngle is the outer cone's half-angle in degrees,
+// above 0 and below 90 (zero means 45), and InnerAngle the half-angle of the
+// full-strength inner cone, from 0 to OuterAngle. Angles are in degrees, as
+// every angle set on a camera or a light is.
 type Light struct {
-	Kind      LightKind
-	Direction nt3dmath.Vec3 // Directional: toward the light; Spot: beam direction; required for both.
-	Position  nt3dmath.Vec3 // Point and Spot: in world space.
-	Color     color.RGBA
-	Intensity float32
-	Range     float32 // Point and Spot only.
-	InnerCone float32 // Spot only: inner cone half-angle in radians, 0..OuterCone.
-	OuterCone float32 // Spot only: outer cone half-angle in radians, (0, π/2); 0 means π/4.
-	Shadows   bool    // Only the first light with Shadows casts shadows.
+	Kind       LightKind
+	Direction  nt3dmath.Vec3 // Directional: toward the light; Spot: beam direction; required for both.
+	Position   nt3dmath.Vec3 // Point and Spot: in world space.
+	Color      color.RGBA
+	Intensity  float32
+	Range      float32 // Point and Spot only.
+	InnerAngle float32 // Spot only: inner cone half-angle in degrees, 0..OuterAngle.
+	OuterAngle float32 // Spot only: outer cone half-angle in degrees, above 0 and below 90; 0 means 45.
+	Shadows    bool    // Only the first light with Shadows casts shadows.
 }
 
 // defaultKey is the default key light's intensity: with the default
@@ -102,19 +103,25 @@ func (l Light) intensity() float32 {
 	return l.Intensity
 }
 
-func (l Light) outerCone() float32 {
-	if l.OuterCone == 0 {
-		return defaultSpotOuterCone
+// outerAngle is the spot's outer half-angle in degrees, its default filled in.
+func (l Light) outerAngle() float32 {
+	if l.OuterAngle == 0 {
+		return defaultSpotOuterAngle
 	}
-	return l.OuterCone
+	return l.OuterAngle
 }
+
+// outerRadians and innerRadians are the cone's half-angles as the renderers
+// compute with them.
+func (l Light) outerRadians() float64 { return float64(l.outerAngle()) * math.Pi / 180 }
+func (l Light) innerRadians() float64 { return float64(l.InnerAngle) * math.Pi / 180 }
 
 func validLighting(l Lighting) bool {
 	if len(l.Lights) > MaxLights || !validFloat(l.Ambient.Intensity) || l.Ambient.Intensity < 0 {
 		return false
 	}
 	for _, x := range l.Lights {
-		if x.Kind > SpotLight || !finiteVec(x.Direction) || !finiteVec(x.Position) || !validFloat(x.Intensity, x.Range, x.InnerCone, x.OuterCone) || x.Intensity < 0 || x.Range < 0 {
+		if x.Kind > SpotLight || !finiteVec(x.Direction) || !finiteVec(x.Position) || !validFloat(x.Intensity, x.Range, x.InnerAngle, x.OuterAngle) || x.Intensity < 0 || x.Range < 0 {
 			return false
 		}
 		// Directional and spot lights need a direction: without one, a
@@ -123,8 +130,8 @@ func validLighting(l Lighting) bool {
 			return false
 		}
 		if x.Kind == SpotLight {
-			outer := x.outerCone()
-			if x.InnerCone < 0 || outer <= 0 || outer >= math.Pi/2 || x.InnerCone > outer {
+			outer := x.outerAngle()
+			if x.InnerAngle < 0 || outer <= 0 || outer >= 90 || x.InnerAngle > outer {
 				return false
 			}
 		}
@@ -188,8 +195,7 @@ func newRig(f *Frame) lightRig {
 			rl.v = x.Direction.Normalize()
 		} else if x.Kind == SpotLight {
 			rl.spotDir = x.Direction.Normalize()
-			outer := float64(x.outerCone())
-			inner := float64(x.InnerCone)
+			outer, inner := x.outerRadians(), x.innerRadians()
 			cosOut := float32(math.Cos(outer))
 			cosIn := float32(math.Cos(inner))
 			rl.cosOuter = cosOut

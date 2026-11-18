@@ -324,8 +324,8 @@ fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput {
 
 	cam := DefaultCamera()
 	cam.Projection = Perspective
-	cam.Alpha = 42
-	cam.Beta = 25
+	cam.Elevation = 42
+	cam.Azimuth = 25
 	cam.Distance = 6.5
 
 	lighting := Lighting{

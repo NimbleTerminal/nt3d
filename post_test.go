@@ -113,8 +113,8 @@ func flatQuadFrame(t *testing.T, col color.RGBA, unlit bool, lightIntensity floa
 	check(t, err)
 	cam := Camera{
 		Distance:   3,
-		Alpha:      89,
-		Beta:       -90,
+		Elevation:  89,
+		Azimuth:    -90,
 		Projection: Perspective,
 	}
 	f, err := s.Frame(cam, 64, 64)
@@ -198,7 +198,7 @@ func emitterFrame(t *testing.T, intensity float32) Frame {
 	s := NewScene()
 	_, err := s.SetGeometry("emitter", g)
 	check(t, err)
-	cam := Camera{Distance: 3, Alpha: 89, Beta: -90, Projection: Perspective}
+	cam := Camera{Distance: 3, Elevation: 89, Azimuth: -90, Projection: Perspective}
 	f, err := s.Frame(cam, 80, 80)
 	check(t, err)
 	f.Linear = true
@@ -284,8 +284,8 @@ func cornerSSAOFrame(t *testing.T) Frame {
 	cam := Camera{
 		Target:     nt3dmath.Vec3{X: 0, Y: 0, Z: 0},
 		Distance:   3.2,
-		Alpha:      35,
-		Beta:       -90,
+		Elevation:  35,
+		Azimuth:    -90,
 		Projection: Perspective,
 	}
 	f, err := s.Frame(cam, 96, 96)

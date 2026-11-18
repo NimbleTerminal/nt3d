@@ -219,7 +219,7 @@ func toonStreetShadowFrame(t *testing.T, pbr bool, shadowSoftness float32, kind 
 	check(t, s.SetTransform(caster, nt3dmath.Translation(nt3dmath.Vec3{Z: .3}).Mul(nt3dmath.RotationZ(27*math.Pi/180))))
 	cam := DefaultCamera()
 	cam.Projection = Perspective
-	cam.Alpha = 89
+	cam.Elevation = 89
 	cam.Target = nt3dmath.Vec3{X: -.6, Z: -1}
 	cam.Distance = 2.4
 	f, err := s.Frame(cam, 240, 240)
@@ -229,14 +229,14 @@ func toonStreetShadowFrame(t *testing.T, pbr bool, shadowSoftness float32, kind 
 	switch kind {
 	case SpotLight:
 		light = Light{
-			Kind:      SpotLight,
-			Position:  nt3dmath.Vec3{X: 22, Z: 22},
-			Direction: nt3dmath.Vec3{X: -1, Z: -1},
-			Range:     80,
-			InnerCone: .55,
-			OuterCone: .95,
-			Intensity: .85,
-			Shadows:   true,
+			Kind:       SpotLight,
+			Position:   nt3dmath.Vec3{X: 22, Z: 22},
+			Direction:  nt3dmath.Vec3{X: -1, Z: -1},
+			Range:      80,
+			InnerAngle: .55 * 180 / math.Pi,
+			OuterAngle: .95 * 180 / math.Pi,
+			Intensity:  .85,
+			Shadows:    true,
 		}
 	case PointLight:
 		light = Light{
