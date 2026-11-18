@@ -171,7 +171,15 @@ func (s *gpuHookSampleSet) release() {
 	*s = gpuHookSampleSet{}
 }
 
+// hookProgramIdleFrames is how many frames, counted across every view of a
+// device, a hook program may go undrawn before it is released. Programs are
+// keyed by shader source, so an application that generates sources would
+// otherwise fill the cache for as long as the device is in use; a released
+// program is compiled again when a frame next draws its source.
+var hookProgramIdleFrames uint64 = 600
+
 type gpuHookProgram struct {
+	used    uint64 // gpuShared.hookClock when a frame last asked for it.
 	shader  *wgpu.ShaderModule
 	samples [2]gpuHookSampleSet
 	shadows [2]*wgpu.RenderPipeline
@@ -338,43 +346,10 @@ func (g *gpuRenderer) ensureHookLayouts(dev *wgpu.Device) error {
 	if err := g.ensureTexturePipelines(dev); err != nil {
 		return err
 	}
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-		if g.shared.hookBindLayout == nil {
-			bl, err := dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
-				Label: "nt3d shader hooks",
-				Entries: []gputypes.BindGroupLayoutEntry{{
-					Binding:    0,
-					Visibility: wgpu.ShaderStageVertex | wgpu.ShaderStageFragment,
-					Buffer: &gputypes.BufferBindingLayout{
-						Type:           gputypes.BufferBindingTypeUniform,
-						MinBindingSize: hookUniformSize,
-					},
-				}},
-			})
-			if err != nil {
-				return err
-			}
-			g.shared.hookBindLayout = bl
-		}
-		if g.shared.hookLayout == nil {
-			pl, err := dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
-				Label:            "nt3d hook pipeline",
-				BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout, g.materialBindLayout, g.shared.hookBindLayout},
-			})
-			if err != nil {
-				return err
-			}
-			g.shared.hookLayout = pl
-		}
-		g.hookBindLayout = g.shared.hookBindLayout
-		g.hookLayout = g.shared.hookLayout
-		return nil
-	}
-	var err error
-	if g.hookBindLayout == nil {
-		g.hookBindLayout, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
+	if g.shared.hookBindLayout == nil {
+		bl, err := dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 			Label: "nt3d shader hooks",
 			Entries: []gputypes.BindGroupLayoutEntry{{
 				Binding:    0,
@@ -388,45 +363,35 @@ func (g *gpuRenderer) ensureHookLayouts(dev *wgpu.Device) error {
 		if err != nil {
 			return err
 		}
+		g.shared.hookBindLayout = bl
 	}
-	if g.hookLayout == nil {
-		g.hookLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+	if g.shared.hookLayout == nil {
+		pl, err := dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
 			Label:            "nt3d hook pipeline",
-			BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout, g.materialBindLayout, g.hookBindLayout},
+			BindGroupLayouts: []*wgpu.BindGroupLayout{g.bindLayout, g.shadowLayout, g.materialBindLayout, g.shared.hookBindLayout},
 		})
 		if err != nil {
 			return err
 		}
+		g.shared.hookLayout = pl
 	}
+	g.hookBindLayout = g.shared.hookBindLayout
+	g.hookLayout = g.shared.hookLayout
 	return nil
 }
 
 func (g *gpuRenderer) ensureHookProgram(dev *wgpu.Device, key hookProgramKey) (*gpuHookProgram, error) {
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-		if g.shared.hookPrograms == nil {
-			g.shared.hookPrograms = make(map[hookProgramKey]*gpuHookProgram)
-		}
-		if prog := g.shared.hookPrograms[key]; prog != nil {
-			return prog, nil
-		}
-		mod, err := dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-			Label: "nt3d shader hook",
-			WGSL:  hookShaderSource(key.displace, key.material),
-		})
-		if err != nil {
-			return nil, err
-		}
-		prog := &gpuHookProgram{shader: mod}
-		g.shared.hookPrograms[key] = prog
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
+	if g.shared.hookPrograms == nil {
+		g.shared.hookPrograms = make(map[hookProgramKey]*gpuHookProgram)
+	}
+	if prog := g.shared.hookPrograms[key]; prog != nil {
+		prog.used = g.shared.hookClock
 		return prog, nil
 	}
-	if g.hookPrograms == nil {
-		g.hookPrograms = make(map[hookProgramKey]*gpuHookProgram)
-	}
-	if prog := g.hookPrograms[key]; prog != nil {
-		return prog, nil
+	if err := checkHookPair(key.displace, key.material); err != nil {
+		return nil, err
 	}
 	mod, err := dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label: "nt3d shader hook",
@@ -435,16 +400,14 @@ func (g *gpuRenderer) ensureHookProgram(dev *wgpu.Device, key hookProgramKey) (*
 	if err != nil {
 		return nil, err
 	}
-	prog := &gpuHookProgram{shader: mod}
-	g.hookPrograms[key] = prog
+	prog := &gpuHookProgram{shader: mod, used: g.shared.hookClock}
+	g.shared.hookPrograms[key] = prog
 	return prog, nil
 }
 
 func (g *gpuRenderer) ensureHookPipeline(dev *wgpu.Device, prog *gpuHookProgram, kind hookPipelineKind) error {
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-	}
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
 	idx := g.sampleIdx
 	ms := g.multisample()
 	s := &prog.samples[idx]
@@ -555,10 +518,8 @@ func (g *gpuRenderer) ensureHookPipeline(dev *wgpu.Device, prog *gpuHookProgram,
 }
 
 func (g *gpuRenderer) ensureHookShadowPipeline(dev *wgpu.Device, prog *gpuHookProgram, cutout bool) error {
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-	}
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
 	slot, fragment := 0, ""
 	if cutout {
 		slot, fragment = 1, "fs_shadow_cutout"
@@ -586,7 +547,23 @@ func (g *gpuRenderer) ensureHookShadowPipeline(dev *wgpu.Device, prog *gpuHookPr
 	return err
 }
 
+// releaseIdleHookPrograms counts a frame and releases the hook programs no
+// frame has asked for in hookProgramIdleFrames frames. It runs before a frame
+// asks for its own, which are stamped with the new count and so are kept.
+func (g *gpuRenderer) releaseIdleHookPrograms() {
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
+	g.shared.hookClock++
+	for key, prog := range g.shared.hookPrograms {
+		if g.shared.hookClock-prog.used > hookProgramIdleFrames {
+			prog.release()
+			delete(g.shared.hookPrograms, key)
+		}
+	}
+}
+
 func (g *gpuRenderer) prepareHooks(dev *wgpu.Device, f Frame, drawn []bool) error {
+	g.releaseIdleHookPrograms()
 	usedUniforms := make(map[hookUniformKey]bool)
 	needHooks := false
 	for i := range f.Draws {
@@ -741,13 +718,10 @@ func (g *gpuRenderer) prepareHooks(dev *wgpu.Device, f Frame, drawn []bool) erro
 }
 
 func (g *gpuRenderer) lookupHookProgram(key hookProgramKey) *gpuHookProgram {
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		prog := g.shared.hookPrograms[key]
-		g.shared.mu.Unlock()
-		return prog
-	}
-	return g.hookPrograms[key]
+	g.shared.mu.Lock()
+	prog := g.shared.hookPrograms[key]
+	g.shared.mu.Unlock()
+	return prog
 }
 
 func (g *gpuRenderer) hookPipelineFor(geom *Geometry, kind hookPipelineKind) *wgpu.RenderPipeline {
@@ -759,10 +733,8 @@ func (g *gpuRenderer) hookPipelineFor(geom *Geometry, kind hookPipelineKind) *wg
 	if prog == nil {
 		return nil
 	}
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-	}
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
 	s := &prog.samples[g.sampleIdx]
 	switch kind {
 	case hookPipeOpaque:
@@ -813,10 +785,8 @@ func (g *gpuRenderer) hookOrShadowPipeline(geom *Geometry, fallback *wgpu.Render
 	if prog == nil {
 		return fallback
 	}
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-	}
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
 	if prog.shadows[slot] != nil {
 		return prog.shadows[slot]
 	}

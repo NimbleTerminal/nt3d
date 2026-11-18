@@ -36,13 +36,11 @@ func (g *gpuRenderer) initSkin(dev *wgpu.Device) error {
 	if g.skinPipeline != nil {
 		return nil
 	}
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-		if g.shared.skinPipeline != nil {
-			g.skinLayout, g.skinPipeline = g.shared.skinLayout, g.shared.skinPipeline
-			return nil
-		}
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
+	if g.shared.skinPipeline != nil {
+		g.skinLayout, g.skinPipeline = g.shared.skinLayout, g.shared.skinPipeline
+		return nil
 	}
 	var entries []gputypes.BindGroupLayoutEntry
 	for i := range 4 {
@@ -74,9 +72,7 @@ func (g *gpuRenderer) initSkin(dev *wgpu.Device) error {
 		return err
 	}
 	g.skinLayout, g.skinPipeline = layout, pipeline
-	if g.shared != nil {
-		g.shared.skinLayout, g.shared.skinPipeline = layout, pipeline
-	}
+	g.shared.skinLayout, g.shared.skinPipeline = layout, pipeline
 	return nil
 }
 
@@ -99,9 +95,9 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 		if err := g.initSkin(dev); err != nil {
 			return err
 		}
-		slot := 1
+		slot := slotMesh
 		if mapped(geom) {
-			slot = 7
+			slot = slotTextured
 		}
 		// A normal-mapped mesh's extension records, its tangents, are posed
 		// after its primary ones.
@@ -165,9 +161,9 @@ func (g *gpuRenderer) skinGeometry(dev *wgpu.Device, encoder *wgpu.CommandEncode
 		if err := dev.Queue().WriteBuffer(skin.palette, 0, data); err != nil {
 			return err
 		}
-		if node.batches[8].buffer != nil {
+		if node.batches[slotDrop].buffer != nil {
 			data := dropShadowData(&geom, &f.Draws[i].state)
-			if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, data); err != nil {
+			if err := dev.Queue().WriteBuffer(node.batches[slotDrop].buffer, 0, data); err != nil {
 				return err
 			}
 		}

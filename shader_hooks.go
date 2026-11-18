@@ -88,6 +88,9 @@ func NewVertexDisplacementWithParameters(wgsl string, maxDisplacement, time floa
 	if fallback == nil {
 		return nil, errors.New("nt3d: nil vertex displacement fallback")
 	}
+	if err := checkHookNames(wgsl, "nt3dDisplace"); err != nil {
+		return nil, err
+	}
 	if !validFloat(maxDisplacement, time) || maxDisplacement < 0 {
 		return nil, errors.New("nt3d: vertex displacement requires finite time and nonnegative maxDisplacement")
 	}
@@ -242,6 +245,9 @@ func NewMaterialShaderWithParameters(wgsl string, time float32, params [][4]floa
 	}
 	if fallback == nil {
 		return nil, errors.New("nt3d: nil material shader fallback")
+	}
+	if err := checkHookNames(wgsl, "nt3dMaterial"); err != nil {
+		return nil, err
 	}
 	if !validFloat(time) {
 		return nil, errors.New("nt3d: non-finite shader time")

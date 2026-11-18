@@ -92,66 +92,22 @@ func (g *gpuRenderer) ensureProcDownPipeline(dev *wgpu.Device, data bool) (*wgpu
 		idx = 1
 		format = gputypes.TextureFormatRGBA8Unorm
 	}
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-		if g.shared.procDownPipes[idx] != nil {
-			g.procDownGroup = g.shared.procDownGroup
-			g.procDownPipes[idx] = g.shared.procDownPipes[idx]
-			return g.procDownGroup, g.procDownPipes[idx], nil
-		}
-		var err error
-		if g.shared.procDownShader == nil {
-			g.shared.procDownShader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d procedural mip", WGSL: procDownShader})
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		if g.shared.procDownGroup == nil {
-			g.shared.procDownGroup, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
-				Entries: []gputypes.BindGroupLayoutEntry{{
-					Binding:    0,
-					Visibility: wgpu.ShaderStageFragment,
-					Texture:    &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D},
-				}},
-			})
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		if g.shared.procDownLayout == nil {
-			g.shared.procDownLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.shared.procDownGroup}})
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		pipe, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
-			Label:       "nt3d procedural mip down",
-			Layout:      g.shared.procDownLayout,
-			Vertex:      wgpu.VertexState{Module: g.shared.procDownShader, EntryPoint: "vs_mip_down"},
-			Fragment:    &wgpu.FragmentState{Module: g.shared.procDownShader, EntryPoint: "fs_mip_down", Targets: []gputypes.ColorTargetState{{Format: format, WriteMask: gputypes.ColorWriteMaskAll}}},
-			Primitive:   gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
-			Multisample: gputypes.DefaultMultisampleState(),
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		g.shared.procDownPipes[idx] = pipe
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
+	if g.shared.procDownPipes[idx] != nil {
 		g.procDownGroup = g.shared.procDownGroup
-		g.procDownPipes[idx] = pipe
-		return g.procDownGroup, pipe, nil
-	}
-	if g.procDownPipes[idx] != nil {
+		g.procDownPipes[idx] = g.shared.procDownPipes[idx]
 		return g.procDownGroup, g.procDownPipes[idx], nil
 	}
 	var err error
-	if g.procDownShader == nil {
-		if g.procDownShader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d procedural mip", WGSL: procDownShader}); err != nil {
+	if g.shared.procDownShader == nil {
+		g.shared.procDownShader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d procedural mip", WGSL: procDownShader})
+		if err != nil {
 			return nil, nil, err
 		}
 	}
-	if g.procDownGroup == nil {
-		g.procDownGroup, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	if g.shared.procDownGroup == nil {
+		g.shared.procDownGroup, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 			Entries: []gputypes.BindGroupLayoutEntry{{
 				Binding:    0,
 				Visibility: wgpu.ShaderStageFragment,
@@ -162,22 +118,25 @@ func (g *gpuRenderer) ensureProcDownPipeline(dev *wgpu.Device, data bool) (*wgpu
 			return nil, nil, err
 		}
 	}
-	if g.procDownLayout == nil {
-		if g.procDownLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.procDownGroup}}); err != nil {
+	if g.shared.procDownLayout == nil {
+		g.shared.procDownLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.shared.procDownGroup}})
+		if err != nil {
 			return nil, nil, err
 		}
 	}
 	pipe, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 		Label:       "nt3d procedural mip down",
-		Layout:      g.procDownLayout,
-		Vertex:      wgpu.VertexState{Module: g.procDownShader, EntryPoint: "vs_mip_down"},
-		Fragment:    &wgpu.FragmentState{Module: g.procDownShader, EntryPoint: "fs_mip_down", Targets: []gputypes.ColorTargetState{{Format: format, WriteMask: gputypes.ColorWriteMaskAll}}},
+		Layout:      g.shared.procDownLayout,
+		Vertex:      wgpu.VertexState{Module: g.shared.procDownShader, EntryPoint: "vs_mip_down"},
+		Fragment:    &wgpu.FragmentState{Module: g.shared.procDownShader, EntryPoint: "fs_mip_down", Targets: []gputypes.ColorTargetState{{Format: format, WriteMask: gputypes.ColorWriteMaskAll}}},
 		Primitive:   gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
 		Multisample: gputypes.DefaultMultisampleState(),
 	})
 	if err != nil {
 		return nil, nil, err
 	}
+	g.shared.procDownPipes[idx] = pipe
+	g.procDownGroup = g.shared.procDownGroup
 	g.procDownPipes[idx] = pipe
 	return g.procDownGroup, pipe, nil
 }

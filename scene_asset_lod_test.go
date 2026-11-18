@@ -295,7 +295,7 @@ func TestSceneAssetWithLODMultiPartSynchronizedBounds(t *testing.T) {
 	// At X = 16, unpadded distance is ~11.3 (> 10 -> LOD1 = 7 tris); with MaxDisplacement = 2.0,
 	// padded prop max X becomes ~6.7 so distance is ~9.3 (<= 10 -> LOD0 = 20 tris)!
 	disp, err := NewVertexDisplacement(
-		"fn nt3d_displace(in: NT3DDisplaceInput) -> NT3DDisplaceOutput { return NT3DDisplaceOutput(in.position, in.normal); }",
+		"fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput { return NT3DVertexOutput(in.position, in.normal); }",
 		2.0,
 		func(in VertexDisplaceInput) VertexDisplaceOutput {
 			return VertexDisplaceOutput{Position: in.Position, Normal: in.Normal}

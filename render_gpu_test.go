@@ -228,14 +228,14 @@ func TestGPUPerNodeGeometryCache(t *testing.T) {
 	original, err := r.Render(old)
 	check(t, err)
 	fixed := r.nodes[1]
-	originalBuffer := fixed.batches[7].buffer
+	originalBuffer := fixed.batches[slotTextured].buffer
 	uploads := r.uploads
 	// Replacing one node, including its primitive type, leaves the other untouched.
 	changed := Geometry{Boxes: []Box{{Min: nt3dmath.Vec3{X: .2, Y: .2}, Size: nt3dmath.Vec3{X: .3, Y: .3, Z: .5}, Color: color.RGBA{250, 30, 20, 255}}}}
 	check(t, s.SetNodeGeometry(moving, changed))
 	_, err = r.Render(frame(t, s))
 	check(t, err)
-	if r.uploads != uploads+1 || r.nodes[1] != fixed || fixed.batches[7].buffer != originalBuffer {
+	if r.uploads != uploads+1 || r.nodes[1] != fixed || fixed.batches[slotTextured].buffer != originalBuffer {
 		t.Fatal("unrelated geometry reuploaded")
 	}
 	uploads = r.uploads
@@ -281,7 +281,7 @@ func TestGPUPerNodeGeometryCache(t *testing.T) {
 	check(t, s.SetNodeGeometry(stable, mesh))
 	_, err = r.Render(frame(t, s))
 	check(t, err)
-	if r.nodes[0].batches[7].count != 0 || r.nodes[0].batches[1].count == 0 {
+	if r.nodes[0].batches[slotTextured].count != 0 || r.nodes[0].batches[slotMesh].count == 0 {
 		t.Fatal("stale textured batch after material change")
 	}
 	s.Clear()

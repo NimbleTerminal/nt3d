@@ -4,13 +4,14 @@ package nt3d
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/gogpu/gputypes"
@@ -20,8 +21,36 @@ import (
 	gpuimage "nimbleterminal.dev/ntgpuimage"
 )
 
-//go:embed scene.wgsl
-var sceneShader string
+// The scene shader is one WGSL module written as several files, joined in
+// this order. They share one namespace; the split is for reading, by topic.
+//
+//go:embed wgsl/scene_*.wgsl
+var sceneShaderFiles embed.FS
+
+var sceneShaderParts = []string{
+	"bindings",     // Bind groups, the uniform and record structs, positions and outputs.
+	"shadows",      // Light directions and shadow-map visibility.
+	"indirect",     // Ambient occlusion, probes, and the indirect diffuse and specular terms.
+	"shading",      // Lights, fog, toon and PBR lobes, and shadeSurface.
+	"primitives",   // Points, meshes, strokes, lines, creases, arrows, overlays, and their fragments.
+	"textured",     // Meshes with a texture or maps: sampling, normals, and the material hook.
+	"passes",       // Boxes, the shadow passes, drop shadows, and the environment.
+	"outline",      // Inverted-hull outlines.
+	"points",       // Sprites and Gaussian splats.
+	"transmission", // Transmission through the opaque scene, order-independent transparency, lightmaps.
+}
+
+var sceneShader = func() string {
+	var b strings.Builder
+	for _, part := range sceneShaderParts {
+		text, err := sceneShaderFiles.ReadFile("wgsl/scene_" + part + ".wgsl")
+		if err != nil {
+			panic("nt3d: missing scene shader part " + part)
+		}
+		b.Write(text)
+	}
+	return b.String()
+}()
 
 // sceneShaderSource is the scene shader with the constants it shares with
 // Go declared ahead of it: maxLights sizes its lights, and maxPointPixels
@@ -46,7 +75,7 @@ type gpuBatch struct {
 }
 
 type scenePipelineSet struct {
-	pipelines           [7]*wgpu.RenderPipeline
+	pipelines           [slotPipelines]*wgpu.RenderPipeline
 	blendPipelines      [2]*wgpu.RenderPipeline
 	pointBlends         [2][3]*wgpu.RenderPipeline
 	dropPipeline        *wgpu.RenderPipeline
@@ -113,6 +142,7 @@ type gpuShared struct {
 	hookBindLayout         *wgpu.BindGroupLayout
 	hookLayout             *wgpu.PipelineLayout
 	hookPrograms           map[hookProgramKey]*gpuHookProgram
+	hookClock              uint64 // Frames prepared on the device; see hookProgramIdleFrames.
 	procDownShader         *wgpu.ShaderModule
 	procDownGroup          *wgpu.BindGroupLayout
 	procDownLayout         *wgpu.PipelineLayout
@@ -378,13 +408,10 @@ type gpuRenderer struct {
 	textureLayout          *wgpu.PipelineLayout
 	hookBindLayout         *wgpu.BindGroupLayout
 	hookLayout             *wgpu.PipelineLayout
-	hookPrograms           map[hookProgramKey]*gpuHookProgram
 	hookBinds              map[hookUniformKey]*gpuHookBind
 	texturePipeline        *wgpu.RenderPipeline
 	cutoutPipeline         *wgpu.RenderPipeline
-	procDownShader         *wgpu.ShaderModule
 	procDownGroup          *wgpu.BindGroupLayout
-	procDownLayout         *wgpu.PipelineLayout
 	procDownPipes          [2]*wgpu.RenderPipeline
 	// Transparent meshes' back faces, then front faces: untextured and textured.
 	blendPipelines [2]*wgpu.RenderPipeline
@@ -422,7 +449,7 @@ type gpuRenderer struct {
 	layout          *wgpu.PipelineLayout
 	uniform         *wgpu.Buffer
 	transforms      *wgpu.Buffer
-	pipelines       [7]*wgpu.RenderPipeline
+	pipelines       [slotPipelines]*wgpu.RenderPipeline
 	batches         [7]gpuBatch // points, triangles, boxes, lines, overlays, dynamic lines, arrows
 	uploads         uint64
 	target          sceneTarget
@@ -891,6 +918,12 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	if err = g.uploadUI(dev, f); err != nil {
 		return err
 	}
+	// The uniform is assembled above by appending, field after field in the
+	// order of the shader's Uniforms struct; a field added to one and not the
+	// other is caught here rather than drawn.
+	if len(ub) != uniformSize {
+		return fmt.Errorf("nt3d: scene uniform is %d bytes, the shader's is %d", len(ub), uniformSize)
+	}
 	if err = dev.Queue().WriteBuffer(g.uniform, 0, ub); err != nil {
 		return err
 	}
@@ -988,14 +1021,14 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 		// buffers but are not drawn. Meshes draw each run of instances at once;
 		// other primitives belong to unshared geometry, one instance each.
 		// Transparent triangles wait for everything opaque.
-		for _, i := range []int{5, 0, 1, 2, 3, 6, 4} {
-			if prepass && i == 5 {
+		for _, i := range slotDrawOrder {
+			if prepass && i == slotDynamic {
 				continue
 			}
-			if prepass && i == 4 {
+			if prepass && i == slotUI {
 				break
 			}
-			if i == 4 {
+			if i == slotUI {
 				for _, d := range g.draws {
 					if !transparent(&f.Draws[d.index].Geometry) {
 						g.drawOutline(pass, f, d)
@@ -1007,9 +1040,9 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 					}
 				}
 				for _, d := range g.draws {
-					if d.geom.batches[8].count > 0 {
+					if d.geom.batches[slotDrop].count > 0 {
 						g.setScenePipeline(pass, g.dropPipeline)
-						pass.SetBindGroup(0, d.set.binds[8], nil)
+						pass.SetBindGroup(0, d.set.binds[slotDrop], nil)
 						pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.count})
 					}
 				}
@@ -1033,13 +1066,13 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 						}
 						transmitted = true
 						if mapped(*geom) {
-							if d.geom.batches[7].count > 0 {
+							if d.geom.batches[slotTextured].count > 0 {
 								g.setHookOrScenePipeline(pass, geom, g.texturePipeline, hookPipeOpaque)
 								g.drawTextured(pass, f, d)
 							}
-						} else if b := d.geom.batches[1]; b.count > 0 {
-							g.setScenePipeline(pass, g.pipelines[1])
-							pass.SetBindGroup(0, d.set.binds[1], nil)
+						} else if b := d.geom.batches[slotMesh]; b.count > 0 {
+							g.setScenePipeline(pass, g.pipelines[slotMesh])
+							pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
 							pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 						}
 					}
@@ -1094,10 +1127,10 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 					}
 				}
 			}
-			if i == 2 {
+			if i == slotBox {
 				for _, d := range g.draws {
 					geom := &f.Draws[d.index].Geometry
-					if !mapped(*geom) || transparent(geom) || transmitting(geom) || d.geom.batches[7].count == 0 {
+					if !mapped(*geom) || transparent(geom) || transmitting(geom) || d.geom.batches[slotTextured].count == 0 {
 						continue
 					}
 					if geom.Material != nil && geom.Material.Cutout {
@@ -1108,8 +1141,8 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 					g.drawTextured(pass, f, d)
 				}
 			}
-			if i == 4 || i == 5 {
-				if i == 4 && f.PostProcess.on() {
+			if i == slotUI || i == slotDynamic {
+				if i == slotUI && f.PostProcess.on() {
 					continue
 				}
 				g.drawBatch(pass, i, g.batches[i], g.batches[i].bind)
@@ -1118,12 +1151,12 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 			for _, d := range g.draws {
 				b := d.geom.batches[i]
 				switch {
-				case b.count == 0 || i == 1 && (mapped(f.Draws[d.index].Geometry) || transparent(&f.Draws[d.index].Geometry) || transmitting(&f.Draws[d.index].Geometry)) || i == 0 && blendedPoints(&f.Draws[d.index].Geometry):
-				case i == 0 && f.Draws[d.index].Geometry.PointStyle.Texture != nil:
+				case b.count == 0 || i == slotMesh && (mapped(f.Draws[d.index].Geometry) || transparent(&f.Draws[d.index].Geometry) || transmitting(&f.Draws[d.index].Geometry)) || i == slotPoint && blendedPoints(&f.Draws[d.index].Geometry):
+				case i == slotPoint && f.Draws[d.index].Geometry.PointStyle.Texture != nil:
 					g.drawSprite(pass, f, d)
-				case i == 1:
-					g.setScenePipeline(pass, g.pipelines[1])
-					pass.SetBindGroup(0, d.set.binds[1], nil)
+				case i == slotMesh:
+					g.setScenePipeline(pass, g.pipelines[slotMesh])
+					pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
 					pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 				default:
 					g.drawBatch(pass, i, b, d.set.binds[i])
@@ -1142,7 +1175,7 @@ func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 		g.drawOutline(pass, f, d)
 		for side := range 2 {
 			if mapped(*geom) {
-				if d.geom.batches[7].count > 0 {
+				if d.geom.batches[slotTextured].count > 0 {
 					kind := hookPipeBlendBack
 					if side == 1 {
 						kind = hookPipeBlendFront
@@ -1150,9 +1183,9 @@ func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 					g.setHookOrScenePipeline(pass, geom, g.textureBlends[side], kind)
 					g.drawTextured(pass, f, d)
 				}
-			} else if b := d.geom.batches[1]; b.count > 0 {
+			} else if b := d.geom.batches[slotMesh]; b.count > 0 {
 				g.setScenePipeline(pass, g.blendPipelines[side])
-				pass.SetBindGroup(0, d.set.binds[1], nil)
+				pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
 				pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 			}
 		}
@@ -1160,14 +1193,14 @@ func (g *gpuRenderer) drawBlended(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 			g.drawCrease(pass, f, d)
 		}
 	}
-	if blendedPoints(geom) && geom.PointStyle.Blend == AdditiveBlend && d.geom.batches[0].count > 0 {
+	if blendedPoints(geom) && geom.PointStyle.Blend == AdditiveBlend && d.geom.batches[slotPoint].count > 0 {
 		if geom.PointStyle.Texture != nil {
 			g.drawSprite(pass, f, d)
 			return
 		}
 		g.setScenePipeline(pass, g.pointBlends[1][geom.PointStyle.Shape])
-		pass.SetBindGroup(0, d.set.binds[0], noRunOffset)
-		pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
+		pass.SetBindGroup(0, d.set.binds[slotPoint], noRunOffset)
+		pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[slotPoint].count})
 	}
 }
 
@@ -1189,7 +1222,7 @@ func (g *gpuRenderer) resolveSortedRuns(f Frame) {
 	for _, index := range g.plan.slots {
 		d := g.draws[g.blendDraw[index]]
 		run := sortedRun{d: d}
-		if d.geom.batches[0].count > 0 {
+		if d.geom.batches[slotPoint].count > 0 {
 			style := f.Draws[d.index].Geometry.PointStyle
 			if style.Texture != nil {
 				run.pipeline = g.spritePipelines[style.Blend]
@@ -1219,7 +1252,7 @@ func (g *gpuRenderer) drawSortedRun(pass *wgpu.RenderPassEncoder, run sortedRun,
 		g.setScenePipeline(pass, run.pipeline)
 	}
 	i := slice*len(g.sortedRuns) + slot
-	pass.SetBindGroup(0, run.d.set.binds[0], g.runOffsets[i:i+1:i+1])
+	pass.SetBindGroup(0, run.d.set.binds[slotPoint], g.runOffsets[i:i+1:i+1])
 	if run.texture != nil {
 		pass.SetBindGroup(2, run.texture, nil)
 	}
@@ -1269,17 +1302,17 @@ func (g *gpuRenderer) createCorePipelineSet(dev *wgpu.Device, samples int) (ps s
 		}
 	}()
 	ms := multisampleState(samples)
-	for i, entry := range []string{"vs_point", "vs_mesh", "vs_box", "vs_line", "vs_ui", "vs_dynamic", "vs_arrow"} {
+	for i, entry := range slotEntryPoints {
 		primitive := gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}
-		if i == 0 || i == 3 || i >= 4 {
+		if i == slotPoint || i == slotLine || i >= slotUI {
 			primitive.CullMode = gputypes.CullModeNone
 		}
 		fragment := "fs_main"
-		if i == 4 {
+		if i == slotUI {
 			fragment = "fs_overlay" // Overlays: no highlight or fog.
 		}
 		layout := g.layout
-		if i == 0 {
+		if i == slotPoint {
 			layout = g.pointLayout
 		}
 		ps.pipelines[i], err = dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{Label: entry, Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: entry}, Primitive: primitive, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: ms, Fragment: &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: sceneFormat, WriteMask: gputypes.ColorWriteMaskAll}}}})
@@ -1318,25 +1351,17 @@ func (g *gpuRenderer) activateSampleCount(dev *wgpu.Device, msaa bool) error {
 	if msaa {
 		idx, samples = 1, 4
 	}
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		if g.shared.msaaSets[idx].pipelines[0] == nil {
-			ps, err := g.createCorePipelineSet(dev, samples)
-			if err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			g.shared.msaaSets[idx] = ps
-		}
-		g.msaaSets[idx] = g.shared.msaaSets[idx]
-		g.shared.mu.Unlock()
-	} else if g.msaaSets[idx].pipelines[0] == nil {
+	g.shared.mu.Lock()
+	if g.shared.msaaSets[idx].pipelines[slotPoint] == nil {
 		ps, err := g.createCorePipelineSet(dev, samples)
 		if err != nil {
+			g.shared.mu.Unlock()
 			return err
 		}
-		g.msaaSets[idx] = ps
+		g.shared.msaaSets[idx] = ps
 	}
+	g.msaaSets[idx] = g.shared.msaaSets[idx]
+	g.shared.mu.Unlock()
 	g.sampleIdx = idx
 	g.applyPipelineSet(g.msaaSets[idx])
 	return nil
@@ -1428,145 +1453,38 @@ func (g *gpuRenderer) releaseResources() {
 	g.oit.release()
 	g.lightingAO = nil
 	g.releaseAOPrepassBinds()
-	g.post.release(g.shared != nil)
-	g.depthPick.release(g.shared != nil)
-	if g.shared != nil {
-		g.sort.releaseBuffers()
-		g.target.releaseView()
-		g.msaaSets = [2]scenePipelineSet{}
-		g.sampleIdx = 0
-		g.applyPipelineSet(scenePipelineSet{})
-		g.environmentUniform = nil
-		g.skinPipeline = nil
-		g.skinLayout = nil
-		g.spriteLayout = nil
-		g.textureLayout = nil
-		g.hookLayout = nil
-		g.hookBindLayout = nil
-		g.hookPrograms = nil
-		g.spriteBindLayout = nil
-		g.materialBindLayout = nil
-		g.procDownPipes = [2]*wgpu.RenderPipeline{}
-		g.procDownLayout = nil
-		g.procDownGroup = nil
-		g.procDownShader = nil
-		g.zeros = nil
-		g.zeroRun = nil
-		g.pointLayout = nil
-		g.pointBindLayout = nil
-		g.layout = nil
-		g.bindLayout = nil
-		g.shadowPipelines = [4]*wgpu.RenderPipeline{}
-		g.shadowLayout = nil
-		g.shader = nil
-		g.shared.release()
-		g.shared = nil
-		return
+	g.post.release()
+	g.depthPick.release()
+	if g.shared == nil {
+		return // Never set up, or released already: nothing of the device's is held.
 	}
-	g.msaaSets[g.sampleIdx] = g.currentPipelineSet()
-	for i := range g.msaaSets {
-		g.msaaSets[i].release()
-	}
+	g.sort.releaseBuffers()
+	g.target.releaseView()
+	g.msaaSets = [2]scenePipelineSet{}
 	g.sampleIdx = 0
 	g.applyPipelineSet(scenePipelineSet{})
-	if g.environmentUniform != nil {
-		g.environmentUniform.Release()
-		g.environmentUniform = nil
-	}
-	if g.skinPipeline != nil {
-		g.skinPipeline.Release()
-		g.skinPipeline = nil
-	}
-	if g.skinLayout != nil {
-		g.skinLayout.Release()
-		g.skinLayout = nil
-	}
-	g.sort.release()
-	for pk, prog := range g.hookPrograms {
-		prog.release()
-		delete(g.hookPrograms, pk)
-	}
-	if g.hookLayout != nil {
-		g.hookLayout.Release()
-		g.hookLayout = nil
-	}
-	if g.hookBindLayout != nil {
-		g.hookBindLayout.Release()
-		g.hookBindLayout = nil
-	}
-	if g.spriteLayout != nil {
-		g.spriteLayout.Release()
-		g.spriteLayout = nil
-	}
-	if g.textureLayout != nil {
-		g.textureLayout.Release()
-		g.textureLayout = nil
-	}
-	if g.spriteBindLayout != nil {
-		g.spriteBindLayout.Release()
-		g.spriteBindLayout = nil
-	}
-	if g.materialBindLayout != nil {
-		g.materialBindLayout.Release()
-		g.materialBindLayout = nil
-	}
-	for i, p := range g.procDownPipes {
-		if p != nil {
-			p.Release()
-			g.procDownPipes[i] = nil
-		}
-	}
-	if g.procDownLayout != nil {
-		g.procDownLayout.Release()
-		g.procDownLayout = nil
-	}
-	if g.procDownGroup != nil {
-		g.procDownGroup.Release()
-		g.procDownGroup = nil
-	}
-	if g.procDownShader != nil {
-		g.procDownShader.Release()
-		g.procDownShader = nil
-	}
-	if g.zeros != nil {
-		g.zeros.Release()
-		g.zeros = nil
-	}
-	if g.zeroRun != nil {
-		g.zeroRun.Release()
-		g.zeroRun = nil
-	}
-	if g.pointLayout != nil {
-		g.pointLayout.Release()
-		g.pointLayout = nil
-	}
-	if g.pointBindLayout != nil {
-		g.pointBindLayout.Release()
-		g.pointBindLayout = nil
-	}
-	if g.layout != nil {
-		g.layout.Release()
-		g.layout = nil
-	}
-	if g.bindLayout != nil {
-		g.bindLayout.Release()
-		g.bindLayout = nil
-	}
-	for i, p := range g.shadowPipelines {
-		if p != nil {
-			p.Release()
-			g.shadowPipelines[i] = nil
-		}
-	}
-	if g.shadowLayout != nil {
-		g.shadowLayout.Release()
-		g.shadowLayout = nil
-	}
-	if g.shader != nil {
-		g.shader.Release()
-		g.shader = nil
-	}
-	g.target.release()
+	g.environmentUniform = nil
+	g.skinPipeline = nil
+	g.skinLayout = nil
+	g.spriteLayout = nil
+	g.textureLayout = nil
+	g.hookLayout = nil
+	g.hookBindLayout = nil
+	g.spriteBindLayout = nil
+	g.materialBindLayout = nil
+	g.procDownPipes = [2]*wgpu.RenderPipeline{}
+	g.procDownGroup = nil
+	g.zeros = nil
+	g.zeroRun = nil
+	g.pointLayout = nil
+	g.pointBindLayout = nil
+	g.layout = nil
+	g.bindLayout = nil
+	g.shadowPipelines = [4]*wgpu.RenderPipeline{}
+	g.shadowLayout = nil
+	g.shader = nil
+	g.shared.release()
+	g.shared = nil
 }
 
 // Close releases all WebGPU pipelines, buffers, and textures owned by g.
@@ -1611,13 +1529,13 @@ func (g *gpuRenderer) drawTextured(pass *wgpu.RenderPassEncoder, f Frame, d gpuD
 // The high four vertex bits select a shadow face. Ordinary draws use zero.
 func (g *gpuRenderer) drawTexturedOffset(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw, first uint32) {
 	geom := &f.Draws[d.index].Geometry
-	pass.SetBindGroup(0, d.set.binds[7], nil)
+	pass.SetBindGroup(0, d.set.binds[slotTextured], nil)
 	mk := g.materialKey(geom.Material, f.anisotropy())
 	pass.SetBindGroup(2, g.materialBinds[mk], nil)
 	if bind := g.hookBindFor(geom); bind != nil {
 		pass.SetBindGroup(3, bind, nil)
 	}
-	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[7].count, InstanceCount: d.count, FirstVertex: first})
+	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[slotTextured].count, InstanceCount: d.count, FirstVertex: first})
 }
 
 func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBatch, bind *wgpu.BindGroup) {
@@ -1625,7 +1543,7 @@ func (g *gpuRenderer) drawBatch(pass *wgpu.RenderPassEncoder, kind int, b gpuBat
 		return
 	}
 	g.setScenePipeline(pass, g.pipelines[kind])
-	if kind == 0 {
+	if kind == slotPoint {
 		pass.SetBindGroup(0, bind, noRunOffset) // Opaque points: the empty run.
 	} else {
 		pass.SetBindGroup(0, bind, nil)

@@ -172,101 +172,98 @@ func (g *gpuRenderer) prepareOIT(dev *wgpu.Device, f Frame, drawn []bool) error 
 		}
 	}
 
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		os := &g.shared.oit
-		if os.compositeShader == nil {
-			var err error
-			if os.compositeShader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d oit composite", WGSL: oitCompositeShader}); err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			if os.compositeGroup, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
-				Label: "nt3d oit composite group",
-				Entries: []gputypes.BindGroupLayoutEntry{
-					{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}},
-					{Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}},
-				},
-			}); err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			if os.compositeLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{os.compositeGroup}}); err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
+	g.shared.mu.Lock()
+	os := &g.shared.oit
+	if os.compositeShader == nil {
+		var err error
+		if os.compositeShader, err = dev.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "nt3d oit composite", WGSL: oitCompositeShader}); err != nil {
+			g.shared.mu.Unlock()
+			return err
 		}
-		if os.compositePipelines[idx] == nil {
-			blend := gputypes.BlendStateAlpha()
-			p, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
-				Label:        "nt3d oit composite",
-				Layout:       os.compositeLayout,
-				Vertex:       wgpu.VertexState{Module: os.compositeShader, EntryPoint: "vs_oit_composite"},
-				Primitive:    gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
-				DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionAlways},
-				Multisample:  ms,
-				Fragment:     &wgpu.FragmentState{Module: os.compositeShader, EntryPoint: "fs_oit_composite", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}},
-			})
-			if err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			os.compositePipelines[idx] = p
+		if os.compositeGroup, err = dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+			Label: "nt3d oit composite group",
+			Entries: []gputypes.BindGroupLayoutEntry{
+				{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}},
+				{Binding: 1, Visibility: wgpu.ShaderStageFragment, Texture: &gputypes.TextureBindingLayout{SampleType: gputypes.TextureSampleTypeUnfilterableFloat, ViewDimension: gputypes.TextureViewDimension2D}},
+			},
+		}); err != nil {
+			g.shared.mu.Unlock()
+			return err
 		}
-		if needMesh && os.meshPipelines[idx] == nil {
-			p, err := createOITPipeline(dev, g.layout, g.shader, "vs_mesh", "fs_oit_main", gputypes.CullModeNone, ms)
-			if err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			os.meshPipelines[idx] = p
+		if os.compositeLayout, err = dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{os.compositeGroup}}); err != nil {
+			g.shared.mu.Unlock()
+			return err
 		}
-		if needTex && os.texPipelines[idx] == nil {
-			p, err := createOITPipeline(dev, g.textureLayout, g.shader, "vs_texture", "fs_oit_texture", gputypes.CullModeNone, ms)
-			if err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			os.texPipelines[idx] = p
-		}
-		if needOutline[0] && os.outlinePipelines[idx][0] == nil {
-			p, err := createOITPipeline(dev, g.layout, g.shader, "vs_outline", "fs_oit_main", gputypes.CullModeFront, ms)
-			if err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			os.outlinePipelines[idx][0] = p
-		}
-		if needOutline[1] && os.outlinePipelines[idx][1] == nil {
-			p, err := createOITPipeline(dev, g.textureLayout, g.shader, "vs_outline_map", "fs_oit_outline_blend", gputypes.CullModeFront, ms)
-			if err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			os.outlinePipelines[idx][1] = p
-		}
-		if needCrease[0] && os.creasePipelines[idx][0] == nil {
-			p, err := createOITPipeline(dev, g.layout, g.shader, "vs_crease", "fs_oit_main", gputypes.CullModeNone, ms)
-			if err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			os.creasePipelines[idx][0] = p
-		}
-		if needCrease[1] && os.creasePipelines[idx][1] == nil {
-			p, err := createOITPipeline(dev, g.textureLayout, g.shader, "vs_crease", "fs_oit_outline_blend", gputypes.CullModeNone, ms)
-			if err != nil {
-				g.shared.mu.Unlock()
-				return err
-			}
-			os.creasePipelines[idx][1] = p
-		}
-		compGroup := os.compositeGroup
-		g.shared.mu.Unlock()
-
-		return g.ensureOITTarget(dev, g.target.w, g.target.h, samples, compGroup)
 	}
-	return nil
+	if os.compositePipelines[idx] == nil {
+		blend := gputypes.BlendStateAlpha()
+		p, err := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+			Label:        "nt3d oit composite",
+			Layout:       os.compositeLayout,
+			Vertex:       wgpu.VertexState{Module: os.compositeShader, EntryPoint: "vs_oit_composite"},
+			Primitive:    gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeNone},
+			DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: false, DepthCompare: gputypes.CompareFunctionAlways},
+			Multisample:  ms,
+			Fragment:     &wgpu.FragmentState{Module: os.compositeShader, EntryPoint: "fs_oit_composite", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}},
+		})
+		if err != nil {
+			g.shared.mu.Unlock()
+			return err
+		}
+		os.compositePipelines[idx] = p
+	}
+	if needMesh && os.meshPipelines[idx] == nil {
+		p, err := createOITPipeline(dev, g.layout, g.shader, "vs_mesh", "fs_oit_main", gputypes.CullModeNone, ms)
+		if err != nil {
+			g.shared.mu.Unlock()
+			return err
+		}
+		os.meshPipelines[idx] = p
+	}
+	if needTex && os.texPipelines[idx] == nil {
+		p, err := createOITPipeline(dev, g.textureLayout, g.shader, "vs_texture", "fs_oit_texture", gputypes.CullModeNone, ms)
+		if err != nil {
+			g.shared.mu.Unlock()
+			return err
+		}
+		os.texPipelines[idx] = p
+	}
+	if needOutline[0] && os.outlinePipelines[idx][0] == nil {
+		p, err := createOITPipeline(dev, g.layout, g.shader, "vs_outline", "fs_oit_main", gputypes.CullModeFront, ms)
+		if err != nil {
+			g.shared.mu.Unlock()
+			return err
+		}
+		os.outlinePipelines[idx][0] = p
+	}
+	if needOutline[1] && os.outlinePipelines[idx][1] == nil {
+		p, err := createOITPipeline(dev, g.textureLayout, g.shader, "vs_outline_map", "fs_oit_outline_blend", gputypes.CullModeFront, ms)
+		if err != nil {
+			g.shared.mu.Unlock()
+			return err
+		}
+		os.outlinePipelines[idx][1] = p
+	}
+	if needCrease[0] && os.creasePipelines[idx][0] == nil {
+		p, err := createOITPipeline(dev, g.layout, g.shader, "vs_crease", "fs_oit_main", gputypes.CullModeNone, ms)
+		if err != nil {
+			g.shared.mu.Unlock()
+			return err
+		}
+		os.creasePipelines[idx][0] = p
+	}
+	if needCrease[1] && os.creasePipelines[idx][1] == nil {
+		p, err := createOITPipeline(dev, g.textureLayout, g.shader, "vs_crease", "fs_oit_outline_blend", gputypes.CullModeNone, ms)
+		if err != nil {
+			g.shared.mu.Unlock()
+			return err
+		}
+		os.creasePipelines[idx][1] = p
+	}
+	compGroup := os.compositeGroup
+	g.shared.mu.Unlock()
+
+	return g.ensureOITTarget(dev, g.target.w, g.target.h, samples, compGroup)
 }
 
 func (g *gpuRenderer) ensureOITTarget(dev *wgpu.Device, w, h, samples int, compGroup *wgpu.BindGroupLayout) (err error) {
@@ -366,24 +363,24 @@ func (g *gpuRenderer) encodeOITPass(f Frame, encoder *wgpu.CommandEncoder, depth
 		}
 		if geom.Outline.Width != 0 && len(geom.Indices) > 0 {
 			if mapped(*geom) {
-				if d.geom.batches[7].count > 0 {
+				if d.geom.batches[slotTextured].count > 0 {
 					g.setHookOrScenePipeline(pass, geom, outlinePipes[1], hookPipeOITOutline)
 					g.drawTextured(pass, f, d)
 				}
-			} else if d.geom.batches[1].count > 0 {
+			} else if d.geom.batches[slotMesh].count > 0 {
 				g.setScenePipeline(pass, outlinePipes[0])
-				pass.SetBindGroup(0, d.set.binds[1], nil)
-				pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[1].count, InstanceCount: d.count})
+				pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
+				pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[slotMesh].count, InstanceCount: d.count})
 			}
 		}
 		if mapped(*geom) {
-			if d.geom.batches[7].count > 0 {
+			if d.geom.batches[slotTextured].count > 0 {
 				g.setHookOrScenePipeline(pass, geom, texPipe, hookPipeOIT)
 				g.drawTextured(pass, f, d)
 			}
-		} else if b := d.geom.batches[1]; b.count > 0 {
+		} else if b := d.geom.batches[slotMesh]; b.count > 0 {
 			g.setScenePipeline(pass, meshPipe)
-			pass.SetBindGroup(0, d.set.binds[1], nil)
+			pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
 			pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 		}
 		g.drawCreaseOIT(pass, f, d, creasePipes)

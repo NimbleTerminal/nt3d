@@ -83,7 +83,7 @@ type sharedGeometry struct {
 	pointRevision uint64
 	meshRevision  uint64
 	skin          *gpuSkin
-	batches       [9]gpuBatch
+	batches       [slotCount]gpuBatch
 }
 
 // gpuGeometry is a geometry's uploaded primitives and the instance sets that
@@ -97,7 +97,7 @@ type gpuGeometry struct {
 	meshRevision  uint64
 	creasesRev    uint64
 	skin          *gpuSkin
-	batches       [9]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
+	batches       [slotCount]gpuBatch // Same primitive slots as gpuRenderer; slot 7 is textured triangles, slot 8 drop discs.
 	sets          []*instanceSet
 	used          int // Sets drawn from this frame.
 	shared        *sharedGeometry
@@ -192,7 +192,7 @@ func (n *gpuGeometry) release(shared *gpuShared) {
 type instanceSet struct {
 	transform *wgpu.Buffer
 	capacity  int
-	binds     [9]*wgpu.BindGroup
+	binds     [slotCount]*wgpu.BindGroup
 	// creaseBinds pair the transforms with the geometry's crease edges.
 	creaseBinds map[*gpuCrease]*wgpu.BindGroup
 	last        []transformState // What the buffer holds.
@@ -315,7 +315,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 	for i := range f.Draws {
 		geom, st := f.Draws[i].Geometry, &f.Draws[i].state
 		node := g.geometries[keys[i]]
-		if node == nil && g.shared != nil {
+		if node == nil {
 			g.shared.mu.Lock()
 			if sg := g.shared.geometries[keys[i]]; sg != nil && (!keys[i].manual || sg.manual == manualSig(geom)) {
 				sg.refs++
@@ -340,7 +340,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			node = &gpuGeometry{}
 			for kind, data := range geometryData(geom, st) {
 				record := 48
-				if kind == 0 {
+				if kind == slotPoint {
 					record = pointRecord
 				}
 				if err := g.uploadData(dev, &node.batches[kind], data, record); err != nil {
@@ -349,7 +349,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				}
 			}
 			if extended(geom) {
-				node.batches[7].count = uint32(len(geom.Indices))
+				node.batches[slotTextured].count = uint32(len(geom.Indices))
 			}
 			if st.pointUpdate != nil {
 				node.pointRevision = st.pointUpdate.revision
@@ -384,27 +384,25 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 					return err
 				}
 			}
-			if g.shared != nil {
-				sg := &sharedGeometry{
-					key:           keys[i],
-					refs:          1,
-					sh:            node.sh,
-					sprite:        node.sprite,
-					axes:          node.axes,
-					shBytes:       node.shBytes,
-					order:         node.order,
-					pointRevision: node.pointRevision,
-					meshRevision:  node.meshRevision,
-					batches:       node.batches,
-				}
-				if keys[i].manual {
-					sg.manual = manualSig(geom)
-				}
-				node.shared = sg
-				g.shared.mu.Lock()
-				g.shared.geometries[keys[i]] = sg
-				g.shared.mu.Unlock()
+			sg := &sharedGeometry{
+				key:           keys[i],
+				refs:          1,
+				sh:            node.sh,
+				sprite:        node.sprite,
+				axes:          node.axes,
+				shBytes:       node.shBytes,
+				order:         node.order,
+				pointRevision: node.pointRevision,
+				meshRevision:  node.meshRevision,
+				batches:       node.batches,
 			}
+			if keys[i].manual {
+				sg.manual = manualSig(geom)
+			}
+			node.shared = sg
+			g.shared.mu.Lock()
+			g.shared.geometries[keys[i]] = sg
+			g.shared.mu.Unlock()
 			g.geometries[keys[i]] = node
 			g.uploads++
 		}
@@ -415,11 +413,11 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			node.skin = node.shared.skin
 		}
 		if len(geom.Indices) > 0 {
-			slot := 1
+			slot := slotMesh
 			if mapped(geom) {
-				slot = 7
+				slot = slotTextured
 			}
-			if node.batches[slot].buffer == nil && node.shared != nil && g.shared != nil {
+			if node.batches[slot].buffer == nil && node.shared != nil {
 				g.shared.mu.Lock()
 				node.batches[slot] = node.shared.batches[slot]
 				g.shared.mu.Unlock()
@@ -429,10 +427,10 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				if err := g.uploadData(dev, &node.batches[slot], data, 48); err != nil {
 					return err
 				}
-				if slot == 7 && extended(geom) {
-					node.batches[7].count = uint32(len(geom.Indices))
+				if slot == slotTextured && extended(geom) {
+					node.batches[slotTextured].count = uint32(len(geom.Indices))
 				}
-				if node.shared != nil && g.shared != nil {
+				if node.shared != nil {
 					g.shared.mu.Lock()
 					if node.shared.batches[slot].buffer == nil {
 						node.shared.batches[slot] = node.batches[slot]
@@ -465,12 +463,12 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 				first, end = u.first, u.end
 			}
 			data := geometryData(Geometry{Points: geom.Points[first:end], PointStyle: geom.PointStyle}, &noState)[0]
-			if err := dev.Queue().WriteBuffer(node.batches[0].buffer, uint64(first*pointRecord), data); err != nil {
+			if err := dev.Queue().WriteBuffer(node.batches[slotPoint].buffer, uint64(first*pointRecord), data); err != nil {
 				return err
 			}
 			if geom.DropShadow.Strength > 0 {
 				data := geometryData(Geometry{Bounds: geom.Bounds, DropShadow: geom.DropShadow}, &noState)[8]
-				if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, data); err != nil {
+				if err := dev.Queue().WriteBuffer(node.batches[slotDrop].buffer, 0, data); err != nil {
 					return err
 				}
 			}
@@ -496,32 +494,32 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			node.creasesRev = meshRev
 		}
 		if node.meshRevision != meshRev && len(geom.Indices) > 0 {
-			slot := 1
+			slot := slotMesh
 			if mapped(geom) {
-				slot = 7
+				slot = slotTextured
 			}
 			g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, geom, st)
 			if err := dev.Queue().WriteBuffer(node.batches[slot].buffer, 0, g.meshScratch); err != nil {
 				return err
 			}
-			if slot == 7 && node.batches[1].buffer != nil {
+			if slot == slotTextured && node.batches[slotMesh].buffer != nil {
 				unmapped := geom
 				unmapped.Material = nil
 				unmapped.Displacement = nil
 				g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, unmapped, st)
-				if err := dev.Queue().WriteBuffer(node.batches[1].buffer, 0, g.meshScratch); err != nil {
+				if err := dev.Queue().WriteBuffer(node.batches[slotMesh].buffer, 0, g.meshScratch); err != nil {
 					return err
 				}
-			} else if slot == 1 && node.batches[7].buffer != nil && !extended(geom) {
+			} else if slot == slotMesh && node.batches[slotTextured].buffer != nil && !extended(geom) {
 				mappedGeom := geom
 				mappedGeom.Displacement = &VertexDisplacement{}
 				g.meshScratch, g.flowScratch = appendMeshRecords(g.meshScratch[:0], g.flowScratch, mappedGeom, st)
-				if err := dev.Queue().WriteBuffer(node.batches[7].buffer, 0, g.meshScratch); err != nil {
+				if err := dev.Queue().WriteBuffer(node.batches[slotTextured].buffer, 0, g.meshScratch); err != nil {
 					return err
 				}
 			}
-			if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() && node.batches[8].buffer != nil {
-				if err := dev.Queue().WriteBuffer(node.batches[8].buffer, 0, dropShadowData(&geom, st)); err != nil {
+			if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() && node.batches[slotDrop].buffer != nil {
+				if err := dev.Queue().WriteBuffer(node.batches[slotDrop].buffer, 0, dropShadowData(&geom, st)); err != nil {
 					return err
 				}
 			}
@@ -614,7 +612,7 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 	if s.capacity >= n {
 		size := uint64(s.capacity) * instanceRecordSize
 		for kind, b := range node.batches {
-			if b.buffer == nil || kind == 0 || s.binds[kind] != nil {
+			if b.buffer == nil || kind == slotPoint || s.binds[kind] != nil {
 				continue
 			}
 			entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: s.transform, Size: size}}
@@ -641,7 +639,7 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 		if b.buffer == nil {
 			continue
 		}
-		if kind == 0 {
+		if kind == slotPoint {
 			continue // Points bind by the frame's sort: bindPoints.
 		}
 		entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: b.buffer, Size: b.size}, {Binding: 2, Buffer: next.transform, Size: size}}
@@ -660,7 +658,7 @@ func (g *gpuRenderer) instanceSet(dev *wgpu.Device, node *gpuGeometry, n int) (*
 // stand-ins otherwise. The sort's buffers are made again when they grow,
 // so a group of an older generation, or over another run table, is too.
 func (g *gpuRenderer) bindPoints(dev *wgpu.Device, node *gpuGeometry, s *instanceSet, sorted bool) error {
-	b := node.batches[0]
+	b := node.batches[slotPoint]
 	if b.buffer == nil {
 		return nil
 	}
@@ -669,12 +667,12 @@ func (g *gpuRenderer) bindPoints(dev *wgpu.Device, node *gpuGeometry, s *instanc
 		order, runs = g.sort.payload[g.sort.final], g.sort.runs
 		orderSize = order.Size()
 	}
-	if s.binds[0] != nil && s.order == order && s.runs == runs && s.generation == g.sort.generation {
+	if s.binds[slotPoint] != nil && s.order == order && s.runs == runs && s.generation == g.sort.generation {
 		return nil
 	}
-	if s.binds[0] != nil {
-		s.binds[0].Release()
-		s.binds[0] = nil
+	if s.binds[slotPoint] != nil {
+		s.binds[slotPoint].Release()
+		s.binds[slotPoint] = nil
 	}
 	entries := []wgpu.BindGroupEntry{{Binding: 0, Buffer: g.uniform, Size: uniformSize}, {Binding: 1, Buffer: g.zeros, Size: 48}, {Binding: 2, Buffer: s.transform, Size: uint64(s.capacity) * instanceRecordSize}, {Binding: 3, Buffer: b.buffer, Size: b.size}, {Binding: 4, Buffer: order, Size: orderSize}}
 	sh, shSize := g.zeros, uint64(4*shHeaderFloats)
@@ -697,7 +695,7 @@ func (g *gpuRenderer) bindPoints(dev *wgpu.Device, node *gpuGeometry, s *instanc
 	if err != nil {
 		return err
 	}
-	s.binds[0], s.order, s.runs, s.generation = bind, order, runs, g.sort.generation
+	s.binds[slotPoint], s.order, s.runs, s.generation = bind, order, runs, g.sort.generation
 	return nil
 }
 
@@ -966,23 +964,23 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry, st *geometry
 	return dst, flowScratch
 }
 
-func geometryData(geom Geometry, st *geometryState) (data [9][]byte) {
+func geometryData(geom Geometry, st *geometryState) (data [slotCount][]byte) {
 	// Each record is twelve floats; each kind is sized once, so encoding
 	// allocates per kind rather than per record.
 	const record = 12 * 4
-	var records [9]int
-	records[0], records[2], records[3], records[6] = len(geom.Points), len(geom.Boxes), len(geom.Lines), len(geom.Arrows)
+	var records [slotCount]int
+	records[slotPoint], records[slotBox], records[slotLine], records[slotArrow] = len(geom.Points), len(geom.Boxes), len(geom.Lines), len(geom.Arrows)
 	for kind, n := range records {
 		if n > 0 {
 			size := record
-			if kind == 0 {
+			if kind == slotPoint {
 				size = pointRecord
 			}
 			data[kind] = make([]byte, 0, n*size)
 		}
 	}
 	if geom.DropShadow.Strength > 0 && geom.Bounds.IsValid() {
-		data[8] = dropShadowData(&geom, st)
+		data[slotDrop] = dropShadowData(&geom, st)
 	}
 	// Each node binds one transform; records always reference its slot zero.
 	vertex := func(kind int, v Vertex, radius float32) {
@@ -994,24 +992,24 @@ func geometryData(geom Geometry, st *geometryState) (data [9][]byte) {
 		sign = -1
 	}
 	for _, p := range geom.Points {
-		data[0] = appendFloats(data[0], p.Position.X, p.Position.Y, p.Position.Z, sign*p.Radius)
-		data[0] = binary.LittleEndian.AppendUint32(data[0], uint32(p.Color.R)|uint32(p.Color.G)<<8|uint32(p.Color.B)<<16|uint32(p.Color.A)<<24)
+		data[slotPoint] = appendFloats(data[slotPoint], p.Position.X, p.Position.Y, p.Position.Z, sign*p.Radius)
+		data[slotPoint] = binary.LittleEndian.AppendUint32(data[slotPoint], uint32(p.Color.R)|uint32(p.Color.G)<<8|uint32(p.Color.B)<<16|uint32(p.Color.A)<<24)
 	}
 	if len(geom.Indices) > 0 {
-		slot := 1
+		slot := slotMesh
 		if mapped(geom) {
-			slot = 7
+			slot = slotTextured
 		}
 		data[slot], _ = appendMeshRecords(nil, nil, geom, st)
 	}
 	for _, b := range geom.Boxes {
-		vertex(2, Vertex{b.Min, b.Size, b.Color}, 1)
+		vertex(slotBox, Vertex{b.Min, b.Size, b.Color}, 1)
 	}
 	for _, v := range geom.Lines {
-		vertex(3, v, lineWidth(geom.LineWidth))
+		vertex(slotLine, v, lineWidth(geom.LineWidth))
 	}
 	for _, a := range geom.Arrows {
-		data[6] = appendFloats(data[6], a.Start.X, a.Start.Y, a.Start.Z, lineWidth(a.Width), a.End.X, a.End.Y, a.End.Z, a.HeadSize, float32(a.Color.R)/255, float32(a.Color.G)/255, float32(a.Color.B)/255, 0)
+		data[slotArrow] = appendFloats(data[slotArrow], a.Start.X, a.Start.Y, a.Start.Z, lineWidth(a.Width), a.End.X, a.End.Y, a.End.Z, a.HeadSize, float32(a.Color.R)/255, float32(a.Color.G)/255, float32(a.Color.B)/255, 0)
 	}
 	return
 }

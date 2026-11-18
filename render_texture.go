@@ -298,57 +298,48 @@ func baseKey(m *Material, aniso int) textureKey {
 
 func (g *gpuRenderer) ensureTexturePipelines(dev *wgpu.Device) error {
 	idx := g.sampleIdx
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-		if g.shared.textureLayout == nil || g.shared.spriteLayout == nil {
-			g.materialBindLayout = g.shared.materialBindLayout
-			g.spriteBindLayout = g.shared.spriteBindLayout
-			g.textureLayout = g.shared.textureLayout
-			g.spriteLayout = g.shared.spriteLayout
-			if err := g.setupTextureLayouts(dev); err != nil {
-				return err
-			}
-			g.shared.materialBindLayout = g.materialBindLayout
-			g.shared.spriteBindLayout = g.spriteBindLayout
-			g.shared.textureLayout = g.textureLayout
-			g.shared.spriteLayout = g.spriteLayout
-			g.shared.shadowPipelines[2] = g.shadowPipelines[2]
-			g.shared.shadowPipelines[3] = g.shadowPipelines[3]
-		} else {
-			g.materialBindLayout = g.shared.materialBindLayout
-			g.spriteBindLayout = g.shared.spriteBindLayout
-			g.textureLayout = g.shared.textureLayout
-			g.spriteLayout = g.shared.spriteLayout
-			g.shadowPipelines[2] = g.shared.shadowPipelines[2]
-			g.shadowPipelines[3] = g.shared.shadowPipelines[3]
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
+	if g.shared.textureLayout == nil || g.shared.spriteLayout == nil {
+		g.materialBindLayout = g.shared.materialBindLayout
+		g.spriteBindLayout = g.shared.spriteBindLayout
+		g.textureLayout = g.shared.textureLayout
+		g.spriteLayout = g.shared.spriteLayout
+		if err := g.setupTextureLayouts(dev); err != nil {
+			return err
 		}
-		if g.shared.msaaSets[idx].texturePipeline == nil {
-			if err := g.setupTexturePipelines(dev); err != nil {
-				return err
-			}
-			g.shared.msaaSets[idx].texturePipeline = g.texturePipeline
-			g.shared.msaaSets[idx].cutoutPipeline = g.cutoutPipeline
-			g.shared.msaaSets[idx].textureBlends = g.textureBlends
-			g.shared.msaaSets[idx].spritePipelines = g.spritePipelines
-		} else {
-			ps := &g.shared.msaaSets[idx]
-			g.texturePipeline = ps.texturePipeline
-			g.cutoutPipeline = ps.cutoutPipeline
-			g.textureBlends = ps.textureBlends
-			g.spritePipelines = ps.spritePipelines
-			g.msaaSets[idx].texturePipeline = ps.texturePipeline
-			g.msaaSets[idx].cutoutPipeline = ps.cutoutPipeline
-			g.msaaSets[idx].textureBlends = ps.textureBlends
-			g.msaaSets[idx].spritePipelines = ps.spritePipelines
+		g.shared.materialBindLayout = g.materialBindLayout
+		g.shared.spriteBindLayout = g.spriteBindLayout
+		g.shared.textureLayout = g.textureLayout
+		g.shared.spriteLayout = g.spriteLayout
+		g.shared.shadowPipelines[2] = g.shadowPipelines[2]
+		g.shared.shadowPipelines[3] = g.shadowPipelines[3]
+	} else {
+		g.materialBindLayout = g.shared.materialBindLayout
+		g.spriteBindLayout = g.shared.spriteBindLayout
+		g.textureLayout = g.shared.textureLayout
+		g.spriteLayout = g.shared.spriteLayout
+		g.shadowPipelines[2] = g.shared.shadowPipelines[2]
+		g.shadowPipelines[3] = g.shared.shadowPipelines[3]
+	}
+	if g.shared.msaaSets[idx].texturePipeline == nil {
+		if err := g.setupTexturePipelines(dev); err != nil {
+			return err
 		}
-		return nil
-	}
-	if err := g.setupTextureLayouts(dev); err != nil {
-		return err
-	}
-	if g.texturePipeline == nil || g.spritePipelines[0] == nil {
-		return g.setupTexturePipelines(dev)
+		g.shared.msaaSets[idx].texturePipeline = g.texturePipeline
+		g.shared.msaaSets[idx].cutoutPipeline = g.cutoutPipeline
+		g.shared.msaaSets[idx].textureBlends = g.textureBlends
+		g.shared.msaaSets[idx].spritePipelines = g.spritePipelines
+	} else {
+		ps := &g.shared.msaaSets[idx]
+		g.texturePipeline = ps.texturePipeline
+		g.cutoutPipeline = ps.cutoutPipeline
+		g.textureBlends = ps.textureBlends
+		g.spritePipelines = ps.spritePipelines
+		g.msaaSets[idx].texturePipeline = ps.texturePipeline
+		g.msaaSets[idx].cutoutPipeline = ps.cutoutPipeline
+		g.msaaSets[idx].textureBlends = ps.textureBlends
+		g.msaaSets[idx].spritePipelines = ps.spritePipelines
 	}
 	return nil
 }
@@ -393,7 +384,7 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 			}
 			used[key] = true
 			t := g.textures[key]
-			if t == nil && g.shared != nil {
+			if t == nil {
 				g.shared.mu.Lock()
 				if cached := g.shared.textures[key]; cached != nil {
 					cached.refs++
@@ -431,14 +422,12 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 						return err
 					}
 				}
-				if g.shared != nil {
-					g.shared.mu.Lock()
-					t.shared = g.shared
-					t.key = key
-					t.refs = 1
-					g.shared.textures[key] = t
-					g.shared.mu.Unlock()
-				}
+				g.shared.mu.Lock()
+				t.shared = g.shared
+				t.key = key
+				t.refs = 1
+				g.shared.textures[key] = t
+				g.shared.mu.Unlock()
 				g.textures[key] = t
 				g.textureUploads++
 			}
@@ -503,9 +492,9 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 func (g *gpuRenderer) drawSprite(pass *wgpu.RenderPassEncoder, f Frame, d gpuDraw) {
 	style := f.Draws[d.index].Geometry.PointStyle
 	g.setScenePipeline(pass, g.spritePipelines[style.Blend])
-	pass.SetBindGroup(0, d.set.binds[0], noRunOffset)
+	pass.SetBindGroup(0, d.set.binds[slotPoint], noRunOffset)
 	pass.SetBindGroup(2, g.textures[textureKey{src: style.Texture, aniso: f.anisotropy()}].spriteBind, nil)
-	pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[0].count})
+	pass.Draw(gputypes.DrawArgs{VertexCount: 6, InstanceCount: d.geom.batches[slotPoint].count})
 }
 
 // noRunOffset is the dynamic offset of unsorted points' stand-in run. It is

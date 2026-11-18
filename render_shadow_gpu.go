@@ -167,7 +167,7 @@ func (g *gpuRenderer) drawShadowFace(f Frame, encoder *wgpu.CommandEncoder, face
 		geom := &f.Draws[d.index].Geometry
 		if !transparent(geom) && !transmitting(geom) {
 			if mapped(*geom) {
-				if d.geom.batches[7].count > 0 {
+				if d.geom.batches[slotTextured].count > 0 {
 					if geom.Material != nil && geom.Material.Cutout {
 						hasCutout = true
 					} else {
@@ -176,17 +176,17 @@ func (g *gpuRenderer) drawShadowFace(f Frame, encoder *wgpu.CommandEncoder, face
 						g.drawTexturedOffset(pass, f, d, uint32(face)<<28)
 					}
 				}
-			} else if b := d.geom.batches[1]; b.count > 0 {
+			} else if b := d.geom.batches[slotMesh]; b.count > 0 {
 				pass.SetPipeline(g.shadowPipelines[0])
 				pass.SetBindGroup(1, g.noShadow.bind, nil)
-				pass.SetBindGroup(0, d.set.binds[1], nil)
+				pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
 				pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count, FirstVertex: uint32(face) << 28})
 			}
 		}
-		if b := d.geom.batches[2]; b.count > 0 {
+		if b := d.geom.batches[slotBox]; b.count > 0 {
 			pass.SetPipeline(g.shadowPipelines[1])
 			pass.SetBindGroup(1, g.noShadow.bind, nil)
-			pass.SetBindGroup(0, d.set.binds[2], nil)
+			pass.SetBindGroup(0, d.set.binds[slotBox], nil)
 			pass.Draw(gputypes.DrawArgs{VertexCount: 36, InstanceCount: b.count, FirstVertex: uint32(face) << 28})
 		}
 	}
@@ -203,7 +203,7 @@ func (g *gpuRenderer) drawShadowFace(f Frame, encoder *wgpu.CommandEncoder, face
 	}
 	for _, d := range g.draws {
 		geom := &f.Draws[d.index].Geometry
-		if !transparent(geom) && !transmitting(geom) && mapped(*geom) && d.geom.batches[7].count > 0 && geom.Material != nil && geom.Material.Cutout {
+		if !transparent(geom) && !transmitting(geom) && mapped(*geom) && d.geom.batches[slotTextured].count > 0 && geom.Material != nil && geom.Material.Cutout {
 			pass.SetPipeline(g.hookOrShadowPipeline(geom, g.shadowPipelines[3], 1))
 			pass.SetBindGroup(1, g.noShadow.bind, nil)
 			g.drawTexturedOffset(pass, f, d, uint32(face)<<28)

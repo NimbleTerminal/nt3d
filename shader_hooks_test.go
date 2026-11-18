@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 	"testing"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
@@ -400,5 +401,75 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
 	withBloom := softwareRender(fHDR)
 	if hookImgMeanAbsDiff(noBloom, withBloom) < 1.0 {
 		t.Fatal("expected HDR MaterialShader values > 1.0 to drive Bloom halo")
+	}
+}
+
+func hookFallbackColor(in MaterialColorInput) [4]float32 { return in.Color }
+
+// A hook's WGSL is compiled into the scene shader's own module, so its helpers
+// share that module's names. A helper that takes a name the scene shader uses
+// is refused when the hook is made, by name, rather than failing to compile
+// on the first GPU frame with the shader translator's error.
+func TestShaderHookRefusesNamesTheSceneShaderUses(t *testing.T) {
+	for _, taken := range []string{"decode", "shadeSurface", "Light", "u", "maxLights", "nt3d_material"} {
+		decl := "fn " + taken + "() -> f32 { return 1.0; }"
+		switch taken {
+		case "Light":
+			decl = "struct Light { a: f32 };"
+		case "u":
+			decl = "var<private> u: f32;"
+		case "maxLights":
+			decl = "const maxLights: u32 = 2u;"
+		}
+		src := decl + "\nfn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> { return in.color; }"
+		_, err := NewMaterialShader(src, hookFallbackColor)
+		if err == nil || !strings.Contains(err.Error(), `"`+taken+`"`) {
+			t.Errorf("a material hook declaring %s: error %v, want one naming it", taken, err)
+		}
+		dsrc := decl + "\nfn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput { return NT3DVertexOutput(in.position, in.normal); }"
+		_, err = NewVertexDisplacement(dsrc, 0, func(in VertexDisplaceInput) VertexDisplaceOutput {
+			return VertexDisplaceOutput{Position: in.Position, Normal: in.Normal}
+		})
+		if err == nil || !strings.Contains(err.Error(), `"`+taken+`"`) {
+			t.Errorf("a displacement hook declaring %s: error %v, want one naming it", taken, err)
+		}
+	}
+}
+
+// Names of its own, and names used only inside its functions, are a hook's to choose.
+func TestShaderHookKeepsItsOwnNames(t *testing.T) {
+	src := `
+// fn decode() in a comment declares nothing.
+struct Stripe { width: f32, u: f32 };
+const stripeWidth: f32 = 0.25;
+fn stripe(x: f32) -> f32 {
+ let u = fract(x / stripeWidth);   // a local may shadow a module name
+ var decode = u;
+ return step(0.5, decode);
+}
+fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> { return vec4<f32>(vec3<f32>(stripe(in.uv.x)), 1.0); }`
+	if _, err := NewMaterialShader(src, hookFallbackColor); err != nil {
+		t.Fatalf("a hook with names of its own was refused: %v", err)
+	}
+}
+
+func TestWGSLDeclaredNames(t *testing.T) {
+	got := wgslDeclared(`
+struct A { x: f32, y: vec2<f32> };
+alias B = vec3<f32>;
+const c: f32 = 1.0; override d: f32;
+@group(0) @binding(0) var<uniform> e: A;
+var<private> f: f32;
+/* fn hidden() {} */ // fn alsoHidden() {}
+@vertex fn g(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> { let inner = 1; var local: f32; return vec4<f32>(); }
+fn h(a: f32) -> f32 { return a; }`)
+	want := []string{"A", "B", "c", "d", "e", "f", "g", "h"}
+	if len(got) != len(want) {
+		t.Fatalf("declared %v, want %v", got, want)
+	}
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("%s is not among the declared names %v", name, got)
+		}
 	}
 }

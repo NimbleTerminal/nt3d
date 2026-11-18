@@ -76,14 +76,12 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 		}
 	}
 	idx := g.sampleIdx
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-		if p := g.shared.msaaSets[idx].outlinePipelines[kind]; p != nil {
-			g.outlinePipelines[kind] = p
-			g.msaaSets[idx].outlinePipelines[kind] = p
-			return nil
-		}
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
+	if p := g.shared.msaaSets[idx].outlinePipelines[kind]; p != nil {
+		g.outlinePipelines[kind] = p
+		g.msaaSets[idx].outlinePipelines[kind] = p
+		return nil
 	}
 	layout, vertex, fragment := g.layout, "vs_outline", "fs_main"
 	cull := gputypes.CullModeFront
@@ -126,9 +124,7 @@ func (g *gpuRenderer) prepareOutline(dev *wgpu.Device, geom *Geometry, kind int)
 		return err
 	}
 	g.msaaSets[idx].outlinePipelines[kind] = g.outlinePipelines[kind]
-	if g.shared != nil {
-		g.shared.msaaSets[idx].outlinePipelines[kind] = g.outlinePipelines[kind]
-	}
+	g.shared.msaaSets[idx].outlinePipelines[kind] = g.outlinePipelines[kind]
 	return nil
 }
 
@@ -347,17 +343,17 @@ func (g *gpuRenderer) drawOutline(pass *wgpu.RenderPassEncoder, f Frame, d gpuDr
 	}
 	kind := outlinePipelineKind(geom)
 	if mapped(*geom) {
-		if d.geom.batches[7].count == 0 {
+		if d.geom.batches[slotTextured].count == 0 {
 			return
 		}
 		g.setHookOrScenePipeline(pass, geom, g.outlinePipelines[kind], hookOutlinePipeKind(kind))
 		g.drawTextured(pass, f, d)
 		return
 	}
-	if d.geom.batches[1].count == 0 {
+	if d.geom.batches[slotMesh].count == 0 {
 		return
 	}
 	g.setScenePipeline(pass, g.outlinePipelines[kind])
-	pass.SetBindGroup(0, d.set.binds[1], nil)
-	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[1].count, InstanceCount: d.count})
+	pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
+	pass.Draw(gputypes.DrawArgs{VertexCount: d.geom.batches[slotMesh].count, InstanceCount: d.count})
 }

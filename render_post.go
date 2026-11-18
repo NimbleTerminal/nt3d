@@ -856,8 +856,6 @@ func (m *bloomMip) release() {
 }
 
 type gpuPost struct {
-	ownShared gpuPostShared
-
 	ssaoUniform     *wgpu.Buffer
 	ssaoUniformBind *wgpu.BindGroup
 	depthView       *wgpu.TextureView
@@ -930,7 +928,7 @@ func (p *gpuPost) releaseOverlay() {
 	p.overlayW, p.overlayH, p.overlayTex, p.overlayView = 0, 0, nil, nil
 }
 
-func (p *gpuPost) release(shared bool) {
+func (p *gpuPost) release() {
 	p.releaseSSAO()
 	p.releaseBloom()
 	p.releaseOverlay()
@@ -944,25 +942,16 @@ func (p *gpuPost) release(shared bool) {
 			u.Release()
 		}
 	}
-	if !shared {
-		p.ownShared.release()
-	}
 	*p = gpuPost{}
 }
 
 func (g *gpuRenderer) postShared(dev *wgpu.Device) (*gpuPostShared, error) {
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		defer g.shared.mu.Unlock()
-		if err := g.shared.post.init(dev); err != nil {
-			return nil, err
-		}
-		return &g.shared.post, nil
-	}
-	if err := g.post.ownShared.init(dev); err != nil {
+	g.shared.mu.Lock()
+	defer g.shared.mu.Unlock()
+	if err := g.shared.post.init(dev); err != nil {
 		return nil, err
 	}
-	return &g.post.ownShared, nil
+	return &g.shared.post, nil
 }
 
 func (g *gpuRenderer) ensurePostUniforms(dev *wgpu.Device, ps *gpuPostShared) error {
@@ -1043,13 +1032,9 @@ func (g *gpuRenderer) encodeSSAO(dev *wgpu.Device, enc *wgpu.CommandEncoder, ps 
 	var depthGroup *wgpu.BindGroupLayout
 	var ssaoPipe *wgpu.RenderPipeline
 	var err error
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		depthGroup, ssaoPipe, err = ps.ensureSSAO(dev, msaa)
-		g.shared.mu.Unlock()
-	} else {
-		depthGroup, ssaoPipe, err = ps.ensureSSAO(dev, msaa)
-	}
+	g.shared.mu.Lock()
+	depthGroup, ssaoPipe, err = ps.ensureSSAO(dev, msaa)
+	g.shared.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -1250,7 +1235,7 @@ func (g *gpuRenderer) resolveWithPost(dev *wgpu.Device, enc *wgpu.CommandEncoder
 		p.resolveScene, p.resolveBloom = g.target.colorView, bloomView
 	}
 
-	hasOverlays := g.batches[4].count > 0
+	hasOverlays := g.batches[slotUI].count > 0
 	if hasOverlays {
 		if err := g.resolvePostWithOverlays(dev, enc, ps, f, target, s, bloomGain); err != nil {
 			return err
@@ -1259,13 +1244,9 @@ func (g *gpuRenderer) resolveWithPost(dev *wgpu.Device, enc *wgpu.CommandEncoder
 	}
 
 	var pipe *wgpu.RenderPipeline
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		pipe, err = ps.resolvePipeline(dev, target.Format, target.Load)
-		g.shared.mu.Unlock()
-	} else {
-		pipe, err = ps.resolvePipeline(dev, target.Format, target.Load)
-	}
+	g.shared.mu.Lock()
+	pipe, err = ps.resolvePipeline(dev, target.Format, target.Load)
+	g.shared.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -1347,19 +1328,12 @@ func (g *gpuRenderer) resolvePostWithOverlays(dev *wgpu.Device, enc *wgpu.Comman
 
 	var postPipe, uiPipe *wgpu.RenderPipeline
 	var err error
-	if g.shared != nil {
-		g.shared.mu.Lock()
-		postPipe, err = ps.resolvePipeline(dev, sceneFormat, false)
-		if err == nil {
-			uiPipe, err = ps.ensureOverlayPipeline(dev, g.layout, g.shader)
-		}
-		g.shared.mu.Unlock()
-	} else {
-		postPipe, err = ps.resolvePipeline(dev, sceneFormat, false)
-		if err == nil {
-			uiPipe, err = ps.ensureOverlayPipeline(dev, g.layout, g.shader)
-		}
+	g.shared.mu.Lock()
+	postPipe, err = ps.resolvePipeline(dev, sceneFormat, false)
+	if err == nil {
+		uiPipe, err = ps.ensureOverlayPipeline(dev, g.layout, g.shader)
 	}
+	g.shared.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -1402,8 +1376,8 @@ func (g *gpuRenderer) resolvePostWithOverlays(dev *wgpu.Device, enc *wgpu.Comman
 	pass.Draw(gputypes.DrawArgs{VertexCount: 3, InstanceCount: 1})
 
 	g.setScenePipeline(pass, uiPipe)
-	pass.SetBindGroup(0, g.batches[4].bind, nil)
-	pass.Draw(gputypes.DrawArgs{VertexCount: g.batches[4].count, InstanceCount: 1})
+	pass.SetBindGroup(0, g.batches[slotUI].bind, nil)
+	pass.Draw(gputypes.DrawArgs{VertexCount: g.batches[slotUI].count, InstanceCount: 1})
 	if err := pass.End(); err != nil {
 		return err
 	}

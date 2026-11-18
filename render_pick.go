@@ -114,23 +114,15 @@ type gpuDepthPicker struct {
 	samples                int
 }
 
-func (p *gpuDepthPicker) release(shared bool) {
+// release drops the picker's own buffers and bind group. Its pipelines and
+// layouts belong to the device's shared state.
+func (p *gpuDepthPicker) release() {
 	if p.bind != nil {
 		p.bind.Release()
 	}
 	for _, b := range []*wgpu.Buffer{p.uniform, p.result, p.stage} {
 		if b != nil {
 			b.Release()
-		}
-	}
-	if !shared {
-		for i := range p.pipelines {
-			if p.pipelines[i] != nil {
-				p.pipelines[i].Release()
-			}
-			if p.layouts[i] != nil {
-				p.layouts[i].Release()
-			}
 		}
 	}
 	*p = gpuDepthPicker{}
@@ -144,32 +136,30 @@ func (g *gpuRenderer) initDepthPick(dev *wgpu.Device) error {
 		idx = 1
 	}
 	if p.pipelines[idx] == nil {
-		if g.shared != nil {
-			g.shared.mu.Lock()
-			if g.shared.depthPickPipelines[idx] != nil {
-				p.layouts[idx] = g.shared.depthPickLayouts[idx]
-				p.pipelines[idx] = g.shared.depthPickPipelines[idx]
-				g.shared.mu.Unlock()
-			} else {
-				layout, pipeline, err := createDepthPickPipeline(dev, msaa)
-				if err != nil {
-					g.shared.mu.Unlock()
-					return err
-				}
-				g.shared.depthPickLayouts[idx] = layout
-				g.shared.depthPickPipelines[idx] = pipeline
-				p.layouts[idx] = layout
-				p.pipelines[idx] = pipeline
-				g.shared.mu.Unlock()
-			}
+		g.shared.mu.Lock()
+		if g.shared.depthPickPipelines[idx] != nil {
+			p.layouts[idx] = g.shared.depthPickLayouts[idx]
+			p.pipelines[idx] = g.shared.depthPickPipelines[idx]
+			g.shared.mu.Unlock()
 		} else {
 			layout, pipeline, err := createDepthPickPipeline(dev, msaa)
 			if err != nil {
+				g.shared.mu.Unlock()
 				return err
 			}
+			g.shared.depthPickLayouts[idx] = layout
+			g.shared.depthPickPipelines[idx] = pipeline
 			p.layouts[idx] = layout
 			p.pipelines[idx] = pipeline
+			g.shared.mu.Unlock()
 		}
+	} else {
+		layout, pipeline, err := createDepthPickPipeline(dev, msaa)
+		if err != nil {
+			return err
+		}
+		p.layouts[idx] = layout
+		p.pipelines[idx] = pipeline
 	}
 	p.pipeline = p.pipelines[idx]
 	if p.uniform == nil {

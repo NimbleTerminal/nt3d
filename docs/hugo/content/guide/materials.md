@@ -134,6 +134,10 @@ The [procedural demo](../demos/#procedural-plasma) paints terrain with an animat
 
 Beyond 2D shader textures, indexed triangle meshes can customize per-vertex displacement (`Geometry.Displacement`) and per-fragment linear surface color (`Material.Shader`) directly in the scene shader while keeping GPU, software, wireframe, shadows, and picking in parity via pure-Go fallbacks. Both hook types carry `Time` (`float32`, in seconds) and up to `MaxShaderParameters` (`16`) `[4]float32` uniform vectors, and `WithParameters` advances them each frame without recompiling WGSL or re-uploading mesh buffers.
 
+**Naming your helpers.** A hook's WGSL is compiled into the scene shader's own module, and WGSL has no namespaces: your functions, structs, constants, and module-scope variables share one set of names with the scene shader's, and with the other hook when a mesh has both a displacement and a material shader. A helper that takes a name the scene shader uses (`decode`, `Light`, `u`, the engine's own `nt3d…` and `NT3D…` names) is refused by `NewVertexDisplacement` and `NewMaterialShader` with an error naming it, and two hooks on one mesh that declare the same name fail that frame the same way. Names used only inside your functions are yours. A simple habit avoids both: prefix a hook's helpers with something of its own, such as `wave_height` or `ink_edge`, and leave the `nt3d` and `NT3D` prefixes to the engine.
+
+GPU renderers compile one program per distinct hook source and keep it while frames draw it. A program no frame has drawn for some 600 frames is released, and compiled again if its source returns, so generating shader sources does not grow memory for as long as the renderer lives. To animate a hook, change its parameters (`WithParameters`), which reuses the program, rather than its source.
+
 ### Vertex displacement
 
 `NewVertexDisplacement` / `NewVertexDisplacementWithParameters` define `fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput` in WGSL alongside a `VertexDisplaceFunc` Go fallback and a conservative local-space `maxDisplacement` bound:

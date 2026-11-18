@@ -14,7 +14,7 @@ import (
 // uses it, so each embedded shader is scanned for the mix.
 func TestWGSLShiftsAreParenthesized(t *testing.T) {
 	shaders := map[string]string{
-		"scene.wgsl":    sceneShader,
+		"wgsl/scene_*":  sceneShader,
 		"skin.wgsl":     skinShader,
 		"sort.wgsl":     sortShader,
 		"resolve":       resolveShader,

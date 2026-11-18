@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Shader hooks: a hook whose WGSL declares a name the scene shader uses is
+  refused by `NewVertexDisplacement` and `NewMaterialShader` with an error
+  naming it. Hooks are compiled into the scene shader's module and share its
+  names, so such a hook never compiled on a GPU; it now fails when it is
+  made, in software too, instead of on the first GPU frame with the shader
+  translator's message. A displacement and a material shader on one mesh that
+  both declare a name fail that frame the same way.
+- GPU hook programs no frame has drawn for 600 frames are released, and
+  compiled again if their source returns. They were kept until the renderer
+  closed, so an application that generates shader sources grew without bound.
+- GPU renderer internals, with no change in what is drawn: the unreachable
+  single-renderer code path beside the shared device state is removed (some
+  300 lines); primitive slots, their entry points, and the draw order are
+  named rather than numbered; the scene shader is ten files by topic under
+  `wgsl/`, joined into the same module text; and tests hold the byte counts Go
+  writes for the scene uniform, instance, mesh, and point records to the
+  structs the shader declares.
+
 - The engine no longer links the terminal UI stack. `RenderWireframe` was the
   root package's only use of ntcanvas, whose single package brought Bubble
   Tea, Lip Gloss, and bubblezone to every importer, `water` and `fur`

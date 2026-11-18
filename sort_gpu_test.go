@@ -21,8 +21,9 @@ import (
 	gpuimage "nimbleterminal.dev/ntgpuimage"
 )
 
-// withSortDevice runs f on a device of its own, with a bare renderer whose
-// sort it releases afterward.
+// withSortDevice runs f on a device of its own, with a renderer that has only
+// the device's shared state, where the sort keeps its pipelines; both are
+// released afterward.
 func withSortDevice(t *testing.T, f func(dev *wgpu.Device, g *gpuRenderer) error) {
 	t.Helper()
 	r, err := gpuimage.New(context.Background(), gpuimage.Options{Width: 1, Height: 1, Label: "nt3d sort test"})
@@ -30,9 +31,10 @@ func withSortDevice(t *testing.T, f func(dev *wgpu.Device, g *gpuRenderer) error
 		t.Fatal(err)
 	}
 	defer r.Close()
-	g := &gpuRenderer{}
+	g := &gpuRenderer{shared: &gpuShared{refs: 1}}
 	if err := r.Do(func(dev *wgpu.Device) error {
-		defer g.sort.release()
+		defer g.shared.release()
+		defer g.sort.releaseBuffers()
 		if err := g.initSort(dev); err != nil {
 			return err
 		}
