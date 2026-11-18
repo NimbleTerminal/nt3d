@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Math written two and three times over now lives once in `nt3dmath`, which
+  gains a float64 family beside the float32 one:
+  - `Vec3d`, `Quatd`, and `Mat4d`, with `TRSd`, for transforms that carry
+    geographic origins, matrices read from files, and camera paths. `D` and
+    `Vec3`/`Quat`/`Mat4` convert between the families.
+  - `Quat`, a float32 quaternion with `Normalize` and `Slerp`, `TRS`, and
+    `Mat4.Rotation`.
+  - `Mat4.Inverse`, for any invertible matrix, projections included.
+  - `RayProbe` and `AABB.Hits`, the ray-against-box test, and
+    `Mat4.Outside`, the culling test.
+
+  The scene, the glTF decoder, the BVH, `nt3daabbtree`, `nt3dclod`, picking,
+  and culling use them in place of their own copies. In the camera packages,
+  `nt3dcam.Vec3d`, `nt3dcam.Quatd`, `nt3dcurve.Vec3`, and `nt3dframes.Quat`
+  are now aliases of `nt3dmath.Vec3d` and `nt3dmath.Quatd`, so the four are
+  two types and convert without ceremony; code using them is unchanged,
+  though `go vet` now asks for field names in their struct literals.
+- **Breaking:** `nt3d.TRS` moves to `nt3dmath.TRS`, and takes its rotation as
+  an `nt3dmath.Quat` rather than a `[4]float32`.
+
 - `nt3dmesh.Options.AssetOnly` decodes a glTF into `Model.Asset` alone,
   leaving `Objects` empty. A glTF decode otherwise reads every primitive
   twice, placed for the flat view and again in its own space for the asset;

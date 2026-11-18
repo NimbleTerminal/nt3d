@@ -28,6 +28,9 @@ packages and files and explains what holds the three renderers together.
 - **Go and WGSL layouts are mirrored by hand.** A layout test compares byte
   counts with the shader's structs; keep its table current when adding a
   buffer.
+- **Math lives in `math`.** Vectors, quaternions, matrices, bounds, and ray
+  and view-volume tests are written there once, in float32 and float64, and
+  used from everywhere else, the camera packages included.
 - **Untrusted input never panics.** Decoders return errors; each has a fuzz
   target.
 

@@ -20,7 +20,7 @@ You import only what you use. The core package reads no files; `nt3dmesh` reads 
 | Import | Package | What it is for |
 | --- | --- | --- |
 | `nimbleterminal.dev/nt3d` | `nt3d` | Scenes, cameras, geometry, textures, picking, and rendering |
-| `nimbleterminal.dev/nt3d/math` | `nt3dmath` | Float32 vectors, matrices, rays, and bounds |
+| `nimbleterminal.dev/nt3d/math` | `nt3dmath` | Vectors, quaternions, matrices, bounds, and ray tests, in float32 and float64 |
 | `nimbleterminal.dev/nt3d/widget` | `nt3dwidget` | The Bubble Tea widget, with Kitty graphics or colored glyphs |
 | `nimbleterminal.dev/nt3d/mesh` | `nt3dmesh` | Reading and writing STL, OBJ, 3MF, and PLY |
 | `nimbleterminal.dev/nt3d/mesh/gltf` | `nt3dgltf` | Reading glTF 2.0 (`.gltf` and `.glb`) |

@@ -39,11 +39,11 @@ Dependencies point one way: everything builds on `math`, the engine builds on a 
 
 | Package | Import | Role | Depends on |
 | --- | --- | --- | --- |
-| `nt3dmath` | `nt3d/math` | Float32 vectors, matrices, rays, bounds | nothing |
+| `nt3dmath` | `nt3d/math` | All the math: vectors, quaternions, matrices, bounds, and ray and view-volume tests, in float32 and in float64 | nothing |
 | `nt3dsh` | `nt3d/sh` | Spherical harmonics, in Go and WGSL | `math` |
 | `nt3dclod` | `nt3d/clod` | Clustering many items for budgeted drawing | `math` |
 | `nt3daabbtree` | `nt3d/aabbtree` | Dynamic bounding-volume tree | `math` |
-| `nt3dcam` | `nt3d/cam` and below | Declarative camera paths, in float64 | nothing of nt3d's |
+| `nt3dcam` | `nt3d/cam` and below | Declarative camera paths, in float64 | `math` |
 | **`nt3d`** | `nt3d` | Scene, frame, the three renderers, picking | `math`, `sh`, `clod` |
 | `nt3dcamscene` | `nt3d/cam/scene` | Joins camera paths to a scene: states to cameras, targets by node name, a path drawn into a frame | the engine, `cam` |
 | `nt3dmesh` | `nt3d/mesh` | Reading and writing mesh files | the engine |
@@ -102,6 +102,7 @@ Wireframe is a structural fallback, not the same picture: edges, points, and lab
 | Add a field the scene should carry | The scene setter, then the `Draw` or `Look` it reaches the frame through. Add an `Example` if it is something callers do. |
 | Add a value to the scene uniform | Append it where `render_gpu.go` builds the uniform, add it to `Uniforms` in `wgsl/scene_bindings.wgsl` in the same position, and adjust `uniformSize`. The layout test says if they disagree. |
 | Add a per-instance value | `transformRecord` in `render_geometry.go`, `Instance` in `wgsl/scene_bindings.wgsl`, and `instanceRecordSize`. |
+| Add math | Package `math`, with a test there. No other package defines a vector, quaternion, matrix, or intersection test of its own; a float64 need uses `Vec3d`, `Quatd`, and `Mat4d`. |
 | Add a material rule | `checkMaterial` in `material.go`, the only place a material's own rules are written. |
 | Add shading | Both `render_software.go` (or `shading.go`) and the matching `wgsl/scene_*.wgsl`, with a `_gpu_test.go` that compares them. |
 | Honor a glTF material extension | A read function and a row in `materialExtensions` (`mesh/gltf/material_extensions.go`); any other extension gets a row in `documentExtensions`. A test holds every extension name in the source to those tables. |
