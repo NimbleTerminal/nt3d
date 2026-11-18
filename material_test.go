@@ -43,7 +43,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	before := frame(t, s)
 
 	// Instance-uniform-only material update preserves SharedGeometry and revisions!
-	pbrMat := &Material{PBR: true, Metallic: .8, Roughness: .25, EnvironmentReflect: true}
+	pbrMat := &Material{PBR: true, Metallic: .8, Roughness: .25, Clearcoat: .5}
 	check(t, s.SetMaterial(group, pbrMat))
 	pbrMat.Metallic = .1 // Caller mutation must not leak.
 
@@ -56,7 +56,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 			}
 		case "in-shared":
 			m := afterUniform.Draws[idx].Geometry.Material
-			if m == nil || m.Metallic != .8 || !m.EnvironmentReflect {
+			if m == nil || m.Metallic != .8 || m.Clearcoat != .5 {
 				t.Fatalf("in-shared material not updated: %+v", m)
 			}
 			if afterUniform.Draws[idx].Shared == 0 || afterUniform.Draws[idx].Revision != before.Draws[idx].Revision {

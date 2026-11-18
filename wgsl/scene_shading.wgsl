@@ -101,7 +101,7 @@ fn shadeSurface(o:Out,rgb:vec3<f32>,shadeNormal:vec3<f32>,orm:vec3<f32>,emSample
   let nX=normalize(shadeNormal+nx);let nY=normalize(shadeNormal+ny);
   let pX=o.world+wx;let pY=o.world+wy;
   let bands=style.x;let soft=style.y/max(bands,1.0);let shadowSoft=style.w;
-  let envRefl=u.viewport.w>0.5 || (u.viewport.w>0.1 && style.z>0.5);
+  let envRefl=u.viewport.w>0.5;
   if pbr.z>=0.5 {
    let roughness=clamp(pbr.y*orm.y,0.045,1.0);
    let metallic=clamp(pbr.x*orm.z,0.0,1.0);

@@ -62,47 +62,61 @@ func TestShaderNormalMapData(t *testing.T) {
 	}
 }
 
-func TestEnvironmentReflectBackgroundOnly(t *testing.T) {
+// A background-only environment is seen and nothing more: it neither lights
+// surfaces nor is reflected by them. A surface that should reflect the sky all
+// the same is given a reflection probe holding it, which is independent of
+// the setting.
+func TestBackgroundOnlyEnvironmentIsNotReflected(t *testing.T) {
 	sky := GradientEnvironment(color.RGBA{240, 80, 40, 255}, color.RGBA{220, 120, 50, 255}, color.RGBA{40, 80, 220, 255})
+	backdrop := func(m *Material) Frame {
+		f := normalFrame(t)
+		f.Forward = nt3dmath.Vec3{Z: -1}
+		f.Environment = sky
+		f.EnvironmentBackgroundOnly = true
+		f.Lighting = Lighting{}
+		f.Draws[0].Geometry.Material = m
+		return f
+	}
+	center := func(f Frame) color.RGBA { return at(softwareRender(f), 40, 40) }
 
-	// Matte land under EnvironmentBackgroundOnly receives zero diffuse SH even
-	// with a bright sky panorama.
-	matte := normalFrame(t)
-	matte.Forward = nt3dmath.Vec3{Z: -1}
-	matte.Environment = sky
-	matte.EnvironmentBackgroundOnly = true
-	matte.Lighting = Lighting{}
-	matte.Draws[0].Geometry.Material = &Material{}
-	if c := at(softwareRender(matte), 40, 40); c.R != 0 || c.G != 0 || c.B != 0 {
-		t.Fatalf("matte surface received diffuse sky light under EnvironmentBackgroundOnly: %v", c)
+	// A matte surface receives no diffuse light from the sky.
+	if c := center(backdrop(&Material{})); c.R != 0 || c.G != 0 || c.B != 0 {
+		t.Fatalf("a matte surface is lit by a background-only sky: %v", c)
+	}
+	// A mirror, classic or PBR, does not reflect it.
+	if c := center(backdrop(&Material{Reflectivity: 1})); c.R != 0 {
+		t.Fatalf("a reflective surface reflects a background-only sky: %v", c)
+	}
+	pbrMirror := &Material{PBR: true, Metallic: 1, Roughness: .05}
+	lit := backdrop(pbrMirror)
+	lit.EnvironmentBackgroundOnly = false
+	if only, full := center(backdrop(pbrMirror)).R, center(lit).R; int(only)+100 >= int(full) {
+		t.Fatalf("a PBR mirror reflects a background-only sky: red %d, and %d with the environment lighting the frame", only, full)
 	}
 
-	// Classic reflective water without EnvironmentReflect stays unreflected under
-	// EnvironmentBackgroundOnly, while EnvironmentReflect: true reflects the sky
-	// without enabling diffuse SH!
-	waterOff := matte
-	waterOff.Draws = append([]Draw(nil), matte.Draws...)
-	waterOff.Draws[0].Geometry.Material = &Material{Reflectivity: 1}
-	if c := at(softwareRender(waterOff), 40, 40); c.R != 0 {
-		t.Fatalf("expected reflections off without EnvironmentReflect, got %v", c)
+	// A probe holding the sky makes both reflect it, the frame still unlit by it.
+	probes := []ReflectionProbe{{Environment: sky, Position: nt3dmath.Vec3{Z: 1}, Bounds: probeBox(10)}}
+	water := backdrop(&Material{Reflectivity: 1})
+	water.ReflectionProbes = probes
+	if c := center(water); c.R < 200 {
+		t.Fatalf("a probe of the sky is not reflected under a background-only environment: %v", c)
 	}
+	metal := backdrop(pbrMirror)
+	metal.ReflectionProbes = probes
+	if with, without := center(metal).R, center(backdrop(pbrMirror)).R; int(with) <= int(without)+100 {
+		t.Fatalf("a PBR mirror does not reflect a probe of the sky: red %d, and %d without the probe", with, without)
+	}
+	matte := backdrop(&Material{})
+	matte.ReflectionProbes = probes
+	if c := center(matte); c.R != 0 || c.G != 0 || c.B != 0 {
+		t.Fatalf("a probe lit a matte surface: %v", c)
+	}
+}
 
-	waterOn := matte
-	waterOn.Draws = append([]Draw(nil), matte.Draws...)
-	waterOn.Draws[0].Geometry.Material = &Material{Reflectivity: 1, EnvironmentReflect: true}
-	if c := at(softwareRender(waterOn), 40, 40); c.R < 200 {
-		t.Fatalf("EnvironmentReflect did not sample sky under EnvironmentBackgroundOnly: %v", c)
-	}
-
-	// PBR mirror metal with EnvironmentReflect: true also samples prefiltered
-	// specular IBL while keeping diffuse SH off.
-	pbrOff := matte
-	pbrOff.Draws = append([]Draw(nil), matte.Draws...)
-	pbrOff.Draws[0].Geometry.Material = &Material{PBR: true, Metallic: 1, Roughness: .05}
-	pbrOn := matte
-	pbrOn.Draws = append([]Draw(nil), matte.Draws...)
-	pbrOn.Draws[0].Geometry.Material = &Material{PBR: true, Metallic: 1, Roughness: .05, EnvironmentReflect: true}
-	if at(softwareRender(pbrOn), 40, 40).R <= at(softwareRender(pbrOff), 40, 40).R+100 {
-		t.Fatal("PBR EnvironmentReflect did not reflect sky under EnvironmentBackgroundOnly")
-	}
+// probeBox is a cube of the given half size about the origin.
+func probeBox(half float32) nt3dmath.AABB {
+	var b nt3dmath.AABB
+	b.Include(nt3dmath.Vec3{X: -half, Y: -half, Z: -half})
+	b.Include(nt3dmath.Vec3{X: half, Y: half, Z: half})
+	return b
 }

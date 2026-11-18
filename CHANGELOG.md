@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Breaking: `Material.EnvironmentReflect` is removed.** It let one material
+  reflect the environment when `EnvironmentBackgroundOnly` made it a backdrop.
+  A reflection probe holding the same panorama does that for every reflective
+  surface inside its box, and is independent of the setting:
+  `scene.SetReflectionProbes([]nt3d.ReflectionProbe{{Environment: sky,
+  Position: p, Bounds: box}})`. Where the environment lights the frame the
+  field did nothing and can simply be deleted.
+
 - **Breaking: the camera-path bridge has its own package.** `CameraFromState`,
   `StateFromCamera`, `SceneResolver`, `AppendCameraPathOverlay`, and
   `CameraPathOverlayOptions` move from package `nt3d` to

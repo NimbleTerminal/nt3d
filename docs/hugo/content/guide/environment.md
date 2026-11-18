@@ -65,8 +65,7 @@ frame.EnvironmentStrength = 0.6
 
 `EnvironmentStrength` scales only the lighting; zero means 1, as with the
 other lighting intensity fields. `EnvironmentBackgroundOnly = true` keeps the
-sky while disabling its diffuse light (and reflections on materials unless they
-opt in with `Material.EnvironmentReflect: true`). `Frame.Environment` can also override the scene's
+sky while disabling its diffuse light and its reflections. `Frame.Environment` can also override the scene's
 choice for one frame. In a widget, set these fields in a frame decorator; use
 `SetLighting(nt3d.Lighting{})` to remove its default lights.
 
@@ -110,9 +109,10 @@ specular highlights are added afterward. Normal maps affect both contributions.
 GPU and software share panorama orientation, seam wrapping, pole clamping, and
 color-space behavior. `EnvironmentStrength` scales reflected light too.
 `EnvironmentBackgroundOnly` disables reflections along with diffuse environment
-light by default, while setting `Material.EnvironmentReflect: true` lets
-individual reflective (`Reflectivity > 0`) or `PBR` surfaces—such as water or
-glass—still reflect the sky panorama without illuminating land by diffuse SH.
+light. For reflective (`Reflectivity > 0`) or `PBR` surfaces that should still
+reflect the sky, such as water or glass, without the sky lighting the land,
+set a reflection probe that holds the sky panorama over them: probes are
+independent of `EnvironmentBackgroundOnly`.
 Without an environment, reflectivity has no effect.
 
 This is a distant-sky reflection that does not reflect nearby geometry. On classic materials (`PBR: false`), reflections sample the sharp base panorama while `Shininess` controls direct highlights; on [PBR materials](../materials/#metallicroughness-pbr-and-orm-maps), `Roughness` samples a six-level GGX-prefiltered mip chain of the LDR or `.hdr` panorama.

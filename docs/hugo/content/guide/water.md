@@ -194,9 +194,10 @@ snapshot with linear-data mipmaps. Authored tangent directions follow the
 Gerstner mesh. `n` disables ripple strength without changing geometry or physics.
 
 `Material.Reflectivity` enables distant environment reflection with Schlick
-Fresnel blending, and `Material.EnvironmentReflect: true` keeps sky reflections
-active on water even when `Frame.EnvironmentBackgroundOnly` disables diffuse
-environment light on surrounding terrain. Water uses `.02` at normal incidence, rising toward full
+Fresnel blending. Where the environment is a backdrop only
+(`EnvironmentBackgroundOnly`, so it does not light the surrounding terrain), give
+the water a [reflection probe](../environment/#local-reflection-probes) holding the
+sky and it reflects it all the same. Water uses `.02` at normal incidence, rising toward full
 reflection at grazing angles. The procedural cloud panorama supplies both the
 sky and reflections. `e` disables reflection; direct-light highlights remain.
 These reflections show the distant panorama, not the craft or nearby objects

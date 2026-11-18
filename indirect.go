@@ -90,7 +90,7 @@ func (r *lightRig) indirectToonDiffuse(visibility float32) indirectSample {
 // environment fallback.
 // Roughness determines the incoming-light filter; the caller still owns the
 // BRDF, specular-occlusion heuristic, and base/clearcoat energy conservation.
-func (r *lightRig) indirectSpecular(f *Frame, point, direction nt3dmath.Vec3, roughness float32, environmentReflect bool, visibility float32) indirectSample {
+func (r *lightRig) indirectSpecular(f *Frame, point, direction nt3dmath.Vec3, roughness float32, visibility float32) indirectSample {
 	local := localReflection(f, point, direction, roughness, true).occluded(visibility)
 	if local.coverage == 1 {
 		return local
@@ -98,7 +98,7 @@ func (r *lightRig) indirectSpecular(f *Frame, point, direction nt3dmath.Vec3, ro
 	t := direction.Z*.5 + .5
 	t += (.5 - t) * (roughness * roughness)
 	c := [3]float32{r.ground[0] + (r.sky[0]-r.ground[0])*t, r.ground[1] + (r.sky[1]-r.ground[1])*t, r.ground[2] + (r.sky[2]-r.ground[2])*t}
-	if f.Environment != nil && (!f.EnvironmentBackgroundOnly || environmentReflect) {
+	if f.Environment != nil && !f.EnvironmentBackgroundOnly {
 		sky := f.Environment.sampleSpecular(direction, roughness)
 		strength := f.EnvironmentStrength
 		if strength == 0 {

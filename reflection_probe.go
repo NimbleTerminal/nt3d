@@ -132,13 +132,13 @@ func localReflection(f *Frame, point, direction nt3dmath.Vec3, roughness float32
 	return indirectSample{}
 }
 
-func sceneIndirectReflection(f *Frame, point, direction nt3dmath.Vec3, environmentReflect bool, visibility float32) indirectSample {
+func sceneIndirectReflection(f *Frame, point, direction nt3dmath.Vec3, visibility float32) indirectSample {
 	local := localReflection(f, point, direction, 0, false).occluded(visibility)
 	if local.coverage == 1 {
 		return local
 	}
 	var fallback indirectSample
-	if f.Environment != nil && (!f.EnvironmentBackgroundOnly || environmentReflect) {
+	if f.Environment != nil && !f.EnvironmentBackgroundOnly {
 		fallback = indirectReflection(f.Environment, direction, f.EnvironmentStrength, f.Linear, visibility)
 	}
 	return local.over(fallback)

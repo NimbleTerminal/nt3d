@@ -762,8 +762,6 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	environmentActive := float32(0)
 	if rig.environmentActive {
 		environmentActive = 1
-	} else if f.Environment != nil {
-		environmentActive = 0.25
 	}
 	maxEnvMip := float32(0)
 	if f.Environment != nil {

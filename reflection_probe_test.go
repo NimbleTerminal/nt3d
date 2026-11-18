@@ -127,22 +127,22 @@ func TestReflectionProbeCoverageAndFallback(t *testing.T) {
 	rig := lightRig{sky: [3]float32{1, 1, 1}, ground: [3]float32{1, 1, 1}}
 	point := nt3dmath.Vec3{}
 	ray := nt3dmath.Vec3{Z: 1}
-	got := rig.indirectSpecular(&f, point, ray, .5, false, 1)
+	got := rig.indirectSpecular(&f, point, ray, .5, 1)
 	if got.coverage != 1 || got.radiance != ([3]float32{1, 0, 0}) {
 		t.Fatalf("priority or fallback doubled: %+v", got)
 	}
 	f.ReflectionProbes[0].Strength = 2
-	got = rig.indirectSpecular(&f, point, ray, .5, false, .25)
+	got = rig.indirectSpecular(&f, point, ray, .5, .25)
 	if got.radiance != ([3]float32{.5, 0, 0}) || got.coverage != 1 {
 		t.Fatalf("strength/occlusion: %+v", got)
 	}
 	f.ReflectionProbes[0] = testProbe(t, color.NRGBA{0, 0, 0, 255})
-	got = rig.indirectSpecular(&f, point, ray, .5, false, 1)
+	got = rig.indirectSpecular(&f, point, ray, .5, 1)
 	if got.radiance != ([3]float32{}) || got.coverage != 1 {
 		t.Fatal("black probe leaked fallback")
 	}
 	outside := nt3dmath.Vec3{X: 3}
-	got = rig.indirectSpecular(&f, outside, ray, .5, false, 1)
+	got = rig.indirectSpecular(&f, outside, ray, .5, 1)
 	if got.radiance != ([3]float32{1, 1, 2}) {
 		t.Fatalf("outside fallback: %+v", got)
 	}
@@ -151,7 +151,7 @@ func TestReflectionProbeCoverageAndFallback(t *testing.T) {
 	f.Environment = nil
 	rgb := [3]float32{50, 60, 70}
 	want := rgb
-	reflectSceneEnvironment(&rgb, &f, outside, 1, ray, ray, false, 1)
+	reflectSceneEnvironment(&rgb, &f, outside, 1, ray, ray, 1)
 	if rgb != want {
 		t.Fatalf("classic miss darkened surface: %v", rgb)
 	}

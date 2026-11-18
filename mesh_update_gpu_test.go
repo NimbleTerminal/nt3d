@@ -156,10 +156,9 @@ func TestGPUSetMaterialSharedGeometryParity(t *testing.T) {
 
 	// Make only front transmissive while keeping SharedGeometry intact!
 	check(t, s.SetMaterial(frontID, &Material{
-		Transmission:       .85,
-		Refraction:         .02,
-		Reflectivity:       .08,
-		EnvironmentReflect: true,
+		Transmission: .85,
+		Refraction:   .02,
+		Reflectivity: .08,
 	}))
 	check(t, s.SetMaterial(backID, &Material{PBR: true, Metallic: .2, Roughness: .35}))
 

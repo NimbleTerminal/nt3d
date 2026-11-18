@@ -97,38 +97,37 @@ func TestGPUShaderNormalMaps(t *testing.T) {
 	}
 }
 
-func TestGPUEnvironmentReflectBackgroundOnly(t *testing.T) {
+// The GPU agrees with software about a background-only environment: it is not
+// reflected, by classic or PBR materials, in either working space.
+func TestGPUBackgroundOnlyEnvironmentIsNotReflected(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
 	env := GradientEnvironment(color.RGBA{240, 70, 35, 255}, color.RGBA{200, 180, 60, 255}, color.RGBA{35, 70, 235, 255})
 	var rev uint64 = 100
 	for _, linear := range []bool{false, true} {
 		for _, pbr := range []bool{false, true} {
-			for _, envRefl := range []bool{false, true} {
-				rev++
-				f := normalFrame(t)
-				f.Revision = rev
-				f.Linear = linear
-				f.Environment = env
-				f.EnvironmentBackgroundOnly = true
-				f.EnvironmentStrength = .85
-				f.Forward = nt3dmath.Vec3{Z: -1}
-				f.Eye = nt3dmath.Vec3{Z: 3}
-				f.Perspective = true
-				if pbr {
-					f.Draws[0].Geometry.Material = &Material{PBR: true, Metallic: .9, Roughness: .1, EnvironmentReflect: envRefl}
-				} else {
-					f.Draws[0].Geometry.Material.Reflectivity = .6
-					f.Draws[0].Geometry.Material.EnvironmentReflect = envRefl
-				}
-				got, err := r.Render(f)
-				check(t, err)
-				want := softwareRender(f)
-				for y := 28; y < 52; y += 6 {
-					for x := 28; x < 52; x += 6 {
-						if !closeRGB(at(got, x, y), at(want, x, y), 5) {
-							t.Fatalf("linear=%v pbr=%v envReflect=%v (%d,%d): gpu=%v sw=%v", linear, pbr, envRefl, x, y, at(got, x, y), at(want, x, y))
-						}
+			rev++
+			f := normalFrame(t)
+			f.Revision = rev
+			f.Linear = linear
+			f.Environment = env
+			f.EnvironmentBackgroundOnly = true
+			f.EnvironmentStrength = .85
+			f.Forward = nt3dmath.Vec3{Z: -1}
+			f.Eye = nt3dmath.Vec3{Z: 3}
+			f.Perspective = true
+			if pbr {
+				f.Draws[0].Geometry.Material = &Material{PBR: true, Metallic: .9, Roughness: .1}
+			} else {
+				f.Draws[0].Geometry.Material.Reflectivity = .6
+			}
+			got, err := r.Render(f)
+			check(t, err)
+			want := softwareRender(f)
+			for y := 28; y < 52; y += 6 {
+				for x := 28; x < 52; x += 6 {
+					if !closeRGB(at(got, x, y), at(want, x, y), 5) {
+						t.Fatalf("linear=%v pbr=%v (%d,%d): gpu=%v sw=%v", linear, pbr, x, y, at(got, x, y), at(want, x, y))
 					}
 				}
 			}

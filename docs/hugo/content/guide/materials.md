@@ -61,10 +61,10 @@ GPU and software perturb diffuse, specular, and environment lighting. See
 `Material.Specular` (0 to 1) adds a white highlight where the surface reflects the light toward the camera, and `Shininess` (1 to 1024, default 32) sets how tight it is. It's worked out per pixel, so highlights stay round even on coarse meshes. Boxes, unlit materials, and wireframe have none.
 
 `Material.Reflectivity` adds [environment reflections](../environment/#reflections).
-Zero disables them; `.02` suits water and `1` makes a mirror. Set
-`Material.EnvironmentReflect: true` when `Frame.EnvironmentBackgroundOnly`
-keeps the sky backdrop without diffuse environment light yet the surface should
-still reflect the sky. Normal maps also perturb reflection direction. Unlit
+Zero disables them; `.02` suits water and `1` makes a mirror. When
+`EnvironmentBackgroundOnly` keeps the sky as a backdrop without its light, a
+[reflection probe](../environment/#local-reflection-probes) holding the sky is what
+lets a surface still reflect it. Normal maps also perturb reflection direction. Unlit
 materials ignore reflections.
 
 ### Metallic/roughness PBR, Clearcoat, Sheen, and ORM maps
@@ -407,9 +407,8 @@ under `root`:
 
 ```go
 err := scene.SetMaterial(root, &nt3d.Material{
-    PBR:                true,
-    Roughness:          .25,
-    EnvironmentReflect: true,
+    PBR:       true,
+    Roughness: .25,
 })
 ```
 
