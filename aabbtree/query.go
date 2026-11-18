@@ -53,10 +53,9 @@ func (t *Tree[T]) RayCast(ray nt3dmath.Ray, fn func(id ID, value T, t float32) b
 	if t.root == null || !finite(ray.Origin) || !finite(ray.Direction) {
 		return
 	}
-	origin := [3]float32{ray.Origin.X, ray.Origin.Y, ray.Origin.Z}
-	inverse := [3]float32{1 / ray.Direction.X, 1 / ray.Direction.Y, 1 / ray.Direction.Z} // ±Inf for a zero component.
+	probe, far := ray.Probe(), float32(math.Inf(1))
 	root := &t.nodes[t.root]
-	d, ok := slab(origin, inverse, root.min, root.max)
+	d, ok := probe.Enter(root.min, root.max, 0, far)
 	if !ok {
 		return
 	}
@@ -77,8 +76,8 @@ func (t *Tree[T]) RayCast(ray nt3dmath.Ray, fn func(id ID, value T, t float32) b
 			continue
 		}
 		c1, c2 := &t.nodes[n.child1], &t.nodes[n.child2]
-		d1, ok1 := slab(origin, inverse, c1.min, c1.max)
-		d2, ok2 := slab(origin, inverse, c2.min, c2.max)
+		d1, ok1 := probe.Enter(c1.min, c1.max, 0, far)
+		d2, ok2 := probe.Enter(c2.min, c2.max, 0, far)
 		// Push the farther child first so the nearer is visited first.
 		switch {
 		case ok1 && ok2 && d1 <= d2:
@@ -95,32 +94,4 @@ func (t *Tree[T]) RayCast(ray nt3dmath.Ray, fn func(id ID, value T, t float32) b
 
 func finite(v nt3dmath.Vec3) bool {
 	return nt3dmath.IsFinite(float64(v.X)) && nt3dmath.IsFinite(float64(v.Y)) && nt3dmath.IsFinite(float64(v.Z))
-}
-
-// slab returns where a ray enters a box, clamped to zero for an origin
-// inside it, and false if the ray misses the box or the box lies entirely
-// behind the origin. inverse holds the reciprocal direction, ±Inf where the
-// ray is parallel to a slab.
-func slab(origin, inverse [3]float32, lower, upper nt3dmath.Vec3) (float32, bool) {
-	lo := [3]float32{lower.X, lower.Y, lower.Z}
-	hi := [3]float32{upper.X, upper.Y, upper.Z}
-	near, far := float32(0), float32(math.Inf(1))
-	for k := range 3 {
-		if math.IsInf(float64(inverse[k]), 0) {
-			// Parallel to this slab: inside it or never.
-			if origin[k] < lo[k] || origin[k] > hi[k] {
-				return 0, false
-			}
-			continue
-		}
-		t0, t1 := (lo[k]-origin[k])*inverse[k], (hi[k]-origin[k])*inverse[k]
-		if t0 > t1 {
-			t0, t1 = t1, t0
-		}
-		near, far = max(near, t0), min(far, t1)
-		if far < near {
-			return 0, false
-		}
-	}
-	return near, true
 }

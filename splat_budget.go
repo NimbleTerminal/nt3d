@@ -65,7 +65,7 @@ func (f Frame) planLOD(plan *blendPlan) lodPlan {
 		clusters := g.Clusters.Clusters
 		want := make([]uint32, len(clusters))
 		for i, c := range clusters {
-			if c.Count == 0 || f.Cull && outside(c.Bounds, m, 2*pad/float32(f.Width), 2*pad/float32(f.Height)) {
+			if c.Count == 0 || f.Cull && m.Outside(c.Bounds.Min, c.Bounds.Max, 2*pad/float32(f.Width), 2*pad/float32(f.Height)) {
 				continue
 			}
 			want[i] = lodWant(c.Count, lodProjectedRadius(c.Center, c.Radius, m, f.Width, f.Height, f.Perspective))

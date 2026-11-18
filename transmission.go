@@ -31,52 +31,6 @@ func needsSceneSnapshot(f Frame, drawn []bool) bool {
 	return false
 }
 
-// inverseProjection also accepts orthographic and caller-supplied frame matrices.
-// A singular matrix returns zero, keeping reconstruction finite.
-func inverseProjection(m nt3dmath.Mat4) (nt3dmath.Mat4, bool) {
-	var a [4][8]float64
-	for r := range 4 {
-		for c := range 4 {
-			a[r][c] = float64(m[c*4+r])
-		}
-		a[r][r+4] = 1
-	}
-	for c := range 4 {
-		p := c
-		for r := c + 1; r < 4; r++ {
-			if math.Abs(a[r][c]) > math.Abs(a[p][c]) {
-				p = r
-			}
-		}
-		if math.Abs(a[p][c]) < 1e-30 || math.IsNaN(a[p][c]) || math.IsInf(a[p][c], 0) {
-			return nt3dmath.Mat4{}, false
-		}
-		a[c], a[p] = a[p], a[c]
-		d := a[c][c]
-		for k := range 8 {
-			a[c][k] /= d
-		}
-		for r := range 4 {
-			if r == c {
-				continue
-			}
-			d = a[r][c]
-			for k := range 8 {
-				a[r][k] -= d * a[c][k]
-			}
-		}
-	}
-	var inv nt3dmath.Mat4
-	for r := range 4 {
-		for c := range 4 {
-			inv[c*4+r] = float32(a[r][c+4])
-			if !validFloat(inv[c*4+r]) {
-				return nt3dmath.Mat4{}, false
-			}
-		}
-	}
-	return inv, true
-}
 func sceneWorld(inv nt3dmath.Mat4, x, y, z float32, w, h int) nt3dmath.Vec3 {
 	a, b, c, d := inv.Transform(nt3dmath.Vec3{X: 2*x/float32(w) - 1, Y: 1 - 2*y/float32(h), Z: z})
 	if abs(d) < 1e-8 {

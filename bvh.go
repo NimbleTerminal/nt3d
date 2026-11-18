@@ -94,47 +94,19 @@ func (b *meshBVH) build(g *Geometry, centroids []nt3dmath.Vec3, lo, hi int) int3
 	return index
 }
 
-// slab returns where a ray enters and leaves a box, given the reciprocal of
-// its direction, and whether it does so between near and far.
-func slab(origin, inverse [3]float32, lower, upper nt3dmath.Vec3, near, far float32) (float32, bool) {
-	lo, hi := components(lower), components(upper)
-	for k := range 3 {
-		if math.IsInf(float64(inverse[k]), 0) {
-			// Parallel to this slab: inside it or never.
-			if origin[k] < lo[k] || origin[k] > hi[k] {
-				return 0, false
-			}
-			continue
-		}
-		t0, t1 := (lo[k]-origin[k])*inverse[k], (hi[k]-origin[k])*inverse[k]
-		if t0 > t1 {
-			t0, t1 = t1, t0
-		}
-		near, far = max(near, t0), min(far, t1)
-		if far < near {
-			return 0, false
-		}
-	}
-	return near, true
-}
-
 // nearest finds the nearest front face the ray meets, returning its triangle
 // number and ray parameter. Hits that skip, when given, reports (with the
 // triangle and the hit's barycentric weights toward its second and third
 // corners) are passed through, as at a cutout's gaps.
 func (b *meshBVH) nearest(g *Geometry, r nt3dmath.Ray, skip func(tri int, u, w float32) bool) (int, float32, bool) {
-	origin, direction := components(r.Origin), components(r.Direction)
-	var inverse [3]float32
-	for k := range 3 {
-		inverse[k] = 1 / direction[k] // ±Inf for a zero component.
-	}
+	probe := r.Probe()
 	best, found := float32(math.Inf(1)), -1
 	stack := make([]int32, 1, 64)
 	for len(stack) > 0 {
 		index := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		node := &b.nodes[index]
-		if _, ok := slab(origin, inverse, node.min, node.max, 0, best); !ok {
+		if _, ok := probe.Enter(node.min, node.max, 0, best); !ok {
 			continue
 		}
 		if node.count > 0 {
@@ -148,8 +120,8 @@ func (b *meshBVH) nearest(g *Geometry, r nt3dmath.Ray, skip func(tri int, u, w f
 		}
 		// Visit the nearer child first, so the farther is often pruned.
 		left, right := index+1, node.right
-		l, lok := slab(origin, inverse, b.nodes[left].min, b.nodes[left].max, 0, best)
-		rt, rok := slab(origin, inverse, b.nodes[right].min, b.nodes[right].max, 0, best)
+		l, lok := probe.Enter(b.nodes[left].min, b.nodes[left].max, 0, best)
+		rt, rok := probe.Enter(b.nodes[right].min, b.nodes[right].max, 0, best)
 		switch {
 		case lok && rok && l <= rt:
 			stack = append(stack, right, left)

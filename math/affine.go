@@ -108,3 +108,52 @@ func (b AABB) Transformed(m Mat4) (out AABB) {
 	}
 	return
 }
+
+// Inverse returns the inverse of any invertible 4×4 matrix, a projection as
+// well as an affine transform, and false with the zero matrix for one that is
+// singular or not finite. It eliminates in float64. For an affine transform,
+// InverseAffine is cheaper.
+func (m Mat4) Inverse() (Mat4, bool) {
+	var a [4][8]float64
+	for r := range 4 {
+		for c := range 4 {
+			a[r][c] = float64(m[c*4+r])
+		}
+		a[r][r+4] = 1
+	}
+	for c := range 4 {
+		p := c
+		for r := c + 1; r < 4; r++ {
+			if math.Abs(a[r][c]) > math.Abs(a[p][c]) {
+				p = r
+			}
+		}
+		if math.Abs(a[p][c]) < 1e-30 || math.IsNaN(a[p][c]) || math.IsInf(a[p][c], 0) {
+			return Mat4{}, false
+		}
+		a[c], a[p] = a[p], a[c]
+		d := a[c][c]
+		for k := range 8 {
+			a[c][k] /= d
+		}
+		for r := range 4 {
+			if r == c {
+				continue
+			}
+			d = a[r][c]
+			for k := range 8 {
+				a[r][k] -= d * a[c][k]
+			}
+		}
+	}
+	var inv Mat4
+	for r := range 4 {
+		for c := range 4 {
+			inv[c*4+r] = float32(a[r][c+4])
+			if !IsFinite(float64(inv[c*4+r])) {
+				return Mat4{}, false
+			}
+		}
+	}
+	return inv, true
+}

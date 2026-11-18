@@ -62,3 +62,38 @@ func TestRotationXYRightHanded(t *testing.T) {
 		t.Fatalf("RotationY(pi/2)(+Z) = %v, want +X", ry)
 	}
 }
+
+// Inverse undoes any invertible matrix, a perspective projection included,
+// and refuses a singular one.
+func TestMat4Inverse(t *testing.T) {
+	perspective := Mat4{1.2, 0, 0, 0, 0, 1.6, 0, 0, 0, 0, -1.002, -1, 0, 0, -0.2002, 0}
+	affine := Translation(Vec3{X: 3, Y: -2, Z: 5}).Mul(RotationZ(.7)).Mul(Scaling(Vec3{X: 2, Y: .5, Z: 3}))
+	for name, m := range map[string]Mat4{"perspective": perspective, "affine": affine, "identity": Identity()} {
+		inv, ok := m.Inverse()
+		if !ok {
+			t.Fatalf("%s: no inverse", name)
+		}
+		product, want := m.Mul(inv), Identity()
+		for i := range product {
+			if d := product[i] - want[i]; d > 1e-5 || d < -1e-5 {
+				t.Fatalf("%s: m times its inverse is %v", name, product)
+			}
+		}
+	}
+	// The general inverse agrees with the affine one where both apply.
+	general, _ := affine.Inverse()
+	special, ok := affine.InverseAffine()
+	if !ok {
+		t.Fatal("no affine inverse")
+	}
+	for i := range general {
+		if d := general[i] - special[i]; d > 1e-5 || d < -1e-5 {
+			t.Fatalf("general inverse %v, affine inverse %v", general, special)
+		}
+	}
+	for name, m := range map[string]Mat4{"zero": {}, "flattened": Scaling(Vec3{X: 1, Y: 1}), "not finite": {float32(math.NaN()), 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}} {
+		if inv, ok := m.Inverse(); ok || inv != (Mat4{}) {
+			t.Errorf("%s: inverse %v, %v; want the zero matrix and false", name, inv, ok)
+		}
+	}
+}

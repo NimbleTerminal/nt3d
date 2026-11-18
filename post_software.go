@@ -242,7 +242,7 @@ func sampleRGBBilinear(buf []float32, w, h int, fx, fy float32) [3]float32 {
 // for Complete software frames, matching the GPU estimator and bilateral blur.
 func softwareSSAO(f Frame, depth []float32) []float32 {
 	w, h := f.Width, f.Height
-	inv, ok := inverseProjection(f.Matrix)
+	inv, ok := f.Matrix.Inverse()
 	if !ok || w < 2 || h < 2 {
 		return nil
 	}

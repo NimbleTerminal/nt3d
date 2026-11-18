@@ -65,7 +65,7 @@ func TestSceneInverseAndGap(t *testing.T) {
 		c.Projection = projection
 		f, err := s.Frame(c, 80, 60)
 		check(t, err)
-		inverse, ok := inverseProjection(f.Matrix)
+		inverse, ok := f.Matrix.Inverse()
 		if !ok {
 			t.Fatal("no inverse")
 		}
@@ -76,7 +76,7 @@ func TestSceneInverseAndGap(t *testing.T) {
 			t.Fatal("depth reconstruction", projection, p, q)
 		}
 	}
-	if _, ok := inverseProjection(nt3dmath.Mat4{}); ok {
+	if _, ok := (nt3dmath.Mat4{}).Inverse(); ok {
 		t.Fatal("singular inverse")
 	}
 }

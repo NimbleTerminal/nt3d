@@ -385,7 +385,7 @@ func (f Frame) Unproject(x, y, depth float32) (nt3dmath.Vec3, bool) {
 	if f.Width <= 0 || f.Height <= 0 || x < 0 || y < 0 || x > float32(f.Width) || y > float32(f.Height) || depth < 0 || depth > 1 || !validFloat(x, y, depth) {
 		return nt3dmath.Vec3{}, false
 	}
-	inv, ok := inverseProjection(f.Matrix)
+	inv, ok := f.Matrix.Inverse()
 	if !ok {
 		return nt3dmath.Vec3{}, false
 	}
@@ -400,17 +400,10 @@ func (f Frame) Unproject(x, y, depth float32) (nt3dmath.Vec3, bool) {
 	return nt3dmath.Vec3{X: a / d, Y: b / d, Z: c / d}, true
 }
 
+// rayHitsMeshBounds reports whether a ray may meet a mesh: one without valid
+// bounds may be anywhere.
 func rayHitsMeshBounds(r nt3dmath.Ray, b nt3dmath.AABB) bool {
-	if !b.IsValid() {
-		return true
-	}
-	origin, direction := components(r.Origin), components(r.Direction)
-	var inverse [3]float32
-	for k := range 3 {
-		inverse[k] = 1 / direction[k]
-	}
-	_, ok := slab(origin, inverse, b.Min, b.Max, 0, float32(math.Inf(1)))
-	return ok
+	return !b.IsValid() || b.Hits(r)
 }
 
 func (s *Scene) hasUnindexedLargeMesh(f Frame) bool {

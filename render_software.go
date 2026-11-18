@@ -130,7 +130,7 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 
 func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []float32, prepass bool) (*image.RGBA, []float32, []float32) {
 	px := float32(scale)
-	inverseScene, _ := inverseProjection(f.Matrix)
+	inverseScene, _ := f.Matrix.Inverse()
 	var opaqueColor []byte
 	var opaqueDepth []float32
 	right, up, _ := f.skyBasis()

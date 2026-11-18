@@ -158,16 +158,16 @@ func TestOutside(t *testing.T) {
 		{"past the far plane", box(eye.Add(forward.Scale(1000)), 1), true},
 		{"enclosing the view", box(nt3dmath.Vec3{}, 1e4), false},
 	} {
-		if got := outside(c.box, m, 0, 0); got != c.out {
+		if got := m.Outside(c.box.Min, c.box.Max, 0, 0); got != c.out {
 			t.Errorf("%s: outside %v", c.name, got)
 		}
 	}
 	// A box just right of the view is kept when pixel sizes pad the view.
 	near := box(right.Scale(1.6), .05)
-	if !outside(near, m, 0, 0) {
+	if !m.Outside(near.Min, near.Max, 0, 0) {
 		t.Fatal("test box is in view")
 	}
-	if outside(near, m, 1, 1) {
+	if m.Outside(near.Min, near.Max, 1, 1) {
 		t.Fatal("padding did not keep the box")
 	}
 }

@@ -1055,7 +1055,7 @@ func (g *gpuRenderer) encodeSSAO(dev *wgpu.Device, enc *wgpu.CommandEncoder, ps 
 		p.depthMSAA = msaa
 	}
 
-	inv, _ := inverseProjection(f.Matrix)
+	inv, _ := f.Matrix.Inverse()
 	persp := float32(0)
 	if f.Perspective {
 		persp = 1

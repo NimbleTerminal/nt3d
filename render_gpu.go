@@ -846,7 +846,7 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 		}
 		ub = append(ub, floats(matrix[:]...)...)
 	}
-	inverse, _ := inverseProjection(f.Matrix)
+	inverse, _ := f.Matrix.Inverse()
 	ub = append(ub, floats(inverse[:]...)...)
 	for i := 0; i < MaxReflectionProbes; i++ {
 		var record [12]float32

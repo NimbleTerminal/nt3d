@@ -111,50 +111,6 @@ func (v View) orthoDistance() float32 {
 	return 2 / k
 }
 
-// outside reports whether the box lies wholly outside the view volume under
-// m, widened by padX and padY to the sides: every corner beyond one of its
-// six planes. It is nt3d's culling test, so a cluster is kept whenever
-// nt3d would draw it. The GPU shader repeats it expression for expression.
-func outside(lo, hi nt3dmath.Vec3, m *nt3dmath.Mat4, padX, padY float32) bool {
-	common := 0x3f
-	for i := range 8 {
-		p := lo
-		if i&1 != 0 {
-			p.X = hi.X
-		}
-		if i&2 != 0 {
-			p.Y = hi.Y
-		}
-		if i&4 != 0 {
-			p.Z = hi.Z
-		}
-		x, y, z, w := m.Transform(p)
-		sides := 0
-		if x < -w*(1+padX) {
-			sides |= 1
-		}
-		if x > w*(1+padX) {
-			sides |= 2
-		}
-		if y < -w*(1+padY) {
-			sides |= 4
-		}
-		if y > w*(1+padY) {
-			sides |= 8
-		}
-		if z < 0 {
-			sides |= 16
-		}
-		if z > w {
-			sides |= 32
-		}
-		if common &= sides; common == 0 {
-			return false
-		}
-	}
-	return true
-}
-
 // distance is how far the cluster is from the viewer: in perspective, from
 // the eye to its bounding sphere, zero inside it.
 func (v View) distance(c *Cluster, ortho float32) float32 {
@@ -200,7 +156,7 @@ func (s *Set) Select(v View, levels []Level, out *Selection) error {
 	ortho := v.orthoDistance()
 	for c := range s.Clusters {
 		cl := &s.Clusters[c]
-		if outside(cl.Bounds.Min, cl.Bounds.Max, &v.Matrix, padX, padY) {
+		if v.Matrix.Outside(cl.Bounds.Min, cl.Bounds.Max, padX, padY) {
 			continue
 		}
 		level := levelFor(v.distance(cl, ortho), levels)
