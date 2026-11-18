@@ -52,7 +52,7 @@ func fitShadow(f *Frame, drawn []bool, size int) (v shadowView, ok bool) {
 		if !drawn[i] || !g.Bounds.IsValid() {
 			continue
 		}
-		b := g.Bounds.Transformed(instance(*f, i).World)
+		b := g.Bounds.Transformed(f.Draws[i].world())
 		for _, x := range []float32{b.Min.X, b.Max.X} {
 			for _, y := range []float32{b.Min.Y, b.Max.Y} {
 				for _, z := range []float32{b.Min.Z, b.Max.Z} {
@@ -137,7 +137,7 @@ func buildShadowFace(f *Frame, drawn []bool, view shadowView) *shadowMap {
 		if !drawn[gi] {
 			continue
 		}
-		world := instance(*f, gi).World
+		world := f.Draws[gi].world()
 		var normals nt3dmath.Mat4
 		if g.Material != nil && g.Material.cutout() && g.Material.Shader != nil {
 			inv, _ := world.InverseAffine()
@@ -376,7 +376,7 @@ func fitSpotShadow(f *Frame, drawn []bool, index, size int) (v shadowView, ok bo
 		if !drawn[i] || !g.Bounds.IsValid() {
 			continue
 		}
-		b := g.Bounds.Transformed(instance(*f, i).World)
+		b := g.Bounds.Transformed(f.Draws[i].world())
 		for _, x := range []float32{b.Min.X, b.Max.X} {
 			for _, y := range []float32{b.Min.Y, b.Max.Y} {
 				for _, z := range []float32{b.Min.Z, b.Max.Z} {
@@ -454,7 +454,7 @@ func fitShadows(f *Frame, drawn []bool, size int) []shadowView {
 			continue
 		}
 		found = true
-		b := g.Bounds.Transformed(instance(*f, i).World)
+		b := g.Bounds.Transformed(f.Draws[i].world())
 		for _, x := range []float32{b.Min.X, b.Max.X} {
 			for _, y := range []float32{b.Min.Y, b.Max.Y} {
 				for _, z := range []float32{b.Min.Z, b.Max.Z} {

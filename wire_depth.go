@@ -56,10 +56,10 @@ func newWireDepth(f Frame, cols, rows int) *wireDepth {
 		if !d.drawn[gi] || edgeOn(g) || g.Billboard != nil && (g.Billboard.Text != "" || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue // Edge-on geometry depends on a view wireframe does not draw.
 		}
-		inst := instance(f, gi)
-		verts := displacedVertices(&g, inst.World)
-		m := f.Matrix.Mul(inst.World)
-		inverse, _ := inst.World.InverseAffine()
+		inst := &f.Draws[gi]
+		verts := displacedVertices(&g, inst.world())
+		m := f.Matrix.Mul(inst.world())
+		inverse, _ := inst.world().InverseAffine()
 		normals := inverse.Transpose()
 		for i := 0; i+2 < len(g.Indices); i += 3 {
 			d.triangle(gi, &m, &normals, verts[g.Indices[i]].Position, verts[g.Indices[i+1]].Position, verts[g.Indices[i+2]].Position)

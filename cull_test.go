@@ -62,7 +62,7 @@ func cullScene(t *testing.T) Frame {
 func culled(f Frame) int {
 	n := 0
 	for i, d := range f.drawn(1) {
-		if !d && instance(f, i).Visible {
+		if !d && !f.Draws[i].Hidden {
 			n++
 		}
 	}

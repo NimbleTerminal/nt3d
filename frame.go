@@ -52,15 +52,6 @@ func (d *Draw) world() nt3dmath.Mat4 {
 	return d.World
 }
 
-// placement is a draw without its geometry, as renderers and picking read it.
-type placement struct {
-	Node    NodeID
-	Name    string
-	Data    any
-	World   nt3dmath.Mat4
-	Visible bool
-}
-
 // OverlayRect is an opaque screen-space rectangle in render pixels.
 type OverlayRect struct {
 	X, Y, Width, Height int
@@ -284,10 +275,6 @@ func (s *Scene) frame(camera Camera, width, height int, still bool) (Frame, erro
 	return f, nil
 }
 
-func instance(f Frame, i int) placement {
-	d := &f.Draws[i]
-	return placement{Node: d.Node, Name: d.Name, Data: d.Data, World: d.world(), Visible: !d.Hidden}
-}
 func validateFrame(f Frame) error {
 	if f.Supersample < 0 || f.Supersample > MaxSupersample {
 		return fmt.Errorf("nt3d: supersample must be 0..%d", MaxSupersample)
@@ -354,7 +341,7 @@ func validateFrame(f Frame) error {
 		if err := validateFrameGeometry(g, st); err != nil {
 			return err
 		}
-		m := instance(f, i).World
+		m := f.Draws[i].world()
 		if _, ok := m.InverseAffine(); !ok || m.Determinant3() <= 0 {
 			return fmt.Errorf("nt3d: invalid instance transform")
 		}

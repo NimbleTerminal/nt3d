@@ -73,7 +73,7 @@ func (f Frame) Stats() FrameStats {
 	nonAlphaPoints := 0
 	hasAlphaPoints := false
 	for i := range f.Draws {
-		if instance(f, i).Visible {
+		if !f.Draws[i].Hidden {
 			stats.VisibleInstances++
 		}
 		if !drawn[i] {

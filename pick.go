@@ -54,11 +54,11 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 	drawn := f.drawn(1)
 	for i := range f.Draws {
 		g := f.Draws[i].Geometry
-		inst := instance(f, i)
+		inst := &f.Draws[i]
 		if !drawn[i] || edgeOn(g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue // Edge-on geometry shows only at silhouettes; the surface beneath is picked.
 		}
-		inv, ok := inst.World.InverseAffine()
+		inv, ok := inst.world().InverseAffine()
 		if !ok {
 			continue
 		}
@@ -68,7 +68,7 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 		// and a tie going to the later draw. The pixel is in view, so only
 		// depth clips: a point's center may lie off screen.
 		set := func(kind Primitive, index, datum int, p nt3dmath.Vec3, bias float32) {
-			world := inst.World.Point(p)
+			world := inst.world().Point(p)
 			_, _, z, w := f.Matrix.Transform(world)
 			if w <= 0 || z < 0 || z > w || z/w+bias > best {
 				return
@@ -92,7 +92,7 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 			}
 		}
 		for j, p := range g.Points {
-			cx, cy, cz, cw := f.Matrix.Transform(inst.World.Point(p.Position))
+			cx, cy, cz, cw := f.Matrix.Transform(inst.world().Point(p.Position))
 			if cw <= 0 || cz < 0 || cz > cw {
 				continue
 			}
@@ -117,7 +117,7 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 				set(TrianglePrimitive, tri, tri, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 			}
 		} else if len(g.Indices) >= 3 && rayHitsMeshBounds(localRay, g.Bounds) {
-			verts := displacedVertices(&g, inst.World)
+			verts := displacedVertices(&g, inst.world())
 			for j := 0; j+2 < len(g.Indices); j += 3 {
 				a, b, c := verts[g.Indices[j]].Position, verts[g.Indices[j+1]].Position, verts[g.Indices[j+2]].Position
 				if t, u, w, ok := rayTriangle(localRay, a, b, c); ok && !cutAt(&g, j/3, u, w) {
@@ -132,7 +132,7 @@ func (s *Scene) Pick(camera Camera, f Frame, x, y, tolerance float32) *Hit {
 		}
 		// Strokes end square at their ends, as they are drawn.
 		stroke := func(kind Primitive, index, datum int, a, b nt3dmath.Vec3, width, head, bias float32) {
-			projected, ok := projectStroke(f, inst.World.Point(a), inst.World.Point(b))
+			projected, ok := projectStroke(f, inst.world().Point(a), inst.world().Point(b))
 			if !ok {
 				return
 			}
@@ -291,7 +291,7 @@ func (s *Scene) pickIndex(f Frame, i int) *meshBVH {
 	if s == nil || s.noPickIndex || g.Displacement != nil || len(g.Indices)/3 < bvhLinear || f.Draws[i].Revision == 0 {
 		return nil
 	}
-	n := s.nodes[instance(f, i).Node]
+	n := s.nodes[f.Draws[i].Node]
 	if n == nil || n.noPickIndex {
 		return nil
 	}
@@ -416,7 +416,7 @@ func (s *Scene) hasUnindexedLargeMesh(f Frame) bool {
 		if s == nil || g.Displacement != nil {
 			return true
 		}
-		n := s.nodes[instance(f, i).Node]
+		n := s.nodes[f.Draws[i].Node]
 		if n == nil || n.noPickIndex || s.noPickIndex || f.Draws[i].Revision == 0 {
 			return true
 		}
@@ -439,17 +439,17 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 	drawn := f.drawn(1)
 	for i := range f.Draws {
 		g := f.Draws[i].Geometry
-		inst := instance(f, i)
+		inst := &f.Draws[i]
 		if !drawn[i] || edgeOn(g) || g.Billboard != nil && (g.Billboard.NoPick || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue
 		}
-		inv, ok := inst.World.InverseAffine()
+		inv, ok := inst.world().InverseAffine()
 		if !ok {
 			continue
 		}
 		localRay := nt3dmath.Ray{Origin: inv.Point(ray.Origin), Direction: inv.Direction(ray.Direction)}
 		set := func(kind Primitive, index, datum int, p nt3dmath.Vec3, bias float32) {
-			world := inst.World.Point(p)
+			world := inst.world().Point(p)
 			_, _, z, w := f.Matrix.Transform(world)
 			if w <= 0 || z < 0 || z > w || z/w+bias > best {
 				return
@@ -473,7 +473,7 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 			}
 		}
 		for j, p := range g.Points {
-			cx, cy, cz, cw := f.Matrix.Transform(inst.World.Point(p.Position))
+			cx, cy, cz, cw := f.Matrix.Transform(inst.world().Point(p.Position))
 			if cw <= 0 || cz < 0 || cz > cw {
 				continue
 			}
@@ -498,7 +498,7 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 				set(TrianglePrimitive, tri, tri, localRay.Origin.Add(localRay.Direction.Scale(t)), 0)
 			}
 		} else if len(g.Indices) >= 3 && rayHitsMeshBounds(localRay, g.Bounds) {
-			verts := displacedVertices(&g, inst.World)
+			verts := displacedVertices(&g, inst.world())
 			matchedGPU := false
 			if gpuOK && len(g.Indices)/3 >= bvhLinear && !transparent(&g) {
 				localHit := inv.Point(gpuWorld)
@@ -544,7 +544,7 @@ func (s *Scene) pickWithGPUDepth(camera Camera, f Frame, x, y, tolerance float32
 			}
 		}
 		stroke := func(kind Primitive, index, datum int, a, b nt3dmath.Vec3, width, head, bias float32) {
-			projected, ok := projectStroke(f, inst.World.Point(a), inst.World.Point(b))
+			projected, ok := projectStroke(f, inst.world().Point(a), inst.world().Point(b))
 			if !ok {
 				return
 			}

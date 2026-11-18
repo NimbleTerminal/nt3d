@@ -34,12 +34,12 @@ func overhang(g *Geometry, st *geometryState) float32 {
 func (f Frame) drawn(scale float32) []bool {
 	out := make([]bool, len(f.Draws))
 	for i := range f.Draws {
-		inst := instance(f, i)
-		out[i] = inst.Visible
+		inst := &f.Draws[i]
+		out[i] = !inst.Hidden
 		g := &f.Draws[i].Geometry
 		if out[i] && f.Cull && g.Bounds.IsValid() {
 			pad := overhang(g, &f.Draws[i].state) * scale
-			clip := f.Matrix.Mul(inst.World)
+			clip := f.Matrix.Mul(inst.world())
 			out[i] = !clip.Outside(g.Bounds.Min, g.Bounds.Max, 2*pad/float32(f.Width), 2*pad/float32(f.Height))
 		}
 	}

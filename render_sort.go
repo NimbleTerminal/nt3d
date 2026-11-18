@@ -298,7 +298,7 @@ func (g *gpuRenderer) encodeSort(dev *wgpu.Device, encoder *wgpu.CommandEncoder,
 		if n > 0 && points == nil {
 			return fmt.Errorf("nt3d: geometry %d's points are not on the device", gi)
 		}
-		slots[slot] = sortSlot{points: points, matrix: f.Matrix.Mul(instance(f, gi).World), count: n}
+		slots[slot] = sortSlot{points: points, matrix: f.Matrix.Mul(f.Draws[gi].world()), count: n}
 		if ranges := lod.slots[slot].ranges; ranges != nil {
 			sl := &slots[slot]
 			sl.count, sl.ranges = lod.slots[slot].selected, ranges

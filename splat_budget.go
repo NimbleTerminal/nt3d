@@ -60,7 +60,7 @@ func (f Frame) planLOD(plan *blendPlan) lodPlan {
 			fixed += len(g.Points)
 			continue
 		}
-		m := f.Matrix.Mul(instance(f, gi).World)
+		m := f.Matrix.Mul(f.Draws[gi].world())
 		pad := overhang(g, &f.Draws[gi].state)
 		clusters := g.Clusters.Clusters
 		want := make([]uint32, len(clusters))

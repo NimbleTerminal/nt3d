@@ -72,11 +72,11 @@ func wireRender(f Frame, cols, rows int) string {
 		if !depth.drawn[gi] || edgeOn(g) || g.Billboard != nil && (g.Billboard.Text != "" || len(g.Vertices) > 0 && g.Vertices[0].Color.A == 0) {
 			continue
 		}
-		inst := instance(f, gi)
-		g.Vertices = displacedVertices(&g, inst.World)
+		inst := &f.Draws[gi]
+		g.Vertices = displacedVertices(&g, inst.world())
 		// Project local coordinates through the node's transform.
 		local, cells := f, cellFrame
-		local.Matrix = f.Matrix.Mul(inst.World)
+		local.Matrix = f.Matrix.Mul(inst.world())
 		cells.Matrix = local.Matrix
 		line := func(a, b nt3dmath.Vec3) { drawLine(cells, a, b, nil, true) }
 		step := max(1, (len(g.Points)+1999)/2000)
@@ -157,7 +157,7 @@ func wireRender(f Frame, cols, rows int) string {
 		if b == nil || b.Text == "" || !depth.drawn[gi] || len(g.Vertices) == 0 || g.Vertices[0].Color.A == 0 {
 			continue
 		}
-		m := f.Matrix.Mul(instance(f, gi).World)
+		m := f.Matrix.Mul(f.Draws[gi].world())
 		local := f
 		local.Matrix = m
 		if len(g.Indices) >= 3 && !frontFacing(local, g.Vertices[g.Indices[0]].Position, g.Vertices[g.Indices[1]].Position, g.Vertices[g.Indices[2]].Position) {

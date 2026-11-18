@@ -157,7 +157,7 @@ func creaseKeyForDraw(f Frame, d gpuDraw) (creaseUploadKey, uint64, creaseDispla
 		disp = creaseDisplaceState{
 			active: true,
 			ptr:    geom.Displacement,
-			world:  instance(f, d.index).World,
+			world:  f.Draws[d.index].world(),
 		}
 	}
 	return creaseUploadKey{

@@ -1513,7 +1513,7 @@ func (g *gpuRenderer) uploadIdentity(dev *wgpu.Device) error {
 	if err != nil {
 		return err
 	}
-	if err = writeTransform(dev, g.transforms, placement{World: nt3dmath.Identity(), Visible: true}, nil); err != nil {
+	if err = writeTransform(dev, g.transforms, nt3dmath.Identity(), true, nil); err != nil {
 		g.transforms.Release()
 		g.transforms = nil
 	}

@@ -34,7 +34,7 @@ func (f Frame) blendOrder(drawn []bool) []int {
 			continue
 		}
 		b := blendBounds(g)
-		_, _, z, _ := f.Matrix.Mul(instance(f, i).World).Transform(b.Min.Add(b.Max).Scale(.5))
+		_, _, z, _ := f.Matrix.Mul(f.Draws[i].world()).Transform(b.Min.Add(b.Max).Scale(.5))
 		entries = append(entries, entry{i, z})
 	}
 	slices.SortStableFunc(entries, func(a, b entry) int {
@@ -92,7 +92,7 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 	spans := make([][2]float32, len(order)) // Each geometry's clip depth range over its bounds corners.
 	for o, gi := range order {
 		g := &f.Draws[gi].Geometry
-		m := f.Matrix.Mul(instance(f, gi).World)
+		m := f.Matrix.Mul(f.Draws[gi].world())
 		b := blendBounds(g)
 		for c := range 8 {
 			corner := b.Min
@@ -138,7 +138,7 @@ func (f Frame) planBlend(drawn []bool) (blendPlan, error) {
 		}
 		if (!f.OIT && transparent(g)) || blendedPoints(g) && g.PointStyle.Blend == AdditiveBlend {
 			b := blendBounds(g)
-			_, _, z, _ := f.Matrix.Mul(instance(f, gi).World).Transform(b.Min.Add(b.Max).Scale(.5))
+			_, _, z, _ := f.Matrix.Mul(f.Draws[gi].world()).Transform(b.Min.Add(b.Max).Scale(.5))
 			s := plan.sliceOf(z)
 			plan.bySlice[s] = append(plan.bySlice[s], gi)
 		}

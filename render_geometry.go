@@ -325,7 +325,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			bounded[i] = -1
 			d := &f.Draws[i]
 			if b := d.Geometry.Bounds; b.IsValid() && d.Geometry.Displacement == nil && d.state.posed == nil {
-				bounds[i], bounded[i] = b.Transformed(instance(f, i).World), 1
+				bounds[i], bounded[i] = b.Transformed(f.Draws[i].world()), 1
 			}
 		}
 		return bounds[i], bounded[i] > 0
@@ -776,7 +776,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	states := make([]transformState, len(members))
 	for k, i := range members {
 		m := f.Draws[i].Geometry.Material
-		states[k].world = instance(f, i).World
+		states[k].world = f.Draws[i].world()
 		states[k].optics = opticalParams(m, f.Draws[i].Geometry.PointStyle)
 		var specPacked float32
 		states[k].pbr, specPacked = pbrParams(m, f.Linear)
@@ -847,7 +847,7 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 	return appendFloats(data, pbr[0], pbr[1], pbr[2], pbr[3], emissive[0], emissive[1], emissive[2], emissive[3], coat[0], coat[1], coat[2], coat[3], sheen[0], sheen[1], sheen[2], sheen[3])
 }
 
-func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v placement, m *Material) error {
+func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, world nt3dmath.Mat4, visible bool, m *Material) error {
 	var specular, shininess, reflectivity float32
 	if m != nil && m.Phong.Specular > 0 && !m.unlit() {
 		specular, shininess = m.Phong.Specular, m.shininess()
@@ -857,7 +857,7 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v placement, m *Mater
 	}
 	pbr, specPacked := pbrParams(m, false)
 	em := emissiveFactor(m, false)
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.unlit(), 0, [8]float32{}, toonParams(m), pbr, [4]float32{em[0], em[1], em[2], specPacked}, coatParams(m), sheenParams(m, false)))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(world, specular, shininess, reflectivity, false, visible, OutlineStyle{}, m != nil && m.unlit(), 0, [8]float32{}, toonParams(m), pbr, [4]float32{em[0], em[1], em[2], specPacked}, coatParams(m), sheenParams(m, false)))
 }
 
 // uploadData uploads a geometry batch's records, to be bound per instance set.
