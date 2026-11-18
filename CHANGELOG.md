@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The engine no longer links the terminal UI stack. `RenderWireframe` was the
+  root package's only use of ntcanvas, whose single package brought Bubble
+  Tea, Lip Gloss, and bubblezone to every importer, `water` and `fur`
+  included. It now uses `nimbleterminal.dev/ntcanvas/grid` (ntcanvas v0.2.0),
+  which imports none of them, and wireframe output is unchanged. Only
+  `nt3dwidget` imports Bubble Tea, so a program that does not use the widget
+  no longer builds it.
+
 - **Breaking: a frame is one list of draws.** `Frame.Geometry`, `Instances`,
   `GeometryRevisions`, and `Shared`, four slices kept in step by index, are
   one slice, `Frame.Draws`, and `Instance` is gone. A `Draw` holds a node's

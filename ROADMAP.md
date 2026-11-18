@@ -5,14 +5,7 @@ move to Done with their commit; git history has the details.
 
 ## Next
 
-- [ ] **Drop the terminal UI stack from the engine's imports.** The root
-  package links Bubble Tea, Lip Gloss, and bubblezone only because
-  `render_wireframe.go` uses ntcanvas's grid and line rasterizer. ntcanvas now
-  has them in a dependency-free `ntcanvas/grid` package (unreleased). Once it
-  is tagged: require that version, import `nimbleterminal.dev/ntcanvas/grid`
-  in `render_wireframe.go`, and add the test that fails if the engine links
-  the stack again. The change is ready as a patch in
-  `../nt3d-superpowers/plans/2026-11-17-ntcanvas-grid.patch`.
+Nothing queued; the sections below are the open work.
 
 ## Rendering
 
@@ -92,6 +85,11 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **No terminal UI stack in the engine**: the wireframe renderer uses
+  `nimbleterminal.dev/ntcanvas/grid` (ntcanvas v0.2.0), so the root package and
+  `water`, `fur`, `mesh`, `clod`, `cam`, `sh`, `aabbtree`, and `math` no longer
+  link Bubble Tea, Lip Gloss, or bubblezone; only `widget` does. A test fails
+  if they do again.
 - **The frame contract**: nodes declare their draw order
   (`Scene.SetNodeDrawOrder`) and carry application data (`SetNodeData`), a
   still is taken without touching level-of-detail memory (`StillFrame`), and

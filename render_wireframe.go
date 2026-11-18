@@ -9,25 +9,25 @@ import (
 	"strings"
 
 	"nimbleterminal.dev/nt3d/math"
-	"nimbleterminal.dev/ntcanvas"
+	ntcanvasgrid "nimbleterminal.dev/ntcanvas/grid"
 )
 
 func wireRender(f Frame, cols, rows int) string {
-	c := ntcanvas.NewGraphemeGrid(cols, rows)
-	styleFor := func(ink color.Color) ntcanvas.CellStyle {
+	c := ntcanvasgrid.NewGraphemeGrid(cols, rows)
+	styleFor := func(ink color.Color) ntcanvasgrid.CellStyle {
 		if ink == nil {
-			return ntcanvas.CellStyle{}
+			return ntcanvasgrid.CellStyle{}
 		}
 		rgb := color.RGBAModel.Convert(ink).(color.RGBA)
-		return ntcanvas.CellStyle{Foreground: ntcanvas.RGBColor(rgb.R, rgb.G, rgb.B)}
+		return ntcanvasgrid.CellStyle{Foreground: ntcanvasgrid.RGBColor(rgb.R, rgb.G, rgb.B)}
 	}
 	// visible, when set, keeps the cells of a stroke that no surface hides.
-	drawCells := func(x, y, xx, yy float32, ink color.Color, visible func(ntcanvas.Point) bool) {
+	drawCells := func(x, y, xx, yy float32, ink color.Color, visible func(ntcanvasgrid.Point) bool) {
 		style := styleFor(ink)
-		ntcanvas.RasterLine(c.Bounds(),
-			ntcanvas.Float64Point{X: float64(x), Y: float64(y)},
-			ntcanvas.Float64Point{X: float64(xx), Y: float64(yy)},
-			func(p ntcanvas.Point) {
+		ntcanvasgrid.RasterLine(c.Bounds(),
+			ntcanvasgrid.Float64Point{X: float64(x), Y: float64(y)},
+			ntcanvasgrid.Float64Point{X: float64(xx), Y: float64(yy)},
+			func(p ntcanvasgrid.Point) {
 				if visible == nil || visible(p) {
 					c.SetGrapheme(p, "·", style)
 				}
@@ -43,11 +43,11 @@ func wireRender(f Frame, cols, rows int) string {
 		if !ok {
 			return
 		}
-		var visible func(ntcanvas.Point) bool
+		var visible func(ntcanvasgrid.Point) bool
 		if occluded {
 			dx, dy := s.b.x-s.a.x, s.b.y-s.a.y
 			length := dx*dx + dy*dy
-			visible = func(p ntcanvas.Point) bool {
+			visible = func(p ntcanvasgrid.Point) bool {
 				t := float32(0)
 				if length > 0 {
 					t = min(1, max(0, ((float32(p.X)+.5-s.a.x)*dx+(float32(p.Y)+.5-s.a.y)*dy)/length))
@@ -63,7 +63,7 @@ func wireRender(f Frame, cols, rows int) string {
 		}
 		drawCells(s.a.x, s.a.y, s.b.x, s.b.y, ink, visible)
 	}
-	depth.features(func(x, y int) { c.SetGrapheme(ntcanvas.Point{X: x, Y: y}, "·", ntcanvas.CellStyle{}) })
+	depth.features(func(x, y int) { c.SetGrapheme(ntcanvasgrid.Point{X: x, Y: y}, "·", ntcanvasgrid.CellStyle{}) })
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
 		drawLine(cellFrame, f.DynamicLines[i].Position, f.DynamicLines[i+1].Position, f.DynamicLines[i].Color, false)
 	}
@@ -87,7 +87,7 @@ func wireRender(f Frame, cols, rows int) string {
 			}
 			x, y, _, ok := local.Matrix.Project(p.Position, cols, rows)
 			if ok {
-				c.SetGrapheme(ntcanvas.Point{X: int(x), Y: int(y)}, "•", ntcanvas.CellStyle{})
+				c.SetGrapheme(ntcanvasgrid.Point{X: int(x), Y: int(y)}, "•", ntcanvasgrid.CellStyle{})
 			}
 		}
 		if g.WireGrid != ([2]int{}) {
@@ -185,7 +185,7 @@ func wireRender(f Frame, cols, rows int) string {
 					}
 				}
 				if visible {
-					c.SetGrapheme(ntcanvas.Point{X: xx, Y: yy}, clusters.Str(), styleFor(b.Color))
+					c.SetGrapheme(ntcanvasgrid.Point{X: xx, Y: yy}, clusters.Str(), styleFor(b.Color))
 					for dx := 0; dx < width; dx++ {
 						depth.far[yy*cols+xx+dx] = at
 					}
@@ -195,12 +195,12 @@ func wireRender(f Frame, cols, rows int) string {
 		}
 	}
 	for _, label := range f.CellText {
-		c.SetTextWithStyle(ntcanvas.Point{X: label.X, Y: label.Y}, label.Text, styleFor(label.Color))
+		c.SetTextWithStyle(ntcanvasgrid.Point{X: label.X, Y: label.Y}, label.Text, styleFor(label.Color))
 	}
 	if f.Environment != nil {
 		for y := 0; y < rows; y++ {
 			for x := 0; x < cols; x++ {
-				p := ntcanvas.Point{X: x, Y: y}
+				p := ntcanvasgrid.Point{X: x, Y: y}
 				cell := c.Cell(p)
 				if cell.Continuation {
 					continue
@@ -208,14 +208,14 @@ func wireRender(f Frame, cols, rows int) string {
 				sky := f.skyPixel((2*x+1)*f.Width/(2*cols), (2*y+1)*f.Height/(2*rows))
 				style := cell.Style
 				if style.Background == 0 {
-					style.Background = ntcanvas.RGBColor(sky.R, sky.G, sky.B)
+					style.Background = ntcanvasgrid.RGBColor(sky.R, sky.G, sky.B)
 				}
 				if style.Foreground == 0 {
 					ink := uint8(235)
 					if int(sky.R)+int(sky.G)+int(sky.B) > 384 {
 						ink = 32
 					}
-					style.Foreground = ntcanvas.RGBColor(ink, ink, ink)
+					style.Foreground = ntcanvasgrid.RGBColor(ink, ink, ink)
 				}
 				c.SetStyleRect(image.Rect(x, y, x+max(1, cell.Width), y+1), style)
 			}

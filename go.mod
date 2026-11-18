@@ -14,14 +14,13 @@ require (
 	github.com/qmuntal/gltf v0.29.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/image v0.48.0
-	nimbleterminal.dev/ntcanvas v0.1.4
+	nimbleterminal.dev/ntcanvas v0.2.0
 	nimbleterminal.dev/ntgpuimage v0.6.0
 	nimbleterminal.dev/ntpicture v0.2.0
 )
 
 require (
-	charm.land/bubbles/v2 v2.2.1 // indirect
-	charm.land/lipgloss/v2 v2.1.1 // indirect
+	github.com/aymanbagabas/go-udiff v0.4.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect

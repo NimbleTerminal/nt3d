@@ -39,7 +39,7 @@ require (
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	nimbleterminal.dev/booba v0.13.0 // indirect
-	nimbleterminal.dev/ntcanvas v0.1.4 // indirect
+	nimbleterminal.dev/ntcanvas v0.2.0 // indirect
 	nimbleterminal.dev/ntgpuimage v0.6.0 // indirect
 	nimbleterminal.dev/ntpicture v0.2.0 // indirect
 )
