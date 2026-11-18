@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.12.0 (2026-11-18)
+
 This release reshapes the API so that it is hard to misuse, and it breaks
 most programs that use nt3d. A frame is one list of draws; a material says
 what kind of surface it is instead of being inferred from which fields are

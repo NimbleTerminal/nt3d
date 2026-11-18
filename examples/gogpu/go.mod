@@ -5,7 +5,7 @@ go 1.26.8
 require (
 	github.com/gogpu/gogpu v0.54.0
 	github.com/gogpu/gpucontext v0.32.0
-	nimbleterminal.dev/nt3d v0.10.0
+	nimbleterminal.dev/nt3d v0.11.1
 	nimbleterminal.dev/nt3d/examples/demos v0.0.0
 )
 
