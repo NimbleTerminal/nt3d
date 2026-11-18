@@ -490,6 +490,16 @@ culling, and the camera packages use them in place of their own copies.
   instance, mesh, and point records differ from the structs the shader
   declares, if a scene method finds its node by name, if a `Material` group
   is not named for its field, or if `Geometry.Clone` misses a field.
+- **Reference pictures.** Every demo is drawn at 240 by 160 and compared
+  with a recorded picture, in software as part of `task ci` and on the GPU
+  as part of `task test-gpu`; a picture fails when more than half a percent
+  of its pixels move by more than eight levels. Until now rendering tests
+  asked about a few pixels of small scenes or compared one renderer with the
+  other, so nothing noticed a whole picture change. Against v0.11.1, every
+  demo of this release draws the same picture to within 140 of 614,400
+  pixels, in both renderers. The toon demo added its ground and roads in the
+  order a map ranged over them, so its picture varied from run to run; the
+  order is fixed.
 - **Fuzzing.** `FuzzCamera` holds that `Camera.Valid` always satisfies
   `Camera.Validate`, and that a camera `Validate` accepts gives a frame a
   renderer accepts; it found the orthographic and float32-range camera

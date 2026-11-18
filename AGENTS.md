@@ -57,6 +57,11 @@ packages and files and explains what holds the three renderers together.
   use Tint, which rejects some WGSL the native translator accepts.
   `task build-web` then `task serve`, and load a demo that uses the shader.
   Moving shader text without changing a byte needs no such check.
+- **Every demo has a reference picture.** `TestDemosMatchReference` (software,
+  in `task ci`) and `TestGPUDemosMatchReference` (in `task test-gpu`) compare
+  what each demo draws with `examples/demos/internal/demo/testdata`. When a
+  picture changes on purpose, look at the pictures the failure writes, then
+  record again with `-update-reference`; never to make a failure go away.
 - `task fuzz-smoke` runs every fuzz target briefly. The targets also run on
   the NimbleTerminal fuzzing fleet, where a seed over about 1 KB stalls
   minimization: keep seeds small.

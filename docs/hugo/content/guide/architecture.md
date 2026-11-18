@@ -75,6 +75,7 @@ The root package is one flat package. Its files are named for what they hold:
 
 Shading is written twice, in Go for software and in WGSL for the GPU, and nothing in the language ties the two together. These do:
 
+- **Reference pictures.** Every demo is drawn at a small size and compared with a picture recorded earlier, in software (`TestDemosMatchReference`, part of `task ci`) and on the GPU (`TestGPUDemosMatchReference`, part of `task test-gpu`). The tests below ask about a few pixels of small scenes, or compare one renderer with the other; these are what notice a whole picture change, or both renderers change together. A failure writes what was drawn and a map of where it differs; `-update-reference` records a picture that changed on purpose.
 - **Parity tests.** Most features have a `_gpu_test.go` that renders the same frame both ways and compares pixels. They carry the `webgpu` build tag and need a real adapter: `task test-gpu`. `task ci` type-checks them without running them.
 - **Layout tests.** `TestGPUBufferLayoutsMatchTheShader` parses the shader's struct declarations and fails if the byte counts Go writes for the scene uniform, instance, mesh, and point records differ from them. The uniform is also checked for length where it is written.
 - **One module, one namespace.** WGSL has no namespaces. A shader hook's source is compiled into the scene shader's module, so hooks are refused if they declare a name it uses.

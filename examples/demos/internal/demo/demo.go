@@ -969,6 +969,11 @@ func mapImage(topo bool) *image.RGBA {
 	}
 	return img
 }
+
+// snapshotSize is the size of the picture --snapshot writes. The reference
+// pictures, which the tests compare every demo against, are smaller.
+var snapshotSize = [2]int{960, 640}
+
 func run(proceduralDefault bool, kind sceneMode) error {
 	procedural := flag.Bool("procedural", proceduralDefault, "generate plasma textures with a GPU shader (CPU image fallback)")
 	animate := flag.Bool("animate", kind != sceneAABB, "animate the scene or procedural phase (a toggles pause); the AABB demo starts still")
@@ -1240,7 +1245,7 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		return d.benchmarkKitty(*benchmark, *benchmarkFrames, *benchmarkScale)
 	}
 	if *snapshot != "" {
-		img, used, err := d.view.Snapshot(960, 640)
+		img, used, err := d.view.Snapshot(snapshotSize[0], snapshotSize[1])
 		if err != nil {
 			return err
 		}
