@@ -137,3 +137,48 @@ func TestBloomNoThresholdLetsEveryPixelGlow(t *testing.T) {
 		t.Fatalf("a dim pixel glowed by only %v with no threshold", d)
 	}
 }
+
+// A light too far from the camera's Origin to place in the frame's float32
+// coordinates does not keep the frame from drawing. A directional light has
+// no use for a position and keeps shining; a point or spot light that far
+// lights nothing, and is off in the frame, keeping its place among the
+// lights. Both a look's lights and light nodes are held to it.
+func TestLightsFarFromOriginDoNotStopTheFrame(t *testing.T) {
+	far := [3]float64{0, 1e39, 0}
+	camera := DefaultCamera()
+	camera.Origin = far
+	ball, err := BuildSphere(Sphere{Radius: .5, Segments: 8, Rings: 4, Color: color.RGBA{A: 255}})
+	check(t, err)
+	sun := Light{Kind: DirectionalLight, Direction: nt3dmath.Vec3{Z: 1}}
+	lamp := Light{Kind: PointLight, Position: nt3dmath.Vec3{X: 1}}
+	for name, place := range map[string]func(*Scene){
+		"look lights": func(s *Scene) {
+			look := s.Look()
+			look.Lighting.Lights = []Light{sun, lamp}
+			s.SetLook(look)
+		},
+		"light nodes": func(s *Scene) {
+			for i, l := range []Light{sun, lamp} {
+				id, err := s.Add(Root, []string{"sun", "lamp"}[i])
+				check(t, err)
+				check(t, s.SetNodeLight(id, l))
+			}
+		},
+	} {
+		s := NewScene()
+		id, err := s.SetGeometry("ball", ball)
+		check(t, err)
+		check(t, s.SetNodeOrigin(id, far))
+		place(s)
+		f, err := s.StillFrame(camera, 16, 16)
+		check(t, err)
+		if err := validateFrame(f); err != nil {
+			t.Errorf("%s: a far light keeps the whole frame from drawing: %v", name, err)
+			continue
+		}
+		lights := f.Lighting.Lights
+		if len(lights) != 2 || lights[0].Off || !lights[1].Off {
+			t.Errorf("%s: want the sun on and the lamp off, got %+v", name, lights)
+		}
+	}
+}

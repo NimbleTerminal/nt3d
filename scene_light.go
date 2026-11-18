@@ -118,5 +118,5 @@ func (s *Scene) resolveNodeLightRelative(id NodeID, n *sceneNode, ref [3]float64
 	default:
 		out.Direction = nt3dmath.Vec3{}
 	}
-	return out
+	return inFrame(out)
 }

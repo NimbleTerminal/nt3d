@@ -91,8 +91,8 @@ under *Migrating* below.
   them.
 - An orthographic camera with only `Near` set drew nothing once `Near`
   reached its automatic far plane.
-- A reflection probe far from the camera's `Origin` kept the whole frame
-  from drawing.
+- A reflection probe or a light far from the camera's `Origin` kept the
+  whole frame from drawing.
 - In browsers, post-processing never drew and cutout shadows raised a
   pipeline error; both work now.
 - Two decoder panics on malformed glTF and PLY files.
@@ -412,6 +412,10 @@ culling, and the camera packages use them in place of their own copies.
 - **A reflection probe far from the camera's `Origin` no longer keeps the
   whole frame from drawing.** Rebased into the frame's float32 coordinates
   its box collapsed, and the frame was refused; such a probe is now left out.
+  A light farther from the origin than float32 reaches did the same, its
+  position coming out infinite: a directional light, which has no use for a
+  position, keeps shining, and a point or spot light that far is off in the
+  frame.
 - **Two faults only a browser showed.** The post-processing resolve shader
   named a variable `smooth`, which WGSL reserves: browsers refused the
   module, so post-processing never drew there, while the native translator
@@ -487,7 +491,11 @@ culling, and the camera packages use them in place of their own copies.
 - **Fuzzing.** `FuzzCamera` holds that `Camera.Valid` always satisfies
   `Camera.Validate`, and that a camera `Validate` accepts gives a frame a
   renderer accepts; it found the orthographic and float32-range camera
-  faults above. The glTF fuzz target gains seeds aimed at the places where
+  faults above. `FuzzSceneFrame` holds the same for a whole scene: whatever
+  material, lights, fog, reflection probe, and origins a scene accepts, the
+  frame validates and software draws it; it found the far light.
+  `FuzzNewHDRLightMap` covers the lightmap reader. The glTF fuzz target gains
+  seeds aimed at the places where
   the reader has to translate a file into nt3d's stricter rules.
 - **GPU renderer,** with no change in what is drawn beyond the draw-order
   fix: the unreachable single-renderer code path beside the shared device

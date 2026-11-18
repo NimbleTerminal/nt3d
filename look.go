@@ -3,6 +3,8 @@ package nt3d
 import (
 	"image/color"
 	"slices"
+
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
 // Look is how a scene is lit and finished: everything a frame shows that is
@@ -76,7 +78,26 @@ func lightsRelative(lights []Light, origin [3]float64) []Light {
 			p.X = float32(float64(p.X) - origin[0])
 			p.Y = float32(float64(p.Y) - origin[1])
 			p.Z = float32(float64(p.Z) - origin[2])
+			out[i] = inFrame(out[i])
 		}
 	}
 	return out
+}
+
+// inFrame is a light as a frame can hold it once its position is in the
+// frame's coordinates, which are float32 around the camera's Origin. A light
+// far enough from that origin has no position there: it comes out infinite,
+// and a frame holding it would be refused whole. A directional light has no
+// use for a position and keeps shining; a point or spot light that far
+// lights nothing the frame can show, so it is off, keeping its place among
+// the lights.
+func inFrame(l Light) Light {
+	if finiteVec(l.Position) {
+		return l
+	}
+	l.Position = nt3dmath.Vec3{}
+	if l.Kind != DirectionalLight {
+		l.Off = true
+	}
+	return l
 }
