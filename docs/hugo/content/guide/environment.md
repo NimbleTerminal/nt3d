@@ -100,7 +100,7 @@ assets. `1`, `2`, and `3` compare GPU, software, and wireframe; drag to orbit.
 
 ## Reflections
 
-`Material.Reflectivity` samples the panorama along the reflected view direction.
+`Material.Phong.Reflectivity` samples the panorama along the reflected view direction.
 It is the normal-incidence reflectance F0, in [0,1]: zero explicitly disables
 reflection, `.02` suits water, and `1` is a mirror. Schlick Fresnel increases
 reflection toward grazing angles, blending it with the lit base color. Direct
@@ -109,13 +109,13 @@ specular highlights are added afterward. Normal maps affect both contributions.
 GPU and software share panorama orientation, seam wrapping, pole clamping, and
 color-space behavior. `EnvironmentStrength` scales reflected light too.
 `EnvironmentBackgroundOnly` disables reflections along with diffuse environment
-light. For reflective (`Reflectivity > 0`) or `PBR` surfaces that should still
+light. For reflective (`Phong.Reflectivity > 0`) or `PBR` surfaces that should still
 reflect the sky, such as water or glass, without the sky lighting the land,
 set a reflection probe that holds the sky panorama over them: probes are
 independent of `EnvironmentBackgroundOnly`.
 Without an environment, reflectivity has no effect.
 
-This is a distant-sky reflection that does not reflect nearby geometry. On classic materials (`PBR: false`), reflections sample the sharp base panorama while `Shininess` controls direct highlights; on [PBR materials](../materials/#metallicroughness-pbr-and-orm-maps), `Roughness` samples a six-level GGX-prefiltered mip chain of the LDR or `.hdr` panorama.
+This is a distant-sky reflection that does not reflect nearby geometry. On classic materials (`PBR: false`), reflections sample the sharp base panorama while `Phong.Shininess` controls direct highlights; on [PBR materials](../materials/#metallicroughness-pbr-and-orm-maps), `PBR.Roughness` samples a six-level GGX-prefiltered mip chain of the LDR or `.hdr` panorama.
 
 ## Local reflection probes
 
@@ -150,7 +150,7 @@ Both WebGPU and software intersect the reflected ray from the surface with the
 box, then sample the panorama in the direction from the capture position to
 that intersection. This corrects the main parallax error as objects or the
 camera move through a rectangular room. PBR and clearcoat use roughness-filtered
-samples; classic `Material.Reflectivity` uses the sharp image.
+samples; classic `Material.Phong.Reflectivity` uses the sharp image.
 
 Probes supply specular light only: they do not replace the visible sky, add
 diffuse light, or capture geometry automatically. They work without a global
@@ -183,8 +183,8 @@ if err != nil {
 }
 geometry.LightMapUV = bakedUVs
 geometry.Material = &nt3d.Material{
-    PBR: true,
-    Roughness: 0.7,
+    Shading: nt3d.ShadePBR,
+    PBR: nt3d.PBRStyle{Roughness: 0.7},
     LightMap: baked,
 }
 ```

@@ -180,7 +180,7 @@ var wakeFoam = sync.OnceValue(func() *nt3d.Texture {
 })
 
 func (e *waterEffects) ribbon(surface *nt3dwater.WaveSurface, time, side float64) (nt3d.Geometry, error) {
-	g := nt3d.Geometry{Material: &nt3d.Material{Texture: wakeFoam(), Repeat: true, Tint: true, Transparent: true, Unlit: true}}
+	g := nt3d.Geometry{Material: &nt3d.Material{Shading: nt3d.ShadeUnlit, Texture: wakeFoam(), Repeat: true, Tint: true, Alpha: nt3d.AlphaTransparent}}
 	previous := -1
 	var last wakeStation
 	for i := 0; i < e.count; i++ {

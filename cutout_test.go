@@ -33,9 +33,13 @@ func cutoutScene(t *testing.T, cutout bool) (Frame, color.RGBA, color.RGBA) {
 		return g
 	}
 	s := NewScene()
-	_, err = s.SetGeometry("back", quad(0, .75, &Material{Unlit: true}, back))
+	_, err = s.SetGeometry("back", quad(0, .75, &Material{Shading: ShadeUnlit}, back))
 	check(t, err)
-	_, err = s.SetGeometry("front", quad(.4, .8, &Material{Texture: texture, Unlit: true, Cutout: cutout}, color.RGBA{}))
+	alpha := AlphaOpaque
+	if cutout {
+		alpha = AlphaCutout
+	}
+	_, err = s.SetGeometry("front", quad(.4, .8, &Material{Texture: texture, Shading: ShadeUnlit, Alpha: alpha}, color.RGBA{}))
 	check(t, err)
 	camera := DefaultCamera()
 	camera.Elevation = 89
@@ -86,7 +90,7 @@ func rampScene(t *testing.T, threshold float32) (Frame, color.RGBA) {
 	}
 	texture, err := NewTexture(ramp)
 	check(t, err)
-	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -.8, MaxX: .8, MinY: -.8, MaxY: .8, Heights: make([]float32, 4), Material: &Material{Texture: texture, Unlit: true, Cutout: true, Threshold: threshold}})
+	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -.8, MaxX: .8, MinY: -.8, MaxY: .8, Heights: make([]float32, 4), Material: &Material{Shading: ShadeUnlit, Texture: texture, Alpha: AlphaCutout, Threshold: threshold}})
 	check(t, err)
 	s := NewScene()
 	_, err = s.SetGeometry("ramp", g)
@@ -108,7 +112,7 @@ func TestSoftwareCutoutThreshold(t *testing.T) {
 	if ratio := float64(shown[0]) / float64(shown[1]); ratio < 2.6 || ratio > 3.4 {
 		t.Fatalf("kept %v pixels at thresholds 0.25 and 0.75", shown)
 	}
-	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: 0, MaxX: 1, MinY: 0, MaxY: 1, Heights: make([]float32, 4), Material: &Material{Cutout: true, Threshold: 1.5}})
+	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: 0, MaxX: 1, MinY: 0, MaxY: 1, Heights: make([]float32, 4), Material: &Material{Alpha: AlphaCutout, Threshold: 1.5}})
 	if err == nil {
 		t.Fatal("accepted a threshold over 1", g.Material)
 	}

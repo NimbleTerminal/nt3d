@@ -414,7 +414,7 @@ func validateGeometryCert(g Geometry, certifiedMesh bool) error {
 // with tangents, independent normal UVs, or a flow field. Such meshes hold at most half
 // the triangles of others (MaxMeshTriangles/2).
 func extended(g Geometry) bool {
-	return g.Material != nil && (g.Material.LightMap != nil || g.Material.NormalMap != nil && (len(g.NormalUV) > 0 || len(g.Tangents) > 0 || g.Material.FlowMap != nil))
+	return g.Material != nil && (g.Material.LightMap != nil || g.Material.Normal.Map != nil && (len(g.NormalUV) > 0 || len(g.Tangents) > 0 || g.Material.Normal.Flow.Map != nil))
 }
 
 // boxVertices uses outward counterclockwise faces, matching the GPU box shader.

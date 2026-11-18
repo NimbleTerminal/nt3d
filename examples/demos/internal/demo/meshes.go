@@ -698,13 +698,13 @@ func (d *demo) rebuildMeshes() error {
 			}
 			if d.meshes.shiny {
 				if d.meshes.intersecting && d.meshes.glass > 0 && !isOpaqueCore {
-					m.PBR, m.Roughness, m.IOR = true, 0.14, 1.55
+					m.Shading, m.PBR.Roughness, m.PBR.IOR = nt3d.ShadePBR, 0.14, 1.55
 				} else {
-					m.Specular, m.Shininess = .5, 48
+					m.Phong.Specular, m.Phong.Shininess = .5, 48
 				}
 			}
 			if d.meshes.glass > 0 && !isOpaqueCore {
-				m.Transparent, m.Cutout, m.EdgeOn = true, false, false
+				m.Alpha = nt3d.AlphaTransparent
 				g.Vertices = append([]nt3d.Vertex(nil), g.Vertices...)
 				for j := range g.Vertices {
 					g.Vertices[j].Color.A = glassAlpha

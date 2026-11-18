@@ -52,8 +52,8 @@ func (f *Frame) eyeDistance(p nt3dmath.Vec3) float32 {
 
 // shininess is a material's specular exponent; zero means 32.
 func (m *Material) shininess() float32 {
-	if m.Shininess == 0 {
+	if m.Phong.Shininess == 0 {
 		return 32
 	}
-	return m.Shininess
+	return m.Phong.Shininess
 }

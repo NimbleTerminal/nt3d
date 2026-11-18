@@ -18,7 +18,7 @@ func rgba(img image.Image, x, y int) color.RGBA {
 
 // ball is a sphere painted one flat, unlit color.
 func ball(c color.RGBA) nt3d.Geometry {
-	g, err := nt3d.BuildSphere(nt3d.Sphere{Radius: .7, Segments: 24, Rings: 12, Color: c, Material: &nt3d.Material{Unlit: true}})
+	g, err := nt3d.BuildSphere(nt3d.Sphere{Radius: .7, Segments: 24, Rings: 12, Color: c, Material: &nt3d.Material{Shading: nt3d.ShadeUnlit}})
 	if err != nil {
 		panic(err)
 	}
@@ -181,12 +181,12 @@ func ExampleScene_ApplyMaterial() {
 	}
 	add("tug")
 	add("barge")
-	_ = scene.ApplyMaterial(fleet, &nt3d.Material{Metallic: 1, Roughness: .3})
+	_ = scene.ApplyMaterial(fleet, &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Metallic: 1, Roughness: .3}})
 	add("ferry")
 
 	frame, _ := scene.StillFrame(nt3d.DefaultCamera(), 32, 32)
 	for _, draw := range frame.Draws {
-		fmt.Println(draw.Name, "is metal:", draw.Geometry.Material.Metallic == 1)
+		fmt.Println(draw.Name, "is metal:", draw.Geometry.Material.PBR.Metallic == 1)
 	}
 	// Output:
 	// tug is metal: true
@@ -243,4 +243,29 @@ func ExampleLight() {
 	// lit: true
 	// intensity zero: true
 	// off: {0 0 0 255}
+}
+
+// A material says what kind of surface it is in two fields, Shading and
+// Alpha, and describes each feature in a group that is off while it is zero.
+// A group that belongs to another lighting model is refused, not ignored.
+func ExampleMaterial() {
+	gold := nt3d.Material{
+		Shading: nt3d.ShadePBR,
+		PBR:     nt3d.PBRStyle{Metallic: 1, Roughness: .3},
+	}
+	fmt.Println("gold:", gold.Validate())
+
+	glass := nt3d.Material{
+		Alpha: nt3d.AlphaTransparent,
+		Phong: nt3d.PhongStyle{Specular: .6, Shininess: 96},
+	}
+	fmt.Println("glass:", glass.Validate())
+
+	// Roughness belongs to ShadePBR, and this material is ShadePhong.
+	confused := nt3d.Material{PBR: nt3d.PBRStyle{Roughness: .3}}
+	fmt.Println("confused:", confused.Validate())
+	// Output:
+	// gold: <nil>
+	// glass: <nil>
+	// confused: nt3d: material sets its PBR group but its Shading is not ShadePBR
 }

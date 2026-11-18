@@ -9,17 +9,45 @@ A geometry's `Material` says how its surface looks: its texture, whether light a
 
 ```go
 tex, err := nt3d.NewTexture(img) // any image.Image
-mat := &nt3d.Material{Texture: tex, Repeat: true, Specular: .4}
+mat := &nt3d.Material{Texture: tex, Repeat: true, Phong: nt3d.PhongStyle{Specular: .4}}
 ```
+
+## The shape of a material
+
+Two fields say what kind of surface a material is, and nothing else does:
+
+| Field | Values | Meaning |
+| --- | --- | --- |
+| `Shading` | `ShadePhong` (the zero value), `ShadePBR`, `ShadeUnlit` | The lighting model |
+| `Alpha` | `AlphaOpaque` (the zero value), `AlphaCutout`, `AlphaEdgeOn`, `AlphaTransparent` | What the alpha of the texture and vertex colors does |
+
+Everything else is a group, one per feature, and a group left zero is off:
+
+| Group | Type | What it is |
+| --- | --- | --- |
+| `Phong` | `PhongStyle` | The highlight and reflection of a `ShadePhong` material |
+| `PBR` | `PBRStyle` | The surface of a `ShadePBR` material, with `Specular`, `Clearcoat`, and `Sheen` groups inside |
+| `Normal` | `NormalStyle` | A normal map, and the `Flow` that moves it |
+| `Emission` | `EmissionStyle` | Light of the surface's own |
+| `Transmission` | `TransmissionStyle` | Seeing the scene behind through the surface |
+| `Toon` | `ToonStyle` | Banded shading |
+
+A group's type is always its field's name with `Style` after it. The texture, `Repeat`, `Tint`, `BaseColor`, `Threshold`, `LightMap`, and `Shader` are fields of the material itself.
+
+Three rules hold throughout:
+
+- **The model is what `Shading` says.** A `ShadePBR` material stays PBR when its roughness and metalness are zero, which is a mirror-smooth dielectric. Nothing switches the model by being set.
+- **A group that belongs to another model is an error.** Setting `PBR` on a material that is not `ShadePBR`, or `Phong` on one that is not `ShadePhong`, is refused when the geometry is given to a scene, where it used to be ignored without a word. `Material.Validate` reports it.
+- **A strength left zero means 1** wherever its group is in use (`Normal.Strength`, `Emission.Intensity`, `PBR.OcclusionStrength`, `PBR.Specular.Strength`). To have none, leave the group or its map out, or set the flag the group has for it: `PBR.NoOcclusion`, `PBR.Specular.Off`.
 
 ## Textures
 
 `NewTexture` takes a snapshot of any `image.Image`, up to 8192 pixels a side. Textures are sRGB, as images are, and both renderers filter them in linear light.
 
 - **Repeat.** With `Material.Repeat`, texture coordinates outside 0 to 1 wrap around, and filtering blends across the seams, so a texture made to tile shows none. Otherwise they clamp to the edge. The OBJ, PLY, and 3MF readers set it, since those formats tile by default.
-- **BaseColor.** `Material.BaseColor` multiplies surface albedo (and scales `Transparent` opacity by `BaseColor.A / 255`) from per-instance uniforms without re-encoding mesh vertices or detaching `SharedGeometry`; the zero value leaves vertex and texture colors unchanged.
+- **BaseColor.** `Material.BaseColor` multiplies surface albedo (and scales `AlphaTransparent` opacity by `BaseColor.A / 255`) from per-instance uniforms without re-encoding mesh vertices or detaching `SharedGeometry`; the zero value leaves vertex and texture colors unchanged.
 - **Tint.** `Material.Tint` multiplies the texture by the vertex colors.
-- **Unlit.** `Material.Unlit` shows colors as they are, ignoring the light.
+- **Unlit.** `ShadeUnlit` shows colors as they are, ignoring the light.
 
 ### Mipmaps
 
@@ -37,18 +65,18 @@ The chain preserves how much shows, not exactly where: a thin strand far off bec
 
 ## Transparency and cutouts
 
-`Material.Transparent` blends a mesh over what lies behind it, by the vertex colors' alpha times the texture's. By default (`Frame.OIT == false`), transparent meshes are drawn after everything opaque, farthest first, each with its back faces before its front ones, so a glass sphere shows its far side through its near one, and alpha-blended points sort with transparent meshes by depth slice. When transparent meshes intersect each other or fold over themselves, set `Frame.OIT = true` (or `nt3dwidget.WithOIT(true)` / `SetOIT(true)`) to draw all transparent meshes with McGuire & Bavoil Weighted Blended Order-Independent Transparency on both WebGPU (compatible with 1× and 4× `MSAA`) and software, eliminating mesh-order popping as the camera orbits. Wireframe and picking treat transparent surfaces as solid. Press `t` in the [shapes demo](../demos/#shape-builders) to cycle `opaque` → `glass (OIT)` → `glass (sorted)` and compare.
+`AlphaTransparent` blends a mesh over what lies behind it, by the vertex colors' alpha times the texture's. By default (`Frame.OIT == false`), transparent meshes are drawn after everything opaque, farthest first, each with its back faces before its front ones, so a glass sphere shows its far side through its near one, and alpha-blended points sort with transparent meshes by depth slice. When transparent meshes intersect each other or fold over themselves, set `Frame.OIT = true` (or `nt3dwidget.WithOIT(true)` / `SetOIT(true)`) to draw all transparent meshes with McGuire & Bavoil Weighted Blended Order-Independent Transparency on both WebGPU (compatible with 1× and 4× `MSAA`) and software, eliminating mesh-order popping as the camera orbits. Wireframe and picking treat transparent surfaces as solid. Press `t` in the [shapes demo](../demos/#shape-builders) to cycle `opaque` → `glass (OIT)` → `glass (sorted)` and compare.
 
-`Material.Cutout` instead cuts holes: texels with alpha under `Threshold` (one half by default) aren't drawn at all, and the rest are solid. It's how leaves, fences, and [fur](../fur/) are made, and it can't be combined with `Transparent`. Picking passes through the holes. Far off, cutouts keep their density through [mipmaps of their own](#cutout-mipmaps).
+`AlphaCutout` instead cuts holes: texels with alpha under `Threshold` (one half by default) aren't drawn at all, and the rest are solid. It's how leaves, fences, and [fur](../fur/) are made, and it can't be combined with `AlphaTransparent`. Picking passes through the holes. Far off, cutouts keep their density through [mipmaps of their own](#cutout-mipmaps).
 
-`Material.EdgeOn` shows a cutout only where the surface turns edge-on to the viewer, fading it out as the surface comes to face the camera. Fur uses it to fill in silhouettes. Wireframe and picking leave edge-on surfaces out.
+`AlphaEdgeOn` shows a cutout only where the surface turns edge-on to the viewer, fading it out as the surface comes to face the camera. Fur uses it to fill in silhouettes. Wireframe and picking leave edge-on surfaces out.
 
 Other materials ignore alpha.
 
 ## Normal maps
 
 `NewNormalMap(img)` creates a linear-data normal texture. Assign it to
-`Material.NormalMap`, set `NormalStrength: 1`, and provide `Geometry.UV`.
+`Material.Normal.Map` and provide `Geometry.UV`; `Normal.Strength` scales it, and zero means 1.
 GPU and software perturb diffuse, specular, and environment lighting. See
 [normal maps](../normal-maps/) for sampling, tangent frames, animation, and glTF mapping.
 
@@ -58,9 +86,9 @@ GPU and software perturb diffuse, specular, and environment lighting. See
 
 ### Classic highlights
 
-`Material.Specular` (0 to 1) adds a white highlight where the surface reflects the light toward the camera, and `Shininess` (1 to 1024, default 32) sets how tight it is. It's worked out per pixel, so highlights stay round even on coarse meshes. Boxes, unlit materials, and wireframe have none.
+`Material.Phong.Specular` (0 to 1) adds a white highlight where the surface reflects the light toward the camera, and `Phong.Shininess` (1 to 1024, default 32) sets how tight it is. It's worked out per pixel, so highlights stay round even on coarse meshes. Boxes, unlit materials, and wireframe have none.
 
-`Material.Reflectivity` adds [environment reflections](../environment/#reflections).
+`Material.Phong.Reflectivity` adds [environment reflections](../environment/#reflections).
 Zero disables them; `.02` suits water and `1` makes a mirror. When
 `EnvironmentBackgroundOnly` keeps the sky as a backdrop without its light, a
 [reflection probe](../environment/#local-reflection-probes) holding the sky is what
@@ -69,31 +97,33 @@ materials ignore reflections.
 
 ### Metallic/roughness PBR, Clearcoat, Sheen, and ORM maps
 
-Setting `PBR: true` (or a positive `Metallic`, `Roughness`, `Clearcoat`, nonzero `SheenColor`, or non-nil `ORMMap`) switches a lit surface to Cook-Torrance GGX microfacet shading on both GPU and software:
+`Shading: ShadePBR` lights a surface by Cook-Torrance GGX microfacet shading on both GPU and software, as its `PBR` group describes:
 
 ```go
 orm, err := nt3d.NewORMMap(ormImg) // R = occlusion, G = roughness, B = metallic
 mat := &nt3d.Material{
-    PBR:                true,
-    Metallic:           1.0,
-    Roughness:          1.0,
-    IOR:                1.5, // 1..3; 0 defaults to 1.5 (dielectric F0 = 0.04)
-    Clearcoat:          .95, // 0..1 dielectric top coat (car paint, varnish, wet asphalt)
-    ClearcoatRoughness: .08, // 0..1 coat roughness along geometric normal
-    SheenColor:         color.RGBA{235, 175, 255, 255}, // cloth/velvet grazing tint
-    SheenRoughness:     .35,                            // 0..1 microfiber roughness
-    ORMMap:             orm,
-    ORMRepeat:          true,
-    OcclusionStrength:  .85, // 0..1; 0 defaults to 1 when ORMMap is set
+    Shading: nt3d.ShadePBR,
+    PBR: nt3d.PBRStyle{
+        Metallic:  1.0,
+        Roughness: 1.0,
+        IOR:       1.5, // 1..3; zero means 1.5 (dielectric F0 = 0.04)
+        // A dielectric top coat (car paint, varnish, wet asphalt), along the geometric normal.
+        Clearcoat: nt3d.ClearcoatStyle{Amount: .95, Roughness: .08},
+        // A cloth or velvet tint toward the silhouette.
+        Sheen:             nt3d.SheenStyle{Color: color.RGBA{235, 175, 255, 255}, Roughness: .35},
+        ORMMap:            orm,
+        ORMRepeat:         true,
+        OcclusionStrength: .85, // 0..1; zero means 1, and NoOcclusion ignores the map's occlusion
+    },
 }
 ```
 
-- **Conductors vs. dielectrics.** `Metallic` (0 to 1) blends between a dielectric surface (diffuse base color plus Fresnel specular `F0` derived from `IOR`, optionally tinted and scaled by `SpecularColor` and `SpecularIntensity` per glTF `KHR_materials_specular`) and a conductor (`(1 - Metallic)` diffuse attenuation with base-color-tinted `F0`). Setting `SpecularColor` with `A: 0` (such as `color.RGBA{R: 255, G: 255, B: 255, A: 0}`) suppresses dielectric `F0` and grazing `F90` completely for chalky/matte surfaces, while `color.RGBA{A: 255}` (`specularColorFactor = [0, 0, 0]`, `specularFactor = 1`) suppresses normal-incidence `F0` while preserving grazing Fresnel reflections.
-- **Roughness and prefiltered IBL.** `Roughness` (0 to 1) widens the GGX microfacet lobe and blurs [environment](../environment/) reflections across a lazily prefiltered six-level GGX equirectangular mip chain combined with a split-sum Fresnel BRDF. Without an environment, hemisphere ambient provides grazing specular reflections.
-- **Clearcoat.** `Clearcoat` (0 to 1) and `ClearcoatRoughness` (0 to 1) add an energy-conserving dielectric top coat (`IOR = 1.5`, `F0 = 0.04`) evaluated along the unperturbed geometric surface normal. Base diffuse, base specular, and sheen beneath the coat attenuate by `(1 - Clearcoat * Fc)`, while `NormalMap` detail (metallic car-paint flakes, wood grain, cobblestones) stays under a smooth glossy lacquer or rain-wet film with its own prefiltered environment IBL and GGX highlights.
-- **Sheen.** `SheenColor` (sRGB; black disables) and `SheenRoughness` (0 to 1) add an Estevez & Kulla Charlie microfiber grazing/retroreflective lobe with Neubelt visibility and directional-albedo energy scaling for velvet, satin, felt, and character clothing.
-- **Packed linear ORM maps.** `NewORMMap` snapshots a linear-data texture following glTF's channel layout: **R** scales indirect diffuse and specular ambient occlusion by `OcclusionStrength` (leaving direct lights unoccluded), **G** multiplies `Roughness`, and **B** multiplies `Metallic`. `NewShaderORMMap` and `NewShaderORMMapWithParameters` generate linear ORM mip chains on the GPU; `Scene.SetNodeORMMap` swaps an existing ORM map without reuploading geometry.
-- **Composability.** PBR, Clearcoat, and Sheen compose with `Toon` (quantizing base GGX, clearcoat lacquer highlights, cloth sheen bands, and diffuse cel bands), `Transmission` / `Refraction` / `Absorption` (refracting behind diffuse before adding Fresnel reflections and GGX highlights), `NormalMap`, `Cutout`, and `Transparent`. Press `e` in the [lights demo](../demos/#lights) to compare `PBR`, `PBR ORM+glow`, `coat+sheen`, `shiny`, and `dull`.
+- **Conductors vs. dielectrics.** `PBR.Metallic` (0 to 1) blends between a dielectric surface (diffuse base color plus Fresnel specular `F0` derived from `PBR.IOR`, optionally tinted and scaled by `PBR.Specular.Color` and `PBR.Specular.Intensity` per glTF `KHR_materials_specular`) and a conductor (`(1 - PBR.Metallic)` diffuse attenuation with base-color-tinted `F0`). `PBR.Specular.Strength` (0 to 1, zero means 1) scales the whole highlight, grazing angles included, and `PBR.Specular.Off` removes it completely for chalky, matte surfaces (`specularFactor = 0`). A black `PBR.Specular.Color`, `color.RGBA{A: 255}` (`specularColorFactor = [0, 0, 0]`), suppresses normal-incidence `F0` while preserving grazing Fresnel reflections; the color's alpha is ignored.
+- **Roughness and prefiltered IBL.** `PBR.Roughness` (0 to 1) widens the GGX microfacet lobe and blurs [environment](../environment/) reflections across a lazily prefiltered six-level GGX equirectangular mip chain combined with a split-sum Fresnel BRDF. Without an environment, hemisphere ambient provides grazing specular reflections.
+- **Clearcoat.** `PBR.Clearcoat.Amount` (0 to 1) and `PBR.Clearcoat.Roughness` (0 to 1) add an energy-conserving dielectric top coat (`PBR.IOR = 1.5`, `F0 = 0.04`) evaluated along the unperturbed geometric surface normal. Base diffuse, base specular, and sheen beneath the coat attenuate by `(1 - PBR.Clearcoat.Amount * Fc)`, while `Normal.Map` detail (metallic car-paint flakes, wood grain, cobblestones) stays under a smooth glossy lacquer or rain-wet film with its own prefiltered environment IBL and GGX highlights.
+- **Sheen.** `PBR.Sheen.Color` (sRGB; black disables) and `PBR.Sheen.Roughness` (0 to 1) add an Estevez & Kulla Charlie microfiber grazing/retroreflective lobe with Neubelt visibility and directional-albedo energy scaling for velvet, satin, felt, and character clothing.
+- **Packed linear ORM maps.** `NewORMMap` snapshots a linear-data texture following glTF's channel layout: **R** scales indirect diffuse and specular ambient occlusion by `PBR.OcclusionStrength` (leaving direct lights unoccluded), **G** multiplies `PBR.Roughness`, and **B** multiplies `PBR.Metallic`. `NewShaderORMMap` and `NewShaderORMMapWithParameters` generate linear ORM mip chains on the GPU; `Scene.SetNodeORMMap` swaps an existing ORM map without reuploading geometry.
+- **Composability.** PBR, Clearcoat, and Sheen compose with `Toon` (quantizing base GGX, clearcoat lacquer highlights, cloth sheen bands, and diffuse cel bands), `Transmission` / `Transmission.Refraction` / `Transmission.Absorption` (refracting behind diffuse before adding Fresnel reflections and GGX highlights), `Normal.Map`, `AlphaCutout`, and `AlphaTransparent`. Press `e` in the [lights demo](../demos/#lights) to compare `PBR`, `PBR ORM+glow`, `coat+sheen`, `shiny`, and `dull`.
 
 ### Emissive colors and maps
 
@@ -101,16 +131,14 @@ Any lit or unlit surface (except outline hulls and wireframe) can emit light of 
 
 ```go
 mat := &nt3d.Material{
-    PBR:               true,
-    Roughness:         .4,
-    Emissive:          color.RGBA{255, 140, 40, 255},
-    EmissiveIntensity: 3.5, // > 1 produces HDR radiance for Frame.PostProcess.Bloom
-    EmissiveMap:       glowTex,
-    EmissiveRepeat:    true,
+    Shading: nt3d.ShadePBR,
+    PBR: nt3d.PBRStyle{Roughness: .4},
+    // An Intensity above 1 gives HDR light for Frame.PostProcess.Bloom.
+    Emission: nt3d.EmissionStyle{Color: color.RGBA{255, 140, 40, 255}, Intensity: 3.5, Map: glowTex, Repeat: true},
 }
 ```
 
-`Emissive` is an sRGB color multiplied by `EmissiveIntensity` (default `1` when zero) and optional `EmissiveMap` (`NewTexture` or `NewShaderTexture`, replaceable via `Scene.SetNodeEmissiveMap`). Emission is added before fog. Values with `EmissiveIntensity > 1` exceed `1.0` in HDR scene passes and software float buffers, driving selective glow when `Frame.PostProcess.Bloom` is active.
+`Emission.Color` is an sRGB color multiplied by `Emission.Intensity` (default `1` when zero) and optional `Emission.Map` (`NewTexture` or `NewShaderTexture`, replaceable via `Scene.SetNodeEmissiveMap`). Emission is added before fog. Values with `Emission.Intensity > 1` exceed `1.0` in HDR scene passes and software float buffers, driving selective glow when `Frame.PostProcess.Bloom` is active.
 
 ## Shader textures
 
@@ -191,7 +219,7 @@ matShader, err := nt3d.NewMaterialShaderWithParameters(bandWGSL, 0, [][4]float32
 scene.ApplyMaterialShader(root, matShader)
 ```
 
-`NT3DMaterialInput` / `MaterialColorInput` supply `(world, normal, view, uv, color, time)` in **linear light** after vertex color/tint, base-color `Texture` sampling, and `NormalMap` perturbation, and before scene lighting (unless `Material.Unlit` is true), emissive, and fog. Returned RGB values remain unclamped above `1.0` so custom shaders can drive HDR `Bloom` and tone mapping directly, while returned alpha (`0..1`) feeds `Cutout` testing (including perforated directional/point/spot shadow maps and cutout outlines), alpha blending, and Weighted Blended OIT (`Frame.OIT`). Press `w` in the [procedural demo](../demos/#procedural-plasma) to toggle both hooks live.
+`NT3DMaterialInput` / `MaterialColorInput` supply `(world, normal, view, uv, color, time)` in **linear light** after vertex color/tint, base-color `Texture` sampling, and `Normal.Map` perturbation, and before scene lighting (unless `ShadeUnlit` is true), emissive, and fog. Returned RGB values remain unclamped above `1.0` so custom shaders can drive HDR `Bloom` and tone mapping directly, while returned alpha (`0..1`) feeds `AlphaCutout` testing (including perforated directional/point/spot shadow maps and cutout outlines), alpha blending, and Weighted Blended OIT (`Frame.OIT`). Press `w` in the [procedural demo](../demos/#procedural-plasma) to toggle both hooks live.
 
 ## Outlines
 
@@ -253,10 +281,10 @@ nodes that show one `SharedGeometry` may each use their own.
 
 Crease lines work on rigid and deforming meshes (skinned, morphed, in-place
 vertex-updated, and `VertexDisplacement` meshes, including instanced
-`SharedGeometry`) as well as see-through materials: `Cutout` creases alpha-test
+`SharedGeometry`) as well as see-through materials: `AlphaCutout` creases alpha-test
 against textures and `Material.Shader`, `Transmission` creases draw after
 transmissive front faces write depth so glass mullions show in front while back
-edges stay hidden, and `Transparent` creases blend by vertex, texture, and
+edges stay hidden, and `AlphaTransparent` creases blend by vertex, texture, and
 shader opacity in both depth-sorted slices and Weighted Blended `Frame.OIT`.
 Static and posed meshes cache their extracted edges up to two angles per mesh,
 and the GPU reuses its crease vertex buffers in place via `WriteBuffer`.
@@ -297,12 +325,12 @@ A toon surface takes flat ambient light, the midpoint of the sky and ground
 colors plus an environment's constant term, since a gradient would bring the
 smooth shading back. `Shade` multiplies it: the unlit band is the base color
 times the ambient times `Shade`, which lets shadows turn cool or warm rather
-than only darker. `Specular` becomes a flat spot instead of a soft lobe, and
+than only darker. `Phong.Specular` becomes a flat spot instead of a soft lobe, and
 `Rim` adds a flat highlight on lit surface seen edge-on. `Rim` suits rounded
 models; on a large flat floor it draws an arc where the view grazes it.
 
 Textures, tint, normal maps, cutouts, transparency, reflections,
-transmission, and fog work as before around the banded light. `Unlit`
+transmission, and fog work as before around the banded light. `ShadeUnlit`
 materials ignore `Toon`; points, boxes, lines, and splats are not
 affected. [Fur](#toon-fur) is meshes, and takes it. The GPU and software renderer agree away from band edges.
 
@@ -341,11 +369,11 @@ to see it.
 `NewShaderNormalMap(source, fallback)` and
 `NewShaderNormalMapWithParameters(source, parameters, fallback)` use the same
 `nt3dTexture` WGSL entry point, returning tangent-space XYZ encoded into RGB
-in [0,1]. Alpha is ignored. Assign the result to `NormalMap`, set
-`NormalStrength: 1`, and animate with `Scene.SetNodeNormalMap`.
+in [0,1]. Alpha is ignored. Assign the result to `Normal.Map`, and animate
+with `Scene.SetNodeNormalMap`.
 
 The render target and its mipmaps are linear data, without sRGB conversion.
-`NormalRepeat` chooses tiling or clamping. Software renders the supplied image,
+`Normal.Repeat` chooses tiling or clamping. Software renders the supplied image,
 which should evaluate the same pattern and parameters. The [water demo](../water/)
 uses this path for periodic ripple normals.
 
@@ -355,24 +383,22 @@ Lit materials can sample the opaque scene behind their surface:
 
 ```go
 material := &nt3d.Material{
-    Transmission: .94,
-    Refraction:   .018,
-    Absorption:   nt3dmath.Vec3{X: .85, Y: .28, Z: .12},
-    Reflectivity: .02,
+    Transmission: nt3d.TransmissionStyle{Amount: .94, Refraction: .018, Absorption: nt3dmath.Vec3{X: .85, Y: .28, Z: .12}},
+    Phong: nt3d.PhongStyle{Reflectivity: .02},
 }
 ```
 
-`Transmission` is a 0–1 mix. `Refraction` is a 0–1 screen offset measured in
+`Transmission.Amount` is a 0–1 mix. `Transmission.Refraction` is a 0–1 screen offset measured in
 fractions of viewport height, directed by the projected shading normal;
-normal maps affect it. Zero gives undistorted transmission. `Absorption` is
+normal maps affect it. Zero gives undistorted transmission. `Transmission.Absorption` is
 nonnegative RGB extinction per world unit: each channel is attenuated by
 `exp(-coefficient * distance)` toward the lit surface color. Distance is the
 view-ray segment to opaque geometry, capped at 1000 world units; missing depth
 uses that cap. Use `Linear` rendering for attenuation in linear light.
 
 Transmissive meshes write depth after the opaque scene is captured and before
-ordinary transparency. They require normals and cannot use `Transparent`,
-`Cutout`, `EdgeOn`, or `Unlit`. Like transparent meshes, their triangles do not
+ordinary transparency. They require normals and cannot use `AlphaTransparent`,
+`AlphaCutout`, `AlphaEdgeOn`, or `ShadeUnlit`. Like transparent meshes, their triangles do not
 cast shadow maps. Offscreen and foreground distortion samples fall
 back to the original pixel. Only the opaque scene is captured, so stacked
 transmissive layers and transparent objects behind them are not composited as
@@ -384,13 +410,13 @@ See [Water](../water/) for the complete example.
 
 ### Flow-driven normal maps
 
-`Material.FlowMap` takes an immutable `NewFlowMap(image)` field. Red/green
+`Material.Normal.Flow.Map` takes an immutable `NewFlowMap(image)` field. Red/green
 encode signed normal-UV displacement; 127/128 are neutral. The field is sampled
-at `Geometry.UV` vertices, then interpolated per fragment. `FlowRepeat` wraps
+at `Geometry.UV` vertices, then interpolated per fragment. `Normal.Flow.Repeat` wraps
 the field rather than clamping it. Use independent `Geometry.NormalUV` for
 ripple tiling.
 
-Set `FlowStrength` to the displacement scale per cycle and animate `FlowPhase`
+Set `Normal.Flow.Strength` to the displacement scale per cycle and animate `Normal.Flow.Phase`
 in cycles. Two offset phases crossfade to avoid a discontinuity on reset;
 zero strength disables flow. A flow map requires a normal map. It adds no
 texture bindings and works in GPU and software, including normal-driven
@@ -407,19 +433,19 @@ under `root`:
 
 ```go
 err := scene.ApplyMaterial(root, &nt3d.Material{
-    PBR:       true,
-    Roughness: .25,
+    Shading: nt3d.ShadePBR,
+    PBR: nt3d.PBRStyle{Roughness: .25},
 })
 ```
 
 Every affected mesh (including all `LOD` tiers and deformed rest meshes) is
 validated before any node is modified, so a missing UV set for a textured or
 normal-mapped material returns an error without partial updates. When
-vertex-baked fields (`Tint`, `Transparent`, `Cutout`, `Threshold`, `Repeat`,
-`NormalRepeat`, `EdgeOn`, normal-map strength/tangent presence, and `FlowMap` /
-`FlowRepeat`) are unchanged, existing GPU mesh buffers and `SharedGeometry`
-instancing stay intact—including per-instance `BaseColor`, `Unlit`, PBR /
-clearcoat / sheen parameters, `FlowPhase`, `FlowStrength`, `Reflectivity`,
+vertex-baked fields (`Tint`, `AlphaTransparent`, `AlphaCutout`, `Threshold`, `Repeat`,
+`Normal.Repeat`, `AlphaEdgeOn`, normal-map strength/tangent presence, and `Normal.Flow.Map` /
+`Normal.Flow.Repeat`) are unchanged, existing GPU mesh buffers and `SharedGeometry`
+instancing stay intact—including per-instance `BaseColor`, `ShadeUnlit`, PBR /
+clearcoat / sheen parameters, `Normal.Flow.Phase`, `Normal.Flow.Strength`, `Phong.Reflectivity`,
 `Toon`, or render-pass switches like `Transmission`. Changing a vertex-baked
 field re-encodes only the affected mesh (detaching `SharedGeometry` into an
 owned copy on that node).

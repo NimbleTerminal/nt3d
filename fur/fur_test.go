@@ -35,7 +35,7 @@ func TestFurShells(t *testing.T) {
 	// Strands thin and end with height: each layer keeps fewer texels.
 	previous := 1 << 30
 	for k, g := range shells[1:] {
-		if g.Material == nil || !g.Material.Cutout || g.Material.Texture == nil {
+		if g.Material == nil || g.Material.Alpha != nt3d.AlphaCutout || g.Material.Texture == nil {
 			t.Fatalf("shell %d is not a cutout", k+1)
 		}
 		tex := g.Material.Texture
@@ -102,7 +102,7 @@ func TestFurSpacingAndTexture(t *testing.T) {
 	if d := coat.density(sphere); d < 66 || d > 76 { // The poles leave a little UV uncovered.
 		t.Fatalf("density %d for 3.5 units of surface a side, 0.05 apart", d)
 	}
-	if shells[0].Material == nil || shells[0].Material.Texture != texture || shells[0].Material.Cutout {
+	if shells[0].Material == nil || shells[0].Material.Texture != texture || shells[0].Material.Alpha == nt3d.AlphaCutout {
 		t.Fatal("the skin does not wear the texture")
 	}
 	// Strands on the left of the texture are red, on the right blue.
@@ -236,7 +236,7 @@ func TestFurFins(t *testing.T) {
 		t.Fatalf("%d fin triangles", len(fins.Indices)/3)
 	}
 	m := fins.Material
-	if !m.Cutout || !m.EdgeOn || !m.Repeat || !m.Tint {
+	if m.Alpha != nt3d.AlphaEdgeOn || !m.Repeat || !m.Tint {
 		t.Fatalf("material %+v", m)
 	}
 	// Tops stand the fur's length off the corner, along its averaged normal.
@@ -361,14 +361,14 @@ func TestFurKeepsTheCoat(t *testing.T) {
 	}
 	tex, err := nt3d.NewTexture(img)
 	check(t, err)
-	sphere, err := nt3d.BuildSphere(nt3d.Sphere{Radius: 1, Segments: 16, Rings: 8, Color: color.RGBA{255, 128, 0, 255}, Material: &nt3d.Material{Texture: tex, Repeat: true, Tint: true, Specular: .5, Transparent: true}})
+	sphere, err := nt3d.BuildSphere(nt3d.Sphere{Radius: 1, Segments: 16, Rings: 8, Color: color.RGBA{255, 128, 0, 255}, Material: &nt3d.Material{Texture: tex, Repeat: true, Tint: true, Phong: nt3d.PhongStyle{Specular: .5}, Alpha: nt3d.AlphaTransparent}})
 	check(t, err)
 	coat, err := New(Config{Length: .1, Shells: 4})
 	check(t, err)
 	shells, err := coat.Shells(sphere)
 	check(t, err)
 	skin := shells[0].Material
-	if skin == nil || skin.Texture != tex || !skin.Repeat || !skin.Tint || skin.Specular != .5 || skin.Transparent {
+	if skin == nil || skin.Texture != tex || !skin.Repeat || !skin.Tint || skin.Phong.Specular != .5 || skin.Alpha == nt3d.AlphaTransparent {
 		t.Fatalf("skin material %+v", skin)
 	}
 	if shells[0].Vertices[0].Color != sphere.Vertices[0].Color {

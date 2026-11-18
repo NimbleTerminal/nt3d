@@ -40,7 +40,11 @@ func NewBillboard(texture *Texture, width, height, opacity float32, transparent 
 		transparent = true
 	}
 	ink := color.RGBA{255, 255, 255, uint8(opacity*255 + .5)}
-	g := Geometry{Billboard: &style, Material: &Material{Texture: texture, Unlit: true, Cutout: !transparent, Transparent: transparent},
+	alpha := AlphaCutout
+	if transparent {
+		alpha = AlphaTransparent
+	}
+	g := Geometry{Billboard: &style, Material: &Material{Texture: texture, Shading: ShadeUnlit, Alpha: alpha},
 		Vertices: []Vertex{
 			{Position: nt3dmath.Vec3{X: -width / 2, Y: -height / 2}, Color: ink},
 			{Position: nt3dmath.Vec3{X: width / 2, Y: -height / 2}, Color: ink},

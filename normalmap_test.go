@@ -21,7 +21,7 @@ func testNormalMap(t *testing.T, c color.NRGBA) *Texture {
 	return tex
 }
 func normalFrame(t *testing.T) Frame {
-	m := &Material{NormalMap: testNormalMap(t, color.NRGBA{218, 128, 218, 255}), NormalStrength: 1}
+	m := &Material{Normal: NormalStyle{Map: testNormalMap(t, color.NRGBA{218, 128, 218, 255}), Strength: 1}}
 	g := quad(.9, .4, white, m, false)
 	g.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	f := flatFrame(80, 80, g)
@@ -34,11 +34,19 @@ func TestNormalMapShading(t *testing.T) {
 	if lit.R < 180 {
 		t.Fatalf("normal map did not tilt toward light: %v", lit)
 	}
-	f.Draws[0].Geometry.Material.NormalStrength = 0
-	if c := at(softwareRender(f), 40, 40); c.R != 0 {
-		t.Fatalf("zero strength did not restore geometric normal: %v", c)
+	// A strength left zero means 1; the geometric normal comes back when
+	// the map is left out.
+	f.Draws[0].Geometry.Material.Normal.Strength = 0
+	if c := at(softwareRender(f), 40, 40); c != lit {
+		t.Fatalf("a zero strength drew %v, want the map at full strength, %v", c, lit)
 	}
-	f.Draws[0].Geometry.Material.NormalStrength = 1
+	bumps := f.Draws[0].Geometry.Material.Normal.Map
+	f.Draws[0].Geometry.Material.Normal.Map = nil
+	if c := at(softwareRender(f), 40, 40); c.R != 0 {
+		t.Fatalf("leaving the map out did not restore the geometric normal: %v", c)
+	}
+	f.Draws[0].Geometry.Material.Normal.Map = bumps
+	f.Draws[0].Geometry.Material.Normal.Strength = 1
 	for i := range f.Draws[0].Geometry.UV {
 		f.Draws[0].Geometry.UV[i].U = 1 - f.Draws[0].Geometry.UV[i].U
 	}
@@ -73,11 +81,11 @@ func TestNormalMapDataAndOwnership(t *testing.T) {
 		}
 	}
 	g := normalFrame(t).Draws[0].Geometry
-	g.Material.NormalMap = testTexture(t, white)
+	g.Material.Normal.Map = testTexture(t, white)
 	if g.Validate() == nil {
 		t.Fatal("accepted color texture in normal slot")
 	}
-	g.Material.NormalMap = n
+	g.Material.Normal.Map = n
 	g.UV = nil
 	if g.Validate() == nil {
 		t.Fatal("accepted normal map without UVs")
@@ -94,7 +102,7 @@ func TestNormalMapReplacement(t *testing.T) {
 	check(t, s.SetNodeNormalMap(named(t, s, "mesh"), next))
 	after, err := s.Frame(DefaultCamera(), 80, 80)
 	check(t, err)
-	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision || before.Draws[0].Geometry.Material.NormalMap == next {
+	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision || before.Draws[0].Geometry.Material.Normal.Map == next {
 		t.Fatal("normal replacement invalidated geometry or mutated snapshot")
 	}
 }

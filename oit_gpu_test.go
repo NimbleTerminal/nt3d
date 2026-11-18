@@ -27,14 +27,14 @@ func TestGPUOITOrderInvarianceMSAAAndSoftwareParity(t *testing.T) {
 	red, blue := crossedGlassQuads(t)
 	tex := testTexture(t, color.RGBA{60, 195, 120, 220})
 	pane := quad(0.45, -2.1, color.RGBA{255, 255, 255, 160}, &Material{
-		Unlit:       true,
-		Transparent: true,
-		Texture:     tex,
+		Shading: ShadeUnlit,
+		Alpha:   AlphaTransparent,
+		Texture: tex,
 	}, false)
 	pane.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	pane.Outline = OutlineStyle{Width: 2, Color: color.RGBA{255, 220, 80, 255}}
 
-	wallBase := quad(0.32, -1.4, color.RGBA{210, 195, 175, 255}, &Material{Unlit: true}, false)
+	wallBase := quad(0.32, -1.4, color.RGBA{210, 195, 175, 255}, &Material{Shading: ShadeUnlit}, false)
 	wall, err := TransformGeometry(wallBase, nt3dmath.Translation(nt3dmath.Vec3{Y: -0.45}))
 	check(t, err)
 

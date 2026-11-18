@@ -66,7 +66,7 @@ var maxGeneratedIndices = func() int { return MeshIndexLimit() / 2 }
 // tangents, when it has UVs and none of its own and fits the extension
 // record.
 func generateTangentsOnUpload(g *Geometry) {
-	if g.Material == nil || g.Material.NormalMap == nil || len(g.Tangents) != 0 || len(g.UV) != len(g.Vertices) || len(g.Indices) == 0 || len(g.Indices) > maxGeneratedIndices() {
+	if g.Material == nil || g.Material.Normal.Map == nil || len(g.Tangents) != 0 || len(g.UV) != len(g.Vertices) || len(g.Indices) == 0 || len(g.Indices) > maxGeneratedIndices() {
 		return
 	}
 	if tangents, err := vertexTangents(*g); err == nil {

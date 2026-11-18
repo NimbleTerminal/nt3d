@@ -132,7 +132,7 @@ func paint(g *nt3d.Geometry, c color.RGBA) {
 // quads width wide at height z, each run on by half its width so bends close.
 func roadRibbons(lines []nt3d.Vertex, width, z float32, c color.RGBA) nt3d.Geometry {
 	g := nt3d.Geometry{
-		Material: &nt3d.Material{Roughness: .65, Clearcoat: .75, ClearcoatRoughness: .14},
+		Material: &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: .65, Clearcoat: nt3d.ClearcoatStyle{Amount: .75, Roughness: .14}}},
 	}
 	up := nt3dmath.Vec3{Z: 1}
 	for i := 0; i+1 < len(lines); i += 2 {
@@ -207,7 +207,7 @@ func buildToonProps(s *nt3d.Scene, here, there nt3dmath.Vec3) (props, bannerJoin
 	enclosure, err := nt3d.BuildCuboid(nt3d.Cuboid{
 		Size:     nt3dmath.Vec3{X: 5.2, Y: 2.6, Z: 4.6},
 		Color:    color.RGBA{225, 244, 252, 255},
-		Material: &nt3d.Material{PBR: true, Transmission: .82, Roughness: .08, IOR: 1.5},
+		Material: &nt3d.Material{Shading: nt3d.ShadePBR, Transmission: nt3d.TransmissionStyle{Amount: .82}, PBR: nt3d.PBRStyle{Roughness: .08, IOR: 1.5}},
 	})
 	if err != nil {
 		return 0, 0, err
@@ -226,7 +226,7 @@ func buildToonProps(s *nt3d.Scene, here, there nt3dmath.Vec3) (props, bannerJoin
 	canopy, err := nt3d.BuildCuboid(nt3d.Cuboid{
 		Size:     nt3dmath.Vec3{X: 6.2, Y: 3.4, Z: .4},
 		Color:    color.RGBA{96, 184, 214, 175},
-		Material: &nt3d.Material{Transparent: true},
+		Material: &nt3d.Material{Alpha: nt3d.AlphaTransparent},
 	})
 	if err != nil {
 		return 0, 0, err
@@ -255,9 +255,8 @@ func buildToonProps(s *nt3d.Scene, here, there nt3dmath.Vec3) (props, bannerJoin
 	}
 	var banner nt3d.Geometry
 	banner.Material = &nt3d.Material{
-		Roughness:      .82,
-		SheenColor:     color.RGBA{255, 210, 195, 255},
-		SheenRoughness: .42,
+		Shading: nt3d.ShadePBR,
+		PBR:     nt3d.PBRStyle{Roughness: .82, Sheen: nt3d.SheenStyle{Color: color.RGBA{255, 210, 195, 255}, Roughness: .42}},
 	}
 	var inf []nt3d.Influence
 	for _, v := range mastLeaf.Vertices {

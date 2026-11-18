@@ -86,7 +86,7 @@ func (d *demo) setupRoom() error {
 		{"warm wall", nt3dmath.Vec3{X: -2, Y: -1.5}, nt3dmath.Vec3{Y: 3}, nt3dmath.Vec3{Z: 2.4}, color.RGBA{210, 90, 55, 255}, wall},
 		{"cool wall", nt3dmath.Vec3{X: 2, Y: 1.5}, nt3dmath.Vec3{Y: -3}, nt3dmath.Vec3{Z: 2.4}, color.RGBA{60, 120, 210, 255}, wall},
 	} {
-		m := nt3d.Material{PBR: true, Roughness: .85, LightMap: s.lm}
+		m := nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: .85}, LightMap: s.lm}
 		id, err := d.scene.SetGeometry(s.name, roomQuad(s.p, s.u, s.v, s.c, &m))
 		if err != nil {
 			return err
@@ -99,13 +99,13 @@ func (d *demo) setupRoom() error {
 		if i == 1 {
 			x = .55
 		}
-		m := &nt3d.Material{Unlit: true, Emissive: c, EmissiveIntensity: 2}
+		m := &nt3d.Material{Shading: nt3d.ShadeUnlit, Emission: nt3d.EmissionStyle{Color: c, Intensity: 2}}
 		_, err = d.scene.SetGeometry(fmt.Sprintf("panel %d", i), roomQuad(nt3dmath.Vec3{X: x, Y: 1.49, Z: 1.35}, nt3dmath.Vec3{X: 1.1}, nt3dmath.Vec3{Z: .7}, c, m))
 		if err != nil {
 			return err
 		}
 	}
-	g, err := nt3d.BuildSphere(nt3d.Sphere{Radius: .42, Color: gray(235), Material: &nt3d.Material{PBR: true, Metallic: 1, Roughness: .12}})
+	g, err := nt3d.BuildSphere(nt3d.Sphere{Radius: .42, Color: gray(235), Material: &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Metallic: 1, Roughness: .12}}})
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (d *demo) setupRoom() error {
 	if err != nil {
 		return err
 	}
-	g, err = nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: .65, Y: .65, Z: .65}, Color: gray(190), Material: &nt3d.Material{PBR: true, Metallic: .85, Roughness: .4}})
+	g, err = nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: .65, Y: .65, Z: .65}, Color: gray(190), Material: &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Metallic: .85, Roughness: .4}}})
 	if err != nil {
 		return err
 	}

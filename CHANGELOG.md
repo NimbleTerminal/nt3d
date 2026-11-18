@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+- **Breaking: `Material` is grouped by feature, and says what kind of surface
+  it is in two fields.** It was 43 flat fields whose lighting model was
+  chosen by which of them were non-zero: sliding `Roughness` to zero turned a
+  PBR material into a Blinn-Phong one, and fields of the model not in use
+  were ignored without a word.
+
+  `Shading` is the lighting model (`ShadePhong`, the zero value; `ShadePBR`;
+  `ShadeUnlit`) and `Alpha` is what alpha does (`AlphaOpaque`, the zero value;
+  `AlphaCutout`; `AlphaEdgeOn`; `AlphaTransparent`). The rest are groups,
+  each off while it is zero, and each of type field-name-plus-`Style`.
+
+  | Before | After |
+  | --- | --- |
+  | `PBR: true`, or any PBR field non-zero | `Shading: ShadePBR` |
+  | `Unlit: true` | `Shading: ShadeUnlit` |
+  | `Transparent: true` | `Alpha: AlphaTransparent` |
+  | `Cutout: true` | `Alpha: AlphaCutout` |
+  | `Cutout: true, EdgeOn: true` | `Alpha: AlphaEdgeOn` |
+  | `Specular`, `Shininess`, `Reflectivity` | `Phong: PhongStyle{Specular, Shininess, Reflectivity}` |
+  | `Metallic`, `Roughness`, `IOR`, `ORMMap`, `ORMRepeat`, `OcclusionStrength` | `PBR: PBRStyle{…}`, same names |
+  | `Clearcoat`, `ClearcoatRoughness` | `PBR.Clearcoat: ClearcoatStyle{Amount, Roughness}` |
+  | `SheenColor`, `SheenRoughness` | `PBR.Sheen: SheenStyle{Color, Roughness}` |
+  | `SpecularColor`, `SpecularIntensity` | `PBR.Specular: SpecularStyle{Color, Intensity, Strength, Off}` |
+  | `NormalMap`, `NormalStrength`, `NormalRepeat` | `Normal: NormalStyle{Map, Strength, Repeat}` |
+  | `FlowMap`, `FlowPhase`, `FlowStrength`, `FlowRepeat` | `Normal.Flow: FlowStyle{Map, Phase, Strength, Repeat}` |
+  | `Emissive`, `EmissiveIntensity`, `EmissiveMap`, `EmissiveRepeat` | `Emission: EmissionStyle{Color, Intensity, Map, Repeat}` |
+  | `Transmission`, `Refraction`, `Absorption` | `Transmission: TransmissionStyle{Amount, Refraction, Absorption}` |
+
+  `Texture`, `Repeat`, `FullSize`, `Tint`, `BaseColor`, `Threshold`, `Toon`,
+  `LightMap`, and `Shader` are unchanged.
+
+  What changes besides the names:
+
+  - **Nothing switches the model by being set.** A material is PBR when its
+    `Shading` is `ShadePBR` and not otherwise. Code that relied on a PBR
+    field to make a material PBR must say `Shading: ShadePBR`.
+  - **A group for another model is an error.** `PBR` on a material that is
+    not `ShadePBR`, or `Phong` on one that is not `ShadePhong`, is refused
+    when the geometry reaches a scene, where it used to be ignored.
+  - **`Normal.Strength` left zero means 1,** like every other strength; it
+    used to mean off, so a normal map set alone did nothing. To have none,
+    leave the map out.
+  - **The PBR highlight's strength is `PBR.Specular.Strength`, and `Off`
+    removes it.** It used to be carried in `SpecularColor`'s alpha, which is
+    now ignored.
+  - **`PBR.NoOcclusion`** ignores the ORM map's occlusion channel, which a
+    zero `OcclusionStrength` cannot ask for.
+  - **`Material.Validate`** is new: the rules a scene applies, callable
+    before there is a scene.
+
+  The glTF reader maps `specularFactor` to `Strength` or `Off`, and leaves
+  out a normal texture whose scale is zero.
+
 - **A way to say "none" where zero means the default.** `Light.Intensity`,
   `Ambient.Intensity`, and `ReflectionProbe.Strength` treat zero as 1, so
   none could not be asked for, and a value faded to exactly zero came back at

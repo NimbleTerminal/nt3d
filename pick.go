@@ -197,7 +197,7 @@ func rayTriangle(r nt3dmath.Ray, a, b, c nt3dmath.Vec3) (t, u, w float32, ok boo
 // texture's alpha falls below the threshold, so renderers draw nothing there.
 func cutAt(g *Geometry, tri int, u, w float32) bool {
 	m := g.Material
-	if m == nil || !m.Cutout || m.Texture == nil {
+	if m == nil || !m.cutout() || m.Texture == nil {
 		return false
 	}
 	var uv UV

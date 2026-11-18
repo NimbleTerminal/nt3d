@@ -24,7 +24,7 @@ func creasePipelineKind(g *Geometry) int {
 		}
 		return creaseBlendPipeline
 	}
-	if mapped(*g) && g.Material != nil && g.Material.Cutout {
+	if mapped(*g) && g.Material != nil && g.Material.cutout() {
 		return creaseCutoutPipeline
 	}
 	return creasePipeline
@@ -37,7 +37,7 @@ func creaseNeedsMaterialBind(g *Geometry) bool {
 	if !mapped(*g) {
 		return false
 	}
-	return transparent(g) || (g.Material != nil && g.Material.Cutout)
+	return transparent(g) || (g.Material != nil && g.Material.cutout())
 }
 
 // Lazily create only the hull and crease pipelines needed by this frame. All
@@ -145,7 +145,7 @@ func creaseKeyForDraw(f Frame, d gpuDraw) (creaseUploadKey, uint64, creaseDispla
 	var cutBits uint32
 	if transparent(geom) {
 		cutBits = 0xFFFFFFFF
-	} else if geom.Material != nil && geom.Material.Cutout {
+	} else if geom.Material != nil && geom.Material.cutout() {
 		cutBits = math.Float32bits(geom.Material.threshold())
 	}
 	var poseRev uint64
@@ -187,7 +187,7 @@ func (g *gpuRenderer) prepareCreases(dev *wgpu.Device, f Frame) error {
 			segments := creaseSegments(verts, geom.Indices, geom.UV, geom.Outline.Crease)
 			isTrans := transparent(geom)
 			cutVal := float32(1)
-			if !isTrans && geom.Material != nil && geom.Material.Cutout {
+			if !isTrans && geom.Material != nil && geom.Material.cutout() {
 				cutVal = geom.Material.threshold()
 			}
 			flagFloat := float32(key.flags)
@@ -325,7 +325,7 @@ func outlinePipelineKind(g *Geometry) int {
 		if transparent(g) {
 			return 4
 		}
-		if g.Material != nil && g.Material.Cutout {
+		if g.Material != nil && g.Material.cutout() {
 			return 3
 		}
 		return 2

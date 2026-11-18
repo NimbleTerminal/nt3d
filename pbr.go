@@ -14,28 +14,28 @@ const (
 	minSheenRoughness = .07
 )
 
+// pbrActive reports whether a material is lit by ShadePBR: what its Shading
+// says, and nothing else.
+func pbrActive(m *Material) bool { return m != nil && m.Shading == ShadePBR }
+
 func sheenActive(m *Material) bool {
-	return m != nil && !m.Unlit && (m.SheenColor.R > 0 || m.SheenColor.G > 0 || m.SheenColor.B > 0)
+	return pbrActive(m) && (m.PBR.Sheen.Color.R > 0 || m.PBR.Sheen.Color.G > 0 || m.PBR.Sheen.Color.B > 0)
 }
 
-func specularCustom(m *Material) bool {
-	return m != nil && !m.Unlit && (m.SpecularColor != (color.RGBA{}) || m.SpecularIntensity > 0)
-}
-
-func pbrActive(m *Material) bool {
-	return m != nil && !m.Unlit && (m.PBR || m.Metallic > 0 || m.Roughness > 0 || m.ORMMap != nil || m.Clearcoat > 0 || sheenActive(m) || specularCustom(m))
-}
+// specularCustom reports whether a PBR material adjusts its dielectric
+// highlight from what its IOR gives.
+func specularCustom(m *Material) bool { return pbrActive(m) && m.PBR.Specular != (SpecularStyle{}) }
 
 func coatParams(m *Material) [4]float32 {
 	var out [4]float32
-	if m != nil && !m.Unlit && m.Clearcoat > 0 {
-		out[0] = max(0, min(1, m.Clearcoat))
-		out[1] = max(minPBRRoughness, min(1, m.ClearcoatRoughness))
+	if pbrActive(m) && m.PBR.Clearcoat.Amount > 0 {
+		out[0] = max(0, min(1, m.PBR.Clearcoat.Amount))
+		out[1] = max(minPBRRoughness, min(1, m.PBR.Clearcoat.Roughness))
 	}
 	if m != nil && m.BaseColor != (color.RGBA{}) {
 		c := m.BaseColor
 		alpha := float32(1)
-		if m.Transparent {
+		if m.blended() {
 			alpha = float32(c.A) / 255
 		}
 		out[2] = float32(int(c.R)<<16 | int(c.G)<<8 | int(c.B))
@@ -50,7 +50,7 @@ func baseColorFactors(m *Material, linear bool) ([3]float32, float32, bool) {
 	}
 	c := m.BaseColor
 	alpha := float32(1)
-	if m.Transparent {
+	if m.blended() {
 		alpha = float32(c.A) / 255
 	}
 	if linear {
@@ -63,8 +63,8 @@ func sheenParams(m *Material, linear bool) [4]float32 {
 	if !sheenActive(m) {
 		return [4]float32{}
 	}
-	c := m.SheenColor
-	rough := max(minSheenRoughness, min(1, m.SheenRoughness))
+	c := m.PBR.Sheen.Color
+	rough := max(minSheenRoughness, min(1, m.PBR.Sheen.Roughness))
 	if linear {
 		return [4]float32{srgbDecode[c.R], srgbDecode[c.G], srgbDecode[c.B], rough}
 	}
@@ -72,10 +72,10 @@ func sheenParams(m *Material, linear bool) [4]float32 {
 }
 
 func dielectricF0(m *Material) float32 {
-	if m == nil || m.IOR == 0 {
+	if m == nil || m.PBR.IOR == 0 {
 		return .04
 	}
-	r := (m.IOR - 1) / (m.IOR + 1)
+	r := (m.PBR.IOR - 1) / (m.PBR.IOR + 1)
 	return r * r
 }
 
@@ -87,12 +87,20 @@ func dielectricSpecular(m *Material, linear bool) (df0 [3]float32, factor, packe
 	if !specularCustom(m) {
 		return [3]float32{base, base, base}, 1, 0
 	}
-	c := m.SpecularColor
+	style := m.PBR.Specular
+	c := style.Color
 	if c == (color.RGBA{}) {
 		c = color.RGBA{255, 255, 255, 255}
 	}
-	factor = float32(c.A) / 255
-	intensity := m.SpecularIntensity
+	switch {
+	case style.Off:
+		factor = 0
+	case style.Strength == 0:
+		factor = 1
+	default:
+		factor = style.Strength
+	}
+	intensity := style.Intensity
 	if intensity == 0 {
 		intensity = 1
 	}
@@ -114,24 +122,24 @@ func dielectricSpecular(m *Material, linear bool) (df0 [3]float32, factor, packe
 }
 
 func occlusionStrength(m *Material) float32 {
-	if m == nil || m.ORMMap == nil {
+	if m == nil || m.PBR.ORMMap == nil || m.PBR.NoOcclusion {
 		return 0
 	}
-	if m.OcclusionStrength == 0 {
+	if m.PBR.OcclusionStrength == 0 {
 		return 1
 	}
-	return m.OcclusionStrength
+	return m.PBR.OcclusionStrength
 }
 
 func emissiveActive(m *Material) bool {
 	if m == nil {
 		return false
 	}
-	if m.EmissiveMap != nil {
+	if m.Emission.Map != nil {
 		// Explicit opaque black disables map emission; zero color defaults to white.
-		return m.Emissive.R > 0 || m.Emissive.G > 0 || m.Emissive.B > 0 || m.Emissive.A == 0
+		return m.Emission.Color.R > 0 || m.Emission.Color.G > 0 || m.Emission.Color.B > 0 || m.Emission.Color.A == 0
 	}
-	return m.Emissive.R > 0 || m.Emissive.G > 0 || m.Emissive.B > 0
+	return m.Emission.Color.R > 0 || m.Emission.Color.G > 0 || m.Emission.Color.B > 0
 }
 
 // emissiveFactor returns the material's emissive RGB multiplier in the frame's
@@ -140,11 +148,11 @@ func emissiveFactor(m *Material, linear bool) [3]float32 {
 	if !emissiveActive(m) {
 		return [3]float32{}
 	}
-	c := m.Emissive
-	if m.EmissiveMap != nil && c == (color.RGBA{}) {
+	c := m.Emission.Color
+	if m.Emission.Map != nil && c == (color.RGBA{}) {
 		c = color.RGBA{255, 255, 255, 255}
 	}
-	intensity := m.EmissiveIntensity
+	intensity := m.Emission.Intensity
 	if intensity == 0 {
 		intensity = 1
 	}
@@ -213,8 +221,8 @@ func sheenBRDF(nh, nl, nv, invAlpha float32) float32 {
 // units so transmissive surfaces can refract behind diffuse before adding
 // Fresnel reflections and GGX specular highlights.
 func pbrShade(base [3]float32, rig *lightRig, f *Frame, m *Material, orm [3]float32, n, p, geometric, view nt3dmath.Vec3) (diffuseOut, specularOut [3]float32) {
-	roughness := max(minPBRRoughness, min(1, m.Roughness*orm[1]))
-	metallic := max(0, min(1, m.Metallic*orm[2]))
+	roughness := max(minPBRRoughness, min(1, m.PBR.Roughness*orm[1]))
+	metallic := max(0, min(1, m.PBR.Metallic*orm[2]))
 	ao := min(1+(orm[0]-1)*occlusionStrength(m), 1-rig.screenOcclusion)
 	alpha := roughness * roughness
 	a2 := alpha * alpha

@@ -81,8 +81,8 @@ func (d *demo) rebuildWaterTiles() error {
 	}
 	w.flow = flow
 	material := w.material
-	material.NormalMap = normal
-	material.FlowMap = flow
+	material.Normal.Map = normal
+	material.Normal.Flow.Map = flow
 	tiles, err := nt3dwater.BuildWaveTiles(nt3dwater.WaveGrid{NX: n, NY: n, TileCells: 40, MinX: -extent, MaxX: extent, MinY: -extent, MaxY: extent, NormalTileSize: 2.5, Color: color.RGBA{28, 127, 155, 255}, Material: &material})
 	if err != nil {
 		return err
@@ -138,7 +138,7 @@ func (d *demo) rebuildWaterTiles() error {
 }
 
 func shoreFoam(g nt3d.Geometry, time float64) nt3d.Geometry {
-	out := nt3d.Geometry{Material: &nt3d.Material{Texture: wakeFoam(), Repeat: true, Tint: true, Transparent: true, Unlit: true}}
+	out := nt3d.Geometry{Material: &nt3d.Material{Shading: nt3d.ShadeUnlit, Texture: wakeFoam(), Repeat: true, Tint: true, Alpha: nt3d.AlphaTransparent}}
 	depths := make([]float64, len(g.Vertices))
 	for i, v := range g.Vertices {
 		depths[i] = float64(v.Position.Z) - waterBedHeight(float64(v.Position.X), float64(v.Position.Y))
@@ -171,11 +171,11 @@ func (d *demo) stepWaterTiles() error {
 	w := d.water
 	for _, tile := range w.tiles {
 		m := w.material
-		m.FlowMap = w.flow
-		m.FlowPhase = float32(math.Mod(d.animationTime/3, 1))
-		m.FlowStrength = 0
+		m.Normal.Flow.Map = w.flow
+		m.Normal.Flow.Phase = float32(math.Mod(d.animationTime/3, 1))
+		m.Normal.Flow.Strength = 0
 		if w.flowOn() {
-			m.FlowStrength = .7
+			m.Normal.Flow.Strength = .7
 		}
 		tile.wave.Geometry.Material = &m
 		if err := d.scene.ApplyMaterial(tile.mesh, &m); err != nil {

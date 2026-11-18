@@ -27,9 +27,9 @@ func TestGPULightMap(t *testing.T) {
 	check(t, err)
 	black := testLightMap(t, [3]float32{})
 	for _, mat := range []Material{
-		{}, {PBR: true, Roughness: .5}, {PBR: true, Metallic: 1, Roughness: .5}, {Unlit: true},
-		{PBR: true, Roughness: .5, Clearcoat: 1, NormalMap: testNormalMap(t, color.NRGBA{150, 128, 250, 255}), NormalStrength: 1, ORMMap: testORMMap(t, color.NRGBA{128, 128, 0, 255}), EmissiveMap: whiteMap, Emissive: color.RGBA{20, 40, 60, 255}, EmissiveIntensity: .2},
-		{Transparent: true}, {Transmission: .5},
+		{}, {Shading: ShadePBR, PBR: PBRStyle{Roughness: .5}}, {Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .5}}, {Shading: ShadeUnlit},
+		{Shading: ShadePBR, PBR: PBRStyle{Roughness: .5, Clearcoat: ClearcoatStyle{Amount: 1}, ORMMap: testORMMap(t, color.NRGBA{128, 128, 0, 255})}, Normal: NormalStyle{Map: testNormalMap(t, color.NRGBA{150, 128, 250, 255}), Strength: 1}, Emission: EmissionStyle{Map: whiteMap, Color: color.RGBA{20, 40, 60, 255}, Intensity: .2}},
+		{Alpha: AlphaTransparent}, {Transmission: TransmissionStyle{Amount: .5}},
 	} {
 		for _, linear := range []bool{true, false} {
 			r.Close()
@@ -46,7 +46,7 @@ func TestGPULightMap(t *testing.T) {
 				uv.U = 1 - uv.U
 				uv.V = .2 + uv.V*.6
 			}
-			if mat.NormalMap == nil {
+			if mat.Normal.Map == nil {
 				f.Draws[0].Geometry.UV = nil
 			}
 			gpu, err := r.Render(f)
@@ -78,7 +78,7 @@ func TestGPULightMap(t *testing.T) {
 			}
 		}
 	}
-	f := lightMapFrame(&Material{LightMap: lm, PBR: true, Roughness: .6})
+	f := lightMapFrame(&Material{Shading: ShadePBR, LightMap: lm, PBR: PBRStyle{Roughness: .6}})
 	f.Revision = revision + 10
 	f.Complete = true
 	f.MSAA = true

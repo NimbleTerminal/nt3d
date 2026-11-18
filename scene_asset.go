@@ -436,7 +436,7 @@ func (s *Scene) applyLODVariantBinding(id NodeID, n *sceneNode, b *variantBindin
 		}
 		g := *lg
 		g.Material = cloneMaterial(target)
-		if target != nil && target.NormalMap != nil && len(g.Tangents) == 0 {
+		if target != nil && target.Normal.Map != nil && len(g.Tangents) == 0 {
 			generateTangentsOnUpload(&g.Geometry)
 		}
 		if !vertexMaterialEqual(lg.Geometry, g.Geometry) {

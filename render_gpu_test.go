@@ -21,7 +21,7 @@ func TestGPUSceneRevisions(t *testing.T) {
 	s := NewScene()
 	red := testTexture(t, color.RGBA{255, 0, 0, 255})
 	green := testTexture(t, color.RGBA{0, 255, 0, 255})
-	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Texture: red, Unlit: true}})
+	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Shading: ShadeUnlit, Texture: red}})
 	check(t, err)
 	id, err := s.SetGeometry("terrain", mesh)
 	check(t, err)
@@ -133,7 +133,7 @@ func TestGPUProceduralTexture(t *testing.T) {
 	fallback := testTexture(t, red)
 	tex, err := NewShaderTexture(`fn nt3dTexture(uv: vec2<f32>) -> vec4<f32> { return vec4<f32>(0,1,0,1); }`, fallback)
 	check(t, err)
-	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Texture: tex, Unlit: true}})
+	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Shading: ShadeUnlit, Texture: tex}})
 	check(t, err)
 	s := NewScene()
 	_, err = s.SetGeometry("terrain", mesh)
@@ -176,7 +176,7 @@ func TestGPUProceduralParameters(t *testing.T) {
 	check(t, err)
 	second, err := NewShaderTextureWithParameters(source, [4]float32{0, 1, 0, 1}, testTexture(t, green))
 	check(t, err)
-	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Texture: first, Unlit: true}})
+	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Shading: ShadeUnlit, Texture: first}})
 	check(t, err)
 	s := NewScene()
 	_, err = s.SetGeometry("terrain", mesh)
@@ -218,7 +218,7 @@ func TestGPUPerNodeGeometryCache(t *testing.T) {
 	moving, err := s.SetGeometry("moving", pointGeometry())
 	check(t, err)
 	tex := testTexture(t, color.RGBA{10, 220, 80, 255})
-	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Texture: tex, Unlit: true}})
+	mesh, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -.7, MaxX: .7, MinY: -.7, MaxY: .7, Heights: make([]float32, 9), Material: &Material{Shading: ShadeUnlit, Texture: tex}})
 	check(t, err)
 	stable, err := s.SetGeometry("stable", mesh)
 	check(t, err)
@@ -277,7 +277,7 @@ func TestGPUPerNodeGeometryCache(t *testing.T) {
 		t.Fatal("snapshot replay invalidated unchanged mesh")
 	}
 	// Material changes invalidate only their own node, including textured -> plain.
-	mesh.Material = &Material{Unlit: true}
+	mesh.Material = &Material{Shading: ShadeUnlit}
 	check(t, s.SetNodeGeometry(stable, mesh))
 	_, err = r.Render(frame(t, s))
 	check(t, err)
@@ -425,7 +425,7 @@ func TestGPUTintAndEdgeOn(t *testing.T) {
 		normal nt3dmath.Vec3
 		shown  bool
 	}{{nt3dmath.Vec3{Z: 1}, false}, {nt3dmath.Vec3{X: 1}, true}} {
-		f := materialScene(t, Material{Cutout: true, EdgeOn: true}, c.normal, white)
+		f := materialScene(t, Material{Alpha: AlphaEdgeOn}, c.normal, white)
 		img, err := r.Render(f)
 		check(t, err)
 		g, s := drawn(img, f.Background), drawn(softwareRender(f), f.Background)
@@ -472,7 +472,7 @@ func TestGPUTransparentMatchesSoftware(t *testing.T) {
 	half.SetNRGBA(0, 0, color.NRGBA{200, 200, 0, 128})
 	tex, err := NewTexture(half)
 	check(t, err)
-	textured := quad(1, .3, color.RGBA{255, 255, 255, 255}, &Material{Texture: tex, Transparent: true}, false)
+	textured := quad(1, .3, color.RGBA{255, 255, 255, 255}, &Material{Texture: tex, Alpha: AlphaTransparent}, false)
 	textured.UV = make([]UV, 4)
 	l := oldLight(nt3dmath.Vec3{Z: 1}, .2, true)
 	light := &l
@@ -519,7 +519,7 @@ func TestGPULinearLighting(t *testing.T) {
 func TestGPUSpecularAndFogMatchSoftware(t *testing.T) {
 	ball, err := BuildSphere(Sphere{Radius: .6, Color: gray, Material: shiny})
 	check(t, err)
-	glassBall, err := BuildSphere(Sphere{Radius: .6, Color: color.RGBA{240, 240, 240, 128}, Material: &Material{Transparent: true, Specular: .8, Shininess: 64}})
+	glassBall, err := BuildSphere(Sphere{Radius: .6, Color: color.RGBA{240, 240, 240, 128}, Material: &Material{Alpha: AlphaTransparent, Phong: PhongStyle{Specular: .8, Shininess: 64}}})
 	check(t, err)
 	marks := Geometry{
 		Points:    []Point{{Position: nt3dmath.Vec3{X: -.5, Z: .3}, Radius: 4, Color: color.RGBA{200, 0, 0, 255}}},
@@ -534,7 +534,7 @@ func TestGPUSpecularAndFogMatchSoftware(t *testing.T) {
 	ortho.Perspective = false
 	scenes := map[string]Frame{
 		"shiny sphere":   blendScene(t, overhead, ball),
-		"per-pixel quad": blendScene(t, overhead, quad(1.2, .3, gray, &Material{Specular: 1, Shininess: 1024}, false)),
+		"per-pixel quad": blendScene(t, overhead, quad(1.2, .3, gray, &Material{Phong: PhongStyle{Specular: 1, Shininess: 1024}}, false)),
 		"fogged sphere":  fogged(blendScene(t, overhead, ball)),
 		"fogged marks":   fogged(blendScene(t, nil, marks)),
 		"fogged glass":   fogged(blendScene(t, overhead, glassBall)),
@@ -820,7 +820,7 @@ func TestGPUInstanceSetFailureRetries(t *testing.T) {
 func TestGPULightingMatchesSoftware(t *testing.T) {
 	ball, err := BuildSphere(Sphere{Radius: .6, Color: gray, Material: shiny})
 	check(t, err)
-	glassBall, err := BuildSphere(Sphere{Radius: .6, Color: color.RGBA{240, 240, 240, 128}, Material: &Material{Transparent: true, Specular: .8, Shininess: 64}})
+	glassBall, err := BuildSphere(Sphere{Radius: .6, Color: color.RGBA{240, 240, 240, 128}, Material: &Material{Alpha: AlphaTransparent, Phong: PhongStyle{Specular: .8, Shininess: 64}}})
 	check(t, err)
 	rig := Lighting{
 		Ambient: Ambient{Sky: color.RGBA{90, 110, 160, 255}, Ground: color.RGBA{70, 50, 30, 255}, Intensity: .8},
@@ -843,7 +843,7 @@ func TestGPULightingMatchesSoftware(t *testing.T) {
 		"rig on a shiny sphere":     blendScene(t, &rig, ball),
 		"eight lights":              blendScene(t, &eight, ball),
 		"glass under a point light": blendScene(t, &behind, glassBall),
-		"no lighting":               blendScene(t, &Lighting{}, quad(.3, .3, white, &Material{Unlit: true}, false), quad(1.2, .2, white, nil, false)),
+		"no lighting":               blendScene(t, &Lighting{}, quad(.3, .3, white, &Material{Shading: ShadeUnlit}, false), quad(1.2, .2, white, nil, false)),
 		"light on the surface":      blendScene(t, &onSurface, quad(1.2, .3, white, shiny, false)),
 	}
 	r := &gpuRenderer{}
@@ -1077,7 +1077,7 @@ func TestGPUOutlinedCutoutMatchesSoftware(t *testing.T) {
 	defer r.Close()
 	tex, err := NewTexture(strandImage(128, 8, 4))
 	check(t, err)
-	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 32, Rings: 16, Material: &Material{Texture: tex, Cutout: true, Repeat: true, Unlit: true, Threshold: .3}})
+	sphere, err := BuildSphere(Sphere{Radius: 1, Segments: 32, Rings: 16, Material: &Material{Shading: ShadeUnlit, Texture: tex, Alpha: AlphaCutout, Repeat: true, Threshold: .3}})
 	check(t, err)
 	for i := range sphere.UV {
 		sphere.UV[i].U *= 24

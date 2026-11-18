@@ -75,14 +75,14 @@ func TestLightMapDiffuseComposition(t *testing.T) {
 	}
 	black := testLightMap(t, [3]float32{})
 	bright := testLightMap(t, [3]float32{math.Pi, 0, 0})
-	for _, mat := range []Material{{}, {PBR: true, Roughness: .5}, {Unlit: true}, {PBR: true, Metallic: 1, Roughness: .5}} {
+	for _, mat := range []Material{{}, {Shading: ShadePBR, PBR: PBRStyle{Roughness: .5}}, {Shading: ShadeUnlit}, {Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .5}}} {
 		mat.LightMap = black
 		f := lightMapFrame(&mat)
 		f.Lighting = Lighting{Ambient: Ambient{Sky: color.RGBA{255, 255, 255, 255}, Ground: color.RGBA{255, 255, 255, 255}}}
 		before := softwareRender(f)
 		mat.LightMap = bright
 		after := softwareRender(f)
-		if mat.Unlit || mat.Metallic == 1 {
+		if mat.unlit() || mat.PBR.Metallic == 1 {
 			if !bytes.Equal(before.(*image.RGBA).Pix, after.(*image.RGBA).Pix) {
 				t.Fatal("lightmap changed unlit/metal surface")
 			}

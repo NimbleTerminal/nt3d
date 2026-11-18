@@ -47,13 +47,13 @@ func TestGeometryCloneCopiesEveryField(t *testing.T) {
 
 // Editing a clone leaves the original as it was, and a clone of nothing is nothing.
 func TestGeometryCloneIsIndependent(t *testing.T) {
-	g, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Material: &Material{Roughness: .5}})
+	g, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .5}}})
 	check(t, err)
 	c := g.Clone()
 	c.Vertices[0].Position.X += 10
 	c.Indices[0] = 7
-	c.Material.Roughness = 1
-	if g.Vertices[0].Position.X == c.Vertices[0].Position.X || g.Indices[0] == 7 || g.Material.Roughness != .5 {
+	c.Material.PBR.Roughness = 1
+	if g.Vertices[0].Position.X == c.Vertices[0].Position.X || g.Indices[0] == 7 || g.Material.PBR.Roughness != .5 {
 		t.Fatal("editing the clone changed the original")
 	}
 	if err := c.Validate(); err != nil {

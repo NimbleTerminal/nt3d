@@ -39,8 +39,7 @@ type gltfLook struct {
 	clearcoat, clearcoatRoughness                       float32
 	sheenColor                                          color.RGBA
 	sheenRoughness                                      float32
-	specularColor                                       color.RGBA
-	specularIntensity                                   float32
+	specular                                            nt3d.SpecularStyle
 	transmission, refraction                            float32
 	absorption                                          nt3dmath.Vec3
 	plain                                               bool // No material: Options.Color paints it.
@@ -143,7 +142,9 @@ func (mb *materialBuild) base() {
 			l.orm, l.ormRepeat = d.ormTexture(mrIdx, occIdx)
 		}
 	}
-	if n := m.NormalTexture; n != nil && n.Index != nil && !l.unlit {
+	// A scale of zero is a map that does nothing; nt3d reads a zero strength
+	// as 1, so such a map is left out.
+	if n := m.NormalTexture; n != nil && n.Index != nil && !l.unlit && n.ScaleOrDefault() != 0 {
 		l.normal, l.normalRepeat = d.textureKind(*n.Index, true)
 		l.normalStrength = float32(n.ScaleOrDefault())
 		nMap, err := readMapping(n.TexCoord, n.Extensions)

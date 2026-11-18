@@ -38,7 +38,7 @@ Every layer samples the texture's [coverage-preserving mipmaps](../materials/#cu
 
 ## Fins
 
-Seen edge-on, shells show as dashes: the technique's known weakness. `Coat.Fins(base)` fixes it with a strip of strands standing on every edge, shown only where the surface turns edge-on to the viewer (`Material.EdgeOn`), so the silhouette fills in. Fins are tinted from the base's texture or from root to tip, and stand straight when the shells sway.
+Seen edge-on, shells show as dashes: the technique's known weakness. `Coat.Fins(base)` fixes it with a strip of strands standing on every edge, shown only where the surface turns edge-on to the viewer (`AlphaEdgeOn`), so the silhouette fills in. Fins are tinted from the base's texture or from root to tip, and stand straight when the shells sway.
 
 In wireframe, the coat draws as its outer outline.
 

@@ -76,7 +76,7 @@ func makeLODTestMesh(t *testing.T, tris int, col color.RGBA) *SharedGeometry {
 		Vertices: verts,
 		UV:       uvs,
 		Indices:  idx,
-		Material: &Material{Roughness: 0.6, BaseColor: col},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 0.6}, BaseColor: col},
 	}
 	sg, err := NewSharedGeometry(g)
 	check(t, err)
@@ -319,10 +319,10 @@ func TestSceneAssetLODMaterialVariantsAndCombine(t *testing.T) {
 	normTex, err := NewNormalMap(normImg)
 	check(t, err)
 
-	taxi0 := &Material{Roughness: 0.2, BaseColor: color.RGBA{240, 190, 20, 255}}
-	taxi1 := &Material{Roughness: 0.3, BaseColor: color.RGBA{235, 185, 25, 255}}
-	weathered := &Material{Roughness: 0.9, BaseColor: color.RGBA{150, 90, 60, 255}, NormalMap: normTex}
-	police1 := &Material{Roughness: 0.25, BaseColor: color.RGBA{30, 80, 230, 255}}
+	taxi0 := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 0.2}, BaseColor: color.RGBA{240, 190, 20, 255}}
+	taxi1 := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 0.3}, BaseColor: color.RGBA{235, 185, 25, 255}}
+	weathered := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 0.9}, BaseColor: color.RGBA{150, 90, 60, 255}, Normal: NormalStyle{Map: normTex}}
+	police1 := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 0.25}, BaseColor: color.RGBA{30, 80, 230, 255}}
 
 	tier0Asset := &SceneAsset{
 		Variants: []string{"Taxi", "Weathered"},

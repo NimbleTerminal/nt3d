@@ -113,10 +113,10 @@ func TestToonDemo(t *testing.T) {
 				low, high = min(low, z), max(high, z)
 			}
 		case props[node]:
-			if g.Material != nil && g.Material.Transmission > 0 {
+			if g.Material != nil && g.Material.Transmission.Amount > 0 {
 				transmissive++
 			}
-			if g.Material != nil && g.Material.Transparent {
+			if g.Material != nil && g.Material.Alpha == nt3d.AlphaTransparent {
 				transparentProps++
 			}
 		case street[node]:

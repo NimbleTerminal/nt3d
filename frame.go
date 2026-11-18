@@ -119,7 +119,7 @@ type Frame struct {
 	// It may be combined with Supersample.
 	MSAA bool
 	// OIT enables McGuire & Bavoil Weighted Blended Order-Independent
-	// Transparency for Material.Transparent meshes on WebGPU (including 4x MSAA)
+	// Transparency for AlphaTransparent meshes on WebGPU (including 4x MSAA)
 	// and software, compositing intersecting or overlapping transparent layers
 	// in a single unsorted pass without view-dependent popping. Wireframe
 	// ignores it.

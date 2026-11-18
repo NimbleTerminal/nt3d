@@ -311,16 +311,16 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		textured := material != nil && material.Texture != nil
 		hull := side < 0
 		blended := side == backFaces || side == frontFaces || side == outlineTransparent
-		hasMatShader := material != nil && material.Shader != nil && (!hull || material.Cutout || blended)
-		cutout := material != nil && material.Cutout && (textured || hasMatShader)
+		hasMatShader := material != nil && material.Shader != nil && (!hull || material.cutout() || blended)
+		cutout := material != nil && material.cutout() && (textured || hasMatShader)
 		fullSize := textured && material.FullSize && material.Texture.shader == ""
 		back := side == backFaces || hull
 		pbr := pbrActive(material) && !hull
 		emissive := emissiveActive(material) && !hull
 		emissiveMul := emissiveFactor(material, linear)
 		hasBaseColor := material != nil && material.BaseColor != (color.RGBA{})
-		directTexture := textured && !hasMatShader && !linear && material.Unlit && !material.Tint && !hasBaseColor && !fogged && !blended && !hull && !emissive
-		normalMapped := material != nil && material.NormalMap != nil && material.NormalStrength != 0 && (!material.Unlit || hasMatShader) && !hull
+		directTexture := textured && !hasMatShader && !linear && material.unlit() && !material.Tint && !hasBaseColor && !fogged && !blended && !hull && !emissive
+		normalMapped := material.normalStrength() != 0 && (!material.unlit() || hasMatShader) && !hull
 		var tangent, bitangent nt3dmath.Vec3
 		// A mesh with frames has one at every corner, so any nonzero
 		// handedness (lerped at a cut edge, they can cancel at one corner
@@ -329,13 +329,13 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		if normalMapped && !framed {
 			tangent, bitangent = normalBasis(a, b, c)
 		}
-		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && (f.probesOn() || f.Environment != nil && !f.EnvironmentBackgroundOnly)
-		specular := !pbr && material != nil && material.Specular > 0 && !material.Unlit
+		reflective := !pbr && material != nil && material.Phong.Reflectivity > 0 && !material.unlit() && (f.probesOn() || f.Environment != nil && !f.EnvironmentBackgroundOnly)
+		specular := !pbr && material != nil && material.Phong.Specular > 0 && !material.unlit()
 		hasNormals := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
-		lit := hasNormals && (material == nil || !material.Unlit) && !hull
+		lit := hasNormals && (material == nil || !material.unlit()) && !hull
 		// Whether pixels need the world point, and so perspective weights.
-		toon := material != nil && material.Toon.on() && !material.Unlit
-		located := fogged || hasMatShader || lit && (pbr || specular || reflective || material != nil && material.Transmission > 0 || rig.points || rig.shadow != nil || toon && material.Toon.Rim > 0)
+		toon := material != nil && material.Toon.on() && !material.unlit()
+		located := fogged || hasMatShader || lit && (pbr || specular || reflective || material != nil && material.Transmission.Amount > 0 || rig.points || rig.shadow != nil || toon && material.Toon.Rim > 0)
 		hasMapped := isMapped
 		perspective := blended || textured || lit || fogged || hasMapped || hasMatShader
 		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
@@ -466,7 +466,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 									bt = bt.Scale(-1)
 								}
 							}
-							n = perturbNormal(n, t, bt, sample, material.NormalStrength)
+							n = perturbNormal(n, t, bt, sample, material.normalStrength())
 						}
 						shadeN = n
 						hasShadeN = true
@@ -519,7 +519,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 					rig.bakedDiffuse = lightMapDiffuse(sample, linear)
 				}
 				rig.screenOcclusion = 0
-				if ao != nil && !blended && (material == nil || material.Transmission == 0) {
+				if ao != nil && !blended && (material == nil || material.Transmission.Amount == 0) {
 					rig.screenOcclusion = 1 - ao[y*f.Width+x]
 				}
 				if lit && hasShadeN {
@@ -527,15 +527,15 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 					{
 						if pbr {
 							orm := [3]float32{1, 1, 1}
-							if material.ORMMap != nil {
+							if material.PBR.ORMMap != nil {
 								uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
-								s := material.ORMMap.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.ORMRepeat, aniso)
+								s := material.PBR.ORMMap.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.PBR.ORMRepeat, aniso)
 								orm = [3]float32{s[0], s[1], s[2]}
 							}
 							base := [3]float32{rgb[0] / 255, rgb[1] / 255, rgb[2] / 255}
 							diffOut, specOut := pbrShade(base, &rig, &f, material, orm, n, p, geometric, f.viewAt(p))
 							rgb = [3]float32{diffOut[0] * 255, diffOut[1] * 255, diffOut[2] * 255}
-							if material.Transmission > 0 && opaqueColor != nil {
+							if material.Transmission.Amount > 0 && opaqueColor != nil {
 								transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
 							}
 							for k := range rgb {
@@ -548,11 +548,11 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 							} else {
 								rig.lightNormal(&rgb, n, p, geometric)
 							}
-							if material != nil && material.Transmission > 0 && opaqueColor != nil {
+							if material != nil && material.Transmission.Amount > 0 && opaqueColor != nil {
 								transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
 							}
 							if reflective {
-								reflectSceneEnvironment(&rgb, &f, p, material.Reflectivity, n, f.viewAt(p), 1-rig.screenOcclusion)
+								reflectSceneEnvironment(&rgb, &f, p, material.Phong.Reflectivity, n, f.viewAt(p), 1-rig.screenOcclusion)
 							}
 							if specular {
 								var s [3]float32
@@ -575,9 +575,9 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				}
 				if emissive {
 					em := [3]float32{1, 1, 1}
-					if material.EmissiveMap != nil {
+					if material.Emission.Map != nil {
 						uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
-						s := material.EmissiveMap.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.EmissiveRepeat, aniso)
+						s := material.Emission.Map.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.Emission.Repeat, aniso)
 						for k := range em {
 							em[k] = s[k]
 							if !linear {
@@ -641,7 +641,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		if whole && (min(corners[0].w, corners[1].w, corners[2].w) <= 0 || facing(&corners[0], &corners[1], &corners[2]) == back) {
 			return
 		}
-		unlit, textured := material != nil && material.Unlit, material != nil && material.Texture != nil
+		unlit, textured := material.unlit(), material != nil && material.Texture != nil
 		hasMatShader := material != nil && material.Shader != nil && !hull
 		baseMul, baseAlpha, hasBaseColor := baseColorFactors(material, linear)
 		for k, i := range index {
@@ -651,7 +651,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			}
 			if blended {
 				corners[k].cut = (float32(c.A) / 255) * baseAlpha
-			} else if textured && material.EdgeOn {
+			} else if textured && material.edgeOn() {
 				corners[k].cut = edgeOnCut(material.threshold(), normals.Direction(n), f.viewAt(world.Point(vertices[i].Position)))
 			} else if material != nil {
 				corners[k].cut = material.threshold()
@@ -901,10 +901,10 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		inverse, _ := inst.World.InverseAffine()
 		normals := inverse.Transpose()
 		// Hulls keep alpha sampling, but never lighting or normal-map detail.
-		material := Material{Unlit: true}
+		material := Material{Shading: ShadeUnlit}
 		if g.Material != nil {
 			material = *g.Material
-			material.Unlit = true
+			material.Shading = ShadeUnlit
 			material.Shader = nil
 		}
 		verts := displacedVertices(g, inst.World)
@@ -953,7 +953,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		_, creaseBaseAlpha, _ := baseColorFactors(g.Material, false)
 		hasTex := g.Material != nil && g.Material.Texture != nil
 		hasMatShader := g.Material != nil && g.Material.Shader != nil
-		isCutout := !isTrans && g.Material != nil && g.Material.Cutout && (hasTex || hasMatShader)
+		isCutout := !isTrans && g.Material != nil && g.Material.cutout() && (hasTex || hasMatShader)
 		inkWork := [3]float32{fromPixel(ink.R), fromPixel(ink.G), fromPixel(ink.B)}
 		for i := 0; i+1 < len(segments); i += 2 {
 			a, b := segments[i], segments[i+1]

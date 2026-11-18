@@ -29,8 +29,8 @@ func TestEnvironmentReflectionFresnel(t *testing.T) {
 	f.Forward = nt3dmath.Vec3{Z: -1}
 	f.Environment = e
 	m := f.Draws[0].Geometry.Material
-	m.NormalStrength = 0
-	m.Reflectivity = 1
+	m.Normal.Strength = 0
+	m.Phong.Reflectivity = 1
 	f.Lighting = Lighting{}
 	if c := at(softwareRender(f), 40, 40); c.R < 254 {
 		t.Fatal("mirror did not reflect sky", c)
@@ -40,7 +40,7 @@ func TestEnvironmentReflectionFresnel(t *testing.T) {
 		t.Fatal("missing sky changed shading", c)
 	}
 	for _, v := range []float32{-1, 2, float32(math.NaN())} {
-		m.Reflectivity = v
+		m.Phong.Reflectivity = v
 		if err := f.Draws[0].Geometry.Validate(); err == nil {
 			t.Fatal("accepted reflection", v)
 		}
@@ -84,10 +84,10 @@ func TestBackgroundOnlyEnvironmentIsNotReflected(t *testing.T) {
 		t.Fatalf("a matte surface is lit by a background-only sky: %v", c)
 	}
 	// A mirror, classic or PBR, does not reflect it.
-	if c := center(backdrop(&Material{Reflectivity: 1})); c.R != 0 {
+	if c := center(backdrop(&Material{Phong: PhongStyle{Reflectivity: 1}})); c.R != 0 {
 		t.Fatalf("a reflective surface reflects a background-only sky: %v", c)
 	}
-	pbrMirror := &Material{PBR: true, Metallic: 1, Roughness: .05}
+	pbrMirror := &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .05}}
 	lit := backdrop(pbrMirror)
 	lit.EnvironmentBackgroundOnly = false
 	if only, full := center(backdrop(pbrMirror)).R, center(lit).R; int(only)+100 >= int(full) {
@@ -96,7 +96,7 @@ func TestBackgroundOnlyEnvironmentIsNotReflected(t *testing.T) {
 
 	// A probe holding the sky makes both reflect it, the frame still unlit by it.
 	probes := []ReflectionProbe{{Environment: sky, Position: nt3dmath.Vec3{Z: 1}, Bounds: probeBox(10)}}
-	water := backdrop(&Material{Reflectivity: 1})
+	water := backdrop(&Material{Phong: PhongStyle{Reflectivity: 1}})
 	water.ReflectionProbes = probes
 	if c := center(water); c.R < 200 {
 		t.Fatalf("a probe of the sky is not reflected under a background-only environment: %v", c)

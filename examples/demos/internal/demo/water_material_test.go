@@ -45,7 +45,7 @@ func TestWaterMaterialTogglesPreservePose(t *testing.T) {
 			t.Fatal("material toggle moved craft")
 		}
 	}
-	if d.water.grid.Material.NormalStrength != 1 || d.water.grid.Material.Reflectivity != .02 {
+	if d.water.grid.Material.Normal.Strength != 1 || d.water.grid.Material.Phong.Reflectivity != .02 {
 		t.Fatal("toggles did not restore material")
 	}
 }

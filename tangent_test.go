@@ -53,7 +53,7 @@ func TestTangentValidation(t *testing.T) {
 		big.Indices = append(big.Indices, 0, 1, 2)
 	}
 	wantError(t, big.Validate(), "exceeds GPU binding limit")
-	big.Material.NormalMap = nil
+	big.Material.Normal.Map = nil
 	check(t, big.Validate())
 }
 
@@ -251,7 +251,7 @@ func TestSceneGeneratesTangents(t *testing.T) {
 		t.Fatalf("scene tangents %v", f.Draws[0].Geometry.Tangents)
 	}
 	plain := g.Clone()
-	plain.Material.NormalMap = nil
+	plain.Material.Normal.Map = nil
 	_, err = s.SetGeometry("mesh", plain)
 	check(t, err)
 	if len(frame(t, s).Draws[0].Geometry.Tangents) != 0 {
@@ -302,7 +302,7 @@ func TestAuthoredTangentShading(t *testing.T) {
 		t.Fatalf("authored -X tangent ignored: %d", r)
 	}
 	// A map tilted +Y under a +Y light: the handedness picks the bitangent.
-	g.Material.NormalMap = testNormalMap(t, color.NRGBA{128, 218, 218, 255})
+	g.Material.Normal.Map = testNormalMap(t, color.NRGBA{128, 218, 218, 255})
 	f.Lighting.Lights[0].Direction = nt3dmath.Vec3{Y: 1}
 	for i := range g.Tangents {
 		g.Tangents[i] = Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1}
@@ -321,16 +321,16 @@ func TestAuthoredTangentShading(t *testing.T) {
 		g.Tangents[i] = Tangent{Direction: nt3dmath.Vec3{Z: 1}, W: 1}
 	}
 	flat := softwareRender(f)
-	g.Material.NormalStrength = 0
+	g.Material.Normal.Strength = 0
 	if got, want := at(softwareRender(f), 40, 40), at(flat, 40, 40); got != want {
 		t.Fatalf("parallel tangent perturbed: %v, want %v", want, got)
 	}
-	g.Material.NormalStrength = 1
+	g.Material.Normal.Strength = 1
 	// The frame turns with the instance.
 	for i := range g.Tangents {
 		g.Tangents[i] = Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1}
 	}
-	g.Material.NormalMap = testNormalMap(t, color.NRGBA{218, 128, 218, 255})
+	g.Material.Normal.Map = testNormalMap(t, color.NRGBA{218, 128, 218, 255})
 	placeAlone(&f, nt3dmath.RotationZ(math.Pi/2))
 	if r := red(); r < 180 {
 		t.Fatalf("rotated frame did not follow the instance: %d", r)

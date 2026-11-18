@@ -98,6 +98,10 @@ func TestSoftwarePostProcessOffAndMSAAFallback(t *testing.T) {
 func flatQuadFrame(t *testing.T, col color.RGBA, unlit bool, lightIntensity float32) Frame {
 	t.Helper()
 	n := nt3dmath.Vec3{Z: 1}
+	shading := ShadePhong
+	if unlit {
+		shading = ShadeUnlit
+	}
 	g := Geometry{
 		Vertices: []Vertex{
 			{Position: nt3dmath.Vec3{X: -3, Y: -3, Z: 0}, Normal: n, Color: col},
@@ -106,7 +110,7 @@ func flatQuadFrame(t *testing.T, col color.RGBA, unlit bool, lightIntensity floa
 			{Position: nt3dmath.Vec3{X: -3, Y: 3, Z: 0}, Normal: n, Color: col},
 		},
 		Indices:  []uint32{0, 1, 2, 0, 2, 3},
-		Material: &Material{Unlit: unlit},
+		Material: &Material{Shading: shading},
 	}
 	s := NewScene()
 	_, err := s.SetGeometry("quad", g)

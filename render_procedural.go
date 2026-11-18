@@ -164,9 +164,9 @@ func (g *gpuRenderer) prepareProcedural(dev *wgpu.Device, f Frame) error {
 			m := materialOrZero(geom.Material)
 			for _, key := range []proceduralKey{
 				{baseMap(&m), m.Repeat},
-				{normalMap(&m), m.NormalRepeat},
-				{ormMap(&m), m.ORMRepeat},
-				{emissiveMap(&m), m.EmissiveRepeat},
+				{normalMap(&m), m.Normal.Repeat},
+				{ormMap(&m), m.PBR.ORMRepeat},
+				{emissiveMap(&m), m.Emission.Repeat},
 			} {
 				if key.src.shader != "" {
 					used[key] = true

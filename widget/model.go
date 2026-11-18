@@ -124,7 +124,7 @@ func WithMSAA(enabled bool) Option {
 }
 
 // WithOIT enables Weighted Blended Order-Independent Transparency for
-// Material.Transparent meshes on GPU and software frames and snapshots.
+// AlphaTransparent meshes on GPU and software frames and snapshots.
 func WithOIT(enabled bool) Option {
 	return func(m *Model) { m.oit = enabled }
 }

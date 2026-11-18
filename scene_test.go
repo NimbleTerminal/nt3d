@@ -86,15 +86,15 @@ func TestHierarchyAndTransactions(t *testing.T) {
 }
 func TestGeometryAndTextureSnapshotOwnership(t *testing.T) {
 	s := NewScene()
-	g, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -1, MaxX: 1, MinY: -1, MaxY: 1, Sampler: func(x, y float32) float32 { return x + y }, Material: &Material{Texture: testTexture(t, color.RGBA{255, 0, 0, 255}), Unlit: true}})
+	g, err := BuildHeightfield(Heightfield{NX: 3, NY: 3, MinX: -1, MaxX: 1, MinY: -1, MaxY: 1, Sampler: func(x, y float32) float32 { return x + y }, Material: &Material{Shading: ShadeUnlit, Texture: testTexture(t, color.RGBA{255, 0, 0, 255})}})
 	check(t, err)
 	_, err = s.SetGeometry("terrain", g)
 	check(t, err)
 	before := frame(t, s)
 	g.Vertices[0].Position.X = 999
 	g.Indices[0] = 999
-	g.Material.Unlit = false
-	if before.Draws[0].Geometry.Vertices[0].Position.X == 999 || before.Draws[0].Geometry.Indices[0] == 999 || !before.Draws[0].Geometry.Material.Unlit {
+	g.Material.Shading = ShadePhong
+	if before.Draws[0].Geometry.Vertices[0].Position.X == 999 || before.Draws[0].Geometry.Indices[0] == 999 || !before.Draws[0].Geometry.Material.unlit() {
 		t.Fatal("caller storage retained")
 	}
 	green := testTexture(t, color.RGBA{0, 255, 0, 255})

@@ -182,10 +182,10 @@ func (d *VertexDisplacement) valid() bool {
 //
 // Color is in linear light: RGB holds the surface's linear base color after
 // vertex color/tint and Material.Texture sampling, and Color[3] holds the
-// surface's base alpha (including vertex opacity when Material.Transparent is
-// true). Returned RGB values remain in linear light (>= 0, unclamped above 1 so
+// surface's base alpha (including vertex opacity when Alpha is
+// AlphaTransparent). Returned RGB values remain in linear light (>= 0, unclamped above 1 so
 // custom shaders can drive HDR Bloom and tone mapping) before scene lighting
-// (unless Material.Unlit is true), emissive, and fog; returned alpha is clamped
+// (unless Shading is ShadeUnlit), emissive, and fog; returned alpha is clamped
 // to 0..1 for cutout testing, alpha blending, and WBOIT.
 type MaterialColorInput struct {
 	World  nt3dmath.Vec3 // World-space fragment position.

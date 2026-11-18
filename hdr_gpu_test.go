@@ -33,7 +33,7 @@ func TestGPUHDREnvironmentSkyBloomAndIBLParity(t *testing.T) {
 		Segments: 40,
 		Rings:    24,
 		Color:    color.RGBA{245, 245, 250, 255},
-		Material: &Material{PBR: true, Metallic: 1, Roughness: 0.1},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: 0.1}},
 	})
 	check(t, err)
 	nChrome, err := s.SetGeometry("chrome", chrome)

@@ -12,7 +12,7 @@ import (
 // NewNormalMap snapshots a tangent-space RGB normal image as linear data.
 // RGB encodes XYZ in [0,1], decoded to [-1,1]; alpha is ignored. Filtering
 // and mipmaps average encoded vectors without sRGB conversion. The sampled
-// vector is normalized after applying Material.NormalStrength to X and Y.
+// vector is normalized after applying Material.Normal.Strength to X and Y.
 func NewNormalMap(src image.Image) (*Texture, error) {
 	t, err := NewTexture(src)
 	if err != nil {
@@ -37,7 +37,7 @@ func materialOrZero(m *Material) Material {
 }
 
 func mapped(g Geometry) bool {
-	return textured(g) || hasShaderHook(g) || g.Material != nil && (g.Material.LightMap != nil || g.Material.NormalMap != nil || g.Material.ORMMap != nil || g.Material.EmissiveMap != nil)
+	return textured(g) || hasShaderHook(g) || g.Material != nil && (g.Material.LightMap != nil || g.Material.Normal.Map != nil || g.Material.PBR.ORMMap != nil || g.Material.Emission.Map != nil)
 }
 
 var whiteMap = func() *Texture {
@@ -66,20 +66,20 @@ func baseMap(m *Material) *Texture {
 	return whiteMap
 }
 func normalMap(m *Material) *Texture {
-	if m != nil && m.NormalMap != nil {
-		return m.NormalMap
+	if m != nil && m.Normal.Map != nil {
+		return m.Normal.Map
 	}
 	return neutralMap
 }
 func ormMap(m *Material) *Texture {
-	if m != nil && m.ORMMap != nil {
-		return m.ORMMap
+	if m != nil && m.PBR.ORMMap != nil {
+		return m.PBR.ORMMap
 	}
 	return defaultORMMap
 }
 func emissiveMap(m *Material) *Texture {
-	if m != nil && m.EmissiveMap != nil {
-		return m.EmissiveMap
+	if m != nil && m.Emission.Map != nil {
+		return m.Emission.Map
 	}
 	return whiteMap
 }
@@ -115,16 +115,16 @@ func (s *Scene) SetNodeORMMap(id NodeID, t *Texture) error {
 		anyMapped, changed := false, false
 		for i := range n.lod {
 			lg := n.lod[i].geometry
-			if lg.Material == nil || lg.Material.ORMMap == nil {
+			if lg.Material == nil || lg.Material.PBR.ORMMap == nil {
 				continue
 			}
 			anyMapped = true
-			if lg.Material.ORMMap == t {
+			if lg.Material.PBR.ORMMap == t {
 				continue
 			}
 			g := *lg
 			g.Material = cloneMaterial(g.Material)
-			g.Material.ORMMap = t
+			g.Material.PBR.ORMMap = t
 			n.lod[i].geometry = &g
 			changed = true
 		}
@@ -137,15 +137,15 @@ func (s *Scene) SetNodeORMMap(id NodeID, t *Texture) error {
 		}
 		return nil
 	}
-	if n.geometry.Material == nil || n.geometry.Material.ORMMap == nil {
+	if n.geometry.Material == nil || n.geometry.Material.PBR.ORMMap == nil {
 		return fmt.Errorf("nt3d: ORM replacement requires NewORMMap and ORM-mapped geometry")
 	}
-	if n.geometry.Material.ORMMap == t {
+	if n.geometry.Material.PBR.ORMMap == t {
 		return nil
 	}
 	g := *n.geometry
 	g.Material = cloneMaterial(g.Material)
-	g.Material.ORMMap = t
+	g.Material.PBR.ORMMap = t
 	n.geometry = &g
 	s.changed(false, true)
 	return nil
@@ -164,16 +164,16 @@ func (s *Scene) SetNodeEmissiveMap(id NodeID, t *Texture) error {
 		anyMapped, changed := false, false
 		for i := range n.lod {
 			lg := n.lod[i].geometry
-			if lg.Material == nil || lg.Material.EmissiveMap == nil {
+			if lg.Material == nil || lg.Material.Emission.Map == nil {
 				continue
 			}
 			anyMapped = true
-			if lg.Material.EmissiveMap == t {
+			if lg.Material.Emission.Map == t {
 				continue
 			}
 			g := *lg
 			g.Material = cloneMaterial(g.Material)
-			g.Material.EmissiveMap = t
+			g.Material.Emission.Map = t
 			n.lod[i].geometry = &g
 			changed = true
 		}
@@ -186,15 +186,15 @@ func (s *Scene) SetNodeEmissiveMap(id NodeID, t *Texture) error {
 		}
 		return nil
 	}
-	if n.geometry.Material == nil || n.geometry.Material.EmissiveMap == nil {
+	if n.geometry.Material == nil || n.geometry.Material.Emission.Map == nil {
 		return fmt.Errorf("nt3d: emissive replacement requires a color texture and emissive-mapped geometry")
 	}
-	if n.geometry.Material.EmissiveMap == t {
+	if n.geometry.Material.Emission.Map == t {
 		return nil
 	}
 	g := *n.geometry
 	g.Material = cloneMaterial(g.Material)
-	g.Material.EmissiveMap = t
+	g.Material.Emission.Map = t
 	n.geometry = &g
 	s.changed(false, true)
 	return nil
@@ -215,16 +215,16 @@ func (s *Scene) SetNodeNormalMap(id NodeID, t *Texture) error {
 		anyMapped, changed := false, false
 		for i := range n.lod {
 			lg := n.lod[i].geometry
-			if lg.Material == nil || lg.Material.NormalMap == nil {
+			if lg.Material == nil || lg.Material.Normal.Map == nil {
 				continue
 			}
 			anyMapped = true
-			if lg.Material.NormalMap == t {
+			if lg.Material.Normal.Map == t {
 				continue
 			}
 			g := *lg
 			g.Material = cloneMaterial(g.Material)
-			g.Material.NormalMap = t
+			g.Material.Normal.Map = t
 			n.lod[i].geometry = &g
 			changed = true
 		}
@@ -237,15 +237,15 @@ func (s *Scene) SetNodeNormalMap(id NodeID, t *Texture) error {
 		}
 		return nil
 	}
-	if n.geometry.Material == nil || n.geometry.Material.NormalMap == nil {
+	if n.geometry.Material == nil || n.geometry.Material.Normal.Map == nil {
 		return fmt.Errorf("nt3d: normal replacement requires a normal map and normal-mapped geometry")
 	}
-	if n.geometry.Material.NormalMap == t {
+	if n.geometry.Material.Normal.Map == t {
 		return nil
 	}
 	g := *n.geometry
 	g.Material = cloneMaterial(g.Material)
-	g.Material.NormalMap = t
+	g.Material.Normal.Map = t
 	n.geometry = &g
 	s.changed(false, true)
 	return nil

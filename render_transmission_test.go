@@ -19,7 +19,7 @@ func TestGPUSceneAccess(t *testing.T) {
 				f.Width, f.Height = size[0], size[1]
 				f.Linear = linear
 				f.Supersample = ss
-				f.Draws[1].Geometry.Material.Absorption = nt3dmath.Vec3{X: 2, Y: 1, Z: .2}
+				f.Draws[1].Geometry.Material.Transmission.Absorption = nt3dmath.Vec3{X: 2, Y: 1, Z: .2}
 				p := Geometry{Points: []Point{{Position: nt3dmath.Vec3{Z: .25}, Radius: 6, Color: color.RGBA{255, 255, 255, 255}}}, PointStyle: PointStyle{Blend: AlphaBlend, SoftDistance: .1}}
 				p.Bounds = GeometryBounds(p)
 				f.Draws = append(f.Draws, Draw{Geometry: p})
@@ -74,7 +74,7 @@ func TestGPURefractionAndForeground(t *testing.T) {
 		s := NewScene()
 		_, err := s.SetGeometry("floor", quad(3, -1, color.RGBA{210, 160, 100, 255}, nil, false))
 		check(t, err)
-		_, err = s.SetGeometry("water", quad(2, 0, color.RGBA{20, 60, 80, 255}, &Material{Transmission: .9, Absorption: nt3dmath.Vec3{X: 1, Y: .3, Z: .1}, Refraction: .02}, false))
+		_, err = s.SetGeometry("water", quad(2, 0, color.RGBA{20, 60, 80, 255}, &Material{Transmission: TransmissionStyle{Amount: .9, Absorption: nt3dmath.Vec3{X: 1, Y: .3, Z: .1}, Refraction: .02}}, false))
 		check(t, err)
 		c := DefaultCamera()
 		c.Projection = projection

@@ -368,7 +368,9 @@ func (c *Coat) Shells(base nt3d.Geometry) ([]nt3d.Geometry, error) {
 	if key.source != nil {
 		// The skin wears the base's material, as the coat it is, but opaque.
 		skin.Material = cloneMaterial(base.Material)
-		skin.Material.Transparent = false
+		if skin.Material.Alpha == nt3d.AlphaTransparent {
+			skin.Material.Alpha = nt3d.AlphaOpaque
+		}
 	} else {
 		shade := func(v uint8) uint8 { return uint8(float64(v) * .6) }
 		for i := range skin.Vertices {
@@ -388,7 +390,7 @@ func (c *Coat) Shells(base nt3d.Geometry) ([]nt3d.Geometry, error) {
 		h := f.height(k)
 		// Strands colored from a texture repeat, and are tinted by the
 		// vertices' colors, as that texture is on the base.
-		g := nt3d.Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(uv), Material: &nt3d.Material{Texture: strands, Cutout: true, Threshold: h, Repeat: tiled || key.repeat, Tint: key.source != nil && base.Material.Tint}}
+		g := nt3d.Geometry{Vertices: slices.Clone(base.Vertices), Indices: slices.Clone(base.Indices), UV: slices.Clone(uv), Material: &nt3d.Material{Texture: strands, Alpha: nt3d.AlphaCutout, Threshold: h, Repeat: tiled || key.repeat, Tint: key.source != nil && base.Material.Tint}}
 		for i := range g.Vertices {
 			v := &g.Vertices[i]
 			v.Position = v.Position.Add(v.Normal.Normalize().Scale(f.Length * h))
@@ -502,7 +504,7 @@ func (c *Coat) spacing(base nt3d.Geometry) float32 {
 
 // Fins returns the fur's fins on a base mesh: on every edge, a strip of
 // strands standing out along the normals, as long as the fur. They are drawn
-// only where the surface turns edge-on to the viewer (Material.EdgeOn), so
+// only where the surface turns edge-on to the viewer (AlphaEdgeOn), so
 // they fill the silhouette, where the shells' layers would show as dashes,
 // and vanish elsewhere. Strips face both ways. A textured base tints them
 // from its texture, darker at the root; otherwise they shade from Root to
@@ -535,7 +537,7 @@ func (c *Coat) Fins(base nt3d.Geometry) (nt3d.Geometry, error) {
 	// Each edge once, by its corners' positions, whichever face names it.
 	type edge struct{ a, b nt3dmath.Vec3 }
 	seen := map[edge]bool{}
-	fins := nt3d.Geometry{Material: &nt3d.Material{Texture: texture, Cutout: true, EdgeOn: true, Repeat: true, Tint: true}}
+	fins := nt3d.Geometry{Material: &nt3d.Material{Texture: texture, Alpha: nt3d.AlphaEdgeOn, Repeat: true, Tint: true}}
 	for i := 0; i+2 < len(base.Indices); i += 3 {
 		for k := range 3 {
 			ia, ib := base.Indices[i+k], base.Indices[i+(k+1)%3]

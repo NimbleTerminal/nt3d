@@ -1133,7 +1133,7 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 					if !mapped(*geom) || transparent(geom) || transmitting(geom) || d.geom.batches[slotTextured].count == 0 {
 						continue
 					}
-					if geom.Material != nil && geom.Material.Cutout {
+					if geom.Material != nil && geom.Material.cutout() {
 						g.setHookOrScenePipeline(pass, geom, g.cutoutPipeline, hookPipeCutout)
 					} else {
 						g.setHookOrScenePipeline(pass, geom, g.texturePipeline, hookPipeOpaque)

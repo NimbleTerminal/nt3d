@@ -20,7 +20,7 @@ func TestGPUSpotLightAndPerspectiveShadowParity(t *testing.T) {
 	floor, err := BuildCuboid(Cuboid{
 		Size:     nt3dmath.Vec3{X: 5, Y: 5, Z: 0.2},
 		Color:    color.RGBA{225, 225, 230, 255},
-		Material: &Material{PBR: true, Roughness: 0.65},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 0.65}},
 	})
 	check(t, err)
 	nFloor, err := s.SetGeometry("floor", floor)
@@ -32,7 +32,7 @@ func TestGPUSpotLightAndPerspectiveShadowParity(t *testing.T) {
 		Segments: 32,
 		Rings:    20,
 		Color:    color.RGBA{230, 95, 65, 255},
-		Material: &Material{PBR: true, Roughness: 0.3, Metallic: 0.1},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 0.3, Metallic: 0.1}},
 	})
 	check(t, err)
 	nBall, err := s.SetGeometry("ball", ball)

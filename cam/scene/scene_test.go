@@ -75,7 +75,7 @@ func TestGeographicCameraOriginZeroJitterParity(t *testing.T) {
 		if err := s.SetTransform(boxNode, nt3dmath.Translation(nt3dmath.Vec3{X: 1.25, Y: 3.5, Z: 0.75})); err != nil {
 			t.Fatal(err)
 		}
-		mat := nt3d.Material{Roughness: 0.7}
+		mat := nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: 0.7}}
 		g := nt3d.Geometry{
 			Boxes:    []nt3d.Box{{Min: nt3dmath.Vec3{X: -0.8, Y: -0.8, Z: -0.8}, Size: nt3dmath.Vec3{X: 1.6, Y: 1.6, Z: 1.6}, Color: color.RGBA{R: 220, G: 90, B: 50, A: 255}, Datum: 42}},
 			Material: &mat,

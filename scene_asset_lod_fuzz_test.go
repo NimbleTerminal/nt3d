@@ -78,8 +78,8 @@ func FuzzSceneAssetLOD(f *testing.F) {
 		"_LOD0",
 	}
 
-	matTaxi := &Material{PBR: true, Roughness: .4, BaseColor: color.RGBA{255, 200, 20, 255}}
-	matMatte := &Material{Roughness: .8, SpecularColor: color.RGBA{255, 255, 255, 0}}
+	matTaxi := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .4}, BaseColor: color.RGBA{255, 200, 20, 255}}
+	matMatte := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .8, Specular: SpecularStyle{Off: true}}}
 
 	f.Fuzz(func(t *testing.T, program []byte, d0, d1, bias, hyst float32) {
 		nNodes := min(20, len(program)/6)

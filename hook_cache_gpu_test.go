@@ -20,7 +20,7 @@ func tintFrame(t *testing.T, tint float32) Frame {
 		func(in MaterialColorInput) [4]float32 { return [4]float32{tint, 0, 0, 1} })
 	check(t, err)
 	g := testCuboid(t, nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, color.RGBA{255, 255, 255, 255})
-	g.Material = &Material{Unlit: true, Shader: shader}
+	g.Material = &Material{Shading: ShadeUnlit, Shader: shader}
 	s := NewScene()
 	_, err = s.SetGeometry("cube", g)
 	check(t, err)
@@ -94,7 +94,7 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> { return vec4<f32>(wobble(in
 	check(t, err)
 	g := testCuboid(t, nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, color.RGBA{255, 255, 255, 255})
 	g.Displacement = disp
-	g.Material = &Material{Unlit: true, Shader: mat}
+	g.Material = &Material{Shading: ShadeUnlit, Shader: mat}
 	s := NewScene()
 	_, err = s.SetGeometry("cube", g)
 	check(t, err)

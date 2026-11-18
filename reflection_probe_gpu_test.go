@@ -20,11 +20,11 @@ func TestGPUReflectionProbes(t *testing.T) {
 	gradient.Environment = testEnvironment(t)
 	gradient.Position = nt3dmath.Vec3{X: -1, Y: .5}
 	for _, mat := range []*Material{
-		{PBR: true, Metallic: 1, Roughness: .1},
-		{PBR: true, Metallic: 1, Roughness: .8},
-		{PBR: true, Roughness: .5, Clearcoat: 1, ClearcoatRoughness: .15},
-		{Reflectivity: 1},
-		{Unlit: true},
+		{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .1}},
+		{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .8}},
+		{Shading: ShadePBR, PBR: PBRStyle{Roughness: .5, Clearcoat: ClearcoatStyle{Amount: 1, Roughness: .15}}},
+		{Phong: PhongStyle{Reflectivity: 1}},
+		{Shading: ShadeUnlit},
 	} {
 		for _, linear := range []bool{true, false} {
 			f := pbrQuadFrame(mat, color.RGBA{160, 150, 140, 255})
@@ -49,7 +49,7 @@ func TestGPUReflectionProbes(t *testing.T) {
 		}
 	}
 	// Verify every binding slot, exclusion outside a box, and first-probe priority.
-	f := pbrQuadFrame(&Material{Reflectivity: 1}, color.RGBA{120, 120, 120, 255})
+	f := pbrQuadFrame(&Material{Phong: PhongStyle{Reflectivity: 1}}, color.RGBA{120, 120, 120, 255})
 	for slot := 0; slot < MaxReflectionProbes; slot++ {
 		f.ReflectionProbes = make([]ReflectionProbe, slot+1)
 		for i := 0; i < slot; i++ {
@@ -116,7 +116,7 @@ func TestGPUReflectionProbeHDRSharedViews(t *testing.T) {
 	check(t, err)
 	probe := testProbe(t, color.NRGBA{0, 0, 0, 255})
 	probe.Environment = env
-	f := pbrQuadFrame(&Material{PBR: true, Metallic: 1, Roughness: .4}, color.RGBA{255, 255, 255, 255})
+	f := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .4}}, color.RGBA{255, 255, 255, 255})
 	f.ReflectionProbes = []ReflectionProbe{probe}
 	f.PostProcess = PostProcess{ToneMap: ReinhardToneMap, Exposure: -1}
 	a, err := session.RenderToImage(f)

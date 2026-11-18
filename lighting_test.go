@@ -112,7 +112,7 @@ func TestRigPointLightAtSurface(t *testing.T) {
 	if got := illuminate(&r, up, nt3dmath.Vec3{}); !near3(got, [3]float32{.1, .1, .1}, .001) {
 		t.Fatalf("light at the surface: %v", got)
 	}
-	m := &Material{Specular: 1}
+	m := &Material{Phong: PhongStyle{Specular: 1}}
 	if got := r.highlight(m, up, nt3dmath.Vec3{}, up); !near3(got, [3]float32{}, 0) {
 		t.Fatalf("highlight from a light at the surface: %v", got)
 	}
@@ -121,7 +121,7 @@ func TestRigPointLightAtSurface(t *testing.T) {
 // Highlights come from each light, tinted by it and faded as its diffuse
 // light is; none from a light behind the surface.
 func TestRigHighlight(t *testing.T) {
-	m := &Material{Specular: .8, Shininess: 32}
+	m := &Material{Phong: PhongStyle{Specular: .8, Shininess: 32}}
 	f := Frame{Lighting: Lighting{Lights: []Light{{Kind: PointLight, Position: nt3dmath.Vec3{Z: 1}, Color: color.RGBA{0, 255, 0, 255}}}}}
 	r := newRig(&f)
 	if got := r.highlight(m, up, nt3dmath.Vec3{}, up); !near3(got, [3]float32{0, .4, 0}, .001) {
@@ -188,7 +188,7 @@ func TestUnlitIgnoresLighting(t *testing.T) {
 		Lines:     []Vertex{{Position: nt3dmath.Vec3{X: .5, Y: -.5, Z: .4}, Color: red}, {Position: nt3dmath.Vec3{X: .5, Y: .5, Z: .4}, Color: red}},
 		LineWidth: 3,
 	}
-	f := blendScene(t, nil, quad(.3, .3, white, &Material{Unlit: true}, false), quad(1.2, .2, white, nil, false), g)
+	f := blendScene(t, nil, quad(.3, .3, white, &Material{Shading: ShadeUnlit}, false), quad(1.2, .2, white, nil, false), g)
 	f.Lighting = Lighting{}
 	img := softwareRender(f)
 	if got := at(img, 40, 40); !closeRGB(got, white, 1) {

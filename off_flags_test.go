@@ -57,7 +57,7 @@ func offScene(t *testing.T) Frame {
 	id, err := s.SetGeometry("floor", floor)
 	check(t, err)
 	check(t, s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{Z: -.8})))
-	ball, err := BuildSphere(Sphere{Radius: .6, Segments: 24, Rings: 12, Color: color.RGBA{180, 180, 190, 255}, Material: &Material{Reflectivity: .6}})
+	ball, err := BuildSphere(Sphere{Radius: .6, Segments: 24, Rings: 12, Color: color.RGBA{180, 180, 190, 255}, Material: &Material{Phong: PhongStyle{Reflectivity: .6}}})
 	check(t, err)
 	_, err = s.SetGeometry("ball", ball)
 	check(t, err)

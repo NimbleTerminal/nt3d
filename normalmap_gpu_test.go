@@ -30,7 +30,7 @@ func TestGPUNormalMaps(t *testing.T) {
 					f.Draws[0].Geometry.Tangents[j].Direction = nt3dmath.Vec3{X: -1}
 				}
 			case "authored w":
-				m.NormalMap = testNormalMap(t, color.NRGBA{128, 218, 218, 255})
+				m.Normal.Map = testNormalMap(t, color.NRGBA{128, 218, 218, 255})
 				f.Lighting.Lights[0].Direction = nt3dmath.Vec3{Y: 1}
 				for j := range f.Draws[0].Geometry.Tangents {
 					f.Draws[0].Geometry.Tangents[j].W = -1
@@ -56,11 +56,11 @@ func TestGPUNormalMaps(t *testing.T) {
 			case "authored mixed":
 				// Handedness differs across the quad: both renderers use the
 				// vertices' frame with the interpolated sign, all the way.
-				m.NormalMap = testNormalMap(t, color.NRGBA{128, 218, 218, 255})
+				m.Normal.Map = testNormalMap(t, color.NRGBA{128, 218, 218, 255})
 				f.Lighting.Lights[0].Direction = nt3dmath.Vec3{Y: 1}
 				f.Draws[0].Geometry.Tangents[0].W, f.Draws[0].Geometry.Tangents[1].W = -1, -1
 			case "authored transparent":
-				m.Transparent = true
+				m.Alpha = AlphaTransparent
 				for j := range f.Draws[0].Geometry.Vertices {
 					f.Draws[0].Geometry.Vertices[j].Color.A = 128
 				}
@@ -73,10 +73,10 @@ func TestGPUNormalMaps(t *testing.T) {
 				}
 				if kind == "independent cutout" {
 					m.Texture = testTexture(t, white)
-					m.Cutout = true
+					m.Alpha = AlphaCutout
 				}
 			case "zero":
-				m.NormalStrength = 0
+				m.Normal.Strength = 0
 			case "mirrored":
 				for j := range f.Draws[0].Geometry.UV {
 					f.Draws[0].Geometry.UV[j].U = 1 - f.Draws[0].Geometry.UV[j].U
@@ -86,19 +86,19 @@ func TestGPUNormalMaps(t *testing.T) {
 					f.Draws[0].Geometry.UV[j] = UV{}
 				}
 			case "transparent":
-				m.Transparent = true
+				m.Alpha = AlphaTransparent
 				for j := range f.Draws[0].Geometry.Vertices {
 					f.Draws[0].Geometry.Vertices[j].Color.A = 128
 				}
 			case "unlit":
-				m.Unlit = true
+				m.Shading = ShadeUnlit
 			case "transform":
 				placeAlone(&f, nt3dmath.RotationZ(.3).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: .8, Y: .5, Z: 1})))
 			case "cutout":
 				m.Texture = testTexture(t, white)
-				m.Cutout = true
+				m.Alpha = AlphaCutout
 			case "mip":
-				m.NormalRepeat = true
+				m.Normal.Repeat = true
 				for j := range f.Draws[0].Geometry.UV {
 					f.Draws[0].Geometry.UV[j].U *= 50
 					f.Draws[0].Geometry.UV[j].V *= 50
@@ -172,12 +172,12 @@ func TestGPUProceduralNormalAddressing(t *testing.T) {
 			g.NormalUV[j] = UV{U: .99 + uv.U*.01, V: uv.V * 16}
 			g.Tangents = append(g.Tangents, Tangent{Direction: nt3dmath.Vec3{X: 1}, W: 1})
 		}
-		g.Material.NormalRepeat = repeat
-		g.Material.NormalMap = uploaded
+		g.Material.Normal.Repeat = repeat
+		g.Material.Normal.Map = uploaded
 		want, err := r.Render(f)
 		check(t, err)
 		f.Revision++
-		g.Material.NormalMap = shader
+		g.Material.Normal.Map = shader
 		got, err := r.Render(f)
 		check(t, err)
 		for _, p := range [][2]int{{40, 40}, {38, 39}, {45, 42}} {
@@ -191,7 +191,7 @@ func TestGPUProceduralNormalAddressing(t *testing.T) {
 		// Both sampler variants must coexist for the same shader in one frame.
 		other := *g
 		m := *g.Material
-		m.NormalRepeat = !repeat
+		m.Normal.Repeat = !repeat
 		other.Material = &m
 		f.Draws = append(f.Draws, Draw{Geometry: other})
 		f.Revision++

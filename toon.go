@@ -154,7 +154,7 @@ func (s *Scene) ApplyToon(root NodeID, style ToonStyle) error {
 // toonParams is the style a material's lit triangles are shaded with: zero
 // unless it is toon and lit.
 func toonParams(m *Material) ToonStyle {
-	if m == nil || m.Unlit || !m.Toon.on() {
+	if m == nil || m.unlit() || !m.Toon.on() {
 		return ToonStyle{}
 	}
 	return m.Toon

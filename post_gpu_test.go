@@ -100,19 +100,19 @@ func TestGPUMSAAAllPipelinesAndSession(t *testing.T) {
 	_, err = s.SetGeometry("tex", texMesh)
 	check(t, err)
 
-	cutMesh, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -0.8, MaxX: -0.3, MinY: -0.7, MaxY: -0.2, Heights: make([]float32, 4), Material: &Material{Texture: checker, Cutout: true}})
+	cutMesh, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -0.8, MaxX: -0.3, MinY: -0.7, MaxY: -0.2, Heights: make([]float32, 4), Material: &Material{Texture: checker, Alpha: AlphaCutout}})
 	check(t, err)
 	_, err = s.SetGeometry("cut", cutMesh)
 	check(t, err)
 
 	// Transmissive glass (exercises sceneSnapshot + captureShaderMSAA + resumeScene).
-	glass, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -0.3, MaxX: 0.3, MinY: -0.3, MaxY: 0.3, Heights: []float32{0.2, 0.2, 0.2, 0.2}, Material: &Material{Transmission: 0.75, Refraction: 0.04}})
+	glass, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -0.3, MaxX: 0.3, MinY: -0.3, MaxY: 0.3, Heights: []float32{0.2, 0.2, 0.2, 0.2}, Material: &Material{Transmission: TransmissionStyle{Amount: 0.75, Refraction: 0.04}}})
 	check(t, err)
 	_, err = s.SetGeometry("glass", glass)
 	check(t, err)
 
 	// Transparent mesh + sorted alpha points + sprites.
-	transMesh, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: 0.1, MaxX: 0.5, MinY: -0.5, MaxY: -0.1, Heights: []float32{0.35, 0.35, 0.35, 0.35}, Material: &Material{Transparent: true}})
+	transMesh, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: 0.1, MaxX: 0.5, MinY: -0.5, MaxY: -0.1, Heights: []float32{0.35, 0.35, 0.35, 0.35}, Material: &Material{Alpha: AlphaTransparent}})
 	check(t, err)
 	for i := range transMesh.Vertices {
 		transMesh.Vertices[i].Color = color.RGBA{120, 200, 255, 130}

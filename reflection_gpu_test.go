@@ -28,7 +28,7 @@ func TestGPUReflections(t *testing.T) {
 					f.Forward = nt3dmath.Vec3{Z: -1}
 					f.Eye = nt3dmath.Vec3{Z: 3}
 					f.Perspective = perspective
-					f.Draws[0].Geometry.Material.Reflectivity = .3
+					f.Draws[0].Geometry.Material.Phong.Reflectivity = .3
 					got, err := r.Render(f)
 					check(t, err)
 					want := softwareRender(f)
@@ -62,12 +62,12 @@ func TestGPUShaderNormalMaps(t *testing.T) {
 		check(t, err)
 		f := normalFrame(t)
 		f.Revision = uint64(i + 1)
-		f.Draws[0].Geometry.Material.NormalMap = tex
+		f.Draws[0].Geometry.Material.Normal.Map = tex
 		for j := range f.Draws[0].Geometry.UV {
 			f.Draws[0].Geometry.UV[j].U = f.Draws[0].Geometry.UV[j].U*3 - 1
 		}
 		f.Environment = testEnvironment(t)
-		f.Draws[0].Geometry.Material.Reflectivity = .2
+		f.Draws[0].Geometry.Material.Phong.Reflectivity = .2
 		f.Forward = nt3dmath.Vec3{Z: -1}
 		if i == 0 {
 			saved = f
@@ -77,7 +77,7 @@ func TestGPUShaderNormalMaps(t *testing.T) {
 			f.Draws = append([]Draw(nil), f.Draws...)
 			m := *f.Draws[0].Geometry.Material
 			f.Draws[0].Geometry.Material = &m
-			m.NormalRepeat = repeat
+			m.Normal.Repeat = repeat
 			revision++
 			f.Revision = revision
 			got, err := r.Render(f)
@@ -117,9 +117,9 @@ func TestGPUBackgroundOnlyEnvironmentIsNotReflected(t *testing.T) {
 			f.Eye = nt3dmath.Vec3{Z: 3}
 			f.Perspective = true
 			if pbr {
-				f.Draws[0].Geometry.Material = &Material{PBR: true, Metallic: .9, Roughness: .1}
+				f.Draws[0].Geometry.Material = &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: .9, Roughness: .1}}
 			} else {
-				f.Draws[0].Geometry.Material.Reflectivity = .6
+				f.Draws[0].Geometry.Material.Phong.Reflectivity = .6
 			}
 			got, err := r.Render(f)
 			check(t, err)

@@ -17,7 +17,7 @@ func edgeScene(t *testing.T, supersample int) Frame {
 	g := Geometry{
 		Vertices: []Vertex{{Position: nt3dmath.Vec3{X: -.9, Y: -.7}, Color: black}, {Position: nt3dmath.Vec3{X: .5, Y: -.7}, Color: black}, {Position: nt3dmath.Vec3{X: -.9, Y: .6}, Color: black}},
 		Indices:  []uint32{0, 1, 2},
-		Material: &Material{Unlit: true},
+		Material: &Material{Shading: ShadeUnlit},
 		Points:   []Point{{Position: nt3dmath.Vec3{X: .6, Y: .6}, Radius: 4, Color: color.RGBA{255, 0, 0, 255}}},
 	}
 	s := NewScene()

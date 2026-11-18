@@ -45,70 +45,53 @@ func TestGPUPBRDirectAndMapsParity(t *testing.T) {
 		mat    *Material
 		col    color.RGBA
 	}{
-		{"dielectric-smooth", true, &Material{PBR: true, Metallic: 0, Roughness: .18, IOR: 1.5}, color.RGBA{210, 70, 50, 255}},
-		{"dielectric-diamond", true, &Material{PBR: true, Metallic: 0, Roughness: .25, IOR: 2.4}, color.RGBA{30, 30, 35, 255}},
-		{"conductor-gold", true, &Material{PBR: true, Metallic: 1, Roughness: .3}, color.RGBA{245, 190, 55, 255}},
-		{"conductor-rough-srgb", false, &Material{PBR: true, Metallic: .9, Roughness: .75}, color.RGBA{180, 190, 205, 255}},
+		{"dielectric-smooth", true, &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 0, Roughness: .18, IOR: 1.5}}, color.RGBA{210, 70, 50, 255}},
+		{"dielectric-diamond", true, &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 0, Roughness: .25, IOR: 2.4}}, color.RGBA{30, 30, 35, 255}},
+		{"conductor-gold", true, &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .3}}, color.RGBA{245, 190, 55, 255}},
+		{"conductor-rough-srgb", false, &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: .9, Roughness: .75}}, color.RGBA{180, 190, 205, 255}},
 		{"all-four-maps", true, &Material{
-			PBR:               true,
-			Metallic:          1,
-			Roughness:         1,
-			OcclusionStrength: .8,
-			Texture:           baseTex,
-			Tint:              true,
-			NormalMap:         normTex,
-			NormalStrength:    .7,
-			ORMMap:            ormTex,
-			Emissive:          color.RGBA{255, 255, 255, 255},
-			EmissiveIntensity: .35,
-			EmissiveMap:       emTex,
+			Shading:  ShadePBR,
+			PBR:      PBRStyle{Metallic: 1, Roughness: 1, OcclusionStrength: .8, ORMMap: ormTex},
+			Texture:  baseTex,
+			Tint:     true,
+			Normal:   NormalStyle{Map: normTex, Strength: .7},
+			Emission: EmissionStyle{Color: color.RGBA{255, 255, 255, 255}, Intensity: .35, Map: emTex},
 		}, white},
 		{"pbr-toon", true, &Material{
-			PBR:       true,
-			Metallic:  .4,
-			Roughness: .35,
-			Toon:      ToonStyle{Bands: 3, Softness: .2, Rim: .25},
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Metallic: .4, Roughness: .35},
+			Toon:    ToonStyle{Bands: 3, Softness: .2, Rim: .25},
 		}, color.RGBA{90, 175, 240, 255}},
 		{"clearcoat-over-normalmap", true, &Material{
-			PBR:                true,
-			Metallic:           .7,
-			Roughness:          .45,
-			Clearcoat:          1,
-			ClearcoatRoughness: .08,
-			NormalMap:          normTex,
-			NormalStrength:     .8,
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Metallic: .7, Roughness: .45, Clearcoat: ClearcoatStyle{Amount: 1, Roughness: .08}},
+			Normal:  NormalStyle{Map: normTex, Strength: .8},
 		}, color.RGBA{190, 30, 42, 255}},
 		{"sheen-velvet", true, &Material{
-			Roughness:      .84,
-			SheenColor:     color.RGBA{245, 165, 255, 255},
-			SheenRoughness: .35,
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Roughness: .84, Sheen: SheenStyle{Color: color.RGBA{245, 165, 255, 255}, Roughness: .35}},
 		}, color.RGBA{56, 26, 78, 255}},
 		{"pbr-toon-coat-sheen", true, &Material{
-			Roughness:          .78,
-			Clearcoat:          .9,
-			ClearcoatRoughness: .12,
-			SheenColor:         color.RGBA{165, 235, 255, 255},
-			SheenRoughness:     .42,
-			Toon:               ToonStyle{Bands: 3, Softness: .2, Rim: .2},
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Roughness: .78, Clearcoat: ClearcoatStyle{Amount: .9, Roughness: .12}, Sheen: SheenStyle{Color: color.RGBA{165, 235, 255, 255}, Roughness: .42}},
+			Toon:    ToonStyle{Bands: 3, Softness: .2, Rim: .2},
 		}, color.RGBA{42, 88, 132, 255}},
 		{"specular-zero-matte", true, &Material{
-			Roughness:     .22,
-			SpecularColor: color.RGBA{255, 255, 255, 0},
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Roughness: .22, Specular: SpecularStyle{Off: true}},
 		}, color.RGBA{195, 65, 55, 255}},
 		{"specular-tinted-hdr", true, &Material{
-			Roughness:         .18,
-			SpecularColor:     color.RGBA{255, 110, 45, 200},
-			SpecularIntensity: 2.5,
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Roughness: .18, Specular: SpecularStyle{Color: color.RGBA{255, 110, 45, 255}, Intensity: 2.5, Strength: 200. / 255}},
 		}, color.RGBA{28, 36, 52, 255}},
 		{"specular-black-grazing-f90", true, &Material{
-			Roughness:     .14,
-			SpecularColor: color.RGBA{0, 0, 0, 255},
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Roughness: .14, Specular: SpecularStyle{Color: color.RGBA{0, 0, 0, 255}}},
 		}, color.RGBA{24, 24, 30, 255}},
 		{"specular-toon-tinted", true, &Material{
-			Roughness:         .28,
-			SpecularColor:     color.RGBA{80, 220, 255, 255},
-			SpecularIntensity: 2,
-			Toon:              ToonStyle{Bands: 3, Softness: .2},
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Roughness: .28, Specular: SpecularStyle{Color: color.RGBA{80, 220, 255, 255}, Intensity: 2}},
+			Toon:    ToonStyle{Bands: 3, Softness: .2},
 		}, color.RGBA{50, 35, 70, 255}},
 	}
 
@@ -174,7 +157,7 @@ func TestGPUPBREnvironmentIBLAndSessionSharing(t *testing.T) {
 		Segments: 36,
 		Rings:    20,
 		Color:    color.RGBA{245, 245, 250, 255},
-		Material: &Material{PBR: true, Metallic: 1, Roughness: .06},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .06}},
 	})
 	check(t, err)
 	rough, err := BuildSphere(Sphere{
@@ -182,7 +165,7 @@ func TestGPUPBREnvironmentIBLAndSessionSharing(t *testing.T) {
 		Segments: 36,
 		Rings:    20,
 		Color:    color.RGBA{245, 245, 250, 255},
-		Material: &Material{PBR: true, Metallic: 1, Roughness: .85},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .85}},
 	})
 	check(t, err)
 
@@ -243,15 +226,9 @@ func TestGPUProceduralORMAndHDREmissiveBloom(t *testing.T) {
 	check(t, err)
 
 	g := quad(.3, .4, color.RGBA{220, 190, 120, 255}, &Material{
-		PBR:               true,
-		Metallic:          1,
-		Roughness:         1,
-		ORMMap:            procORM,
-		ORMRepeat:         true,
-		Emissive:          white,
-		EmissiveIntensity: 5.0,
-		EmissiveMap:       procEm,
-		EmissiveRepeat:    true,
+		Shading:  ShadePBR,
+		PBR:      PBRStyle{Metallic: 1, Roughness: 1, ORMMap: procORM, ORMRepeat: true},
+		Emission: EmissionStyle{Color: white, Intensity: 5.0, Map: procEm, Repeat: true},
 	}, false)
 	g.UV = []UV{{0, 0}, {8, 0}, {8, 8}, {0, 8}} // Force higher mip levels!
 
@@ -279,8 +256,8 @@ func TestGPUProceduralORMAndHDREmissiveBloom(t *testing.T) {
 	}
 
 	// Verify PBR + Transmission refraction on GPU matches Software.
-	back := quad(.85, .8, color.RGBA{220, 45, 45, 255}, &Material{Unlit: true}, false)
-	glass := quad(.55, .2, white, &Material{PBR: true, Roughness: .1, IOR: 1.52, Transmission: .85, Refraction: .03}, false)
+	back := quad(.85, .8, color.RGBA{220, 45, 45, 255}, &Material{Shading: ShadeUnlit}, false)
+	glass := quad(.55, .2, white, &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .1, IOR: 1.52}, Transmission: TransmissionStyle{Amount: .85, Refraction: .03}}, false)
 	fTrans := flatFrame(80, 80, back, glass)
 	fTrans.Forward = nt3dmath.Vec3{Z: -1}
 	fTrans.Revision = 77
@@ -312,10 +289,9 @@ func TestGPUClearcoatIBLAndSetMaterialParity(t *testing.T) {
 		Rings:    24,
 		Color:    color.RGBA{34, 48, 86, 255},
 		Material: &Material{
-			PBR:            true,
-			Roughness:      .75,
-			NormalMap:      normTex,
-			NormalStrength: .75,
+			Shading: ShadePBR,
+			PBR:     PBRStyle{Roughness: .75},
+			Normal:  NormalStyle{Map: normTex, Strength: .75},
 		},
 	})
 	check(t, err)
@@ -336,14 +312,9 @@ func TestGPUClearcoatIBLAndSetMaterialParity(t *testing.T) {
 
 	// Live ApplyMaterial adding Clearcoat + Sheen reuses GPU mesh buffers with zero re-uploads.
 	check(t, s.ApplyMaterial(ballID, &Material{
-		PBR:                true,
-		Roughness:          .75,
-		Clearcoat:          1,
-		ClearcoatRoughness: .06,
-		SheenColor:         color.RGBA{180, 210, 255, 255},
-		SheenRoughness:     .4,
-		NormalMap:          normTex,
-		NormalStrength:     .75,
+		Shading: ShadePBR,
+		PBR:     PBRStyle{Roughness: .75, Clearcoat: ClearcoatStyle{Amount: 1, Roughness: .06}, Sheen: SheenStyle{Color: color.RGBA{180, 210, 255, 255}, Roughness: .4}},
+		Normal:  NormalStyle{Map: normTex, Strength: .75},
 	}))
 	f1, err := s.Frame(cam, 96, 96)
 	check(t, err)
@@ -370,14 +341,14 @@ func TestGPUBaseColorAndMaterialVariantsParity(t *testing.T) {
 		Segments: 36,
 		Rings:    20,
 		Color:    white,
-		Material: &Material{PBR: true, Roughness: .35},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .35}},
 	})
 	check(t, err)
 	sg, err := NewSharedGeometry(ball)
 	check(t, err)
 
 	baseTex := testTexture(t, color.RGBA{225, 225, 225, 255})
-	signMesh, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .7, Y: .2, Z: .35}, Color: white, Material: &Material{PBR: true, Roughness: .4, Texture: baseTex}})
+	signMesh, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: .7, Y: .2, Z: .35}, Color: white, Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .4}, Texture: baseTex}})
 	check(t, err)
 	signSG, err := NewSharedGeometry(signMesh)
 	check(t, err)
@@ -391,9 +362,9 @@ func TestGPUBaseColorAndMaterialVariantsParity(t *testing.T) {
 				Local:  nt3dmath.Identity(),
 				Shared: sg,
 				VariantMaterials: map[int]*Material{
-					0: {PBR: true, Roughness: .22, Clearcoat: 1, ClearcoatRoughness: .08, BaseColor: color.RGBA{245, 190, 25, 255}},
-					1: {PBR: true, Metallic: .85, Roughness: .28, BaseColor: color.RGBA{45, 95, 220, 255}},
-					2: {PBR: true, Roughness: .15, Transparent: true, BaseColor: color.RGBA{90, 220, 255, 140}},
+					0: {Shading: ShadePBR, PBR: PBRStyle{Roughness: .22, Clearcoat: ClearcoatStyle{Amount: 1, Roughness: .08}}, BaseColor: color.RGBA{245, 190, 25, 255}},
+					1: {Shading: ShadePBR, PBR: PBRStyle{Metallic: .85, Roughness: .28}, BaseColor: color.RGBA{45, 95, 220, 255}},
+					2: {Shading: ShadePBR, PBR: PBRStyle{Roughness: .15}, Alpha: AlphaTransparent, BaseColor: color.RGBA{90, 220, 255, 140}},
 				},
 			},
 			{
@@ -402,8 +373,8 @@ func TestGPUBaseColorAndMaterialVariantsParity(t *testing.T) {
 				Local:  nt3dmath.Translation(nt3dmath.Vec3{Z: .85}),
 				Shared: signSG,
 				VariantMaterials: map[int]*Material{
-					0: {PBR: true, Roughness: .4, Texture: baseTex, BaseColor: color.RGBA{255, 120, 30, 255}},
-					1: {PBR: true, Roughness: .4, Texture: baseTex, BaseColor: color.RGBA{60, 170, 255, 255}},
+					0: {Shading: ShadePBR, PBR: PBRStyle{Roughness: .4}, Texture: baseTex, BaseColor: color.RGBA{255, 120, 30, 255}},
+					1: {Shading: ShadePBR, PBR: PBRStyle{Roughness: .4}, Texture: baseTex, BaseColor: color.RGBA{60, 170, 255, 255}},
 				},
 			},
 		},

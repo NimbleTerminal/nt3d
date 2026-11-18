@@ -107,7 +107,7 @@ func TestFrameStatsCullingVisibilityAndBatches(t *testing.T) {
 
 	// Transparent shared instances do not merge into one batch.
 	glass := mesh
-	glass.Material = &Material{Transparent: true}
+	glass.Material = &Material{Alpha: AlphaTransparent}
 	glassShared, err := NewSharedGeometry(glass)
 	if err != nil {
 		t.Fatal(err)

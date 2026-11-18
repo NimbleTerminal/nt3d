@@ -232,11 +232,11 @@ func TestGLTFMaterials(t *testing.T) {
 		byName[o.Material] = o
 	}
 	// Linear 0.5 is sRGB 188; glTF materials without KHR_materials_unlit decode as PBR.
-	if g := byName["gray"].Geometry; g.Vertices[0].Color != (color.RGBA{188, 188, 188, 255}) || g.Material == nil || !g.Material.PBR || g.Material.Roughness != 1 || g.Material.Metallic != 0 || byName["gray"].Plain[0] {
+	if g := byName["gray"].Geometry; g.Vertices[0].Color != (color.RGBA{188, 188, 188, 255}) || g.Material == nil || g.Material.Shading != nt3d.ShadePBR || g.Material.PBR.Roughness != 1 || g.Material.PBR.Metallic != 0 || byName["gray"].Plain[0] {
 		t.Errorf("gray: %v, material %+v", g.Vertices[0].Color, g.Material)
 	}
 	leaf := byName["leaf"].Geometry
-	if m := leaf.Material; m == nil || !m.PBR || m.Roughness != 1 || !m.Cutout || m.Threshold != .4 || m.Texture == nil || !m.Repeat || m.Tint || m.Specular != 0 {
+	if m := leaf.Material; m == nil || m.Shading != nt3d.ShadePBR || m.PBR.Roughness != 1 || m.Alpha != nt3d.AlphaCutout || m.Threshold != .4 || m.Texture == nil || !m.Repeat || m.Tint || m.Phong.Specular != 0 {
 		t.Errorf("leaf material %+v", m)
 	} else if a := m.Texture.At(0, 0).(color.RGBA).A; a != 128 {
 		t.Errorf("leaf texture lost its alpha: %d", a)
@@ -244,16 +244,16 @@ func TestGLTFMaterials(t *testing.T) {
 	if len(leaf.Indices) != 12 || leaf.Vertices[leaf.Indices[6]].Normal.Dot(leaf.Vertices[leaf.Indices[0]].Normal) >= 0 {
 		t.Errorf("double-sided leaf: %d indices", len(leaf.Indices))
 	}
-	if g := byName["glass"].Geometry; g.Material == nil || !g.Material.Transparent || g.Vertices[0].Color.A != 64 || !g.Material.PBR || g.Material.Roughness != .2 || g.Material.Metallic != 0 {
+	if g := byName["glass"].Geometry; g.Material == nil || g.Material.Alpha != nt3d.AlphaTransparent || g.Vertices[0].Color.A != 64 || g.Material.Shading != nt3d.ShadePBR || g.Material.PBR.Roughness != .2 || g.Material.PBR.Metallic != 0 {
 		t.Errorf("glass: %+v, color %v", g.Material, g.Vertices[0].Color)
 	}
-	if g := byName["flat"].Geometry; g.Material == nil || !g.Material.Unlit || g.Material.PBR || g.Material.Specular != 0 || g.Vertices[0].Color != (color.RGBA{255, 0, 0, 255}) {
+	if g := byName["flat"].Geometry; g.Material == nil || g.Material.Shading != nt3d.ShadeUnlit || g.Material.Shading == nt3d.ShadePBR || g.Material.Phong.Specular != 0 || g.Vertices[0].Color != (color.RGBA{255, 0, 0, 255}) {
 		t.Errorf("unlit: %+v", g.Material)
 	}
 	if g := byName["tinted"].Geometry; g.Material == nil || !g.Material.Tint || g.Material.Repeat || g.Vertices[0].Color != (color.RGBA{255, 0, 0, 255}) {
 		t.Errorf("tinted, clamped: %+v", g.Material)
 	}
-	if g := byName["missing texture"].Geometry; g.Material == nil || g.Material.Texture != nil || !g.Material.PBR || len(m.Warnings) == 0 {
+	if g := byName["missing texture"].Geometry; g.Material == nil || g.Material.Texture != nil || g.Material.Shading != nt3d.ShadePBR || len(m.Warnings) == 0 {
 		t.Errorf("missing texture: %+v, warnings %v", g.Material, m.Warnings)
 	}
 	// Every object must be valid nt3d geometry.
@@ -379,34 +379,34 @@ func TestGLTFPBRAndExtensions(t *testing.T) {
 		byName[o.Material] = o.Geometry.Material
 	}
 
-	if mat := byName["packed-orm"]; mat == nil || !mat.PBR || mat.Metallic != .8 || mat.Roughness != .35 || mat.ORMMap == nil || mat.OcclusionStrength != .6 {
+	if mat := byName["packed-orm"]; mat == nil || mat.Shading != nt3d.ShadePBR || mat.PBR.Metallic != .8 || mat.PBR.Roughness != .35 || mat.PBR.ORMMap == nil || mat.PBR.OcclusionStrength != .6 {
 		t.Fatalf("packed-orm: %+v", mat)
-	} else if c := mat.ORMMap.At(0, 0).(color.RGBA); c != (color.RGBA{10, 64, 192, 255}) {
+	} else if c := mat.PBR.ORMMap.At(0, 0).(color.RGBA); c != (color.RGBA{10, 64, 192, 255}) {
 		t.Fatalf("packed-orm texel %v, want {10 64 192 255}", c)
 	}
-	if mat := byName["separate-orm"]; mat == nil || mat.ORMMap == nil || mat.OcclusionStrength != .75 {
+	if mat := byName["separate-orm"]; mat == nil || mat.PBR.ORMMap == nil || mat.PBR.OcclusionStrength != .75 {
 		t.Fatalf("separate-orm: %+v", mat)
-	} else if c := mat.ORMMap.At(0, 0).(color.RGBA); c != (color.RGBA{80, 64, 192, 255}) {
+	} else if c := mat.PBR.ORMMap.At(0, 0).(color.RGBA); c != (color.RGBA{80, 64, 192, 255}) {
 		t.Fatalf("separate-orm merged texel %v, want {80 64 192 255}", c)
 	}
-	if mat := byName["hdr-emissive"]; mat == nil || mat.EmissiveMap == nil || mat.EmissiveIntensity != 4.5 || mat.Emissive != (color.RGBA{255, srgb8(.25), 0, 255}) {
+	if mat := byName["hdr-emissive"]; mat == nil || mat.Emission.Map == nil || mat.Emission.Intensity != 4.5 || mat.Emission.Color != (color.RGBA{255, srgb8(.25), 0, 255}) {
 		t.Fatalf("hdr-emissive: %+v", mat)
 	}
 	crystal := byName["crystal"]
-	if crystal == nil || crystal.IOR != 2 || crystal.Transmission != .9 || math.Abs(float64(crystal.Refraction)-.06) > 1e-5 {
+	if crystal == nil || crystal.PBR.IOR != 2 || crystal.Transmission.Amount != .9 || math.Abs(float64(crystal.Transmission.Refraction)-.06) > 1e-5 {
 		t.Fatalf("crystal optics: %+v", crystal)
 	}
-	if math.Abs(float64(crystal.Absorption.X)-.5) > 1e-4 || math.Abs(float64(crystal.Absorption.Y)-1) > 1e-4 || crystal.Absorption.Z != 0 {
-		t.Fatalf("crystal absorption %v, want {0.5 1 0}", crystal.Absorption)
+	if math.Abs(float64(crystal.Transmission.Absorption.X)-.5) > 1e-4 || math.Abs(float64(crystal.Transmission.Absorption.Y)-1) > 1e-4 || crystal.Transmission.Absorption.Z != 0 {
+		t.Fatalf("crystal absorption %v, want {0.5 1 0}", crystal.Transmission.Absorption)
 	}
-	if thin := byName["thin-glass"]; thin == nil || thin.IOR != 1 || thin.Transmission != .8 || thin.Refraction != 0 || thin.ORMMap != nil {
+	if thin := byName["thin-glass"]; thin == nil || thin.PBR.IOR != 1 || thin.Transmission.Amount != .8 || thin.Transmission.Refraction != 0 || thin.PBR.ORMMap != nil {
 		t.Fatalf("thin-glass: %+v", thin)
 	}
 	wantSheen := color.RGBA{srgb8(.5), srgb8(.25), 255, 255}
-	if cp := byName["car-paint-velvet"]; cp == nil || !cp.PBR || cp.Clearcoat != .95 || cp.ClearcoatRoughness != .08 || cp.SheenColor != wantSheen || cp.SheenRoughness != .35 {
+	if cp := byName["car-paint-velvet"]; cp == nil || cp.Shading != nt3d.ShadePBR || cp.PBR.Clearcoat.Amount != .95 || cp.PBR.Clearcoat.Roughness != .08 || cp.PBR.Sheen.Color != wantSheen || cp.PBR.Sheen.Roughness != .35 {
 		t.Fatalf("car-paint-velvet: %+v, want sheen %v", cp, wantSheen)
 	}
-	if unlit := byName["unlit-coat-ignored"]; unlit == nil || !unlit.Unlit || unlit.PBR || unlit.Clearcoat != 0 || unlit.SheenColor != (color.RGBA{}) {
+	if unlit := byName["unlit-coat-ignored"]; unlit == nil || unlit.Shading != nt3d.ShadeUnlit || unlit.Shading == nt3d.ShadePBR || unlit.PBR.Clearcoat.Amount != 0 || unlit.PBR.Sheen.Color != (color.RGBA{}) {
 		t.Fatalf("unlit-coat-ignored: %+v", unlit)
 	}
 	// Verify SceneAsset preserves Clearcoat and Sheen materials too.
@@ -418,7 +418,7 @@ func TestGLTFPBRAndExtensions(t *testing.T) {
 	foundAssetCoatSheen := false
 	for di := range fAsset.Draws {
 		g := fAsset.Draws[di].Geometry
-		if g.Material != nil && g.Material.Clearcoat == .95 && g.Material.SheenColor == wantSheen {
+		if g.Material != nil && g.Material.PBR.Clearcoat.Amount == .95 && g.Material.PBR.Sheen.Color == wantSheen {
 			foundAssetCoatSheen = true
 		}
 	}
@@ -668,7 +668,7 @@ func TestGLTFNormalMaps(t *testing.T) {
 					t.Fatalf("authored=%v: normal %v, want %v", authored, v.Normal, want)
 				}
 			}
-			if g.Material == nil || g.Material.Texture == nil || g.Material.NormalMap == nil || g.Material.NormalStrength != .5 {
+			if g.Material == nil || g.Material.Texture == nil || g.Material.Normal.Map == nil || g.Material.Normal.Strength != .5 {
 				t.Fatal("base texture or normal map lost")
 			}
 			if c := g.Material.Texture.At(0, 0).(color.RGBA); c != (color.RGBA{200, 100, 50, 255}) {
@@ -725,20 +725,24 @@ func TestGLTFNormalMapOptions(t *testing.T) {
 				}
 			}
 			if wantWarning == "" {
-				if g.Material == nil || g.Material.NormalMap == nil {
+				// A map scaled to nothing is left out: nt3d reads a zero
+				// strength as 1.
+				if kind == "zero scale" {
+					if g.Material != nil && g.Material.Normal.Map != nil {
+						t.Fatal("a normal map of zero scale was kept")
+					}
+					return
+				}
+				if g.Material == nil || g.Material.Normal.Map == nil {
 					t.Fatal("normal map missing")
 				}
-				strength := float32(1)
-				if kind == "zero scale" {
-					strength = 0
-				}
-				if g.Material.NormalStrength != strength {
+				if g.Material.Normal.Strength != 1 {
 					t.Fatal("normal scale lost")
 				}
-				if kind == "shared image" && g.Material.Texture == g.Material.NormalMap {
+				if kind == "shared image" && g.Material.Texture == g.Material.Normal.Map {
 					t.Fatal("color and vector textures share gamma interpretation")
 				}
-			} else if g.Material != nil && g.Material.NormalMap != nil {
+			} else if g.Material != nil && g.Material.Normal.Map != nil {
 				t.Fatal("unsupported map was silently sampled")
 			}
 		})

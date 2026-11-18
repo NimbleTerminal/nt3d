@@ -44,7 +44,7 @@ func TestClipNear(t *testing.T) {
 func nearScene(t *testing.T) (Frame, color.RGBA) {
 	t.Helper()
 	floor := color.RGBA{40, 160, 60, 255}
-	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -50, MaxX: 50, MinY: -50, MaxY: 50, Heights: make([]float32, 4), Material: &Material{Unlit: true}, Color: floor})
+	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -50, MaxX: 50, MinY: -50, MaxY: 50, Heights: make([]float32, 4), Material: &Material{Shading: ShadeUnlit}, Color: floor})
 	check(t, err)
 	s := NewScene()
 	_, err = s.SetGeometry("floor", g)

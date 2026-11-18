@@ -20,15 +20,15 @@ func TestGPUFlowNormals(t *testing.T) {
 	check(t, err)
 	flow, err := NewFlowMap(img)
 	check(t, err)
-	m := &Material{NormalMap: normal, NormalStrength: 1, NormalRepeat: true, FlowMap: flow, FlowStrength: .6}
+	m := &Material{Normal: NormalStyle{Map: normal, Strength: 1, Repeat: true, Flow: FlowStyle{Map: flow, Strength: .6}}}
 	g := quad(1, .4, color.RGBA{210, 180, 120, 255}, m, false)
 	g.UV = []UV{{0, 1}, {1, 1}, {1, 0}, {0, 0}}
 	r := &gpuRenderer{}
 	defer r.Close()
 	for i, phase := range []float32{0, .2, .4999, .5001, .9999, 1.0001, 0} {
-		m.FlowPhase = phase
+		m.Normal.Flow.Phase = phase
 		if i == 6 {
-			m.FlowStrength = 0
+			m.Normal.Flow.Strength = 0
 		}
 		f := flatFrame(80, 60, g)
 		f.Revision = 1

@@ -29,7 +29,7 @@ func TestPickThroughCutout(t *testing.T) {
 	for _, n := range []int{2, 17} { // 2 triangles, then 512: indexed.
 		t.Run(fmt.Sprint(n, "x", n), func(t *testing.T) {
 			s := NewScene()
-			front, err := BuildHeightfield(Heightfield{NX: n, NY: n, MinX: -1.5, MaxX: 1.5, MinY: -1.5, MaxY: 1.5, Heights: make([]float32, n*n), Material: &Material{Texture: tex, Cutout: true, Repeat: true}})
+			front, err := BuildHeightfield(Heightfield{NX: n, NY: n, MinX: -1.5, MaxX: 1.5, MinY: -1.5, MaxY: 1.5, Heights: make([]float32, n*n), Material: &Material{Texture: tex, Alpha: AlphaCutout, Repeat: true}})
 			check(t, err)
 			for i := range front.UV {
 				front.UV[i].U *= 4
@@ -99,7 +99,7 @@ func TestPickCutoutMatchesPixels(t *testing.T) {
 	check(t, err)
 	red := color.RGBA{220, 30, 30, 255}
 	s := NewScene()
-	front, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -1.5, MaxX: 1.5, MinY: -1.5, MaxY: 1.5, Heights: make([]float32, 4), Material: &Material{Texture: tex, Cutout: true, Threshold: .4}})
+	front, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -1.5, MaxX: 1.5, MinY: -1.5, MaxY: 1.5, Heights: make([]float32, 4), Material: &Material{Texture: tex, Alpha: AlphaCutout, Threshold: .4}})
 	check(t, err)
 	// Across the fade, a pick cuts where the renderers' sample does: the
 	// same filtered alpha against the same threshold, not rounded to 8 bits.

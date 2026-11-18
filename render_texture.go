@@ -91,7 +91,7 @@ func (g *gpuRenderer) slotBinding(key textureKey) (*wgpu.TextureView, *wgpu.Samp
 func (g *gpuRenderer) materialKey(m *Material, aniso int) materialBindKey {
 	var normRep, ormRep, emRep bool
 	if m != nil {
-		normRep, ormRep, emRep = m.NormalRepeat, m.ORMRepeat, m.EmissiveRepeat
+		normRep, ormRep, emRep = m.Normal.Repeat, m.PBR.ORMRepeat, m.Emission.Repeat
 	}
 	bv, bs := g.slotBinding(baseKey(m, aniso))
 	nv, ns := g.slotBinding(textureKey{src: normalMap(m), repeat: normRep, aniso: aniso})
@@ -290,7 +290,7 @@ func baseKey(m *Material, aniso int) textureKey {
 	switch {
 	case m.FullSize:
 		key.fullSize, key.aniso = true, 1
-	case m.Cutout:
+	case m.cutout():
 		key.cutout, key.aniso = true, 1
 	}
 	return key
@@ -365,9 +365,9 @@ func (g *gpuRenderer) prepareTextures(dev *wgpu.Device, f Frame) error {
 			needTextured = true
 			keys = append(keys,
 				baseKey(geom.Material, aniso),
-				textureKey{src: normalMap(&m), repeat: m.NormalRepeat, aniso: aniso},
-				textureKey{src: ormMap(&m), repeat: m.ORMRepeat, aniso: aniso},
-				textureKey{src: emissiveMap(&m), repeat: m.EmissiveRepeat, aniso: aniso},
+				textureKey{src: normalMap(&m), repeat: m.Normal.Repeat, aniso: aniso},
+				textureKey{src: ormMap(&m), repeat: m.PBR.ORMRepeat, aniso: aniso},
+				textureKey{src: emissiveMap(&m), repeat: m.Emission.Repeat, aniso: aniso},
 				textureKey{src: lightMapTexture(&m), aniso: aniso},
 			)
 		}

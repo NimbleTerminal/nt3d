@@ -68,7 +68,7 @@ func TestSoftwareTint(t *testing.T) {
 }
 
 func TestSoftwareEdgeOn(t *testing.T) {
-	m := Material{Cutout: true, EdgeOn: true}
+	m := Material{Alpha: AlphaEdgeOn}
 	white := color.RGBA{255, 255, 255, 255}
 	// Normals toward the camera: face-on, cut away entirely.
 	f := materialScene(t, m, nt3dmath.Vec3{Z: 1}, white)

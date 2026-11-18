@@ -9,7 +9,7 @@ import (
 )
 
 func transmissionFrame() Frame {
-	return flatFrame(64, 48, quad(1, .8, color.RGBA{240, 180, 120, 255}, nil, false), quad(.8, .3, color.RGBA{20, 60, 80, 255}, &Material{Transmission: 1}, false))
+	return flatFrame(64, 48, quad(1, .8, color.RGBA{240, 180, 120, 255}, nil, false), quad(.8, .3, color.RGBA{20, 60, 80, 255}, &Material{Transmission: TransmissionStyle{Amount: 1}}, false))
 }
 func TestSceneTransmissionAndAttenuation(t *testing.T) {
 	f := transmissionFrame()
@@ -17,7 +17,7 @@ func TestSceneTransmissionAndAttenuation(t *testing.T) {
 	if !closeRGB(got, color.RGBA{240, 180, 120, 255}, 1) {
 		t.Fatal("zero extinction must transmit floor", got)
 	}
-	f.Draws[1].Geometry.Material.Absorption = nt3dmath.Vec3{X: 2, Y: 1, Z: .2}
+	f.Draws[1].Geometry.Material.Transmission.Absorption = nt3dmath.Vec3{X: 2, Y: 1, Z: .2}
 	got = at(softwareRender(f), 32, 24)
 	want := color.RGBA{A: 255}
 	values := []*uint8{&want.R, &want.G, &want.B}
@@ -81,7 +81,7 @@ func TestSceneInverseAndGap(t *testing.T) {
 	}
 }
 func TestOpticsValidation(t *testing.T) {
-	for _, m := range []Material{{Transmission: -1}, {Transmission: 1, Transparent: true}, {Transmission: 1, Unlit: true}, {Refraction: 2}, {Absorption: nt3dmath.Vec3{X: -1}}, {Transmission: float32(math.NaN())}} {
+	for _, m := range []Material{{Transmission: TransmissionStyle{Amount: -1}}, {Transmission: TransmissionStyle{Amount: 1}, Alpha: AlphaTransparent}, {Shading: ShadeUnlit, Transmission: TransmissionStyle{Amount: 1}}, {Transmission: TransmissionStyle{Refraction: 2}}, {Transmission: TransmissionStyle{Absorption: nt3dmath.Vec3{X: -1}}}, {Transmission: TransmissionStyle{Amount: float32(math.NaN())}}} {
 		s := NewScene()
 		if _, err := s.SetGeometry("bad", quad(1, .3, color.RGBA{}, &m, false)); err == nil {
 			t.Fatal("accepted invalid optics", m)
@@ -101,7 +101,7 @@ func refractionFrame(foreground bool) Frame {
 			}
 		}
 	}
-	water := quad(.95, .3, color.RGBA{0, 20, 30, 255}, &Material{Transmission: 1, Refraction: .2}, false)
+	water := quad(.95, .3, color.RGBA{0, 20, 30, 255}, &Material{Transmission: TransmissionStyle{Amount: 1, Refraction: .2}}, false)
 	for i := range water.Vertices {
 		water.Vertices[i].Normal = nt3dmath.Vec3{X: .8, Z: .6}
 	}
@@ -119,7 +119,7 @@ func refractionFrame(foreground bool) Frame {
 func TestRefractionDistortionAndForegroundRejection(t *testing.T) {
 	f := refractionFrame(false)
 	distorted := at(softwareRender(f), 29, 24)
-	f.Draws[1].Geometry.Material.Refraction = 0
+	f.Draws[1].Geometry.Material.Transmission.Refraction = 0
 	clear := at(softwareRender(f), 29, 24)
 	if distorted.R >= clear.R || distorted.B <= clear.B {
 		t.Fatal("normal did not distort the scene", distorted, clear)
@@ -131,10 +131,10 @@ func TestRefractionDistortionAndForegroundRejection(t *testing.T) {
 }
 
 func TestTransmissionDoesNotCastOpaqueShadow(t *testing.T) {
-	f := blendScene(t, nil, quad(1, 0, color.RGBA{255, 255, 255, 255}, &Material{Transmission: 1}, false))
+	f := blendScene(t, nil, quad(1, 0, color.RGBA{255, 255, 255, 255}, &Material{Transmission: TransmissionStyle{Amount: 1}}, false))
 	f.Lighting = Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{X: 1, Z: 1}, Shadows: true}}}
 	a := buildShadowMap(&f, f.drawn(1), 64)
-	f.Draws[1].Geometry.Material = &Material{Transparent: true}
+	f.Draws[1].Geometry.Material = &Material{Alpha: AlphaTransparent}
 	b := buildShadowMap(&f, f.drawn(1), 64)
 	if a == nil || b == nil || !slices.Equal(a.depth, b.depth) {
 		t.Fatal("transmission cast an opaque shadow")

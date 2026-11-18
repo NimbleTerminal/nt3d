@@ -260,7 +260,7 @@ func TestKHRMaterialsVariantsVehicleFleet(t *testing.T) {
 				t.Fatal("base SharedGeometry did not pre-populate UVs and Tangents for textured/normal-mapped variants")
 			}
 		case "car-1/2:Car": // Taxi body
-			if f.Draws[idx].Shared != bodySharedID || mat.Clearcoat != 1 || mat.BaseColor.R < 220 || mat.BaseColor.G < 180 || mat.BaseColor.B > 80 {
+			if f.Draws[idx].Shared != bodySharedID || mat.PBR.Clearcoat.Amount != 1 || mat.BaseColor.R < 220 || mat.BaseColor.G < 180 || mat.BaseColor.B > 80 {
 				t.Fatalf("Taxi body unexpected: shared=%d (want %d) mat=%+v", f.Draws[idx].Shared, bodySharedID, mat)
 			}
 		case "car-2/2:Car": // Police body (textured)
@@ -268,24 +268,24 @@ func TestKHRMaterialsVariantsVehicleFleet(t *testing.T) {
 				t.Fatalf("Police body unexpected: mat=%+v", mat)
 			}
 		case "car-3/2:Car": // Red metallic body
-			if f.Draws[idx].Shared != bodySharedID || mat.Metallic != .8 || mat.BaseColor.R < 200 || mat.BaseColor.G > 80 {
+			if f.Draws[idx].Shared != bodySharedID || mat.PBR.Metallic != .8 || mat.BaseColor.R < 200 || mat.BaseColor.G > 80 {
 				t.Fatalf("Red body unexpected: shared=%d (want %d) mat=%+v", f.Draws[idx].Shared, bodySharedID, mat)
 			}
 		case "car-4/2:Car": // Weathered body (Texture + NormalMap + ORMMap)
-			if mat.Texture == nil || mat.NormalMap == nil || mat.ORMMap == nil || len(f.Draws[idx].Geometry.Tangents) == 0 {
+			if mat.Texture == nil || mat.Normal.Map == nil || mat.PBR.ORMMap == nil || len(f.Draws[idx].Geometry.Tangents) == 0 {
 				t.Fatalf("Weathered body missing maps or tangents: mat=%+v tangents=%d", mat, len(f.Draws[idx].Geometry.Tangents))
 			}
 		case "car-0/3:Car", "car-1/3:Car", "car-2/3:Car", "car-3/3:Car", "car-4/3:Car": // Unmapped Tires
 			tireCount++
-			if f.Draws[idx].Shared == 0 || mat == nil || mat.Roughness != .92 {
+			if f.Draws[idx].Shared == 0 || mat == nil || mat.PBR.Roughness != .92 {
 				t.Fatalf("unmapped tire altered on %s: shared=%d mat=%+v", inst.Name, f.Draws[idx].Shared, mat)
 			}
 		case "car-2/4:Car": // Police active lightbar
-			if mat.Transparent || mat.EmissiveIntensity != 3 {
+			if mat.Alpha == nt3d.AlphaTransparent || mat.Emission.Intensity != 3 {
 				t.Fatalf("Police lightbar did not activate: %+v", mat)
 			}
 		case "car-1/4:Car", "car-3/4:Car": // Hidden lightbars on Taxi & Red
-			if !mat.Transparent || mat.BaseColor.A != 0 {
+			if mat.Alpha != nt3d.AlphaTransparent || mat.BaseColor.A != 0 {
 				t.Fatalf("hidden lightbar became visible on %s: %+v", inst.Name, mat)
 			}
 		}

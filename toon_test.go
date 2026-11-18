@@ -112,7 +112,7 @@ func TestToonShadeAndNoLights(t *testing.T) {
 
 func TestToonHighlightIsFlat(t *testing.T) {
 	r := toonRig(0, up)
-	m := &Material{Specular: 1, Shininess: 32, Toon: ToonStyle{Bands: 2}}
+	m := &Material{Phong: PhongStyle{Specular: 1, Shininess: 32}, Toon: ToonStyle{Bands: 2}}
 	if got := r.toonHighlight(m, up, nt3dmath.Vec3{}, up, up); got != [3]float32{1, 1, 1} {
 		t.Fatalf("mirror highlight %v", got)
 	}
@@ -194,8 +194,8 @@ func TestToonSphereHasFlatTones(t *testing.T) {
 }
 
 func TestToonZeroBandsIsUnchanged(t *testing.T) {
-	plain := softwareRender(toonSphere(t, &Material{Specular: .4}, 96)).(*image.RGBA)
-	off := softwareRender(toonSphere(t, &Material{Specular: .4, Toon: ToonStyle{Softness: .5, ShadowSoftness: .7, Rim: .5, Shade: color.RGBA{0, 0, 255, 255}}}, 96)).(*image.RGBA)
+	plain := softwareRender(toonSphere(t, &Material{Phong: PhongStyle{Specular: .4}}, 96)).(*image.RGBA)
+	off := softwareRender(toonSphere(t, &Material{Phong: PhongStyle{Specular: .4}, Toon: ToonStyle{Softness: .5, ShadowSoftness: .7, Rim: .5, Shade: color.RGBA{0, 0, 255, 255}}}, 96)).(*image.RGBA)
 	if !bytes.Equal(plain.Pix, off.Pix) {
 		t.Fatal("a toon style without bands changed the frame")
 	}
@@ -206,10 +206,9 @@ func TestToonZeroBandsIsUnchanged(t *testing.T) {
 // between x = -1.35 and x = 0.15 on z = -1.
 func toonStreetShadowFrame(t *testing.T, pbr bool, shadowSoftness float32, kind LightKind) Frame {
 	t.Helper()
-	mat := &Material{
-		PBR:       pbr,
-		Roughness: .8,
-		Toon:      ToonStyle{Bands: 3, ShadowSoftness: shadowSoftness, Shade: color.RGBA{120, 140, 190, 255}},
+	mat := &Material{Toon: ToonStyle{Bands: 3, ShadowSoftness: shadowSoftness, Shade: color.RGBA{120, 140, 190, 255}}}
+	if pbr {
+		mat.Shading, mat.PBR.Roughness = ShadePBR, .8
 	}
 	s := NewScene()
 	_, err := s.SetGeometry("street", quad(28, -1, white, mat, false))
@@ -385,14 +384,14 @@ func TestToonComposes(t *testing.T) {
 
 	// The back of a transparent sheet (opaque ones are culled), seen from
 	// above, is one of the two tones.
-	f = blendScene(t, &shadowLit, quad(.8, .3, white, &Material{Transparent: true, Toon: ToonStyle{Bands: 2}}, true))
+	f = blendScene(t, &shadowLit, quad(.8, .3, white, &Material{Alpha: AlphaTransparent, Toon: ToonStyle{Bands: 2}}, true))
 	cx, cy := pixel(f, nt3dmath.Vec3{Z: .3})
 	if c := at(softwareRender(f), cx, cy); c != white && c != (color.RGBA{137, 137, 137, 255}) {
 		t.Fatalf("back face %v is neither tone", c)
 	}
 
-	unlit := softwareRender(toonSphere(t, &Material{Unlit: true}, 96)).(*image.RGBA)
-	both := softwareRender(toonSphere(t, &Material{Unlit: true, Toon: ToonStyle{Bands: 2}}, 96)).(*image.RGBA)
+	unlit := softwareRender(toonSphere(t, &Material{Shading: ShadeUnlit}, 96)).(*image.RGBA)
+	both := softwareRender(toonSphere(t, &Material{Shading: ShadeUnlit, Toon: ToonStyle{Bands: 2}}, 96)).(*image.RGBA)
 	if !bytes.Equal(unlit.Pix, both.Pix) {
 		t.Fatal("toon changed an unlit material")
 	}
@@ -422,7 +421,7 @@ func TestSetToonSubtree(t *testing.T) {
 	check(t, s.SetNodeGeometry(a, mesh(nil)))
 	b, err := s.Add(a, "b")
 	check(t, err)
-	check(t, s.SetNodeGeometry(b, mesh(&Material{Specular: .5})))
+	check(t, s.SetNodeGeometry(b, mesh(&Material{Phong: PhongStyle{Specular: .5}})))
 	c, err := s.SetGeometry("c", pointGeometry())
 	check(t, err)
 	d, err := s.SetGeometry("d", mesh(nil))
@@ -432,7 +431,7 @@ func TestSetToonSubtree(t *testing.T) {
 	if got := toonBands(t, s); got[a] != 3 || got[b] != 3 || got[c] != -1 || got[d] > 0 {
 		t.Fatalf("bands after ApplyToon: %v", got)
 	}
-	if m := s.nodes[b].geometry.Material; m.Specular != .5 {
+	if m := s.nodes[b].geometry.Material; m.Phong.Specular != .5 {
 		t.Fatalf("ApplyToon lost the material's other fields: %+v", m)
 	}
 	before := s.Revision()
@@ -451,7 +450,7 @@ func TestSetToonSubtree(t *testing.T) {
 
 func TestSetToonDoesNotShareMaterials(t *testing.T) {
 	s := NewScene()
-	shared := &Material{Specular: .25}
+	shared := &Material{Phong: PhongStyle{Specular: .25}}
 	x, err := s.SetGeometry("x", quad(.5, 0, white, shared, false))
 	check(t, err)
 	y, err := s.SetGeometry("y", quad(.5, 1, white, shared, false))

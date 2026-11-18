@@ -193,7 +193,7 @@ func coincident(t *testing.T, redLayer int) Frame {
 		name  string
 		color color.RGBA
 	}{{"red", color.RGBA{255, 0, 0, 255}}, {"blue", color.RGBA{0, 0, 255, 255}}} {
-		g, err := BuildSphere(Sphere{Radius: .7, Segments: 24, Rings: 12, Color: ball.color, Material: &Material{Unlit: true}})
+		g, err := BuildSphere(Sphere{Radius: .7, Segments: 24, Rings: 12, Color: ball.color, Material: &Material{Shading: ShadeUnlit}})
 		check(t, err)
 		id, err := s.SetGeometry(ball.name, g)
 		check(t, err)

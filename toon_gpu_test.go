@@ -46,7 +46,7 @@ func flat(img image.Image, x, y, reach int) bool {
 func TestGPUToonMatchesSoftware(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
-	f := toonSphere(t, &Material{Specular: .4, Toon: ToonStyle{Bands: 3, Shade: color.RGBA{150, 160, 220, 255}, Rim: .3}}, 200)
+	f := toonSphere(t, &Material{Phong: PhongStyle{Specular: .4}, Toon: ToonStyle{Bands: 3, Shade: color.RGBA{150, 160, 220, 255}, Rim: .3}}, 200)
 	gpu, sw := toonGPU(t, r, f), softwareRender(f)
 	compared, off := 0, 0
 	for y := range f.Height {
@@ -72,8 +72,8 @@ func TestGPUToonMatchesSoftware(t *testing.T) {
 func TestGPUToonOffIsUnchanged(t *testing.T) {
 	r := &gpuRenderer{}
 	defer r.Close()
-	plain := toonGPU(t, r, toonSphere(t, &Material{Specular: .4}, 96))
-	off := toonGPU(t, r, toonSphere(t, &Material{Specular: .4, Toon: ToonStyle{Softness: .5, ShadowSoftness: .7, Rim: .5, Shade: color.RGBA{0, 0, 255, 255}}}, 96))
+	plain := toonGPU(t, r, toonSphere(t, &Material{Phong: PhongStyle{Specular: .4}}, 96))
+	off := toonGPU(t, r, toonSphere(t, &Material{Phong: PhongStyle{Specular: .4}, Toon: ToonStyle{Softness: .5, ShadowSoftness: .7, Rim: .5, Shade: color.RGBA{0, 0, 255, 255}}}, 96))
 	if !bytes.Equal(plain.Pix, off.Pix) {
 		t.Fatal("a toon style without bands changed the GPU frame")
 	}
@@ -89,7 +89,7 @@ func TestGPUToonComposes(t *testing.T) {
 	check(t, err)
 	painted := quad(.8, .3, white, &Material{Texture: tex, Toon: ToonStyle{Bands: 2}}, false)
 	painted.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	sheet := quad(.8, .3, white, &Material{Transparent: true, Toon: ToonStyle{Bands: 2}}, true)
+	sheet := quad(.8, .3, white, &Material{Alpha: AlphaTransparent, Toon: ToonStyle{Bands: 2}}, true)
 	for name, g := range map[string]Geometry{"textured": painted, "back of a sheet": sheet} {
 		f := blendScene(t, &shadowLit, g)
 		gpu, sw := toonGPU(t, r, f), softwareRender(f)

@@ -866,22 +866,22 @@ func TestGLTFKHRTextureBasisUAndTwoChannelNormals(t *testing.T) {
 		t.Fatalf("unexpected KHR_texture_basisu/KHR_materials_specular warnings: %v", m.Warnings)
 	}
 	mat := m.Objects[0].Geometry.Material
-	if mat == nil || mat.Texture == nil || mat.NormalMap == nil || mat.ORMMap == nil || mat.EmissiveMap == nil {
+	if mat == nil || mat.Texture == nil || mat.Normal.Map == nil || mat.PBR.ORMMap == nil || mat.Emission.Map == nil {
 		t.Fatalf("missing decoded KTX2 textures: %+v", mat)
 	}
 	if got := mat.Texture.NRGBAAt(0, 0); got != (color.NRGBA{200, 95, 45, 220}) {
 		t.Fatalf("KTX2 UASTC base texel = %v, want {200 95 45 220}", got)
 	}
 	// Reconstructed Z for X=180 (+0.4078), Y=128 (+0.0039) -> Z ≈ 0.913 -> byte ≈ 244 (not collapsed to ~128!).
-	nrmPx := mat.NormalMap.At(0, 0).(color.RGBA)
+	nrmPx := mat.Normal.Map.At(0, 0).(color.RGBA)
 	if nrmPx.R < 175 || nrmPx.B < 235 {
 		t.Fatalf("expected two-channel RRRG normal map to reconstruct +Z, got %v", nrmPx)
 	}
-	if got := mat.EmissiveMap.NRGBAAt(0, 0); got != (color.NRGBA{250, 140, 30, 255}) {
+	if got := mat.Emission.Map.NRGBAAt(0, 0); got != (color.NRGBA{250, 140, 30, 255}) {
 		t.Fatalf("KTX2 BGRA emissive texel = %v, want {250 140 30 255}", got)
 	}
-	if mat.SpecularIntensity != 2.0 || mat.SpecularColor != (color.RGBA{R: 255, G: srgb8(0.5), B: 0, A: 128}) {
-		t.Fatalf("unexpected KHR_materials_specular decode: color=%v intensity=%v", mat.SpecularColor, mat.SpecularIntensity)
+	if want := (nt3d.SpecularStyle{Color: color.RGBA{R: 255, G: srgb8(0.5), B: 0, A: 255}, Intensity: 2, Strength: .5}); mat.PBR.Specular != want {
+		t.Fatalf("unexpected KHR_materials_specular decode: %+v, want %+v", mat.PBR.Specular, want)
 	}
 
 	// Priority & fallback chain: KHR_texture_basisu -> EXT_texture_webp -> Texture.Source.
@@ -1020,11 +1020,11 @@ func TestGLTFKHRMaterialsSpecularVariantsAndValidation(t *testing.T) {
 	instB, err := m.Asset.Instantiate(s, nt3d.Root, "b")
 	check(t, err)
 
-	// Default [1,1,1], 1.0 leaves SpecularColor zero.
+	// Default [1,1,1], 1.0 leaves the Specular group zero.
 	f0, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
-	if f0.Draws[0].Geometry.Material.SpecularColor != (color.RGBA{}) || f0.Draws[0].Geometry.Material.SpecularIntensity != 0 {
-		t.Fatalf("expected zero SpecularColor on default specular, got %+v", f0.Draws[0].Geometry.Material)
+	if f0.Draws[0].Geometry.Material.PBR.Specular.Color != (color.RGBA{}) || f0.Draws[0].Geometry.Material.PBR.Specular.Intensity != 0 {
+		t.Fatalf("expected a zero Specular group on default specular, got %+v", f0.Draws[0].Geometry.Material)
 	}
 	if len(f0.Draws) != 2 || f0.Draws[0].Shared == 0 || f0.Draws[0].Shared != f0.Draws[1].Shared {
 		t.Fatalf("expected shared SharedGeometry ID across 2 instances, got %d draws", len(f0.Draws))
@@ -1042,8 +1042,8 @@ func TestGLTFKHRMaterialsSpecularVariantsAndValidation(t *testing.T) {
 	check(t, s.SetMaterialVariant(instA.Root, "GrazingRim"))
 	f2, err := s.Frame(nt3d.DefaultCamera(), 64, 64)
 	check(t, err)
-	if got := f2.Draws[0].Geometry.Material.SpecularColor; got != (color.RGBA{A: 204}) {
-		t.Fatalf("GrazingRim SpecularColor = %v, want {0 0 0 204}", got)
+	if got, want := f2.Draws[0].Geometry.Material.PBR.Specular, (nt3d.SpecularStyle{Color: color.RGBA{A: 255}, Strength: .8}); got != want {
+		t.Fatalf("GrazingRim specular = %+v, want %+v", got, want)
 	}
 
 	// Invalid KHR_materials_specular & KHR_texture_basisu payloads must be rejected.

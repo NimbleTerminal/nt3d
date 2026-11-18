@@ -8,6 +8,7 @@ import (
 	"math"
 
 	"github.com/qmuntal/gltf"
+	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
@@ -272,27 +273,29 @@ func (mb *materialBuild) specularExtension() {
 			mb.fail(err)
 		}
 		if l.err == nil && !l.unlit {
-			a := uint8(sf*255 + .5)
+			// The factor scales the whole highlight, the color only its
+			// strength head on. A zero strength would mean the default, so
+			// none is Off.
+			var style nt3d.SpecularStyle
+			switch {
+			case sf == 0:
+				style.Off = true
+			case sf < 1:
+				style.Strength = float32(sf)
+			}
 			maxCh := max(scf[0], max(scf[1], scf[2]))
 			switch {
-			case a == 0:
-				l.specularColor = color.RGBA{R: 255, G: 255, B: 255, A: 0}
 			case maxCh == 0:
-				l.specularColor = color.RGBA{A: a}
+				style.Color = color.RGBA{A: 255}
 			case maxCh > 1:
-				l.specularColor = color.RGBA{
-					R: srgb8(scf[0] / maxCh),
-					G: srgb8(scf[1] / maxCh),
-					B: srgb8(scf[2] / maxCh),
-					A: a,
-				}
-				l.specularIntensity = float32(maxCh)
+				style.Color = color.RGBA{R: srgb8(scf[0] / maxCh), G: srgb8(scf[1] / maxCh), B: srgb8(scf[2] / maxCh), A: 255}
+				style.Intensity = float32(maxCh)
 			default:
-				c := color.RGBA{R: srgb8(scf[0]), G: srgb8(scf[1]), B: srgb8(scf[2]), A: a}
-				if c != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
-					l.specularColor = c
+				if c := (color.RGBA{R: srgb8(scf[0]), G: srgb8(scf[1]), B: srgb8(scf[2]), A: 255}); c != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+					style.Color = c
 				}
 			}
+			l.specular = style
 		}
 	}
 }

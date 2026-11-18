@@ -144,7 +144,7 @@ func (d *demo) setupCamPath() error {
 	camPathDirectorCamera(&cp.orbitCam)
 
 	// Terraced plaza floor & water basin.
-	waterMat := &nt3d.Material{Roughness: 0.14, Metallic: 0.05, Clearcoat: 0.9, ClearcoatRoughness: 0.08}
+	waterMat := &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: 0.14, Metallic: 0.05, Clearcoat: nt3d.ClearcoatStyle{Amount: 0.9, Roughness: 0.08}}}
 	waterDisk, err := nt3d.BuildCylinder(nt3d.Cylinder{
 		BottomRadius: 20,
 		TopRadius:    20,
@@ -167,7 +167,7 @@ func (d *demo) setupCamPath() error {
 		return err
 	}
 
-	stoneMat := &nt3d.Material{Roughness: 0.78}
+	stoneMat := &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: 0.78}}
 	plaza, err := nt3d.BuildCylinder(nt3d.Cylinder{
 		BottomRadius: 14.5,
 		TopRadius:    14.0,
@@ -204,7 +204,7 @@ func (d *demo) setupCamPath() error {
 		Height:       2.6,
 		Segments:     24,
 		Color:        color.RGBA{R: 72, G: 78, B: 92, A: 255},
-		Material:     &nt3d.Material{Roughness: 0.4, Metallic: 0.3},
+		Material:     &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: 0.4, Metallic: 0.3}},
 	})
 	if err != nil {
 		return err
@@ -221,10 +221,9 @@ func (d *demo) setupCamPath() error {
 	}
 
 	goldGlow := &nt3d.Material{
-		Roughness:         0.22,
-		Metallic:          0.85,
-		Emissive:          color.RGBA{R: 255, G: 185, B: 65, A: 255},
-		EmissiveIntensity: 0.45,
+		Shading:  nt3d.ShadePBR,
+		PBR:      nt3d.PBRStyle{Roughness: 0.22, Metallic: 0.85},
+		Emission: nt3d.EmissionStyle{Color: color.RGBA{R: 255, G: 185, B: 65, A: 255}, Intensity: 0.45},
 	}
 	orb, err := nt3d.BuildSphere(nt3d.Sphere{
 		Radius:   0.48,
@@ -261,10 +260,8 @@ func (d *demo) setupCamPath() error {
 
 	// Off-axis clearcoated cobalt sculpture ("node:sculpture") for target handoff.
 	coatMat := &nt3d.Material{
-		Roughness:          0.28,
-		Metallic:           0.2,
-		Clearcoat:          1.0,
-		ClearcoatRoughness: 0.06,
+		Shading: nt3d.ShadePBR,
+		PBR:     nt3d.PBRStyle{Roughness: 0.28, Metallic: 0.2, Clearcoat: nt3d.ClearcoatStyle{Amount: 1.0, Roughness: 0.06}},
 	}
 	knotTorus, err := nt3d.BuildTorus(nt3d.Torus{
 		MajorRadius: 0.85,
@@ -320,7 +317,7 @@ func (d *demo) setupCamPath() error {
 		{name: "arch-mid", x: -0.5, y: 0.1, yaw: 0.66, span: 4.6, tall: 4.7, col: color.RGBA{R: 224, G: 148, B: 98, A: 255}},
 		{name: "arch-east", x: 5.4, y: 3.9, yaw: 0.52, span: 4.4, tall: 4.5, col: color.RGBA{R: 196, G: 112, B: 96, A: 255}},
 	}
-	archMat := &nt3d.Material{Roughness: 0.65}
+	archMat := &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: 0.65}}
 	for _, a := range arches {
 		rootID, err := d.scene.Add(d.group, a.name)
 		if err != nil {

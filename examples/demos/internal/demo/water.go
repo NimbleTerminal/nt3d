@@ -43,12 +43,12 @@ func (d *demo) setupWater() error {
 	if err != nil {
 		return err
 	}
-	w := &waterScene{surface: surface, baseSurface: surface, material: nt3d.Material{Specular: .8, Shininess: 64, Reflectivity: .02, NormalStrength: 1, NormalRepeat: true}}
+	w := &waterScene{surface: surface, baseSurface: surface, material: nt3d.Material{Phong: nt3d.PhongStyle{Specular: .8, Shininess: 64, Reflectivity: .02}, Normal: nt3d.NormalStyle{Strength: 1, Repeat: true}}}
 	w.craft = waterCraft{x: 0, y: -2.7, throttle: .65, autopilot: true}
 	w.ripples, w.reflections = true, true
 	w.optics, w.softSpray = true, true
 	d.water = w
-	hull, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 1.5, Y: .7, Z: .23}, Color: color.RGBA{242, 148, 48, 255}, Material: &nt3d.Material{Specular: .25, Shininess: 24}})
+	hull, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 1.5, Y: .7, Z: .23}, Color: color.RGBA{242, 148, 48, 255}, Material: &nt3d.Material{Phong: nt3d.PhongStyle{Specular: .25, Shininess: 24}}})
 	if err != nil {
 		return err
 	}
@@ -91,21 +91,21 @@ func (d *demo) stepWater() error {
 	if err != nil {
 		return err
 	}
-	w.material.Transmission, w.material.Refraction = 0, 0
-	w.material.Absorption = nt3dmath.Vec3{}
+	w.material.Transmission.Amount, w.material.Transmission.Refraction = 0, 0
+	w.material.Transmission.Absorption = nt3dmath.Vec3{}
 	if w.optics {
-		w.material.Transmission = .94
-		w.material.Refraction = .018
-		w.material.Absorption = vec(.85, .28, .12)
+		w.material.Transmission.Amount = .94
+		w.material.Transmission.Refraction = .018
+		w.material.Transmission.Absorption = vec(.85, .28, .12)
 	}
-	w.material.NormalMap = normal
-	w.material.NormalStrength = 0
+	w.material.Normal.Map = normal
+	w.material.Normal.Strength = 0
 	if w.ripples {
-		w.material.NormalStrength = 1
+		w.material.Normal.Strength = 1
 	}
-	w.material.Reflectivity = 0
+	w.material.Phong.Reflectivity = 0
 	if w.reflections {
-		w.material.Reflectivity = .02
+		w.material.Phong.Reflectivity = .02
 	}
 
 	if !w.moored {

@@ -94,12 +94,12 @@ func TestApplyMaterialDoesNotReachNodesAddedLater(t *testing.T) {
 		return nil
 	}
 	before := mesh("before")
-	check(t, s.ApplyMaterial(group, &Material{Unlit: true}))
+	check(t, s.ApplyMaterial(group, &Material{Shading: ShadeUnlit}))
 	after := mesh("after")
-	if m := material(before); m == nil || !m.Unlit {
+	if m := material(before); m == nil || !m.unlit() {
 		t.Fatalf("the mesh under the root was not changed: %+v", m)
 	}
-	if m := material(after); m != nil && m.Unlit {
+	if m := material(after); m != nil && m.unlit() {
 		t.Fatalf("a mesh added after the call was changed: %+v", m)
 	}
 }

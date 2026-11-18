@@ -541,7 +541,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		var cutoff float32
 		if geom.Material != nil {
 			matShader = geom.Material.Shader
-			if geom.Material.Cutout {
+			if geom.Material.cutout() {
 				cutoff = geom.Material.threshold()
 			}
 		}
@@ -558,9 +558,9 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			aniso := f.anisotropy()
 			k.lightMap = textureKey{src: lightMapTexture(&m), aniso: aniso}
 			k.base = baseKey(geom.Material, aniso)
-			k.normal = textureKey{src: normalMap(&m), repeat: m.NormalRepeat, aniso: aniso}
-			k.orm = textureKey{src: ormMap(&m), repeat: m.ORMRepeat, aniso: aniso}
-			k.emissive = textureKey{src: emissiveMap(&m), repeat: m.EmissiveRepeat, aniso: aniso}
+			k.normal = textureKey{src: normalMap(&m), repeat: m.Normal.Repeat, aniso: aniso}
+			k.orm = textureKey{src: ormMap(&m), repeat: m.PBR.ORMRepeat, aniso: aniso}
+			k.emissive = textureKey{src: emissiveMap(&m), repeat: m.Emission.Repeat, aniso: aniso}
 		}
 		if grp := byKey[k]; grp != nil {
 			grp.members = append(grp.members, i)
@@ -707,7 +707,7 @@ func pbrParams(m *Material, linear bool) ([4]float32, float32) {
 	if packed > 0 {
 		f0OrFactor = factor + 1
 	}
-	return [4]float32{m.Metallic, m.Roughness, f0OrFactor, occlusionStrength(m)}, packed
+	return [4]float32{m.PBR.Metallic, m.PBR.Roughness, f0OrFactor, occlusionStrength(m)}, packed
 }
 
 // writeTransforms writes a draw's instance transforms, when they changed.
@@ -724,13 +724,13 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 		em := emissiveFactor(m, f.Linear)
 		states[k].emissive = [4]float32{em[0], em[1], em[2], specPacked}
 		states[k].outline = f.Draws[i].Geometry.Outline
-		states[k].unlit = m != nil && m.Unlit
+		states[k].unlit = m != nil && m.unlit()
 		states[k].toon = toonParams(m)
-		if m != nil && m.Specular > 0 && !m.Unlit {
-			states[k].specular, states[k].shininess = m.Specular, m.shininess()
+		if m != nil && m.Phong.Specular > 0 && !m.unlit() {
+			states[k].specular, states[k].shininess = m.Phong.Specular, m.shininess()
 		}
-		if m != nil && !m.Unlit {
-			states[k].reflectivity = m.Reflectivity
+		if m != nil && !m.unlit() {
+			states[k].reflectivity = m.Phong.Reflectivity
 		}
 		if mapped(f.Draws[i].Geometry) {
 			states[k].procedural = baseMap(m).shader != ""
@@ -788,15 +788,15 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 
 func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, v placement, m *Material) error {
 	var specular, shininess, reflectivity float32
-	if m != nil && m.Specular > 0 && !m.Unlit {
-		specular, shininess = m.Specular, m.shininess()
+	if m != nil && m.Phong.Specular > 0 && !m.unlit() {
+		specular, shininess = m.Phong.Specular, m.shininess()
 	}
-	if m != nil && !m.Unlit {
-		reflectivity = m.Reflectivity
+	if m != nil && !m.unlit() {
+		reflectivity = m.Phong.Reflectivity
 	}
 	pbr, specPacked := pbrParams(m, false)
 	em := emissiveFactor(m, false)
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.Unlit, 0, [8]float32{}, toonParams(m), pbr, [4]float32{em[0], em[1], em[2], specPacked}, coatParams(m), sheenParams(m, false)))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(v.World, specular, shininess, reflectivity, false, v.Visible, OutlineStyle{}, m != nil && m.unlit(), 0, [8]float32{}, toonParams(m), pbr, [4]float32{em[0], em[1], em[2], specPacked}, coatParams(m), sheenParams(m, false)))
 }
 
 // uploadData uploads a geometry batch's records, to be bound per instance set.
@@ -883,7 +883,7 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry, st *geometry
 			// and, for a tint, the vertex color as a 24-bit integer, which a
 			// float holds exactly.
 			m, flags, cut := materialOrZero(geom.Material), int(outlineCode)<<6, geom.Material.threshold()
-			if m.NormalRepeat {
+			if m.Normal.Repeat {
 				flags |= 32
 			}
 			if isExt {
@@ -898,17 +898,14 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry, st *geometry
 			if m.Repeat {
 				flags |= 1
 			}
-			if m.EdgeOn && m.Texture != nil {
+			if m.edgeOn() && m.Texture != nil {
 				flags |= 2
 			}
 			if m.Tint || m.Texture == nil {
 				flags |= 4
 			}
 			rgb := float32(int(v.Color.R)<<16 | int(v.Color.G)<<8 | int(v.Color.B))
-			strength := float32(0)
-			if m.NormalMap != nil {
-				strength = m.NormalStrength
-			}
+			strength := m.normalStrength()
 			var uv UV
 			if int(index) < len(geom.UV) {
 				uv = geom.UV[index]
@@ -924,7 +921,7 @@ func appendMeshRecords(dst []byte, flowScratch []UV, geom Geometry, st *geometry
 		// Flow is fixed in the rest UV field. Resolve it once per vertex, not once
 		// per repeated triangle index, when streaming a large animated grid.
 		var flows []UV
-		if geom.Material.FlowMap != nil {
+		if geom.Material.Normal.Flow.Map != nil {
 			if cap(flowScratch) < len(geom.Vertices) {
 				flowScratch = make([]UV, len(geom.Vertices))
 			}

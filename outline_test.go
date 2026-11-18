@@ -15,7 +15,7 @@ var outlineInk = color.RGBA{200, 30, 90, 255}
 
 func outlineFrame(t *testing.T) Frame {
 	t.Helper()
-	g, err := BuildSphere(Sphere{Radius: .7, Segments: 40, Rings: 24, Color: white, Material: &Material{Unlit: true}})
+	g, err := BuildSphere(Sphere{Radius: .7, Segments: 40, Rings: 24, Color: white, Material: &Material{Shading: ShadeUnlit}})
 	check(t, err)
 	g.Outline = OutlineStyle{Width: 3, Color: outlineInk}
 	s := NewScene()
@@ -49,7 +49,7 @@ func TestOutlinePresenceAndDepth(t *testing.T) {
 	// An opaque screen-aligned pane in front of the entire object hides both
 	// its surface and its expanded contour, in either geometry order.
 	f.Draws[0].Geometry.Outline.Width = 3
-	pane := quad(.95, .001, color.RGBA{20, 180, 40, 255}, &Material{Unlit: true}, false)
+	pane := quad(.95, .001, color.RGBA{20, 180, 40, 255}, &Material{Shading: ShadeUnlit}, false)
 	inv, ok := f.Matrix.InverseAffine()
 	if !ok {
 		t.Fatal("inverse")
@@ -101,7 +101,11 @@ func TestOutlineAlphaAndSupersampling(t *testing.T) {
 	for _, transparent := range []bool{false, true} {
 		f := outlineFrame(t)
 		g := &f.Draws[0].Geometry
-		g.Material = &Material{Unlit: true, Texture: testTexture(t, color.RGBA{}), Cutout: !transparent, Transparent: transparent}
+		alpha := AlphaCutout
+		if transparent {
+			alpha = AlphaTransparent
+		}
+		g.Material = &Material{Shading: ShadeUnlit, Texture: testTexture(t, color.RGBA{}), Alpha: alpha}
 		outlined := softwareRender(f).(*image.RGBA)
 		g.Outline.Width = 0
 		if !bytes.Equal(outlined.Pix, softwareRender(f).(*image.RGBA).Pix) {
@@ -158,7 +162,7 @@ func TestOutlineWorldUnitsAndSplitNormals(t *testing.T) {
 
 	// A faceted box (split vertex normals at all 8 corners) produces smooth
 	// averaged contour normals and a continuous silhouette.
-	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{Unlit: true}})
+	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{Shading: ShadeUnlit}})
 	check(t, err)
 	codes := outlineNormals(cube.Vertices)
 	if len(codes) != len(cube.Vertices) {

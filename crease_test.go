@@ -183,9 +183,9 @@ func TestCreasedEligibility(t *testing.T) {
 		}
 	}
 	for name, change := range map[string]func(*Geometry){
-		"transparent":  func(g *Geometry) { g.Material = &Material{Transparent: true} },
-		"cutout":       func(g *Geometry) { g.Material = &Material{Cutout: true} },
-		"transmitting": func(g *Geometry) { g.Material = &Material{Transmission: .5} },
+		"transparent":  func(g *Geometry) { g.Material = &Material{Alpha: AlphaTransparent} },
+		"cutout":       func(g *Geometry) { g.Material = &Material{Alpha: AlphaCutout} },
+		"transmitting": func(g *Geometry) { g.Material = &Material{Transmission: TransmissionStyle{Amount: .5}} },
 	} {
 		other := g
 		change(&other)
@@ -335,7 +335,7 @@ func creaseCutoutTextureScene(t *testing.T) Frame {
 	}
 	tex, err := NewTexture(half)
 	check(t, err)
-	g := quad(.6, 0, white, &Material{Texture: tex, Cutout: true}, false)
+	g := quad(.6, 0, white, &Material{Texture: tex, Alpha: AlphaCutout}, false)
 	g.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	g.Outline = creaseStyle
 	s := NewScene()
@@ -360,7 +360,7 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
 		return c
 	})
 	check(t, err)
-	g := quad(.6, 0, creaseGray, &Material{Cutout: true, Shader: sh}, false)
+	g := quad(.6, 0, creaseGray, &Material{Alpha: AlphaCutout, Shader: sh}, false)
 	g.Outline = creaseStyle
 	s := NewScene()
 	_, err = s.SetGeometry("cutout", g)
@@ -376,7 +376,7 @@ func creaseTransmissiveScene(t *testing.T) (Frame, int) {
 	cube, err := BuildCuboid(Cuboid{
 		Size:     nt3dmath.Vec3{X: .5, Y: .5, Z: .5},
 		Color:    white,
-		Material: &Material{PBR: true, Transmission: .85, Roughness: .08, IOR: 1.5},
+		Material: &Material{Shading: ShadePBR, Transmission: TransmissionStyle{Amount: .85}, PBR: PBRStyle{Roughness: .08, IOR: 1.5}},
 	})
 	check(t, err)
 	cube.Outline = creaseStyle
@@ -397,7 +397,7 @@ func creaseTransparentScene(t *testing.T, style OutlineStyle, alpha uint8) Frame
 	g, err := BuildCuboid(Cuboid{
 		Size:     nt3dmath.Vec3{X: .5, Y: .5, Z: .5},
 		Color:    color.RGBA{200, 200, 200, alpha},
-		Material: &Material{Transparent: true},
+		Material: &Material{Alpha: AlphaTransparent},
 	})
 	check(t, err)
 	g.Outline = style

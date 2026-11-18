@@ -13,7 +13,7 @@ import (
 // Lighting is how a frame's surfaces are lit: ambient light from all
 // around, plus at most MaxLights lights. Surfaces are lit per pixel, by
 // their interpolated normals. The zero Lighting has no light at all, so
-// lit surfaces are black; Material.Unlit surfaces, points, lines, arrows,
+// lit surfaces are black; ShadeUnlit surfaces, points, lines, arrows,
 // and overlays are never lit.
 type Lighting struct {
 	Ambient Ambient
@@ -299,7 +299,7 @@ func (r *lightRig) highlightNormal(m *Material, n, p, view, geometric nt3dmath.V
 		if h.Dot(h) == 0 {
 			continue
 		}
-		s := m.Specular * float32(math.Pow(float64(max(0, n.Dot(h.Normalize()))), float64(m.shininess()))) * fade
+		s := m.Phong.Specular * float32(math.Pow(float64(max(0, n.Dot(h.Normalize()))), float64(m.shininess()))) * fade
 		if i == r.shadowLight && r.shadow != nil {
 			s *= r.shadow.visibility(p, geometric, dir)
 		}
@@ -364,7 +364,7 @@ func (r *lightRig) toonHighlight(m *Material, n, p, view, geometric nt3dmath.Vec
 			continue
 		}
 		lobe := float32(math.Pow(float64(max(0, n.Dot(h.Normalize()))), float64(m.shininess())))
-		s := m.Specular * toonStep(toonSpot, w, lobe) * fade
+		s := m.Phong.Specular * toonStep(toonSpot, w, lobe) * fade
 		if i == r.shadowLight && r.shadow != nil {
 			s *= toonStep(.5, sw, r.shadow.visibilityToon(p, geometric, dir, m.Toon.ShadowSoftness))
 		}

@@ -18,22 +18,19 @@ if err != nil {
     return err
 }
 mat := &nt3d.Material{
-    NormalMap:      normal,
-    NormalStrength: 1,
-    NormalRepeat:  true,
-    Specular:      0.4,
-    Shininess:     48,
+    Normal: nt3d.NormalStyle{Map: normal, Strength: 1, Repeat: true},
+    Phong: nt3d.PhongStyle{Specular: 0.4, Shininess: 48},
 }
 ```
 
 Assign the material to triangle geometry with one `Geometry.UV` per vertex.
-`NormalStrength` scales tangent-space X and Y. **Set it to 1 for the authored
+`Normal.Strength` scales tangent-space X and Y. **Set it to 1 for the authored
 strength; zero disables the normal perturbation.** Negative strengths reverse the
-X/Y slopes. `NormalRepeat` controls wrapping independently of the base-color
+X/Y slopes. `Normal.Repeat` controls wrapping independently of the base-color
 texture's `Repeat`. Both slots use the same `Geometry.UV` coordinates.
 
 `Material.Texture` remains the base-color slot. Normal maps work with or without
-it; without it, the mesh keeps its vertex colors. `Unlit` materials ignore normal
+it; without it, the mesh keeps its vertex colors. `ShadeUnlit` materials ignore normal
 maps. Cutouts and transparent materials use their usual alpha and depth behavior.
 
 `NewNormalMap` snapshots the image, ignores alpha, and accepts the same dimensions
@@ -123,8 +120,8 @@ than replacing them.
 
 ## glTF mapping
 
-The loader maps `normalTexture` and its `scale` (default 1) into `NormalMap` and
-`NormalStrength`. The image is cached separately from base color even if both
+The loader maps `normalTexture` and its `scale` (default 1) into `Normal.Map` and
+`Normal.Strength`. The image is cached separately from base color even if both
 slots reference the same image, so their color-space interpretations stay correct.
 Each map can select any readable `TEXCOORD_n`, including a `KHR_texture_transform`
 UV-set override. Offset, rotation and scale are baked into its coordinates.

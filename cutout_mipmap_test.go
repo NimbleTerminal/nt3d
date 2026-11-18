@@ -159,7 +159,7 @@ func strandFloor(t *testing.T, m Material, beta float64) Frame {
 	t.Helper()
 	tex, err := NewTexture(strandImage(128, 8, 4))
 	check(t, err)
-	m.Texture, m.Cutout, m.Unlit, m.Repeat = tex, true, true, true
+	m.Texture, m.Alpha, m.Shading, m.Repeat = tex, AlphaCutout, ShadeUnlit, true
 	floor, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -20, MaxX: 20, MinY: -20, MaxY: 20, Heights: make([]float32, 4), Material: &m, Color: color.RGBA{230, 40, 30, 255},
 		UV: []UV{{0, 0}, {50, 0}, {0, 50}, {50, 50}}})
 	check(t, err)

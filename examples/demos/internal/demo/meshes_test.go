@@ -355,7 +355,7 @@ func TestMeshGlassOITCycle(t *testing.T) {
 		if f.OIT != tc.wantOIT {
 			t.Fatalf("step %d: f.OIT = %v, want %v", i, f.OIT, tc.wantOIT)
 		}
-		hasTrans := f.Draws[0].Geometry.Material != nil && f.Draws[0].Geometry.Material.Transparent
+		hasTrans := f.Draws[0].Geometry.Material != nil && f.Draws[0].Geometry.Material.Alpha == nt3d.AlphaTransparent
 		if hasTrans != tc.wantGlass {
 			t.Fatalf("step %d: Transparent = %v, want %v", i, hasTrans, tc.wantGlass)
 		}
@@ -397,11 +397,11 @@ func TestIntersectingGlassShowcase(t *testing.T) {
 	if !fOIT.OIT || len(fOIT.Draws) != 6 {
 		t.Fatalf("expected OIT frame with 6 sculpture parts, got OIT=%v len=%d", fOIT.OIT, len(fOIT.Draws))
 	}
-	if fOIT.Draws[0].Geometry.Material != nil && fOIT.Draws[0].Geometry.Material.Transparent {
+	if fOIT.Draws[0].Geometry.Material != nil && fOIT.Draws[0].Geometry.Material.Alpha == nt3d.AlphaTransparent {
 		t.Fatal("expected interior core to remain opaque")
 	}
 	for i := 1; i < len(fOIT.Draws); i++ {
-		if fOIT.Draws[i].Geometry.Material == nil || !fOIT.Draws[i].Geometry.Material.Transparent {
+		if fOIT.Draws[i].Geometry.Material == nil || fOIT.Draws[i].Geometry.Material.Alpha != nt3d.AlphaTransparent {
 			t.Fatalf("expected part %d to be transparent glass", i)
 		}
 	}

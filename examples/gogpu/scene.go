@@ -125,9 +125,8 @@ func buildDemoScene() (*viewerState, error) {
 		Heights: heights,
 		Color:   color.RGBA{90, 110, 130, 255},
 		Material: &nt3d.Material{
-			PBR:       true,
-			Metallic:  0.1,
-			Roughness: 0.42,
+			Shading: nt3d.ShadePBR,
+			PBR:     nt3d.PBRStyle{Metallic: 0.1, Roughness: 0.42},
 		},
 	})
 	if err != nil {
@@ -147,9 +146,8 @@ func buildDemoScene() (*viewerState, error) {
 		Radius: 0.42,
 		Color:  color.RGBA{242, 165, 75, 255},
 		Material: &nt3d.Material{
-			PBR:       true,
-			Metallic:  0.94,
-			Roughness: 0.18,
+			Shading: nt3d.ShadePBR,
+			PBR:     nt3d.PBRStyle{Metallic: 0.94, Roughness: 0.18},
 		},
 	})
 	if err != nil {
@@ -169,11 +167,9 @@ func buildDemoScene() (*viewerState, error) {
 		MinorRadius: 0.10,
 		Color:       color.RGBA{75, 195, 235, 255},
 		Material: &nt3d.Material{
-			PBR:               true,
-			Metallic:          0.85,
-			Roughness:         0.26,
-			Emissive:          color.RGBA{30, 150, 225, 255},
-			EmissiveIntensity: 1.6,
+			Shading:  nt3d.ShadePBR,
+			PBR:      nt3d.PBRStyle{Metallic: 0.85, Roughness: 0.26},
+			Emission: nt3d.EmissionStyle{Color: color.RGBA{30, 150, 225, 255}, Intensity: 1.6},
 		},
 	})
 	if err != nil {
@@ -194,10 +190,9 @@ func buildDemoScene() (*viewerState, error) {
 		MinorRadius: 0.052,
 		Color:       color.RGBA{245, 68, 92, 145},
 		Material: &nt3d.Material{
-			PBR:         true,
-			Transparent: true,
-			Roughness:   0.10,
-			IOR:         1.75,
+			Shading: nt3d.ShadePBR,
+			Alpha:   nt3d.AlphaTransparent,
+			PBR:     nt3d.PBRStyle{Roughness: 0.10, IOR: 1.75},
 		},
 	})
 	if err != nil {
@@ -219,10 +214,9 @@ func buildDemoScene() (*viewerState, error) {
 		MinorRadius: 0.052,
 		Color:       color.RGBA{65, 185, 255, 145},
 		Material: &nt3d.Material{
-			PBR:         true,
-			Transparent: true,
-			Roughness:   0.10,
-			IOR:         1.75,
+			Shading: nt3d.ShadePBR,
+			Alpha:   nt3d.AlphaTransparent,
+			PBR:     nt3d.PBRStyle{Roughness: 0.10, IOR: 1.75},
 		},
 	})
 	if err != nil {
@@ -244,10 +238,9 @@ func buildDemoScene() (*viewerState, error) {
 		Radius: 0.18,
 		Color:  color.RGBA{255, 95, 145, 165},
 		Material: &nt3d.Material{
-			PBR:         true,
-			Transparent: true,
-			Roughness:   0.12,
-			IOR:         1.8,
+			Shading: nt3d.ShadePBR,
+			Alpha:   nt3d.AlphaTransparent,
+			PBR:     nt3d.PBRStyle{Roughness: 0.12, IOR: 1.8},
 		},
 	})
 	if err != nil {
@@ -621,9 +614,7 @@ func (v *viewerState) toggleModelFloor() {
 			Heights: []float32{minZ, minZ, minZ, minZ},
 			Color:   color.RGBA{115, 122, 134, 255},
 			Material: &nt3d.Material{
-				Specular:     0.2,
-				Shininess:    24,
-				Reflectivity: 0.08,
+				Phong: nt3d.PhongStyle{Specular: 0.2, Shininess: 24, Reflectivity: 0.08},
 			},
 		})
 		if err != nil {

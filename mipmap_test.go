@@ -26,7 +26,7 @@ func checkerFloor(t *testing.T, full bool) Frame {
 	}
 	tex, err := NewTexture(img)
 	check(t, err)
-	m := &Material{Texture: tex, Repeat: true, Unlit: true}
+	m := &Material{Shading: ShadeUnlit, Texture: tex, Repeat: true}
 	m.FullSize = full
 	floor, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -20, MaxX: 20, MinY: -20, MaxY: 20, Heights: make([]float32, 4), Material: m,
 		UV: []UV{{0, 0}, {200, 0}, {0, 200}, {200, 200}}})

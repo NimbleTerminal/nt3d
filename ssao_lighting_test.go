@@ -25,14 +25,14 @@ func testSSAOLighting(t *testing.T, render func(Frame) (image.Image, error)) {
 		darkens  bool
 	}{
 		{"classic ambient", Material{}, ambient, true},
-		{"PBR ambient", Material{PBR: true, Roughness: .7}, ambient, true},
+		{"PBR ambient", Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .7}}, ambient, true},
 		{"toon ambient", Material{Toon: ToonStyle{Bands: 3}}, ambient, true},
-		{"classic direct", Material{Specular: .3}, direct, false},
-		{"PBR direct", Material{PBR: true, Roughness: .7, Clearcoat: .5}, direct, false},
+		{"classic direct", Material{Phong: PhongStyle{Specular: .3}}, direct, false},
+		{"PBR direct", Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .7, Clearcoat: ClearcoatStyle{Amount: .5}}}, direct, false},
 		{"toon direct", Material{Toon: ToonStyle{Bands: 3}}, direct, false},
-		{"emissive", Material{PBR: true, Emissive: color.RGBA{100, 140, 180, 255}}, Lighting{}, false},
-		{"unlit", Material{Unlit: true}, ambient, false},
-		{"material AO", Material{PBR: true, Roughness: .7, ORMMap: ormMap}, ambient, false},
+		{"emissive", Material{Shading: ShadePBR, Emission: EmissionStyle{Color: color.RGBA{100, 140, 180, 255}}}, Lighting{}, false},
+		{"unlit", Material{Shading: ShadeUnlit}, ambient, false},
+		{"material AO", Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .7, ORMMap: ormMap}}, ambient, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := cornerSSAOFrame(t)
@@ -40,7 +40,7 @@ func testSSAOLighting(t *testing.T, render func(Frame) (image.Image, error)) {
 			f.Lighting = tc.light
 			for i := range f.Draws {
 				f.Draws[i].Geometry.Material = &tc.material
-				if tc.material.ORMMap != nil {
+				if tc.material.PBR.ORMMap != nil {
 					f.Draws[i].Geometry.UV = make([]UV, len(f.Draws[i].Geometry.Vertices))
 				}
 			}
@@ -90,7 +90,7 @@ func TestSSAOMaterialOcclusionMinimum(t *testing.T) {
 	ormImage.SetRGBA(0, 0, color.RGBA{64, 255, 255, 255})
 	ormMap, err := NewORMMap(ormImage)
 	check(t, err)
-	m := Material{PBR: true, Roughness: .6, OcclusionStrength: 1, ORMMap: ormMap}
+	m := Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .6, OcclusionStrength: 1, ORMMap: ormMap}}
 	n := nt3dmath.Vec3{Z: 1}
 	base := [3]float32{.3, .4, .5}
 	orm := [3]float32{.25, 1, 1}

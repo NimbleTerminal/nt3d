@@ -85,13 +85,12 @@ const GLTF nt3dmesh.Format = "gltf"
 // transparent material, and KHR_materials_unlit an unlit one. Double-sided
 // materials add each triangle facing the other way. Metallic and roughness
 // factors and metallic-roughness/occlusion textures map to Cook-Torrance GGX
-// PBR and a packed linear ORMMap. Emissive factors, emissive maps, and
-// KHR_materials_emissive_strength map to Material.Emissive, EmissiveMap, and
-// EmissiveIntensity; KHR_materials_ior, KHR_materials_transmission, and
-// KHR_materials_volume map to IOR, Transmission, Refraction, and Absorption;
-// KHR_materials_clearcoat, KHR_materials_sheen, and KHR_materials_specular map
-// to Clearcoat, ClearcoatRoughness, SheenColor, SheenRoughness, SpecularColor,
-// and SpecularIntensity.
+// PBR and a packed linear ORMMap, in Material.PBR. Emissive factors,
+// emissive maps, and KHR_materials_emissive_strength map to
+// Material.Emission; KHR_materials_ior to PBR.IOR; KHR_materials_transmission
+// and KHR_materials_volume to Material.Transmission; and
+// KHR_materials_clearcoat, KHR_materials_sheen, and KHR_materials_specular to
+// the Clearcoat, Sheen, and Specular groups of Material.PBR.
 // Normals the file omits are computed flat; triangle strips and fans become
 // triangles, points points, and lines lines.
 //
@@ -1112,35 +1111,32 @@ func (b *gltfBuilder) nt3dMaterial() *nt3d.Material {
 
 func (d *gltfDecoder) lookMaterial(l gltfLook, hasColors, useBaseColor bool) *nt3d.Material {
 	m := nt3d.Material{
-		NormalMap:          l.normal,
-		NormalStrength:     l.normalStrength,
-		NormalRepeat:       l.normalRepeat && l.normal != nil,
-		Texture:            l.texture,
-		Repeat:             l.repeat && l.texture != nil,
-		Unlit:              l.unlit,
-		PBR:                l.pbr,
-		Metallic:           l.metallic,
-		Roughness:          l.roughness,
-		IOR:                l.ior,
-		SpecularColor:      l.specularColor,
-		SpecularIntensity:  l.specularIntensity,
-		Clearcoat:          l.clearcoat,
-		ClearcoatRoughness: l.clearcoatRoughness,
-		SheenColor:         l.sheenColor,
-		SheenRoughness:     l.sheenRoughness,
-		ORMMap:             l.orm,
-		ORMRepeat:          l.ormRepeat && l.orm != nil,
-		OcclusionStrength:  l.occlusionStrength,
-		Emissive:           l.emissive,
-		EmissiveIntensity:  l.emissiveIntensity,
-		EmissiveMap:        l.emissiveMap,
-		EmissiveRepeat:     l.emissiveRepeat && l.emissiveMap != nil,
-		Transmission:       l.transmission,
-		Refraction:         l.refraction,
-		Absorption:         l.absorption,
+		Texture: l.texture,
+		Repeat:  l.repeat && l.texture != nil,
+		Normal:  nt3d.NormalStyle{Map: l.normal, Strength: l.normalStrength, Repeat: l.normalRepeat && l.normal != nil},
+		Emission: nt3d.EmissionStyle{
+			Color: l.emissive, Intensity: l.emissiveIntensity,
+			Map: l.emissiveMap, Repeat: l.emissiveRepeat && l.emissiveMap != nil,
+		},
+		Transmission: nt3d.TransmissionStyle{Amount: l.transmission, Refraction: l.refraction, Absorption: l.absorption},
 	}
-	if l.orm == nil {
-		m.OcclusionStrength = 0
+	switch {
+	case l.unlit:
+		m.Shading = nt3d.ShadeUnlit
+	case l.pbr:
+		// Only a PBR material may carry the PBR group: nt3d refuses it on
+		// any other.
+		m.Shading = nt3d.ShadePBR
+		m.PBR = nt3d.PBRStyle{
+			Metallic: l.metallic, Roughness: l.roughness, IOR: l.ior,
+			ORMMap: l.orm, ORMRepeat: l.ormRepeat && l.orm != nil,
+			Specular:  l.specular,
+			Clearcoat: nt3d.ClearcoatStyle{Amount: l.clearcoat, Roughness: l.clearcoatRoughness},
+			Sheen:     nt3d.SheenStyle{Color: l.sheenColor, Roughness: l.sheenRoughness},
+		}
+		if l.orm != nil {
+			m.PBR.OcclusionStrength = l.occlusionStrength
+		}
 	}
 	switch l.alpha {
 	case gltf.AlphaMask:
@@ -1153,16 +1149,16 @@ func (d *gltfDecoder) lookMaterial(l gltfLook, hasColors, useBaseColor bool) *nt
 					cut = min(1, l.cutoff/l.factor[3])
 				}
 			}
-			m.Cutout, m.Threshold = true, float32(max(.001, min(1, cut)))
+			m.Alpha, m.Threshold = nt3d.AlphaCutout, float32(max(.001, min(1, cut)))
 		} else if useBaseColor && !hasColors && l.factor[3] < l.cutoff {
-			m.Transparent = true
+			m.Alpha = nt3d.AlphaTransparent
 			m.BaseColor = color.RGBA{R: 255, G: 255, B: 255, A: 0}
 		}
 	case gltf.AlphaBlend:
-		m.Transparent = true
+		m.Alpha = nt3d.AlphaTransparent
 	}
 	if useBaseColor {
-		if !m.Transparent {
+		if m.Alpha != nt3d.AlphaTransparent {
 			if l.plain {
 				if !hasColors {
 					bc := d.o.FaceColor()

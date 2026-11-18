@@ -97,7 +97,7 @@ func (d *demo) setupMipmaps() error {
 		}
 		d.mipmaps.textures = append(d.mipmaps.textures, t)
 	}
-	ball, err := nt3d.BuildSphere(nt3d.Sphere{Radius: .35, Color: color.RGBA{214, 120, 52, 255}, Material: &nt3d.Material{Specular: .6, Shininess: 64}})
+	ball, err := nt3d.BuildSphere(nt3d.Sphere{Radius: .35, Color: color.RGBA{214, 120, 52, 255}, Material: &nt3d.Material{Phong: nt3d.PhongStyle{Specular: .6, Shininess: 64}}})
 	if err != nil {
 		return err
 	}

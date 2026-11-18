@@ -34,7 +34,7 @@ func TestGPUMeshUpdatesInPlaceAndSnapshotReplay(t *testing.T) {
 		MinX: -.9, MaxX: .9, MinY: -.9, MaxY: .9,
 		Sampler:  func(x, y float32) float32 { return 0 },
 		Color:    color.RGBA{40, 150, 210, 255},
-		Material: &Material{NormalMap: nmap, NormalStrength: 1, FlowMap: flow, FlowStrength: .3, Specular: .4, Shininess: 32},
+		Material: &Material{Normal: NormalStyle{Map: nmap, Strength: 1, Flow: FlowStyle{Map: flow, Strength: .3}}, Phong: PhongStyle{Specular: .4, Shininess: 32}},
 	})
 	check(t, err)
 	id, err := s.SetGeometry("water", base)
@@ -156,11 +156,10 @@ func TestGPUSetMaterialSharedGeometryParity(t *testing.T) {
 
 	// Make only front transmissive while keeping SharedGeometry intact!
 	check(t, s.ApplyMaterial(frontID, &Material{
-		Transmission: .85,
-		Refraction:   .02,
-		Reflectivity: .08,
+		Transmission: TransmissionStyle{Amount: .85, Refraction: .02},
+		Phong:        PhongStyle{Reflectivity: .08},
 	}))
-	check(t, s.ApplyMaterial(backID, &Material{PBR: true, Metallic: .2, Roughness: .35}))
+	check(t, s.ApplyMaterial(backID, &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: .2, Roughness: .35}}))
 
 	cam := Camera{Elevation: 10, Azimuth: 0, Distance: 2.5, Projection: Perspective}
 	f, err := s.Frame(cam, 96, 96)

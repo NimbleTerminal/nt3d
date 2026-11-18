@@ -193,7 +193,7 @@ matching image supplies software rendering. Each time produces an immutable
 snapshot with linear-data mipmaps. Authored tangent directions follow the
 Gerstner mesh. `n` disables ripple strength without changing geometry or physics.
 
-`Material.Reflectivity` enables distant environment reflection with Schlick
+`Material.Phong.Reflectivity` enables distant environment reflection with Schlick
 Fresnel blending. Where the environment is a backdrop only
 (`EnvironmentBackgroundOnly`, so it does not light the surrounding terrain), give
 the water a [reflection probe](../environment/#local-reflection-probes) holding the
@@ -240,8 +240,8 @@ longer underwater view paths attenuate red light more strongly than green and
 blue. Fresnel sky reflections remain on top. Pause with `a` to compare the same
 waves and craft pose.
 
-The water material uses `Transmission: .94`, `Refraction: .018`, and RGB
-`Absorption: (.85, .28, .12)`. Absorption is a Beer–Lambert coefficient per world
+The water material uses `Transmission.Amount: .94`, `Transmission.Refraction: .018`, and RGB
+`Transmission.Absorption: (.85, .28, .12)`. Absorption is a Beer–Lambert coefficient per world
 unit, mixing transmitted light toward the lit water color. This approximates
 the underwater segment seen through the surface; it is not a camera-underwater
 volume or a fluid simulation.
@@ -283,7 +283,7 @@ material.FlowRepeat = false   // clamp the field at its borders
 The field is sampled at mesh vertices using `Geometry.UV`, then interpolated
 across triangles. Use enough mesh vertices to resolve changes in the field.
 `NormalUV` independently sets ripple tiling. Two advection phases crossfade
-through their resets, avoiding periodic jumps. `FlowStrength: 0` restores the
+through their resets, avoiding periodic jumps. `Normal.Flow.Strength: 0` restores the
 original normals. GPU and software use the same sampled field and phase math.
 Flow only affects normal shading, including reflection and refraction; it does
 not move the craft, mesh, or wake particles. Camera/reflection/soft-spray
@@ -314,7 +314,7 @@ pushes the updated vertices, analytic tangents, and bounds through
 `Scene.SetNodeVerticesWithTangents` so WebGPU overwrites existing vertex buffers
 via `WriteBuffer` without reallocating buffers or re-validating static indices
 and UVs (pair with `scene.ApplyMaterial(nodes[i], material)` when animating
-`FlowPhase` or material toggles). Neighboring tiles match positions, normals, UVs,
+`Normal.Flow.Phase` or material toggles). Neighboring tiles match positions, normals, UVs,
 and tangents exactly, including partially filled edge tiles. Base UVs span the
 whole field; normal UVs are anchored to world XY. `RestBounds()` supplies the
 undisplaced tile extent for application bookkeeping.

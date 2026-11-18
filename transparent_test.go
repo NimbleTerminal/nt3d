@@ -67,7 +67,7 @@ func oldLight(dir nt3dmath.Vec3, a float32, linear bool) Lighting {
 
 var (
 	blue  = color.RGBA{0, 0, 200, 255}
-	glass = &Material{Transparent: true}
+	glass = &Material{Alpha: AlphaTransparent}
 )
 
 // mixRGB blends top over under by a, in linear light, as scene frames do.
@@ -145,7 +145,7 @@ func TestTransparentTexture(t *testing.T) {
 	half.SetNRGBA(0, 0, color.NRGBA{200, 200, 0, 128})
 	tex, err := NewTexture(half)
 	check(t, err)
-	g := quad(1, .3, color.RGBA{255, 255, 255, 255}, &Material{Texture: tex, Transparent: true}, false)
+	g := quad(1, .3, color.RGBA{255, 255, 255, 255}, &Material{Texture: tex, Alpha: AlphaTransparent}, false)
 	g.UV = make([]UV, 4)
 	f := blendScene(t, nil, g)
 	if got, want := at(softwareRender(f), 40, 40), mixRGB(color.RGBA{200, 200, 0, 255}, 128./255, blue); !closeRGB(got, want, 2) {
@@ -154,7 +154,7 @@ func TestTransparentTexture(t *testing.T) {
 }
 
 func TestTransparentCutoutRejected(t *testing.T) {
-	g := quad(1, 0, blue, &Material{Transparent: true, Cutout: true}, false)
+	g := quad(1, 0, blue, &Material{Alpha: AlphaTransparent}, false)
 	if NewScene().SetNodeGeometry(1, g) == nil {
 		if _, err := NewScene().SetGeometry("x", g); err == nil {
 			t.Fatal("a transparent cutout was accepted")

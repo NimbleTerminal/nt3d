@@ -203,12 +203,16 @@ func (d *demo) updatePlasma() error {
 }
 
 func (d *demo) terrain() error {
+	shading := nt3d.ShadePhong
+	if !d.lit {
+		shading = nt3d.ShadeUnlit
+	}
 	g, err := nt3d.BuildHeightfield(nt3d.Heightfield{NX: 72, NY: 56, MinX: -1.5, MaxX: 1.5, MinY: -1, MaxY: 1, Sampler: func(x, y float32) float32 {
 		if d.flat {
 			return 0
 		}
 		return float32(.6*math.Exp(-float64(x*x+y*y)*2) + .13*math.Sin(float64(x)*7)*math.Cos(float64(y)*5))
-	}, Material: &nt3d.Material{Texture: d.textures[d.style], Unlit: !d.lit}})
+	}, Material: &nt3d.Material{Texture: d.textures[d.style], Shading: shading}})
 	if err != nil {
 		return err
 	}

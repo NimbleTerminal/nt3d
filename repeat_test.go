@@ -49,7 +49,7 @@ func TestSampleWrap(t *testing.T) {
 func repeatScene(t *testing.T, repeat bool) Frame {
 	t.Helper()
 	g, err := BuildHeightfield(Heightfield{NX: 2, NY: 2, MinX: -.8, MaxX: .8, MinY: -.8, MaxY: .8, Heights: make([]float32, 4),
-		UV: []UV{{0, 1}, {3, 1}, {0, 0}, {3, 0}}, Material: &Material{Texture: stripes(t), Unlit: true, Repeat: repeat}})
+		UV: []UV{{0, 1}, {3, 1}, {0, 0}, {3, 0}}, Material: &Material{Shading: ShadeUnlit, Texture: stripes(t), Repeat: repeat}})
 	check(t, err)
 	s := NewScene()
 	_, err = s.SetGeometry("quad", g)

@@ -9,8 +9,8 @@ import (
 
 func opticalParams(m *Material, p PointStyle) (o [8]float32) {
 	if m != nil {
-		o[0], o[1], o[2], o[3], o[4] = m.Absorption.X, m.Absorption.Y, m.Absorption.Z, m.Transmission, m.Refraction
-		o[6], o[7] = m.FlowPhase, m.FlowStrength
+		o[0], o[1], o[2], o[3], o[4] = m.Transmission.Absorption.X, m.Transmission.Absorption.Y, m.Transmission.Absorption.Z, m.Transmission.Amount, m.Transmission.Refraction
+		o[6], o[7] = m.Normal.Flow.Phase, m.Normal.Flow.Strength
 	}
 	o[5] = p.SoftDistance
 	return
@@ -53,7 +53,7 @@ func sceneGap(inv nt3dmath.Mat4, x, y, z, back float32, w, h int) float32 {
 
 func transmitSoftware(rgb *[3]float32, m *Material, n, right, up nt3dmath.Vec3, x, y, z float32, w, h int, inv nt3dmath.Mat4, pixels []byte, depth []float32, decode func(uint8) float32) {
 	thickness := sceneGap(inv, x, y, z, depth[int(y)*w+int(x)], w, h)
-	strength := m.Refraction * float32(h) * min(1, thickness)
+	strength := m.Transmission.Refraction * float32(h) * min(1, thickness)
 	sx, sy := x+n.Dot(right)*strength, y-n.Dot(up)*strength
 	if sx < .5 || sy < .5 || sx > float32(w)-.5 || sy > float32(h)-.5 {
 		sx, sy = x, y
@@ -93,9 +93,9 @@ func transmitSoftware(rgb *[3]float32, m *Material, n, right, up nt3dmath.Vec3, 
 		}
 	}
 	thickness = sceneGap(inv, sx, sy, z, depth[int(sy)*w+int(sx)], w, h)
-	absorption := [3]float32{m.Absorption.X, m.Absorption.Y, m.Absorption.Z}
+	absorption := [3]float32{m.Transmission.Absorption.X, m.Transmission.Absorption.Y, m.Transmission.Absorption.Z}
 	for k := range rgb {
-		weight := m.Transmission * float32(math.Exp(-float64(absorption[k]*thickness)))
+		weight := m.Transmission.Amount * float32(math.Exp(-float64(absorption[k]*thickness)))
 		rgb[k] += (behind[k] - rgb[k]) * weight
 	}
 }

@@ -297,9 +297,8 @@ func TestGPUMaterialShaderSoftwareParityCutoutOITUnlitAndCombined(t *testing.T) 
 	sCombo := NewScene()
 	grid := subdividedGridMesh(28, 28, 2.4, color.RGBA{255, 255, 255, 255})
 	grid.Material = &Material{
-		Specular:  0.4,
-		Shininess: 48,
-		Shader:    testBandMaterialShader(t, 0.7, 2.5),
+		Phong:  PhongStyle{Specular: 0.4, Shininess: 48},
+		Shader: testBandMaterialShader(t, 0.7, 2.5),
 	}
 	grid.Displacement = testWaveDisplacement(t, 0.7, 0.28, 2.8)
 	_, err = sCombo.SetGeometry("water", grid)
@@ -355,11 +354,9 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
 		Rings:    16,
 		Color:    color.RGBA{255, 255, 255, 255},
 		Material: &Material{
-			Unlit:          true,
-			NormalMap:      nmap,
-			NormalStrength: 0.6,
-			NormalRepeat:   true,
-			Shader:         inkShader,
+			Shading: ShadeUnlit,
+			Normal:  NormalStyle{Map: nmap, Strength: 0.6, Repeat: true},
+			Shader:  inkShader,
 		},
 	})
 	check(t, err)
@@ -402,7 +399,7 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
 	check(t, err)
 
 	screen := subdividedGridMesh(2, 2, 1.6, color.RGBA{255, 255, 255, 255})
-	screen.Material = &Material{Cutout: true, Threshold: 0.5, Shader: cutShader}
+	screen.Material = &Material{Alpha: AlphaCutout, Threshold: 0.5, Shader: cutShader}
 	_, err = sCut.SetGeometry("screen", screen)
 	check(t, err)
 
@@ -449,8 +446,8 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
 	redQ, blueQ := crossedGlassQuads(t)
 	redQ.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	blueQ.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	redQ.Material = &Material{Unlit: true, Transparent: true, Shader: glassShader}
-	blueQ.Material = &Material{Unlit: true, Transparent: true, Shader: glassShader}
+	redQ.Material = &Material{Shading: ShadeUnlit, Alpha: AlphaTransparent, Shader: glassShader}
+	blueQ.Material = &Material{Shading: ShadeUnlit, Alpha: AlphaTransparent, Shader: glassShader}
 
 	fOIT := depthFrame(96, 96, redQ, blueQ)
 	fOIT.Revision = 1

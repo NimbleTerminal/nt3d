@@ -75,7 +75,7 @@ func materialFlow(m *Material, uv UV) UV {
 	if m == nil {
 		return UV{}
 	}
-	return m.FlowMap.Sample(uv, m.FlowRepeat)
+	return m.Normal.Flow.Map.Sample(uv, m.Normal.Flow.Repeat)
 }
 func flowPhases(phase float32) (a, b, weight float32) {
 	a = phase - float32(math.Floor(float64(phase)))
@@ -84,14 +84,14 @@ func flowPhases(phase float32) (a, b, weight float32) {
 	return a, b, abs(2*a - 1)
 }
 func flowNormalSample(m *Material, uv, dx, dy, flow UV, aniso int) [4]float32 {
-	if m.FlowMap == nil || m.FlowStrength == 0 || flow == (UV{}) {
-		return m.NormalMap.sampleFootprint(uv, dx, dy, m.NormalRepeat, aniso)
+	if m.Normal.Flow.Map == nil || m.Normal.Flow.Strength == 0 || flow == (UV{}) {
+		return m.Normal.Map.sampleFootprint(uv, dx, dy, m.Normal.Repeat, aniso)
 	}
-	a, b, w := flowPhases(m.FlowPhase)
+	a, b, w := flowPhases(m.Normal.Flow.Phase)
 	sample := func(p float32) [4]float32 {
-		shift := UV{flow.U * m.FlowStrength * p, flow.V * m.FlowStrength * p}
+		shift := UV{flow.U * m.Normal.Flow.Strength * p, flow.V * m.Normal.Flow.Strength * p}
 		move := func(v UV) UV { return UV{v.U - shift.U, v.V - shift.V} }
-		return m.NormalMap.sampleFootprint(move(uv), move(dx), move(dy), m.NormalRepeat, aniso)
+		return m.Normal.Map.sampleFootprint(move(uv), move(dx), move(dy), m.Normal.Repeat, aniso)
 	}
 	x, y := sample(a), sample(b)
 	for i := range x {

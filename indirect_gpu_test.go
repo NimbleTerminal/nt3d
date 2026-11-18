@@ -32,7 +32,7 @@ fn nt3dMaterial(in:NT3DMaterialInput)->vec4<f32> {
 				return [4]float32{tc.want.coverage, tc.want.coverage, tc.want.coverage, 1}
 			})
 			check(t, err)
-			f := pbrQuadFrame(&Material{Unlit: true, Shader: shader}, color.RGBA{255, 255, 255, 255})
+			f := pbrQuadFrame(&Material{Shading: ShadeUnlit, Shader: shader}, color.RGBA{255, 255, 255, 255})
 			gpu, err := r.Render(f)
 			check(t, err)
 			want := softwareRender(f)

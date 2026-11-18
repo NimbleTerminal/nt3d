@@ -131,7 +131,7 @@ func TestSceneSetLODSharedPickAndMutators(t *testing.T) {
 	nmapB, err := NewNormalMap(image.NewRGBA(image.Rect(0, 0, 2, 2)))
 	check(t, err)
 
-	hiSphere.Material = &Material{Texture: texA, NormalMap: nmapA, NormalStrength: 1}
+	hiSphere.Material = &Material{Texture: texA, Normal: NormalStyle{Map: nmapA, Strength: 1}}
 	sgHi, err := NewSharedGeometry(hiSphere)
 	check(t, err)
 	sgLo, err := NewSharedGeometry(loSphere)
@@ -172,7 +172,7 @@ func TestSceneSetLODSharedPickAndMutators(t *testing.T) {
 	// SetNodeTexture and SetNodeNormalMap update textured/normal-mapped tiers even when coarser tiers are untextured.
 	check(t, s.SetNodeTexture(named(t, s, "prop"), texB))
 	check(t, s.SetNodeNormalMap(named(t, s, "prop"), nmapB))
-	if s.nodes[id].lod[0].geometry.Material.Texture != texB || s.nodes[id].lod[0].geometry.Material.NormalMap != nmapB {
+	if s.nodes[id].lod[0].geometry.Material.Texture != texB || s.nodes[id].lod[0].geometry.Material.Normal.Map != nmapB {
 		t.Fatal("SetNodeTexture/SetNodeNormalMap did not update textured LOD tier")
 	}
 

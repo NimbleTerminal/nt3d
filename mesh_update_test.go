@@ -25,7 +25,7 @@ func TestMeshUpdatesPreserveSnapshotsAndTopology(t *testing.T) {
 		NX: 4, NY: 4,
 		MinX: -1, MaxX: 1, MinY: -1, MaxY: 1,
 		Sampler:  func(x, y float32) float32 { return 0 },
-		Material: &Material{NormalMap: nmap, NormalStrength: 1},
+		Material: &Material{Normal: NormalStyle{Map: nmap, Strength: 1}},
 	})
 	check(t, err)
 	id, err := s.SetGeometry("sheet", base)
@@ -114,7 +114,7 @@ func TestMeshCertificateValidatesTamperedFrameCopies(t *testing.T) {
 		NX: 3, NY: 3,
 		MinX: -1, MaxX: 1, MinY: -1, MaxY: 1,
 		Sampler:  func(x, y float32) float32 { return 0 },
-		Material: &Material{NormalMap: nmap, NormalStrength: 1},
+		Material: &Material{Normal: NormalStyle{Map: nmap, Strength: 1}},
 	})
 	check(t, err)
 	_, err = s.SetGeometry("grid", g)
@@ -167,7 +167,7 @@ func BenchmarkMeshUpdate64x64(b *testing.B) {
 		NX: 65, NY: 65,
 		MinX: -5, MaxX: 5, MinY: -5, MaxY: 5,
 		Sampler:  func(x, y float32) float32 { return 0 },
-		Material: &Material{NormalMap: nmap, NormalStrength: 1},
+		Material: &Material{Normal: NormalStyle{Map: nmap, Strength: 1}},
 	})
 	if err != nil {
 		b.Fatal(err)

@@ -52,7 +52,7 @@ func TestGPUEnvironment(t *testing.T) {
 	// surfaces must composite over it without acquiring diffuse illumination.
 	cached := r.environmentTexture
 	f.Revision++
-	f.Draws = drawsOf(quad(.5, .5, color.RGBA{255, 80, 40, 128}, &Material{Unlit: true, Transparent: true}, false))
+	f.Draws = drawsOf(quad(.5, .5, color.RGBA{255, 80, 40, 128}, &Material{Shading: ShadeUnlit, Alpha: AlphaTransparent}, false))
 	got, err = r.Render(f)
 	check(t, err)
 	want = softwareRender(f)

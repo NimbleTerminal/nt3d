@@ -146,16 +146,16 @@ func TestGLTFEXTTextureWebP(t *testing.T) {
 		t.Fatalf("unexpected EXT_texture_webp warnings: %v", m.Warnings)
 	}
 	mat := m.Objects[0].Geometry.Material
-	if mat == nil || mat.Texture == nil || mat.NormalMap == nil || mat.ORMMap == nil || mat.EmissiveMap == nil {
+	if mat == nil || mat.Texture == nil || mat.Normal.Map == nil || mat.PBR.ORMMap == nil || mat.Emission.Map == nil {
 		t.Fatalf("missing decoded WebP maps: %+v", mat)
 	}
 	if got := mat.Texture.NRGBAAt(0, 0); got != (color.NRGBA{210, 90, 40, 200}) {
 		t.Fatalf("WebP base color texel %v, want {210 90 40 200}", got)
 	}
-	if got := mat.ORMMap.At(0, 0).(color.RGBA); got != (color.RGBA{96, 70, 190, 255}) {
+	if got := mat.PBR.ORMMap.At(0, 0).(color.RGBA); got != (color.RGBA{96, 70, 190, 255}) {
 		t.Fatalf("WebP merged ORM texel %v, want {96 70 190 255}", got)
 	}
-	if got := mat.EmissiveMap.NRGBAAt(0, 0); got != (color.NRGBA{255, 120, 20, 255}) {
+	if got := mat.Emission.Map.NRGBAAt(0, 0); got != (color.NRGBA{255, 120, 20, 255}) {
 		t.Fatalf("WebP emissive texel %v, want {255 120 20 255}", got)
 	}
 

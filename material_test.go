@@ -43,9 +43,9 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	before := frame(t, s)
 
 	// Instance-uniform-only material update preserves SharedGeometry and revisions!
-	pbrMat := &Material{PBR: true, Metallic: .8, Roughness: .25, Clearcoat: .5}
+	pbrMat := &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: .8, Roughness: .25, Clearcoat: ClearcoatStyle{Amount: .5}}}
 	check(t, s.ApplyMaterial(group, pbrMat))
-	pbrMat.Metallic = .1 // Caller mutation must not leak.
+	pbrMat.PBR.Metallic = .1 // Caller mutation must not leak.
 
 	afterUniform := frame(t, s)
 	for idx, inst := range afterUniform.Draws {
@@ -56,7 +56,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 			}
 		case "in-shared":
 			m := afterUniform.Draws[idx].Geometry.Material
-			if m == nil || m.Metallic != .8 || m.Clearcoat != .5 {
+			if m == nil || m.PBR.Metallic != .8 || m.PBR.Clearcoat.Amount != .5 {
 				t.Fatalf("in-shared material not updated: %+v", m)
 			}
 			if afterUniform.Draws[idx].Shared == 0 || afterUniform.Draws[idx].Revision != before.Draws[idx].Revision {
@@ -68,7 +68,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 			}
 		case "lod":
 			m := afterUniform.Draws[idx].Geometry.Material
-			if m == nil || m.Metallic != .8 {
+			if m == nil || m.PBR.Metallic != .8 {
 				t.Fatalf("LOD tier material not updated: %+v", m)
 			}
 		}
@@ -77,14 +77,14 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 		t.Fatal("previous Frame snapshot was mutated")
 	}
 
-	// Vertex-baked change (Transparent: true) detaches modified SharedGeometry
+	// Vertex-baked change (Alpha: AlphaTransparent) detaches modified SharedGeometry
 	// cleanly while leaving out-shared on sg!
-	check(t, s.ApplyMaterial(group, &Material{Transparent: true, Specular: .4}))
+	check(t, s.ApplyMaterial(group, &Material{Alpha: AlphaTransparent, Phong: PhongStyle{Specular: .4}}))
 	afterTrans := frame(t, s)
 	for idx, inst := range afterTrans.Draws {
 		switch inst.Name {
 		case "in-shared":
-			if !afterTrans.Draws[idx].Geometry.Material.Transparent || afterTrans.Draws[idx].Shared != 0 {
+			if !afterTrans.Draws[idx].Geometry.Material.blended() || afterTrans.Draws[idx].Shared != 0 {
 				t.Fatal("transparent transition did not detach shared geometry")
 			}
 		case "out-shared":
@@ -112,7 +112,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	}
 	afterErr := frame(t, s)
 	for idx, inst := range afterErr.Draws {
-		if inst.Name == "in-shared" && !afterErr.Draws[idx].Geometry.Material.Transparent {
+		if inst.Name == "in-shared" && !afterErr.Draws[idx].Geometry.Material.blended() {
 			t.Fatal("failed ApplyMaterial partially mutated sibling")
 		}
 	}
@@ -129,7 +129,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	// Invalid material arguments fail even on empty subtrees.
 	empty, err := s.Add(Root, "empty")
 	check(t, err)
-	if s.ApplyMaterial(empty, &Material{Metallic: 2}) == nil {
+	if s.ApplyMaterial(empty, &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 2}}) == nil {
 		t.Fatal("accepted out-of-range Metallic")
 	}
 	if s.ApplyMaterial(NodeID(99999), nil) == nil {
@@ -148,10 +148,10 @@ func TestSetMaterialOnDeformedMesh(t *testing.T) {
 	check(t, s.SetDeformation(id, Deformation{Morphs: []MorphTarget{morph}, Weights: []float32{1}}))
 
 	nmap := testNormalMap(t, color.NRGBA{128, 128, 255, 255})
-	check(t, s.ApplyMaterial(id, &Material{NormalMap: nmap, NormalStrength: 1, Specular: .5}))
+	check(t, s.ApplyMaterial(id, &Material{Normal: NormalStyle{Map: nmap, Strength: 1}, Phong: PhongStyle{Specular: .5}}))
 	f := frame(t, s)
 	check(t, validateFrame(f))
-	if f.Draws[0].Geometry.Material == nil || f.Draws[0].Geometry.Material.NormalMap != nmap || len(f.Draws[0].Geometry.Tangents) != len(g.Vertices) {
+	if f.Draws[0].Geometry.Material == nil || f.Draws[0].Geometry.Material.Normal.Map != nmap || len(f.Draws[0].Geometry.Tangents) != len(g.Vertices) {
 		t.Fatal("deformed mesh did not receive normal map and generated tangents")
 	}
 }
@@ -164,7 +164,7 @@ func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 	tint := color.RGBA{230, 175, 30, 255}
 	for _, linear := range []bool{false, true} {
 		sBaked := NewScene()
-		bBaked, err := BuildSphere(Sphere{Radius: .8, Segments: 28, Rings: 18, Color: tint, Material: &Material{PBR: true, Roughness: .35}})
+		bBaked, err := BuildSphere(Sphere{Radius: .8, Segments: 28, Rings: 18, Color: tint, Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .35}}})
 		check(t, err)
 		_, err = sBaked.SetGeometry("ball", bBaked)
 		check(t, err)
@@ -173,7 +173,7 @@ func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 		fBaked.Linear = linear
 
 		sInst := NewScene()
-		bInst, err := BuildSphere(Sphere{Radius: .8, Segments: 28, Rings: 18, Color: white, Material: &Material{PBR: true, Roughness: .35, BaseColor: tint}})
+		bInst, err := BuildSphere(Sphere{Radius: .8, Segments: 28, Rings: 18, Color: white, Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .35}, BaseColor: tint}})
 		check(t, err)
 		_, err = sInst.SetGeometry("ball", bInst)
 		check(t, err)
@@ -193,7 +193,7 @@ func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 	// 2. Unlit textured mesh (which uses directTexture when BaseColor is zero) tints cleanly when BaseColor is set.
 	tex := testTexture(t, color.RGBA{200, 200, 200, 255})
 	sTex := NewScene()
-	q := quad(1.2, 0, white, &Material{Unlit: true, Texture: tex, BaseColor: color.RGBA{255, 64, 32, 255}}, false)
+	q := quad(1.2, 0, white, &Material{Shading: ShadeUnlit, Texture: tex, BaseColor: color.RGBA{255, 64, 32, 255}}, false)
 	q.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	_, err := sTex.SetGeometry("quad", q)
 	check(t, err)
@@ -208,7 +208,7 @@ func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 
 	// 3. Transparent BaseColor scales opacity, including zero-alpha invisible colorways.
 	sTrans := NewScene()
-	qt := quad(1.2, 0, white, &Material{Unlit: true, Transparent: true, BaseColor: color.RGBA{255, 255, 255, 0}}, false)
+	qt := quad(1.2, 0, white, &Material{Shading: ShadeUnlit, Alpha: AlphaTransparent, BaseColor: color.RGBA{255, 255, 255, 0}}, false)
 	qID, err := sTrans.SetGeometry("glass", qt)
 	check(t, err)
 	fZero, err := sTrans.Frame(topCam, 48, 48)
@@ -217,7 +217,7 @@ func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 	if got := at(softwareRender(fZero), 24, 24); !closeRGB(got, fZero.Background, 1) {
 		t.Fatalf("zero-alpha BaseColor changed background: got %v, want %v", got, fZero.Background)
 	}
-	check(t, sTrans.ApplyMaterial(qID, &Material{Unlit: true, Transparent: true, BaseColor: color.RGBA{220, 40, 40, 128}}))
+	check(t, sTrans.ApplyMaterial(qID, &Material{Shading: ShadeUnlit, Alpha: AlphaTransparent, BaseColor: color.RGBA{220, 40, 40, 128}}))
 	fHalf, err := sTrans.Frame(topCam, 48, 48)
 	check(t, err)
 	fHalf.Background = color.RGBA{20, 40, 80, 255}
@@ -228,17 +228,17 @@ func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 }
 
 func TestSceneAssetMaterialVariants(t *testing.T) {
-	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{PBR: true, Roughness: .5}})
+	cube, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .5}}})
 	check(t, err)
 	bodySG, err := NewSharedGeometry(cube)
 	check(t, err)
 	trimSG, err := NewSharedGeometry(cube)
 	check(t, err)
 
-	taxiMat := &Material{PBR: true, Roughness: .2, Clearcoat: 1, BaseColor: color.RGBA{245, 195, 20, 255}}
-	policeMat := &Material{PBR: true, Roughness: .3, BaseColor: color.RGBA{30, 60, 160, 255}}
-	lightbarMat := &Material{PBR: true, Emissive: color.RGBA{40, 120, 255, 255}, EmissiveIntensity: 2}
-	glassMat := &Material{PBR: true, Roughness: .1, Transparent: true, BaseColor: color.RGBA{120, 210, 255, 128}}
+	taxiMat := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .2, Clearcoat: ClearcoatStyle{Amount: 1}}, BaseColor: color.RGBA{245, 195, 20, 255}}
+	policeMat := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .3}, BaseColor: color.RGBA{30, 60, 160, 255}}
+	lightbarMat := &Material{Shading: ShadePBR, Emission: EmissionStyle{Color: color.RGBA{40, 120, 255, 255}, Intensity: 2}}
+	glassMat := &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .1}, Alpha: AlphaTransparent, BaseColor: color.RGBA{120, 210, 255, 128}}
 
 	asset := &SceneAsset{
 		Variants: []string{"Taxi", "Police", "Glass"},
@@ -310,7 +310,7 @@ func TestSceneAssetMaterialVariants(t *testing.T) {
 				t.Fatalf("carC body did not remain default shared: mat=%+v shared=%d", f.Draws[idx].Geometry.Material, f.Draws[idx].Shared)
 			}
 		case "carB/1:Lightbar":
-			if f.Draws[idx].Geometry.Material.Emissive != lightbarMat.Emissive {
+			if f.Draws[idx].Geometry.Material.Emission.Color != lightbarMat.Emission.Color {
 				t.Fatalf("carB lightbar did not activate on Police: %+v", f.Draws[idx].Geometry.Material)
 			}
 		}
@@ -320,7 +320,7 @@ func TestSceneAssetMaterialVariants(t *testing.T) {
 	check(t, s.SetMaterialVariant(carB.Root, "Taxi"))
 	f2 := frame(t, s)
 	for idx, inst := range f2.Draws {
-		if inst.Name == "carB/1:Lightbar" && f2.Draws[idx].Geometry.Material.Emissive != (color.RGBA{}) {
+		if inst.Name == "carB/1:Lightbar" && f2.Draws[idx].Geometry.Material.Emission.Color != (color.RGBA{}) {
 			t.Fatalf("unmapped Lightbar did not reset to default on Taxi: %+v", f2.Draws[idx].Geometry.Material)
 		}
 	}
@@ -329,7 +329,7 @@ func TestSceneAssetMaterialVariants(t *testing.T) {
 	check(t, s.SetMaterialVariant(carA.Root, "Glass"))
 	fGlass := frame(t, s)
 	for idx, inst := range fGlass.Draws {
-		if inst.Name == "carA/0:Body" && (!fGlass.Draws[idx].Geometry.Material.Transparent || fGlass.Draws[idx].Shared != 0) {
+		if inst.Name == "carA/0:Body" && (!fGlass.Draws[idx].Geometry.Material.blended() || fGlass.Draws[idx].Shared != 0) {
 			t.Fatal("expected transparent variant to detach SharedGeometry")
 		}
 	}
@@ -380,18 +380,17 @@ func TestMaterialRulesAreSharedByGeometryAndMaterial(t *testing.T) {
 	box, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
 	check(t, err)
 	for name, m := range map[string]Material{
-		"metallic":      {Metallic: 2},
-		"roughness":     {Roughness: -1},
-		"ior":           {IOR: .5},
+		"metallic":      {Shading: ShadePBR, PBR: PBRStyle{Metallic: 2}},
+		"roughness":     {Shading: ShadePBR, PBR: PBRStyle{Roughness: -1}},
+		"ior":           {Shading: ShadePBR, PBR: PBRStyle{IOR: .5}},
 		"threshold":     {Threshold: 2},
-		"shininess":     {Specular: .5, Shininess: 2000},
-		"reflectivity":  {Reflectivity: 1.5},
-		"transmission":  {Transmission: .5, Unlit: true},
-		"cutout blend":  {Transparent: true, Cutout: true},
-		"flow strength": {FlowStrength: -1},
-		"emissive":      {EmissiveIntensity: -1},
-		"occlusion":     {OcclusionStrength: 2},
-		"clearcoat":     {Clearcoat: 2},
+		"shininess":     {Phong: PhongStyle{Specular: .5, Shininess: 2000}},
+		"reflectivity":  {Phong: PhongStyle{Reflectivity: 1.5}},
+		"transmission":  {Shading: ShadeUnlit, Transmission: TransmissionStyle{Amount: .5}},
+		"flow strength": {Normal: NormalStyle{Flow: FlowStyle{Strength: -1}}},
+		"emissive":      {Emission: EmissionStyle{Intensity: -1}},
+		"occlusion":     {Shading: ShadePBR, PBR: PBRStyle{OcclusionStrength: 2}},
+		"clearcoat":     {Shading: ShadePBR, PBR: PBRStyle{Clearcoat: ClearcoatStyle{Amount: 2}}},
 	} {
 		want := validateMaterial(&m)
 		if want == nil {

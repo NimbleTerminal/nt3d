@@ -387,7 +387,7 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
 		Segments: 16,
 		Rings:    12,
 		Color:    color.RGBA{255, 255, 255, 255},
-		Material: &Material{Unlit: true, Shader: hdrShader},
+		Material: &Material{Shading: ShadeUnlit, Shader: hdrShader},
 	})
 	check(t, err)
 	_, err = sHDR.SetGeometry("orb", orb)

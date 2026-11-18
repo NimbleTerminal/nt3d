@@ -13,7 +13,7 @@ var (
 	overheadLight = oldLight(nt3dmath.Vec3{Z: 1}, .3, true)
 	overhead      = &overheadLight
 	gray          = color.RGBA{128, 128, 128, 255}
-	shiny         = &Material{Specular: 1, Shininess: 32}
+	shiny         = &Material{Phong: PhongStyle{Specular: 1, Shininess: 32}}
 )
 
 // A shiny sphere lit and seen from above is white where it mirrors the
@@ -23,7 +23,7 @@ func TestSpecularSphere(t *testing.T) {
 		name  string
 		m     *Material
 		white bool
-	}{{"shiny", shiny, true}, {"dull", nil, false}, {"unlit", &Material{Specular: 1, Unlit: true}, false}} {
+	}{{"shiny", shiny, true}, {"dull", nil, false}, {"unlit", &Material{Shading: ShadeUnlit}, false}} {
 		ball, err := BuildSphere(Sphere{Radius: .6, Color: gray, Material: c.m})
 		check(t, err)
 		got := at(softwareRender(blendScene(t, overhead, ball)), 40, 40)
@@ -36,7 +36,7 @@ func TestSpecularSphere(t *testing.T) {
 // Highlights are found at each pixel: a quad of two triangles shines in its
 // middle, under the camera, where no vertex is, and not toward its corners.
 func TestSpecularPerPixel(t *testing.T) {
-	f := blendScene(t, overhead, quad(1.2, .3, gray, &Material{Specular: 1, Shininess: 1024}, false))
+	f := blendScene(t, overhead, quad(1.2, .3, gray, &Material{Phong: PhongStyle{Specular: 1, Shininess: 1024}}, false))
 	img := softwareRender(f)
 	middle, corner := at(img, 40, 40), at(img, 40+18, 40+18)
 	if middle.R < 250 || corner.R > 200 {
@@ -104,7 +104,7 @@ func TestFogValidation(t *testing.T) {
 	if _, err := NewSoftwareRenderer().Render(f); err == nil {
 		t.Fatal("infinite fog accepted")
 	}
-	if _, err := NewScene().SetGeometry("x", quad(1, 0, gray, &Material{Specular: 2}, false)); err == nil {
+	if _, err := NewScene().SetGeometry("x", quad(1, 0, gray, &Material{Phong: PhongStyle{Specular: 2}}, false)); err == nil {
 		t.Fatal("specular 2 accepted")
 	}
 }

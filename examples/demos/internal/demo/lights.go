@@ -180,10 +180,10 @@ func (d *demo) buildLightShapes() error {
 	var floorMat *nt3d.Material
 	switch d.lights.material {
 	case 0, 1:
-		floorMat = &nt3d.Material{PBR: true, Metallic: .08, Roughness: .42}
+		floorMat = &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Metallic: .08, Roughness: .42}}
 	case 2:
 		floorCol = gray(96)
-		floorMat = &nt3d.Material{PBR: true, Roughness: .68, Clearcoat: .92, ClearcoatRoughness: .08}
+		floorMat = &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: .68, Clearcoat: nt3d.ClearcoatStyle{Amount: .92, Roughness: .08}}}
 	}
 	floor := nt3d.Geometry{Indices: []uint32{0, 1, 2, 0, 2, 3}, Material: floorMat}
 	for _, p := range [][2]float32{{-s, -s}, {s, -s}, {s, s}, {-s, s}} {
@@ -199,48 +199,43 @@ func (d *demo) buildLightShapes() error {
 		switch d.lights.material {
 		case 0: // PBR
 			col = shape.pbrCol
-			m = &nt3d.Material{PBR: true, Metallic: shape.metallic, Roughness: shape.roughness, IOR: shape.ior}
+			m = &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Metallic: shape.metallic, Roughness: shape.roughness, IOR: shape.ior}}
 		case 1: // PBR ORM + HDR emissive inlay
 			col = shape.pbrCol
 			m = &nt3d.Material{
-				PBR:               true,
-				Metallic:          1,
-				Roughness:         1,
-				IOR:               shape.ior,
-				ORMMap:            reliefORMMap(),
-				ORMRepeat:         true,
-				OcclusionStrength: .85,
+				Shading: nt3d.ShadePBR,
+				PBR:     nt3d.PBRStyle{Metallic: 1, Roughness: 1, IOR: shape.ior, ORMMap: reliefORMMap(), ORMRepeat: true, OcclusionStrength: .85},
 			}
 			if shape.emissive {
-				m.Emissive = color.RGBA{255, 255, 255, 255}
-				m.EmissiveIntensity = 3.2
-				m.EmissiveMap = inlayEmissiveMap()
-				m.EmissiveRepeat = true
+				m.Emission.Color = color.RGBA{255, 255, 255, 255}
+				m.Emission.Intensity = 3.2
+				m.Emission.Map = inlayEmissiveMap()
+				m.Emission.Repeat = true
 			}
 		case 2: // Clearcoat (car paint + varnished wood) & Sheen (velvet + felt)
 			switch shape.name {
 			case "sphere":
 				col = color.RGBA{185, 24, 38, 255}
-				m = &nt3d.Material{PBR: true, Metallic: .75, Roughness: .42, Clearcoat: 1, ClearcoatRoughness: .06}
+				m = &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Metallic: .75, Roughness: .42, Clearcoat: nt3d.ClearcoatStyle{Amount: 1, Roughness: .06}}}
 			case "torus":
 				col = color.RGBA{72, 34, 96, 255}
-				m = &nt3d.Material{PBR: true, Roughness: .82, SheenColor: color.RGBA{235, 175, 255, 255}, SheenRoughness: .35}
+				m = &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: .82, Sheen: nt3d.SheenStyle{Color: color.RGBA{235, 175, 255, 255}, Roughness: .35}}}
 			case "column":
 				col = color.RGBA{118, 68, 36, 255}
-				m = &nt3d.Material{PBR: true, Roughness: .58, Clearcoat: .88, ClearcoatRoughness: .12}
+				m = &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: .58, Clearcoat: nt3d.ClearcoatStyle{Amount: .88, Roughness: .12}}}
 			default:
 				col = color.RGBA{28, 86, 62, 255}
-				m = &nt3d.Material{PBR: true, Roughness: .88, SheenColor: color.RGBA{165, 240, 198, 255}, SheenRoughness: .55}
+				m = &nt3d.Material{Shading: nt3d.ShadePBR, PBR: nt3d.PBRStyle{Roughness: .88, Sheen: nt3d.SheenStyle{Color: color.RGBA{165, 240, 198, 255}, Roughness: .55}}}
 			}
 		case 3: // Classic Blinn-Phong
-			m = &nt3d.Material{Specular: .5, Shininess: 48}
+			m = &nt3d.Material{Phong: nt3d.PhongStyle{Specular: .5, Shininess: 48}}
 		default: // Classic matte Lambert
 			m = &nt3d.Material{}
 		}
 		if d.lights.normal {
-			m.NormalMap = reliefNormalMap()
-			m.NormalStrength = .65
-			m.NormalRepeat = true
+			m.Normal.Map = reliefNormalMap()
+			m.Normal.Strength = .65
+			m.Normal.Repeat = true
 		}
 		g, err := shape.build(col, m)
 		if err != nil {
@@ -320,7 +315,7 @@ func (d *demo) applyLights() (nt3d.Lighting, error) {
 				Segments: 12,
 				Rings:    8,
 				Color:    lp.color,
-				Material: &nt3d.Material{Unlit: true, Emissive: lp.color, EmissiveIntensity: 3.0},
+				Material: &nt3d.Material{Shading: nt3d.ShadeUnlit, Emission: nt3d.EmissionStyle{Color: lp.color, Intensity: 3.0}},
 			})
 			if err != nil {
 				return l, err

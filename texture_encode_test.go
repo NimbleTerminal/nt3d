@@ -56,23 +56,23 @@ func TestDirectTextureOutputMatchesFloatPath(t *testing.T) {
 			f.Supersample = 2
 			g := &f.Draws[0].Geometry
 			g.Outline.Width = 0
-			g.Material = &Material{Texture: tex, Unlit: true, Repeat: true}
+			g.Material = &Material{Shading: ShadeUnlit, Texture: tex, Repeat: true}
 			for i := range g.Vertices {
 				g.Vertices[i].Color = color.RGBA{255, 255, 255, 180}
 			}
 			switch kind {
 			case "cutout":
-				g.Material.Cutout = true
+				g.Material.Alpha = AlphaCutout
 			case "transparent":
-				g.Material.Transparent = true
+				g.Material.Alpha = AlphaTransparent
 			case "fog":
 				f.Fog = Fog{Near: 1, Far: 5, Color: white}
 			case "lit":
-				g.Material.Unlit = false
-				g.Material.Specular = .4
+				g.Material.Shading = ShadePhong
+				g.Material.Phong.Specular = .4
 			case "normal":
-				g.Material.NormalMap = testNormalMap(t, color.NRGBA{170, 120, 200, 255})
-				g.Material.NormalStrength = 1
+				g.Material.Normal.Map = testNormalMap(t, color.NRGBA{170, 120, 200, 255})
+				g.Material.Normal.Strength = 1
 			case "outline":
 				g.Outline = OutlineStyle{Width: 2, Color: outlineInk}
 			}
@@ -112,7 +112,7 @@ func BenchmarkOpaqueEncoding(b *testing.B) {
 
 func TestDirectTextureMovingCamera(t *testing.T) {
 	tex := samplingTexture(512, 512, false)
-	g := quad(1, 0, white, &Material{Texture: tex, Unlit: true}, false)
+	g := quad(1, 0, white, &Material{Shading: ShadeUnlit, Texture: tex}, false)
 	// Texture dimensions, UVs, and camera match the map consumer. White
 	// interpolation is not always exactly one, so this must retain its rounding.
 	g.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}

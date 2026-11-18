@@ -175,9 +175,9 @@ func TestSoftwareShadowNeedsNoOtherPosition(t *testing.T) {
 // and no caster at all. The cutout's texture is 2x1: an opaque left texel,
 // a transparent right one, on a quad whose UVs run 0..1 across X.
 func shadowScenes(t *testing.T) map[string]Frame {
-	glass := quad(.4, .3, color.RGBA{255, 255, 255, 128}, &Material{Transparent: true}, false)
+	glass := quad(.4, .3, color.RGBA{255, 255, 255, 128}, &Material{Alpha: AlphaTransparent}, false)
 	box := Geometry{Boxes: []Box{{Min: nt3dmath.Vec3{X: -.4, Y: -.4, Z: .3}, Size: nt3dmath.Vec3{X: .8, Y: .8, Z: .2}, Color: white}}}
-	cut := quad(.4, .3, white, &Material{Texture: twoTexel(t), Cutout: true}, false)
+	cut := quad(.4, .3, white, &Material{Texture: twoTexel(t), Alpha: AlphaCutout}, false)
 	cut.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}} // UV per vertex: (0,0) (1,0) (1,1) (0,1)
 	return map[string]Frame{
 		"quad casts":          blendScene(t, &shadowLit, quad(.4, .3, white, nil, false)),
@@ -252,7 +252,7 @@ func TestRigShadowScalesOneLight(t *testing.T) {
 	// ((1/64)*(1+2*(1-.8)) = .022), so the light is blocked.
 	dark := &shadowMap{shadowView: shadowView{matrix: nt3dmath.Identity(), texel: .01, size: 64, light: 0}, depth: make([]float32, 64*64)}
 	n, p := nt3dmath.Vec3{X: .6, Z: .8}, nt3dmath.Vec3{Z: .5}
-	shiny := &Material{Specular: .5, Shininess: 16}
+	shiny := &Material{Phong: PhongStyle{Specular: .5, Shininess: 16}}
 	view := nt3dmath.Vec3{Z: 1}
 	open, openHighlight := illuminate(&rig, n, p), rig.highlight(shiny, n, p, view)
 	rig.shadow = dark
@@ -284,8 +284,8 @@ func twoTexel(t *testing.T) *Texture {
 }
 func glassScene(t *testing.T) Frame {
 	t.Helper()
-	f := blendScene(t, &shadowLit, quad(.4, .3, white, nil, false), quad(3, -.5, color.RGBA{255, 255, 255, 128}, &Material{Transparent: true}, false))
-	f.Draws[0].Geometry.Material = &Material{Unlit: true}
+	f := blendScene(t, &shadowLit, quad(.4, .3, white, nil, false), quad(3, -.5, color.RGBA{255, 255, 255, 128}, &Material{Alpha: AlphaTransparent}, false))
+	f.Draws[0].Geometry.Material = &Material{Shading: ShadeUnlit}
 	return f
 }
 

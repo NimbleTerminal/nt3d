@@ -139,12 +139,12 @@ func buildShadowFace(f *Frame, drawn []bool, view shadowView) *shadowMap {
 		}
 		world := instance(*f, gi).World
 		var normals nt3dmath.Mat4
-		if g.Material != nil && g.Material.Cutout && g.Material.Shader != nil {
+		if g.Material != nil && g.Material.cutout() && g.Material.Shader != nil {
 			inv, _ := world.InverseAffine()
 			normals = inv.Transpose()
 		}
 		tri := func(vertices []Vertex, indices [3]uint32, uv []UV, material *Material) {
-			shaderCut := material != nil && material.Cutout && material.Shader != nil
+			shaderCut := material != nil && material.cutout() && material.Shader != nil
 			var corners [3]clipCorner
 			for k, i := range indices {
 				c := &corners[k]
@@ -523,7 +523,7 @@ func rasterShadowTriangle(f *Frame, m *shadowMap, corners [3]clipCorner, materia
 			if d < 0 || d > 1 {
 				continue
 			}
-			if material != nil && material.Cutout && (material.Texture != nil || material.Shader != nil) {
+			if material != nil && material.cutout() && (material.Texture != nil || material.Shader != nil) {
 				qa, qb, qc := a/corners[0].w, b/corners[1].w, c/corners[2].w
 				sum := qa + qb + qc
 				qa, qb, qc = qa/sum, qb/sum, qc/sum

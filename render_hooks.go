@@ -646,7 +646,7 @@ func (g *gpuRenderer) prepareHooks(dev *wgpu.Device, f Frame, drawn []bool) erro
 				}
 			}
 		} else {
-			cutout := geom.Material != nil && geom.Material.Cutout
+			cutout := geom.Material != nil && geom.Material.cutout()
 			if cutout {
 				if err := g.ensureHookPipeline(dev, prog, hookPipeCutout); err != nil {
 					return err

@@ -41,9 +41,9 @@ func TestFlowPhaseContinuity(t *testing.T) {
 	check(t, err)
 	f, err := NewFlowMap(img)
 	check(t, err)
-	m := &Material{NormalMap: normal, NormalRepeat: true, FlowMap: f, FlowStrength: .4}
+	m := &Material{Normal: NormalStyle{Map: normal, Repeat: true, Flow: FlowStyle{Map: f, Strength: .4}}}
 	sample := func(phase float32) [4]float32 {
-		m.FlowPhase = phase
+		m.Normal.Flow.Phase = phase
 		return flowNormalSample(m, UV{.3, .4}, UV{.31, .4}, UV{.3, .41}, UV{.5, .2}, 1)
 	}
 	for _, phase := range []float32{0, .5, 1, -1, 100} {
@@ -54,7 +54,7 @@ func TestFlowPhaseContinuity(t *testing.T) {
 			}
 		}
 	}
-	m.FlowStrength = 0
+	m.Normal.Flow.Strength = 0
 	a := sample(.2)
 	b := normal.sampleFootprint(UV{.3, .4}, UV{.31, .4}, UV{.3, .41}, true, 1)
 	if a != b {

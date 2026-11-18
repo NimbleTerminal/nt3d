@@ -247,7 +247,7 @@ func TestGPUSessionFormatsAndColorSpace(t *testing.T) {
 
 	s := NewScene()
 	tex := testTexture(t, color.RGBA{220, 90, 40, 255})
-	sphere, err := BuildSphere(Sphere{Radius: .65, Color: color.RGBA{255, 255, 255, 255}, Material: &Material{Texture: tex, Specular: .4, Shininess: 32}})
+	sphere, err := BuildSphere(Sphere{Radius: .65, Color: color.RGBA{255, 255, 255, 255}, Material: &Material{Texture: tex, Phong: PhongStyle{Specular: .4, Shininess: 32}}})
 	check(t, err)
 	_, err = s.SetGeometry("sphere", sphere)
 	check(t, err)
@@ -308,7 +308,7 @@ func TestGPUSessionEncodeAndLoadComposition(t *testing.T) {
 	cube, err := BuildCuboid(Cuboid{
 		Size:     nt3dmath.Vec3{X: .7, Y: .7, Z: .7},
 		Color:    color.RGBA{240, 40, 40, 255},
-		Material: &Material{Unlit: true},
+		Material: &Material{Shading: ShadeUnlit},
 	})
 	check(t, err)
 	_, err = s.SetGeometry("cube", cube)
@@ -532,7 +532,7 @@ func TestGPUSessionSubViewportAndSplitScreen(t *testing.T) {
 	marker, err := BuildSphere(Sphere{
 		Radius:   0.65,
 		Color:    color.RGBA{250, 230, 40, 255},
-		Material: &Material{Unlit: true},
+		Material: &Material{Shading: ShadeUnlit},
 	})
 	check(t, err)
 	_, err = overlayScene.SetGeometry("marker", marker)
@@ -671,10 +671,8 @@ func TestGPUSessionNewViewSharesResources(t *testing.T) {
 		Radius: 0.55,
 		Color:  color.RGBA{255, 255, 255, 255},
 		Material: &Material{
-			Texture:      tex,
-			Specular:     0.5,
-			Shininess:    32,
-			Reflectivity: 0.25,
+			Texture: tex,
+			Phong:   PhongStyle{Specular: 0.5, Shininess: 32, Reflectivity: 0.25},
 		},
 	})
 	check(t, err)
@@ -921,9 +919,7 @@ func TestGPUSessionRenderToImage(t *testing.T) {
 		Radius: 0.65,
 		Color:  color.RGBA{235, 110, 55, 255},
 		Material: &Material{
-			Specular:     0.6,
-			Shininess:    48,
-			Reflectivity: 0.3,
+			Phong: PhongStyle{Specular: 0.6, Shininess: 48, Reflectivity: 0.3},
 		},
 	})
 	check(t, err)

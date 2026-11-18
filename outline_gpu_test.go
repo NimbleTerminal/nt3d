@@ -22,22 +22,22 @@ func TestGPUOutlines(t *testing.T) {
 			g := &f.Draws[0].Geometry
 			switch kind {
 			case "lit":
-				g.Material.Unlit = false
+				g.Material.Shading = ShadePhong
 			case "texture":
 				g.Material.Texture = testTexture(t, color.RGBA{50, 170, 210, 255})
 			case "normal map":
-				g.Material.Unlit = false
-				g.Material.NormalMap = testNormalMap(t, color.NRGBA{180, 128, 240, 255})
-				g.Material.NormalStrength = 1
+				g.Material.Shading = ShadePhong
+				g.Material.Normal.Map = testNormalMap(t, color.NRGBA{180, 128, 240, 255})
+				g.Material.Normal.Strength = 1
 			case "cutout", "hidden alpha":
 				c := white
 				if kind == "hidden alpha" {
 					c = color.RGBA{}
 				}
 				g.Material.Texture = testTexture(t, c)
-				g.Material.Cutout = true
+				g.Material.Alpha = AlphaCutout
 			case "transparent", "texture transparent":
-				g.Material.Transparent = true
+				g.Material.Alpha = AlphaTransparent
 				for j := range g.Vertices {
 					g.Vertices[j].Color.A = 120
 				}
@@ -57,7 +57,7 @@ func TestGPUOutlines(t *testing.T) {
 				g.Outline.Width = .06
 				g.Outline.Units = WorldUnits
 			case "split normals", "split normals textured":
-				box, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{Unlit: true}})
+				box, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}, Color: white, Material: &Material{Shading: ShadeUnlit}})
 				check(t, err)
 				box.Outline = OutlineStyle{Width: 3, Color: outlineInk}
 				if kind == "split normals textured" {
@@ -73,7 +73,7 @@ func TestGPUOutlines(t *testing.T) {
 			case "fog":
 				f.Fog = Fog{Near: 1, Far: 6, Color: color.RGBA{80, 90, 100, 255}}
 			case "occluded":
-				pane := quad(.95, .001, white, &Material{Unlit: true}, false)
+				pane := quad(.95, .001, white, &Material{Shading: ShadeUnlit}, false)
 				inv, _ := f.Matrix.InverseAffine()
 				for j := range pane.Vertices {
 					pane.Vertices[j].Position = inv.Point(pane.Vertices[j].Position)

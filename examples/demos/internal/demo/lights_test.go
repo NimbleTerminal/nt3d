@@ -232,7 +232,7 @@ func TestNormalMapToggle(t *testing.T) {
 		for i, inst := range f.Draws {
 			if inst.Name == "sphere" {
 				m := f.Draws[i].Geometry.Material
-				if (m != nil && m.NormalMap != nil) != enabled {
+				if (m != nil && m.Normal.Map != nil) != enabled {
 					t.Fatal("toggle did not reach sphere")
 				}
 			}

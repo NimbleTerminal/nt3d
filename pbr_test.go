@@ -59,11 +59,11 @@ func TestPBRMetallicEnergyConservationAndTint(t *testing.T) {
 	offLight := Lighting{
 		Lights: []Light{{Direction: nt3dmath.Vec3{X: 1, Z: 1}.Normalize(), Intensity: 1}},
 	}
-	dielectric := pbrQuadFrame(&Material{PBR: true, Metallic: 0, Roughness: .15}, gold)
+	dielectric := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 0, Roughness: .15}}, gold)
 	dielectric.Lighting = offLight
 	dPx := at(softwareRender(dielectric), 40, 40)
 
-	metalOff := pbrQuadFrame(&Material{PBR: true, Metallic: 1, Roughness: .15}, gold)
+	metalOff := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .15}}, gold)
 	metalOff.Lighting = offLight
 	mOffPx := at(softwareRender(metalOff), 40, 40)
 
@@ -75,7 +75,7 @@ func TestPBRMetallicEnergyConservationAndTint(t *testing.T) {
 	headOn := Lighting{
 		Lights: []Light{{Direction: nt3dmath.Vec3{Z: 1}, Intensity: .08}},
 	}
-	metalOn := pbrQuadFrame(&Material{PBR: true, Metallic: 1, Roughness: .35}, gold)
+	metalOn := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .35}}, gold)
 	metalOn.Lighting = headOn
 	mOnPx := at(softwareRender(metalOn), 40, 40)
 	if mOnPx.R <= mOnPx.G || int(mOnPx.G) <= int(mOnPx.B)*2 {
@@ -87,9 +87,9 @@ func TestPBRRoughnessAndIOR(t *testing.T) {
 	headOn := Lighting{
 		Lights: []Light{{Direction: nt3dmath.Vec3{Z: 1}, Intensity: .25}},
 	}
-	smooth := pbrQuadFrame(&Material{PBR: true, Metallic: 1, Roughness: .12}, white)
+	smooth := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .12}}, white)
 	smooth.Lighting = headOn
-	rough := pbrQuadFrame(&Material{PBR: true, Metallic: 1, Roughness: .85}, white)
+	rough := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: .85}}, white)
 	rough.Lighting = headOn
 
 	sPx := at(softwareRender(smooth), 40, 40)
@@ -100,9 +100,9 @@ func TestPBRRoughnessAndIOR(t *testing.T) {
 
 	// Pure black base color isolates dielectric Fresnel specular reflection at normal incidence.
 	black := color.RGBA{0, 0, 0, 255}
-	ior1 := pbrQuadFrame(&Material{PBR: true, Metallic: 0, Roughness: .2, IOR: 1.0}, black)
+	ior1 := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 0, Roughness: .2, IOR: 1.0}}, black)
 	ior1.Lighting = Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{Z: 1}, Intensity: 1}}}
-	iorDiamond := pbrQuadFrame(&Material{PBR: true, Metallic: 0, Roughness: .2, IOR: 2.42}, black)
+	iorDiamond := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 0, Roughness: .2, IOR: 2.42}}, black)
 	iorDiamond.Lighting = ior1.Lighting
 
 	p1 := at(softwareRender(ior1), 40, 40)
@@ -137,12 +137,12 @@ func TestPBREnvironmentPrefilteredIBL(t *testing.T) {
 }
 
 func TestORMMapAndSceneSetters(t *testing.T) {
-	// Occlusion (R=0) attenuates ambient light according to OcclusionStrength, leaving direct light intact.
+	// Occlusion (R=0) attenuates ambient light according to PBR.OcclusionStrength, leaving direct light intact.
 	ormOcc := testORMMap(t, color.NRGBA{0, 128, 0, 255})
 	ambientOnly := Lighting{Ambient: Ambient{Sky: white, Ground: white, Intensity: .8}}
-	fullOcc := pbrQuadFrame(&Material{PBR: true, Roughness: 1, ORMMap: ormOcc, OcclusionStrength: 1}, white)
+	fullOcc := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 1, ORMMap: ormOcc, OcclusionStrength: 1}}, white)
 	fullOcc.Lighting = ambientOnly
-	halfOcc := pbrQuadFrame(&Material{PBR: true, Roughness: 1, ORMMap: ormOcc, OcclusionStrength: .5}, white)
+	halfOcc := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: 1, ORMMap: ormOcc, OcclusionStrength: .5}}, white)
 	halfOcc.Lighting = ambientOnly
 
 	cFull := at(softwareRender(fullOcc), 40, 40)
@@ -160,8 +160,8 @@ func TestORMMapAndSceneSetters(t *testing.T) {
 	// ORM B channel modulates Metallic, G channel modulates Roughness.
 	ormMetalSmooth := testORMMap(t, color.NRGBA{255, 32, 255, 255})
 	ormDielectricRough := testORMMap(t, color.NRGBA{255, 255, 0, 255})
-	fMetal := pbrQuadFrame(&Material{PBR: true, Metallic: 1, Roughness: 1, ORMMap: ormMetalSmooth}, color.RGBA{240, 180, 40, 255})
-	fDielectric := pbrQuadFrame(&Material{PBR: true, Metallic: 1, Roughness: 1, ORMMap: ormDielectricRough}, color.RGBA{240, 180, 40, 255})
+	fMetal := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: 1, ORMMap: ormMetalSmooth}}, color.RGBA{240, 180, 40, 255})
+	fDielectric := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1, Roughness: 1, ORMMap: ormDielectricRough}}, color.RGBA{240, 180, 40, 255})
 	offLight := Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{X: 1, Z: 1}.Normalize(), Intensity: 1}}}
 	fMetal.Lighting = offLight
 	fDielectric.Lighting = offLight
@@ -174,8 +174,8 @@ func TestORMMapAndSceneSetters(t *testing.T) {
 	em1 := testTexture(t, color.RGBA{200, 40, 10, 255})
 	em2 := testTexture(t, color.RGBA{20, 180, 220, 255})
 	g := fullOcc.Draws[0].Geometry
-	g.Material.Emissive = white
-	g.Material.EmissiveMap = em1
+	g.Material.Emission.Color = white
+	g.Material.Emission.Map = em1
 	_, err := s.SetGeometry("mesh", g)
 	check(t, err)
 	before, err := s.Frame(DefaultCamera(), 64, 64)
@@ -183,13 +183,13 @@ func TestORMMapAndSceneSetters(t *testing.T) {
 	check(t, s.SetNodeORMMap(named(t, s, "mesh"), ormMetalSmooth))
 	mid, err := s.Frame(DefaultCamera(), 64, 64)
 	check(t, err)
-	if before.Revision != mid.Revision || before.TextureRevision == mid.TextureRevision || mid.Draws[0].Geometry.Material.ORMMap != ormMetalSmooth {
+	if before.Revision != mid.Revision || before.TextureRevision == mid.TextureRevision || mid.Draws[0].Geometry.Material.PBR.ORMMap != ormMetalSmooth {
 		t.Fatal("SetNodeORMMap invalidated geometry revision or missed texture revision")
 	}
 	check(t, s.SetNodeEmissiveMap(named(t, s, "mesh"), em2))
 	after, err := s.Frame(DefaultCamera(), 64, 64)
 	check(t, err)
-	if mid.Revision != after.Revision || mid.TextureRevision == after.TextureRevision || after.Draws[0].Geometry.Material.EmissiveMap != em2 {
+	if mid.Revision != after.Revision || mid.TextureRevision == after.TextureRevision || after.Draws[0].Geometry.Material.Emission.Map != em2 {
 		t.Fatal("SetNodeEmissiveMap invalidated geometry revision or missed texture revision")
 	}
 
@@ -205,11 +205,9 @@ func TestEmissiveHDRBloomAndCombinations(t *testing.T) {
 	// Emissive surface in pitch black room glows and triggers HDR Bloom into neighboring background pixels.
 	emMap := testTexture(t, color.RGBA{255, 120, 30, 255})
 	g := quad(.25, .4, color.RGBA{0, 0, 0, 255}, &Material{
-		PBR:               true,
-		Roughness:         .5,
-		Emissive:          color.RGBA{255, 255, 255, 255},
-		EmissiveIntensity: 6,
-		EmissiveMap:       emMap,
+		Shading:  ShadePBR,
+		PBR:      PBRStyle{Roughness: .5},
+		Emission: EmissionStyle{Color: color.RGBA{255, 255, 255, 255}, Intensity: 6, Map: emMap},
 	}, false)
 	g.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	f := flatFrame(80, 80, g)
@@ -230,8 +228,8 @@ func TestEmissiveHDRBloomAndCombinations(t *testing.T) {
 	// Unlit + Emissive adds glow without lighting.
 	gUnlit := g
 	mUnlit := *g.Material
-	mUnlit.Unlit = true
-	mUnlit.PBR = false
+	mUnlit.Shading = ShadeUnlit
+	mUnlit.Shading = ShadePhong
 	gUnlit.Material = &mUnlit
 	fUnlit := flatFrame(64, 64, gUnlit)
 	fUnlit.Lighting = Lighting{}
@@ -243,14 +241,14 @@ func TestEmissiveHDRBloomAndCombinations(t *testing.T) {
 	sphereToon, err := BuildSphere(Sphere{
 		Radius:   .6,
 		Color:    color.RGBA{80, 160, 240, 255},
-		Material: &Material{PBR: true, Metallic: .2, Roughness: .35, Toon: ToonStyle{Bands: 3, Rim: .3}},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Metallic: .2, Roughness: .35}, Toon: ToonStyle{Bands: 3, Rim: .3}},
 	})
 	check(t, err)
 	check(t, sphereToon.Validate())
 	_ = softwareRender(flatFrame(64, 64, sphereToon))
 
-	back := quad(.8, .8, color.RGBA{220, 40, 40, 255}, &Material{Unlit: true}, false)
-	glass := quad(.6, .2, white, &Material{PBR: true, Roughness: .1, IOR: 1.52, Transmission: .85, Refraction: .03}, false)
+	back := quad(.8, .8, color.RGBA{220, 40, 40, 255}, &Material{Shading: ShadeUnlit}, false)
+	glass := quad(.6, .2, white, &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .1, IOR: 1.52}, Transmission: TransmissionStyle{Amount: .85, Refraction: .03}}, false)
 	fTrans := flatFrame(64, 64, back, glass)
 	fTrans.Linear = true
 	fTrans.Lighting = Lighting{
@@ -269,26 +267,26 @@ func TestPBRValidation(t *testing.T) {
 	srgb := testTexture(t, white)
 
 	badMaterials := []*Material{
-		{PBR: true, Metallic: -0.1},
-		{PBR: true, Metallic: 1.1},
-		{PBR: true, Roughness: -0.01},
-		{PBR: true, Roughness: 1.01},
-		{PBR: true, IOR: 0.9},
-		{PBR: true, IOR: 3.1},
-		{PBR: true, IOR: float32(math.NaN())},
-		{PBR: true, OcclusionStrength: -0.1},
-		{PBR: true, OcclusionStrength: 1.1},
-		{Clearcoat: -0.05},
-		{Clearcoat: 1.05},
-		{Clearcoat: float32(math.NaN())},
-		{Clearcoat: 0.5, ClearcoatRoughness: -0.1},
-		{Clearcoat: 0.5, ClearcoatRoughness: 1.1},
-		{SheenColor: white, SheenRoughness: -0.01},
-		{SheenColor: white, SheenRoughness: 1.01},
-		{SheenColor: white, SheenRoughness: float32(math.Inf(1))},
-		{EmissiveIntensity: -0.5},
-		{PBR: true, ORMMap: srgb},           // sRGB color texture rejected in ORM slot
-		{Emissive: white, EmissiveMap: orm}, // Linear data texture rejected in EmissiveMap slot
+		{Shading: ShadePBR, PBR: PBRStyle{Metallic: -0.1}},
+		{Shading: ShadePBR, PBR: PBRStyle{Metallic: 1.1}},
+		{Shading: ShadePBR, PBR: PBRStyle{Roughness: -0.01}},
+		{Shading: ShadePBR, PBR: PBRStyle{Roughness: 1.01}},
+		{Shading: ShadePBR, PBR: PBRStyle{IOR: 0.9}},
+		{Shading: ShadePBR, PBR: PBRStyle{IOR: 3.1}},
+		{Shading: ShadePBR, PBR: PBRStyle{IOR: float32(math.NaN())}},
+		{Shading: ShadePBR, PBR: PBRStyle{OcclusionStrength: -0.1}},
+		{Shading: ShadePBR, PBR: PBRStyle{OcclusionStrength: 1.1}},
+		{Shading: ShadePBR, PBR: PBRStyle{Clearcoat: ClearcoatStyle{Amount: -0.05}}},
+		{Shading: ShadePBR, PBR: PBRStyle{Clearcoat: ClearcoatStyle{Amount: 1.05}}},
+		{Shading: ShadePBR, PBR: PBRStyle{Clearcoat: ClearcoatStyle{Amount: float32(math.NaN())}}},
+		{Shading: ShadePBR, PBR: PBRStyle{Clearcoat: ClearcoatStyle{Amount: 0.5, Roughness: -0.1}}},
+		{Shading: ShadePBR, PBR: PBRStyle{Clearcoat: ClearcoatStyle{Amount: 0.5, Roughness: 1.1}}},
+		{Shading: ShadePBR, PBR: PBRStyle{Sheen: SheenStyle{Color: white, Roughness: -0.01}}},
+		{Shading: ShadePBR, PBR: PBRStyle{Sheen: SheenStyle{Color: white, Roughness: 1.01}}},
+		{Shading: ShadePBR, PBR: PBRStyle{Sheen: SheenStyle{Color: white, Roughness: float32(math.Inf(1))}}},
+		{Emission: EmissionStyle{Intensity: -0.5}},
+		{Shading: ShadePBR, PBR: PBRStyle{ORMMap: srgb}},  // sRGB color texture rejected in ORM slot
+		{Emission: EmissionStyle{Color: white, Map: orm}}, // Linear data texture rejected in EmissiveMap slot
 	}
 	for i, m := range badMaterials {
 		g := base
@@ -309,21 +307,17 @@ func TestPBRValidation(t *testing.T) {
 
 	noUV := base
 	noUV.UV = nil
-	noUV.Material = &Material{PBR: true, ORMMap: orm}
+	noUV.Material = &Material{Shading: ShadePBR, PBR: PBRStyle{ORMMap: orm}}
 	if noUV.Validate() == nil {
 		t.Fatal("accepted ORMMap without UVs")
 	}
-	noUV.Material = &Material{Emissive: white, EmissiveMap: srgb}
+	noUV.Material = &Material{Emission: EmissionStyle{Color: white, Map: srgb}}
 	if noUV.Validate() == nil {
 		t.Fatal("accepted EmissiveMap without UVs")
 	}
 }
 
 func TestPBRClearcoatGeometricNormalAndIBL(t *testing.T) {
-	// Clearcoat > 0 activates PBR automatically even with PBR: false.
-	if !pbrActive(&Material{Clearcoat: .8}) {
-		t.Fatal("Clearcoat > 0 did not activate PBR")
-	}
 
 	// Tilted normal map deflects the base layer's shading normal away from head-on light,
 	// whereas Clearcoat evaluates along the unperturbed geometric surface normal (+Z).
@@ -332,19 +326,16 @@ func TestPBRClearcoatGeometricNormalAndIBL(t *testing.T) {
 	black := color.RGBA{0, 0, 0, 255}
 
 	unclear := pbrQuadFrame(&Material{
-		PBR:            true,
-		Roughness:      .08,
-		NormalMap:      tiltedNormal,
-		NormalStrength: 1,
+		Shading: ShadePBR,
+		PBR:     PBRStyle{Roughness: .08},
+		Normal:  NormalStyle{Map: tiltedNormal, Strength: 1},
 	}, black)
 	unclear.Lighting = headOn
 
 	coated := pbrQuadFrame(&Material{
-		Roughness:          .85,
-		Clearcoat:          1,
-		ClearcoatRoughness: .08,
-		NormalMap:          tiltedNormal,
-		NormalStrength:     1,
+		Shading: ShadePBR,
+		PBR:     PBRStyle{Roughness: .85, Clearcoat: ClearcoatStyle{Amount: 1, Roughness: .08}},
+		Normal:  NormalStyle{Map: tiltedNormal, Strength: 1},
 	}, black)
 	coated.Lighting = headOn
 
@@ -356,9 +347,9 @@ func TestPBRClearcoatGeometricNormalAndIBL(t *testing.T) {
 
 	// Energy conservation: off-specular diffuse on a rough dielectric is attenuated by (1 - cc * Fc).
 	offLight := Lighting{Lights: []Light{{Direction: nt3dmath.Vec3{X: .8, Z: .6}.Normalize(), Intensity: 1}}}
-	matte := pbrQuadFrame(&Material{PBR: true, Roughness: .9}, white)
+	matte := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .9}}, white)
 	matte.Lighting = offLight
-	matteCoated := pbrQuadFrame(&Material{PBR: true, Roughness: .9, Clearcoat: 1, ClearcoatRoughness: .06}, white)
+	matteCoated := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .9, Clearcoat: ClearcoatStyle{Amount: 1, Roughness: .06}}}, white)
 	matteCoated.Lighting = offLight
 	if at(softwareRender(matteCoated), 40, 40).R >= at(softwareRender(matte), 40, 40).R {
 		t.Fatal("expected clearcoat Fresnel transmission to attenuate underlying off-specular diffuse")
@@ -373,11 +364,11 @@ func TestPBRClearcoatGeometricNormalAndIBL(t *testing.T) {
 		Segments: 40,
 		Rings:    24,
 		Color:    color.RGBA{18, 20, 24, 255},
-		Material: &Material{PBR: true, Roughness: .95},
+		Material: &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .95}},
 	})
 	check(t, err)
 	coatBall := dullBall
-	coatBall.Material = &Material{PBR: true, Roughness: .95, Clearcoat: 1, ClearcoatRoughness: .05}
+	coatBall.Material = &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .95, Clearcoat: ClearcoatStyle{Amount: 1, Roughness: .05}}}
 	ballID, err := s.SetGeometry("ball", dullBall)
 	check(t, err)
 	cam := DefaultCamera()
@@ -410,9 +401,6 @@ func TestPBRClearcoatGeometricNormalAndIBL(t *testing.T) {
 
 func TestPBRSheenAndToonCoatSheen(t *testing.T) {
 	velvetTint := color.RGBA{245, 110, 210, 255}
-	if !pbrActive(&Material{SheenColor: velvetTint}) {
-		t.Fatal("nonzero SheenColor did not activate PBR")
-	}
 
 	// Grazing velvet sheen: dark rough sphere lit from front stays dark face-on
 	// (N·H ≈ 1 -> Charlie sin²θ ≈ 0) and brightens with velvet tint toward silhouette.
@@ -423,10 +411,9 @@ func TestPBRSheenAndToonCoatSheen(t *testing.T) {
 			Rings:    32,
 			Color:    color.RGBA{16, 16, 20, 255},
 			Material: &Material{
-				Roughness:      .88,
-				SheenColor:     sheen,
-				SheenRoughness: .35,
-				Toon:           toon,
+				Shading: ShadePBR,
+				PBR:     PBRStyle{Roughness: .88, Sheen: SheenStyle{Color: sheen, Roughness: .35}},
+				Toon:    toon,
 			},
 		})
 		check(t, err)
@@ -480,11 +467,9 @@ func TestPBRSheenAndToonCoatSheen(t *testing.T) {
 			Rings:    24,
 			Color:    color.RGBA{180, 40, 40, 255},
 			Material: &Material{
-				PBR:                true,
-				Roughness:          .9,
-				Clearcoat:          cc,
-				ClearcoatRoughness: .1,
-				Toon:               ToonStyle{Bands: 3},
+				Shading: ShadePBR,
+				PBR:     PBRStyle{Roughness: .9, Clearcoat: ClearcoatStyle{Amount: cc, Roughness: .1}},
+				Toon:    ToonStyle{Bands: 3},
 			},
 		})
 		check(t, err)
@@ -507,16 +492,15 @@ func TestPBRSheenAndToonCoatSheen(t *testing.T) {
 }
 
 func TestPBRDielectricSpecularColorAndIntensity(t *testing.T) {
-	if !pbrActive(&Material{SpecularColor: color.RGBA{255, 0, 0, 255}}) {
-		t.Fatal("nonzero SpecularColor did not activate PBR")
+	// A highlight adjusted on a material that is not PBR is refused, where
+	// setting it used to switch the material to PBR.
+	if err := validateMaterial(&Material{PBR: PBRStyle{Specular: SpecularStyle{Intensity: 2}}}); err == nil {
+		t.Fatal("a PBR highlight on a Phong material was accepted")
 	}
-	if !pbrActive(&Material{SpecularIntensity: 2}) {
-		t.Fatal("SpecularIntensity > 0 did not activate PBR")
-	}
-	if err := validateMaterial(&Material{SpecularIntensity: -.1}); err == nil {
+	if err := validateMaterial(&Material{Shading: ShadePBR, PBR: PBRStyle{Specular: SpecularStyle{Intensity: -.1}}}); err == nil {
 		t.Fatal("accepted negative SpecularIntensity")
 	}
-	if err := validateMaterial(&Material{SpecularIntensity: float32(math.NaN())}); err == nil {
+	if err := validateMaterial(&Material{Shading: ShadePBR, PBR: PBRStyle{Specular: SpecularStyle{Intensity: float32(math.NaN())}}}); err == nil {
 		t.Fatal("accepted NaN SpecularIntensity")
 	}
 
@@ -524,13 +508,13 @@ func TestPBRDielectricSpecularColorAndIntensity(t *testing.T) {
 	black := color.RGBA{0, 0, 0, 255}
 
 	// Default dielectric vs specularFactor = 0 (chalk/matte) vs tinted/HDR dielectric F0.
-	fStd := pbrQuadFrame(&Material{PBR: true, Roughness: .1}, black)
+	fStd := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .1}}, black)
 	fStd.Lighting = headOn
-	fZero := pbrQuadFrame(&Material{Roughness: .1, SpecularColor: color.RGBA{255, 255, 255, 0}}, black)
+	fZero := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .1, Specular: SpecularStyle{Off: true}}}, black)
 	fZero.Lighting = headOn
-	fRed := pbrQuadFrame(&Material{Roughness: .1, SpecularColor: color.RGBA{255, 0, 0, 255}}, black)
+	fRed := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .1, Specular: SpecularStyle{Color: color.RGBA{255, 0, 0, 255}}}}, black)
 	fRed.Lighting = headOn
-	fHDR := pbrQuadFrame(&Material{Roughness: .1, SpecularIntensity: 4}, black)
+	fHDR := pbrQuadFrame(&Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .1, Specular: SpecularStyle{Intensity: 4}}}, black)
 	fHDR.Lighting = headOn
 
 	pxStd := at(softwareRender(fStd), 40, 40)
@@ -551,18 +535,19 @@ func TestPBRDielectricSpecularColorAndIntensity(t *testing.T) {
 		t.Fatalf("expected SpecularIntensity=4 (%v) brighter than default F0 (%v)", pxHDR, pxStd)
 	}
 
-	// specularColorFactor = [0, 0, 0] with specularFactor = 1 (color.RGBA{A: 255})
-	// suppresses normal-incidence F0 while preserving grazing Fresnel F90 = 1,
-	// whereas specularFactor = 0 (color.RGBA{R: 255, G: 255, B: 255, A: 0}) suppresses grazing too.
-	buildGrazing := func(specCol color.RGBA) (center, limb color.RGBA) {
+	// A black Color at full Strength (specularColorFactor [0, 0, 0],
+	// specularFactor 1) suppresses normal-incidence F0 while preserving
+	// grazing Fresnel F90 = 1, whereas Off (specularFactor 0) suppresses
+	// grazing too.
+	buildGrazing := func(specular SpecularStyle) (center, limb color.RGBA) {
 		ball, err := BuildSphere(Sphere{
 			Radius:   .85,
 			Segments: 48,
 			Rings:    32,
 			Color:    black,
 			Material: &Material{
-				Roughness:     .22,
-				SpecularColor: specCol,
+				Shading: ShadePBR,
+				PBR:     PBRStyle{Roughness: .22, Specular: specular},
 			},
 		})
 		check(t, err)
@@ -574,12 +559,12 @@ func TestPBRDielectricSpecularColorAndIntensity(t *testing.T) {
 		f0, err := s.Frame(cam, 96, 96)
 		check(t, err)
 		rev := f0.Revision
-		// Verify ApplyMaterial changing SpecularColor preserves mesh Revision (instance uniform only).
-		check(t, s.ApplyMaterial(id, &Material{Roughness: .22, SpecularColor: specCol}))
+		// Verify ApplyMaterial changing PBR.Specular preserves mesh Revision (instance uniform only).
+		check(t, s.ApplyMaterial(id, &Material{Shading: ShadePBR, PBR: PBRStyle{Roughness: .22, Specular: specular}}))
 		f, err := s.Frame(cam, 96, 96)
 		check(t, err)
 		if f.Revision != rev {
-			t.Fatal("ApplyMaterial changing SpecularColor unexpectedly bumped geometry Revision")
+			t.Fatal("ApplyMaterial changing PBR.Specular unexpectedly bumped geometry Revision")
 		}
 		f.Linear = true
 		f.Background = black
@@ -601,9 +586,9 @@ func TestPBRDielectricSpecularColorAndIntensity(t *testing.T) {
 		return center, limb
 	}
 
-	cZeroF0, lZeroF0 := buildGrazing(color.RGBA{A: 255})
-	cZeroAll, lZeroAll := buildGrazing(color.RGBA{R: 255, G: 255, B: 255, A: 0})
+	cZeroF0, lZeroF0 := buildGrazing(SpecularStyle{Color: color.RGBA{A: 255}})
+	cZeroAll, lZeroAll := buildGrazing(SpecularStyle{Off: true})
 	if cZeroF0 != black || cZeroAll != black || lZeroAll.R != 0 || lZeroF0.R < 40 {
-		t.Fatalf("expected black SpecularColor with A=255 to keep grazing Fresnel over A=0: center=%v/%v limbF90=%v limbZero=%v", cZeroF0, cZeroAll, lZeroF0, lZeroAll)
+		t.Fatalf("expected a black specular color to keep the grazing Fresnel that Off removes: center=%v/%v limbF90=%v limbZero=%v", cZeroF0, cZeroAll, lZeroF0, lZeroAll)
 	}
 }

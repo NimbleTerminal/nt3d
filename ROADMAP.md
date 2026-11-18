@@ -98,7 +98,7 @@ Nothing queued; the sections below are the open work.
   unexported fields: what a scene knows about a geometry rides beside it in
   the `Draw`.
 - **Pure-Go `KHR_texture_basisu` (KTX 2.0) and `KHR_materials_specular` +
-  `Material.SpecularColor` / `SpecularIntensity`**: `nt3d/mesh/gltf` decodes
+  `Material.PBR.Specular.Color` / `PBR.Specular.Intensity`**: `nt3d/mesh/gltf` decodes
   KTX 2.0 BasisLZ/ETC1S, 19-mode UASTC, and uncompressed `VkFormat` textures
   (with None, Zstandard, and zlib supercompression, `Options.MaxBytes`
   enforcement, two-channel normal-map `Z` reconstruction, and fallback to
@@ -106,7 +106,7 @@ Nothing queued; the sections below are the open work.
   OGC 3D Tiles 1.1 `.glb` payload parity across native and WASM builds.
   `KHR_materials_specular` moves from `ignoredExtensions` into
   `supportedExtensions` (accepted in `extensionsRequired`), mapping to
-  per-instance `Material.SpecularColor` and `Material.SpecularIntensity` across
+  per-instance `Material.PBR.Specular.Color` and `Material.PBR.Specular.Intensity` across
   WebGPU and software PBR renderers without growing `instanceRecordSize`.
 
 - **Interactive `KHR_materials_variants` and multi-LOD `.glb` inspection in
@@ -196,14 +196,14 @@ Nothing queued; the sections below are the open work.
   `campath` demo.
 
 - **Clearcoat & Sheen on `Material` + glTF `KHR_materials_clearcoat` and
-  `KHR_materials_sheen`**: `Material.Clearcoat` and
-  `Material.ClearcoatRoughness` (`0..1`) add an energy-conserving dielectric
-  top layer (`IOR = 1.5`, `F0 = 0.04`) evaluated along the unperturbed
+  `KHR_materials_sheen`**: `Material.PBR.Clearcoat.Amount` and
+  `Material.PBR.Clearcoat.Roughness` (`0..1`) add an energy-conserving dielectric
+  top layer (`PBR.IOR = 1.5`, `F0 = 0.04`) evaluated along the unperturbed
   geometric surface normal with independent prefiltered GGX environment IBL,
   direct GGX specular, and quantized cel lacquer highlights in `PBR` + `Toon`,
   keeping base normal maps (car-paint flakes, wood grain, rain-wet cobblestones)
-  underneath a smooth glossy coat. `Material.SheenColor` and
-  `Material.SheenRoughness` (`0..1`) add an Estevez & Kulla Charlie microfiber
+  underneath a smooth glossy coat. `Material.PBR.Sheen.Color` and
+  `Material.PBR.Sheen.Roughness` (`0..1`) add an Estevez & Kulla Charlie microfiber
   grazing/retroreflective lobe with Neubelt visibility, directional-albedo base
   energy scaling, ambient cloth sheen, and quantized cel cloth bands across
   both WebGPU and software renderers while preserving `Scene.ApplyMaterial` GPU
@@ -222,8 +222,8 @@ Nothing queued; the sections below are the open work.
   characters' `N·L` cel bands crisp in sunlight and avoiding mid-band contour
   rings. `OutlineStyle.Crease` now renders architectural/mechanical crease
   linework on deforming (skinned, morphed, in-place vertex-updated, and single-
-  or instanced-`VertexDisplacement`) and see-through (`Cutout` textures and
-  `Material.Shader`, post-depth `Transmission`, sorted `Transparent`, and
+  or instanced-`VertexDisplacement`) and see-through (`AlphaCutout` textures and
+  `Material.Shader`, post-depth `Transmission`, sorted `AlphaTransparent`, and
   Weighted Blended `Frame.OIT` at 1× and 4× MSAA) meshes across both WebGPU and
   software renderers, reusing GPU crease buffers via `WriteBuffer`. Showcased in
   `toon` (`s` soft street shadows, refractive/translucent inked transit shelter,
@@ -242,10 +242,10 @@ Nothing queued; the sections below are the open work.
   buffers via `WriteBuffer` without mesh re-uploads, preserves `SharedGeometry`
   instancing, pads culling/shadow/picking bounds from rest bounds by
   `MaxDisplacement` without drifting `DropShadow`, and keeps software rendering,
-  directional/point/spot shadow maps (including procedural `Cutout` shadows),
+  directional/point/spot shadow maps (including procedural `AlphaCutout` shadows),
   silhouette outlines, wireframe, and `Scene.Pick` / `GPUSession.Pick` in parity.
   `MaterialShader` evaluates in linear light with unclamped HDR output (`> 1.0`
-  feeding `Bloom` and tone mapping) and procedural alpha feeding `Cutout`,
+  feeding `Bloom` and tone mapping) and procedural alpha feeding `AlphaCutout`,
   alpha blending, and `Frame.OIT`. Showcased in `procedural` / `terrain` (`w`
   toggles live wave displacement + crest material shader hooks).
 
@@ -258,7 +258,7 @@ Nothing queued; the sections below are the open work.
   allocations, and overwrite existing WebGPU vertex buffers via `WriteBuffer`
   with reusable scratch buffers (~5.2× faster CPU scene updates and zero GPU
   buffer reallocations). `Material.EnvironmentReflect` opts classic
-  `Reflectivity` and `PBR` surfaces into environment reflections while
+  `Phong.Reflectivity` and `PBR` surfaces into environment reflections while
   `Frame.EnvironmentBackgroundOnly` keeps diffuse environment SH lighting off
   for the rest of the scene. `Scene.ApplyMaterial` atomically validates and
   replaces (or clears) materials across indexed meshes in a subtree—including
@@ -286,9 +286,9 @@ Nothing queued; the sections below are the open work.
   `examples/gogpu` (`-env`, `-oit`, `HDR Studio Sun`, `Spotlights`, `N` OIT).
 - **Cook-Torrance GGX PBR, ORM maps, roughness-filtered IBL, HDR emissive
   materials, and glTF material extensions**: unified `Material` gains `PBR`,
-  `Metallic`, `Roughness`, `IOR`, packed linear `ORMMap` (`NewORMMap`,
-  `NewShaderORMMap`, `Scene.SetNodeORMMap`, `OcclusionStrength`), and HDR
-  `Emissive` / `EmissiveIntensity` / `EmissiveMap` (`Scene.SetNodeEmissiveMap`) on
+  `PBR.Metallic`, `PBR.Roughness`, `PBR.IOR`, packed linear `PBR.ORMMap` (`NewORMMap`,
+  `NewShaderORMMap`, `Scene.SetNodeORMMap`, `PBR.OcclusionStrength`), and HDR
+  `Emission.Color` / `Emission.Intensity` / `Emission.Map` (`Scene.SetNodeEmissiveMap`) on
   both WebGPU (consolidated 8-binding material group + procedural GPU mip
   downsampling + 6-level GGX-prefiltered environment specular mip chain) and
   software, composing with `Toon` and `Transmission`. `mesh/gltf` decodes real

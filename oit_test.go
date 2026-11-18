@@ -13,7 +13,7 @@ import (
 
 func crossedGlassQuads(t *testing.T) (Geometry, Geometry) {
 	t.Helper()
-	mat := &Material{Unlit: true, Transparent: true}
+	mat := &Material{Shading: ShadeUnlit, Alpha: AlphaTransparent}
 	// quad(half, z, ...) puts vertices in XY plane around z; shift to z=0 first, then tilt around Y
 	// around (0, 0, -2.5) so both intersect along x=0 at centroid (0, 0, -2.5).
 	base := quad(0.75, 0, white, mat, false)
@@ -74,16 +74,16 @@ func TestOITIntersectingOrderInvarianceAndDepthWeighting(t *testing.T) {
 func TestOITOpaqueOcclusionPointsTexturedOutlineAndWireframe(t *testing.T) {
 	tex := testTexture(t, color.RGBA{50, 185, 100, 200})
 	glassMat := &Material{
-		Unlit:       true,
-		Transparent: true,
-		Texture:     tex,
+		Shading: ShadeUnlit,
+		Alpha:   AlphaTransparent,
+		Texture: tex,
 	}
 	glassQuad := quad(0.7, -2.5, color.RGBA{255, 255, 255, 200}, glassMat, false)
 	glassQuad.UV = []UV{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	glassQuad.Outline = OutlineStyle{Width: 2, Color: color.RGBA{255, 220, 60, 255}}
 
 	// Opaque blocker in front (z = -1.5) covering left half; behind-blocker glass must be depth-rejected.
-	wallBase := quad(0.4, -1.5, color.RGBA{200, 40, 40, 255}, &Material{Unlit: true}, false)
+	wallBase := quad(0.4, -1.5, color.RGBA{200, 40, 40, 255}, &Material{Shading: ShadeUnlit}, false)
 	wall, err := TransformGeometry(wallBase, nt3dmath.Translation(nt3dmath.Vec3{X: -0.35}))
 	check(t, err)
 
