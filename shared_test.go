@@ -107,7 +107,7 @@ func TestSharedGeometryRendersAsCopies(t *testing.T) {
 	_, err = s.SetShared("b", sg)
 	check(t, err)
 	other := testTexture(t, color.RGBA{200, 0, 0, 255})
-	check(t, s.SetTexture("b", other))
+	check(t, s.SetNodeTexture(named(t, s, "b"), other))
 	f := frame(t, s)
 	if f.Draws[0].Shared != f.Draws[1].Shared || f.Draws[0].Geometry.Material.Texture != tex || f.Draws[1].Geometry.Material.Texture != other {
 		t.Fatal("a node's texture leaked to the shared geometry")

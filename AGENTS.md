@@ -64,6 +64,9 @@ packages and files and explains what holds the three renderers together.
   `nt3d/mesh`, and so on.
 - Name a file for what it holds, and put a declaration where its name says it
   is. Per-node scene methods are `SetNodeX` and `NodeX`.
+- Scene methods address a node by `NodeID`. One that reaches a whole subtree
+  is `ApplyX(root, …)`. Only `Find` and the create-or-replace shortcuts
+  (`SetGeometry`, `SetShared`, `SetLabel`) take a name; a test holds this.
 - Tests state the behaviour they hold, in their name and in a comment, and are
   written before the code they test. A fix comes with the test that failed
   without it.

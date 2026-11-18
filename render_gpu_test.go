@@ -43,7 +43,7 @@ func TestGPUSceneRevisions(t *testing.T) {
 	if r.uploads != uploads {
 		t.Fatal("parent motion uploaded mesh")
 	}
-	check(t, s.SetTexture("terrain", green))
+	check(t, s.SetNodeTexture(named(t, s, "terrain"), green))
 	img, err = r.Render(frame(t, s))
 	check(t, err)
 	if r.uploads != uploads || r.textureUploads != textures+1 || coloredPixels(img, color.RGBA{0, 255, 0, 255}) < 100 {
@@ -155,7 +155,7 @@ func TestGPUProceduralTexture(t *testing.T) {
 	if coloredPixels(img, red) < 100 {
 		t.Fatal("software fallback missing")
 	}
-	check(t, s.SetTexture("terrain", fallback))
+	check(t, s.SetNodeTexture(named(t, s, "terrain"), fallback))
 	img, err = r.Render(frame(t, s))
 	check(t, err)
 	if len(r.procedural) != 0 || coloredPixels(img, red) < 100 {
@@ -190,7 +190,7 @@ func TestGPUProceduralParameters(t *testing.T) {
 		t.Fatal("initial parameters missing")
 	}
 	resources := r.procedural[proceduralKey{src: first}]
-	check(t, s.SetTexture("terrain", second))
+	check(t, s.SetNodeTexture(named(t, s, "terrain"), second))
 	img, err = r.Render(frame(t, s))
 	check(t, err)
 	if coloredPixels(img, green) < 100 || r.procedural[proceduralKey{src: second}] != resources {
@@ -205,7 +205,7 @@ func TestGPUProceduralParameters(t *testing.T) {
 	mesh.Material.Texture = second
 	_, err = s.SetGeometry("other", mesh)
 	check(t, err)
-	check(t, s.SetTexture("terrain", first))
+	check(t, s.SetNodeTexture(named(t, s, "terrain"), first))
 	_, err = r.Render(frame(t, s))
 	check(t, err)
 	if len(r.procedural) != 2 || r.procedural[proceduralKey{src: first}] == r.procedural[proceduralKey{src: second}] {
@@ -630,7 +630,7 @@ func TestGPUSharedGeometrySplits(t *testing.T) {
 		check(t, err)
 		check(t, s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: float32(i-1) * .5})))
 	}
-	check(t, s.SetTexture("plane 2", other))
+	check(t, s.SetNodeTexture(named(t, s, "plane 2"), other))
 	r := &gpuRenderer{}
 	defer r.Close()
 	_, err = r.Render(frame(t, s))

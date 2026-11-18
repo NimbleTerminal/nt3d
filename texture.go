@@ -560,7 +560,7 @@ func NewShaderTexture(source string, fallback image.Image) (*Texture, error) {
 // NewShaderTextureWithParameters snapshots a procedural texture and its parameters.
 // WGSL can read nt3dTextureParams (vec4<f32>, group 0 binding 0). Parameters must
 // be finite. Supply fallback pixels evaluated with the same parameters for software
-// rendering. Create a new texture and use Scene.SetTexture to advance animation;
+// rendering. Create a new texture and use Scene.SetNodeTexture to advance animation;
 // previous textures and frames remain immutable. Unchanged source and dimensions
 // allow the renderer to reuse GPU resources across successive snapshots.
 func NewShaderTextureWithParameters(source string, parameters [4]float32, fallback image.Image) (*Texture, error) {

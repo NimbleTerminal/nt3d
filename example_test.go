@@ -168,3 +168,28 @@ func ExampleFrame() {
 	// Output:
 	// center: {0 255 0 255}
 }
+
+// Methods named Apply reach a whole subtree: every mesh under the node they
+// are given, as it is when they are called. A node added afterwards is not
+// changed.
+func ExampleScene_ApplyMaterial() {
+	scene := nt3d.NewScene()
+	fleet, _ := scene.Add(nt3d.Root, "fleet")
+	add := func(name string) {
+		id, _ := scene.Add(fleet, name)
+		_ = scene.SetNodeGeometry(id, ball(color.RGBA{R: 200, G: 200, B: 200, A: 255}))
+	}
+	add("tug")
+	add("barge")
+	_ = scene.ApplyMaterial(fleet, &nt3d.Material{Metallic: 1, Roughness: .3})
+	add("ferry")
+
+	frame, _ := scene.StillFrame(nt3d.DefaultCamera(), 32, 32)
+	for _, draw := range frame.Draws {
+		fmt.Println(draw.Name, "is metal:", draw.Geometry.Material.Metallic == 1)
+	}
+	// Output:
+	// tug is metal: true
+	// barge is metal: true
+	// ferry is metal: false
+}

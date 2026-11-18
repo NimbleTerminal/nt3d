@@ -51,7 +51,7 @@ matching mip chain and anisotropic sampling. The material validator rejects a
 To replace an existing map while retaining GPU geometry buffers:
 
 ```go
-if err := scene.SetNormalMap("mesh", replacementNormalMap); err != nil {
+if err := scene.SetNodeNormalMap(node, replacementNormalMap); err != nil {
     return err
 }
 ```

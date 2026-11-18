@@ -155,25 +155,25 @@ func TestGPUSetMaterialSharedGeometryParity(t *testing.T) {
 	check(t, s.SetTransform(frontID, nt3dmath.Translation(nt3dmath.Vec3{Y: -.5})))
 
 	// Make only front transmissive while keeping SharedGeometry intact!
-	check(t, s.SetMaterial(frontID, &Material{
+	check(t, s.ApplyMaterial(frontID, &Material{
 		Transmission: .85,
 		Refraction:   .02,
 		Reflectivity: .08,
 	}))
-	check(t, s.SetMaterial(backID, &Material{PBR: true, Metallic: .2, Roughness: .35}))
+	check(t, s.ApplyMaterial(backID, &Material{PBR: true, Metallic: .2, Roughness: .35}))
 
 	cam := Camera{Elevation: 10, Azimuth: 0, Distance: 2.5, Projection: Perspective}
 	f, err := s.Frame(cam, 96, 96)
 	check(t, err)
 	f.EnvironmentBackgroundOnly = true
 	if f.Draws[0].Shared == 0 || f.Draws[0].Shared != f.Draws[1].Shared {
-		t.Fatal("SharedGeometry was unnecessarily detached by instance-level SetMaterial")
+		t.Fatal("SharedGeometry was unnecessarily detached by instance-level ApplyMaterial")
 	}
 
 	got, err := r.Render(f)
 	check(t, err)
 	want := softwareRender(f)
 	if !closeRGB(at(got, 48, 48), at(want, 48, 48), 8) {
-		t.Fatalf("SetMaterial SharedGeometry transmission parity mismatch: gpu=%v sw=%v", at(got, 48, 48), at(want, 48, 48))
+		t.Fatalf("ApplyMaterial SharedGeometry transmission parity mismatch: gpu=%v sw=%v", at(got, 48, 48), at(want, 48, 48))
 	}
 }

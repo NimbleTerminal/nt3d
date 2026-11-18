@@ -98,7 +98,7 @@ func TestGeometryAndTextureSnapshotOwnership(t *testing.T) {
 		t.Fatal("caller storage retained")
 	}
 	green := testTexture(t, color.RGBA{0, 255, 0, 255})
-	check(t, s.SetTexture("terrain", green))
+	check(t, s.SetNodeTexture(named(t, s, "terrain"), green))
 	after := frame(t, s)
 	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision {
 		t.Fatal("wrong texture revisions")

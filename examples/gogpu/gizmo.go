@@ -39,7 +39,7 @@ func primitiveName(p nt3d.Primitive) string {
 
 func (v *viewerState) clearPick() {
 	if v.selectedNode != nt3d.Root {
-		_ = v.scene.SetOutline(v.selectedNode, nt3d.OutlineStyle{})
+		_ = v.scene.ApplyOutline(v.selectedNode, nt3d.OutlineStyle{})
 		v.selectedNode = nt3d.Root
 	}
 	v.selectedHit = nil
@@ -67,7 +67,7 @@ func (v *viewerState) selectPick(hit *nt3d.Hit, camera nt3d.Camera) {
 			v.selectedLocal = inv.Point(hit.Position)
 		}
 	}
-	_ = v.scene.SetOutline(hit.Node, nt3d.OutlineStyle{
+	_ = v.scene.ApplyOutline(hit.Node, nt3d.OutlineStyle{
 		Width: 3,
 		Color: color.RGBA{255, 210, 60, 255},
 	})

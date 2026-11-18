@@ -134,7 +134,7 @@ func TestGPUVertexDisplacementSoftwareParityInstancingShadowsOutlineAndPick(t *t
 	check(t, err)
 
 	disp0 := testWaveDisplacement(t, 0.35, 0.38, 2.6)
-	check(t, s.SetDisplacement(sheetID, disp0))
+	check(t, s.ApplyDisplacement(sheetID, disp0))
 
 	cam := DefaultCamera()
 	cam.Projection = Perspective
@@ -194,7 +194,7 @@ func TestGPUVertexDisplacementSoftwareParityInstancingShadowsOutlineAndPick(t *t
 
 	disp1, err := disp0.WithParameters(1.9, [][4]float32{{0.42, 2.6, 0, 0}})
 	check(t, err)
-	check(t, s.SetDisplacement(sheetID, disp1))
+	check(t, s.ApplyDisplacement(sheetID, disp1))
 	fB, err := s.Frame(cam, 128, 96)
 	check(t, err)
 	fB.Linear = true
@@ -204,7 +204,7 @@ func TestGPUVertexDisplacementSoftwareParityInstancingShadowsOutlineAndPick(t *t
 	swB := softwareRender(fB)
 
 	if sess.g.uploads != uploadsBefore {
-		t.Fatalf("WithParameters + SetDisplacement re-uploaded geometry (%d -> %d)", uploadsBefore, sess.g.uploads)
+		t.Fatalf("WithParameters + ApplyDisplacement re-uploaded geometry (%d -> %d)", uploadsBefore, sess.g.uploads)
 	}
 	if meanAbsDiff(imgA, imgB) < 2.0 {
 		t.Fatal("expected wave phase update via WithParameters to change GPU output")
@@ -229,7 +229,7 @@ func TestGPUVertexDisplacementSoftwareParityInstancingShadowsOutlineAndPick(t *t
 		t.Fatalf("CPU Pick %v and GPU Pick %v diverged on displaced wave", cpuHit.Position, gpuHit.Position)
 	}
 
-	// 2. Instanced SharedGeometry started untextured (batches[1]), then upgraded via SetDisplacement (batches[7]).
+	// 2. Instanced SharedGeometry started untextured (batches[1]), then upgraded via ApplyDisplacement (batches[7]).
 	sInst := NewScene()
 	pillarMesh := testCuboid(t, nt3dmath.Vec3{X: 0.45, Y: 0.45, Z: 1.0}, color.RGBA{120, 215, 135, 255})
 	sharedPillar, err := NewSharedGeometry(pillarMesh)
@@ -247,7 +247,7 @@ func TestGPUVertexDisplacementSoftwareParityInstancingShadowsOutlineAndPick(t *t
 	camInst.Azimuth = 20
 	camInst.Distance = 5.8
 
-	// Render first BEFORE SetDisplacement so batches[1] is uploaded first!
+	// Render first BEFORE ApplyDisplacement so batches[1] is uploaded first!
 	fInit, err := sInst.Frame(camInst, 128, 96)
 	check(t, err)
 	fInit.Linear = true
@@ -271,7 +271,7 @@ fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput {
 		}
 	})
 	check(t, err)
-	check(t, sInst.SetDisplacement(row, sway))
+	check(t, sInst.ApplyDisplacement(row, sway))
 
 	fSway, err := sInst.Frame(camInst, 128, 96)
 	check(t, err)
@@ -283,7 +283,7 @@ fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput {
 	check(t, err)
 	swSway := softwareRender(fSway)
 	if mad := meanAbsDiff(gpuSway, swSway); mad > 2.8 {
-		t.Fatalf("SharedGeometry SetDisplacement GPU vs Software mean abs diff %.2f > 2.8", mad)
+		t.Fatalf("SharedGeometry ApplyDisplacement GPU vs Software mean abs diff %.2f > 2.8", mad)
 	}
 }
 

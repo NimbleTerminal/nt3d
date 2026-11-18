@@ -76,10 +76,10 @@ func (d *demo) toonStyle(rim float32) nt3d.ToonStyle {
 // and street props their ink. The street takes none: crease lines would trace
 // every road ribbon's border.
 func (d *demo) applyToon() error {
-	if err := d.scene.SetToon(nt3d.Root, d.toonStyle(0)); err != nil {
+	if err := d.scene.ApplyToon(nt3d.Root, d.toonStyle(0)); err != nil {
 		return err
 	}
-	if err := d.scene.SetToon(d.toon.actors, d.toonStyle(.3)); err != nil {
+	if err := d.scene.ApplyToon(d.toon.actors, d.toonStyle(.3)); err != nil {
 		return err
 	}
 	ink := nt3d.OutlineStyle{}
@@ -87,7 +87,7 @@ func (d *demo) applyToon() error {
 		ink = nt3d.OutlineStyle{Width: 2, Color: toonInk, Crease: 30}
 	}
 	for _, id := range []nt3d.NodeID{d.toon.buildings, d.toon.actors, d.toon.props} {
-		if err := d.scene.SetOutline(id, ink); err != nil {
+		if err := d.scene.ApplyOutline(id, ink); err != nil {
 			return err
 		}
 	}

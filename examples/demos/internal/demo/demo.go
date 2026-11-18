@@ -137,16 +137,25 @@ func phaseTick() tea.Cmd {
 	return tea.Tick(time.Second/30, func(t time.Time) tea.Msg { return phaseMsg(t) })
 }
 
+// setTerrainTexture swaps what the terrain shows, keeping its mesh.
+func (d *demo) setTerrainTexture(t *nt3d.Texture) error {
+	id, ok := d.scene.Find("terrain")
+	if !ok {
+		return fmt.Errorf("demo: no terrain to texture")
+	}
+	return d.scene.SetNodeTexture(id, t)
+}
+
 func (d *demo) applyTerrainHooks() error {
 	id, ok := d.scene.Find("terrain")
 	if !ok {
 		return nil
 	}
 	if !d.hooks {
-		if err := d.scene.SetDisplacement(id, nil); err != nil {
+		if err := d.scene.ApplyDisplacement(id, nil); err != nil {
 			return err
 		}
-		return d.scene.SetMaterialShader(id, nil)
+		return d.scene.ApplyMaterialShader(id, nil)
 	}
 	var err error
 	d.waveDisp, err = proceduralWaveDisplacement(d.waveDisp, float32(d.animationTime), d.style)
@@ -157,10 +166,10 @@ func (d *demo) applyTerrainHooks() error {
 	if err != nil {
 		return err
 	}
-	if err := d.scene.SetDisplacement(id, d.waveDisp); err != nil {
+	if err := d.scene.ApplyDisplacement(id, d.waveDisp); err != nil {
 		return err
 	}
-	return d.scene.SetMaterialShader(id, d.matShader)
+	return d.scene.ApplyMaterialShader(id, d.matShader)
 }
 
 func (d *demo) updateTerrainStatus() {
@@ -183,7 +192,7 @@ func (d *demo) updatePlasma() error {
 			return err
 		}
 		d.textures[d.style] = tex
-		if err := d.scene.SetTexture("terrain", tex); err != nil {
+		if err := d.setTerrainTexture(tex); err != nil {
 			return err
 		}
 	}
@@ -519,7 +528,7 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.procedural = !d.procedural
 			err = d.loadTextures()
 			if err == nil {
-				err = d.scene.SetTexture("terrain", d.textures[d.style])
+				err = d.setTerrainTexture(d.textures[d.style])
 			}
 		case "t":
 			if d.toon != nil {
@@ -548,13 +557,13 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.style = 1 - d.style
 			if d.procedural || d.hooks {
 				if !d.procedural {
-					err = d.scene.SetTexture("terrain", d.textures[d.style])
+					err = d.setTerrainTexture(d.textures[d.style])
 				}
 				if err == nil {
 					err = d.updatePlasma()
 				}
 			} else {
-				err = d.scene.SetTexture("terrain", d.textures[d.style])
+				err = d.setTerrainTexture(d.textures[d.style])
 			}
 		case "f":
 			if d.lights != nil {

@@ -192,7 +192,7 @@ func TestSetDisplacementBoundsPaddingLODAndDropShadowStability(t *testing.T) {
 	}
 
 	d1 := testWaveDisplacement(t, 0, 0.75, 2.0)
-	check(t, s.SetDisplacement(id, d1))
+	check(t, s.ApplyDisplacement(id, d1))
 	padded := s.Bounds()
 	wantMin := nt3dmath.Vec3{X: -1.75, Y: -1.75, Z: -1.25}
 	wantMax := nt3dmath.Vec3{X: 1.75, Y: 1.75, Z: 1.25}
@@ -204,7 +204,7 @@ func TestSetDisplacementBoundsPaddingLODAndDropShadowStability(t *testing.T) {
 	for step := 1; step <= 10; step++ {
 		next, err := d1.WithParameters(float32(step)*0.1, [][4]float32{{0.75, 2.0, 0, 0}})
 		check(t, err)
-		check(t, s.SetDisplacement(id, next))
+		check(t, s.ApplyDisplacement(id, next))
 	}
 	if got := s.Bounds(); got != padded {
 		t.Fatalf("bounds drifted across WithParameters updates: got %+v, want %+v", got, padded)
@@ -212,7 +212,7 @@ func TestSetDisplacementBoundsPaddingLODAndDropShadowStability(t *testing.T) {
 
 	dSmall, err := d1.WithMaxDisplacement(0.25)
 	check(t, err)
-	check(t, s.SetDisplacement(id, dSmall))
+	check(t, s.ApplyDisplacement(id, dSmall))
 	if got := s.Bounds(); got.Min != (nt3dmath.Vec3{X: -1.25, Y: -1.25, Z: -0.75}) || got.Max != (nt3dmath.Vec3{X: 1.25, Y: 1.25, Z: 0.75}) {
 		t.Fatalf("unexpected resized bounds: %+v", got)
 	}
@@ -226,12 +226,12 @@ func TestSetDisplacementBoundsPaddingLODAndDropShadowStability(t *testing.T) {
 	}
 
 	// Clearing displacement restores exact rest bounds.
-	check(t, s.SetDisplacement(id, nil))
+	check(t, s.ApplyDisplacement(id, nil))
 	if got := s.Bounds(); got != restBounds {
 		t.Fatalf("restored bounds = %+v, want %+v", got, restBounds)
 	}
 
-	// LOD tiers also receive SetDisplacement and SetMaterialShader cleanly across distance switches.
+	// LOD tiers also receive ApplyDisplacement and ApplyMaterialShader cleanly across distance switches.
 	lodScene := NewScene()
 	lodID, err := lodScene.Add(Root, "lod-mesh")
 	check(t, err)
@@ -244,8 +244,8 @@ func TestSetDisplacementBoundsPaddingLODAndDropShadowStability(t *testing.T) {
 	}))
 
 	ms := testBandMaterialShader(t, 0.5, 2.0)
-	check(t, lodScene.SetDisplacement(lodID, d1))
-	check(t, lodScene.SetMaterialShader(lodID, ms))
+	check(t, lodScene.ApplyDisplacement(lodID, d1))
+	check(t, lodScene.ApplyMaterialShader(lodID, ms))
 
 	nearCam := DefaultCamera()
 	nearCam.Distance = 2.5
@@ -283,8 +283,8 @@ func TestSharedGeometryHooksPreserveInstancing(t *testing.T) {
 	disp := testWaveDisplacement(t, 0.4, 0.3, 1.5)
 	matShader := testBandMaterialShader(t, 0.4, 2.0)
 
-	check(t, s.SetDisplacement(group, disp))
-	check(t, s.SetMaterialShader(group, matShader))
+	check(t, s.ApplyDisplacement(group, disp))
+	check(t, s.ApplyMaterialShader(group, matShader))
 
 	f, err := s.Frame(cam, 120, 90)
 	check(t, err)
@@ -348,7 +348,7 @@ fn nt3dDisplace(in: NT3DVertexInput) -> NT3DVertexOutput {
 	imgRest := softwareRender(fRest)
 	wireRest := wireRender(fRest, 48, 24)
 
-	check(t, s.SetDisplacement(casterID, lift))
+	check(t, s.ApplyDisplacement(casterID, lift))
 	fLifted, err := s.Frame(cam, 96, 96)
 	check(t, err)
 	fLifted.Lighting = lighting

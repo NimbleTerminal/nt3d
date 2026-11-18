@@ -206,7 +206,7 @@ while PBR materials sample a roughness-prefiltered mip chain). Refraction uses t
 opaque scene as described below.
 
 Mesh evaluation runs on the CPU and updates each tile's vertex buffer and bounds
-in place via `tile.Apply(scene, node)` and `scene.SetMaterial`. This is a modest patch, not a large-ocean performance claim. All
+in place via `tile.Apply(scene, node)` and `scene.ApplyMaterial`. This is a modest patch, not a large-ocean performance claim. All
 renderers and picking see that mesh; queries sample the continuous surface.
 Wireframe shows large waves and craft motion, not ripple detail or reflections.
 
@@ -313,7 +313,7 @@ exact bounds, and evaluates identical global coordinates at shared edges; `Apply
 pushes the updated vertices, analytic tangents, and bounds through
 `Scene.SetNodeVerticesWithTangents` so WebGPU overwrites existing vertex buffers
 via `WriteBuffer` without reallocating buffers or re-validating static indices
-and UVs (pair with `scene.SetMaterial(nodes[i], material)` when animating
+and UVs (pair with `scene.ApplyMaterial(nodes[i], material)` when animating
 `FlowPhase` or material toggles). Neighboring tiles match positions, normals, UVs,
 and tangents exactly, including partially filled edge tiles. Base UVs span the
 whole field; normal UVs are anchored to world XY. `RestBounds()` supplies the

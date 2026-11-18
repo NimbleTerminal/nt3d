@@ -125,12 +125,12 @@ func TestGPUCreaseRestyle(t *testing.T) {
 	}
 	lined(true, outlineInk)
 	green := color.RGBA{20, 160, 60, 255}
-	check(t, s.SetOutline(Root, OutlineStyle{Width: 2, Color: green, Crease: 30}))
+	check(t, s.ApplyOutline(Root, OutlineStyle{Width: 2, Color: green, Crease: 30}))
 	lined(true, green)
 	lined(false, outlineInk)
-	check(t, s.SetOutline(Root, OutlineStyle{Width: 2, Color: green}))
+	check(t, s.ApplyOutline(Root, OutlineStyle{Width: 2, Color: green}))
 	lined(false, green)
-	check(t, s.SetOutline(Root, OutlineStyle{Width: 2, Color: green, Crease: 30}))
+	check(t, s.ApplyOutline(Root, OutlineStyle{Width: 2, Color: green, Crease: 30}))
 	lined(true, green)
 }
 
@@ -147,7 +147,7 @@ func TestGPUCreaseSharedAngles(t *testing.T) {
 		id, err := s.SetShared(name, shared)
 		check(t, err)
 		check(t, s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: x}).Mul(nt3dmath.Scaling(nt3dmath.Vec3{X: .4, Y: .4, Z: .4}))))
-		check(t, s.SetOutline(id, OutlineStyle{Width: 2, Color: outlineInk, Crease: crease}))
+		check(t, s.ApplyOutline(id, OutlineStyle{Width: 2, Color: outlineInk, Crease: crease}))
 		return id
 	}
 	sharp := place("sharp", -.7, 30)
@@ -194,7 +194,7 @@ func TestGPUCreaseInstancedDraw(t *testing.T) {
 		check(t, err)
 		check(t, s.SetTransform(id, world))
 	}
-	check(t, s.SetOutline(Root, creaseStyle))
+	check(t, s.ApplyOutline(Root, creaseStyle))
 	f := creaseFrame(t, s)
 	r := &gpuRenderer{}
 	defer r.Close()
@@ -220,7 +220,7 @@ func TestGPUCreaseAnglesBounded(t *testing.T) {
 	mids := cornerEdges(f, 0, false)
 	var img *image.RGBA
 	for i := range 30 {
-		check(t, s.SetOutline(Root, OutlineStyle{Width: 2, Color: outlineInk, Crease: float32(20 + i)}))
+		check(t, s.ApplyOutline(Root, OutlineStyle{Width: 2, Color: outlineInk, Crease: float32(20 + i)}))
 		f = creaseFrame(t, s)
 		img = creaseGPU(t, r, f)
 	}
@@ -390,7 +390,7 @@ func TestGPUCreaseDeformingMatchesSoftware(t *testing.T) {
 		check(t, err)
 		check(t, instS.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: x})))
 	}
-	check(t, instS.SetOutline(Root, creaseStyle))
+	check(t, instS.ApplyOutline(Root, creaseStyle))
 	instF := creaseFrame(t, instS)
 	instR := &gpuRenderer{}
 	defer instR.Close()

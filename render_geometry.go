@@ -103,7 +103,7 @@ type gpuGeometry struct {
 	shared        *sharedGeometry
 	// creases are the mesh's crease edges, by angle, cutout/opacity mode, and
 	// shader flags: nodes that share the mesh may differ. They live as long as
-	// the uploaded mesh; SetOutline does not replace it.
+	// the uploaded mesh; ApplyOutline does not replace it.
 	creases map[creaseUploadKey]*gpuCrease
 }
 

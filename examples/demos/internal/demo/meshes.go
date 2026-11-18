@@ -394,7 +394,7 @@ func (d *demo) instantiateMeshAssets() error {
 			return err
 		}
 		if ms.outlined {
-			if err := d.scene.SetOutline(inst.Root, outlineStyle); err != nil {
+			if err := d.scene.ApplyOutline(inst.Root, outlineStyle); err != nil {
 				return err
 			}
 		}
@@ -658,7 +658,7 @@ func (d *demo) toggleOutlines() error {
 	}
 	for _, entry := range d.meshes.assets {
 		if entry.root != 0 {
-			if err := d.scene.SetOutline(entry.root, outlineStyle); err != nil {
+			if err := d.scene.ApplyOutline(entry.root, outlineStyle); err != nil {
 				return err
 			}
 		}

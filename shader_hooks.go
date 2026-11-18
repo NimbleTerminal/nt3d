@@ -420,12 +420,12 @@ func applyStoredDisplacement(g *sceneGeometry, d *VertexDisplacement) {
 	g.Bounds, g.restBounds = geometryBoundsPair(g.Geometry)
 }
 
-// SetDisplacement sets or clears the VertexDisplacement of every indexed
+// ApplyDisplacement sets or clears the VertexDisplacement of every indexed
 // triangle mesh in root's subtree (including LOD tiers and skeletal/morph
 // deformations) while preserving uploaded GPU mesh buffers and SharedGeometry
 // instancing. Pass nil to restore undisplaced rest geometry. Use Root to update
-// the whole scene.
-func (s *Scene) SetDisplacement(root NodeID, d *VertexDisplacement) error {
+// the whole scene. A mesh added afterwards is not displaced.
+func (s *Scene) ApplyDisplacement(root NodeID, d *VertexDisplacement) error {
 	if d != nil && !d.valid() {
 		return errors.New("nt3d: invalid vertex displacement")
 	}
@@ -530,13 +530,14 @@ func (s *Scene) SetDisplacement(root NodeID, d *VertexDisplacement) error {
 	return nil
 }
 
-// SetMaterialShader sets or clears Material.Shader on every indexed triangle
+// ApplyMaterialShader sets or clears Material.Shader on every indexed triangle
 // mesh in root's subtree (including LOD tiers and skeletal/morph deformations)
 // while preserving existing Material properties, uploaded GPU mesh buffers, and
 // SharedGeometry instancing. Meshes with a nil Material receive a default
 // Material carrying shader when shader is non-nil. Pass nil to clear custom
-// material shaders. Use Root to update the whole scene.
-func (s *Scene) SetMaterialShader(root NodeID, shader *MaterialShader) error {
+// material shaders. Use Root to update the whole scene. A mesh added
+// afterwards keeps its own material.
+func (s *Scene) ApplyMaterialShader(root NodeID, shader *MaterialShader) error {
 	if shader != nil && !shader.valid() {
 		return errors.New("nt3d: invalid material shader")
 	}

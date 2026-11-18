@@ -15,7 +15,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	group, err := s.Add(Root, "group")
 	check(t, err)
 
-	// Non-mesh point node in subtree is ignored by SetMaterial.
+	// Non-mesh point node in subtree is ignored by ApplyMaterial.
 	ptsID, err := s.SetGeometry("pts", Geometry{Points: []Point{{Radius: 2, Color: white}}})
 	check(t, err)
 	check(t, s.Reparent(ptsID, group))
@@ -44,7 +44,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 
 	// Instance-uniform-only material update preserves SharedGeometry and revisions!
 	pbrMat := &Material{PBR: true, Metallic: .8, Roughness: .25, Clearcoat: .5}
-	check(t, s.SetMaterial(group, pbrMat))
+	check(t, s.ApplyMaterial(group, pbrMat))
 	pbrMat.Metallic = .1 // Caller mutation must not leak.
 
 	afterUniform := frame(t, s)
@@ -60,7 +60,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 				t.Fatalf("in-shared material not updated: %+v", m)
 			}
 			if afterUniform.Draws[idx].Shared == 0 || afterUniform.Draws[idx].Revision != before.Draws[idx].Revision {
-				t.Fatal("instance-only SetMaterial broke SharedGeometry")
+				t.Fatal("instance-only ApplyMaterial broke SharedGeometry")
 			}
 		case "out-shared":
 			if afterUniform.Draws[idx].Geometry.Material != nil {
@@ -79,7 +79,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 
 	// Vertex-baked change (Transparent: true) detaches modified SharedGeometry
 	// cleanly while leaving out-shared on sg!
-	check(t, s.SetMaterial(group, &Material{Transparent: true, Specular: .4}))
+	check(t, s.ApplyMaterial(group, &Material{Transparent: true, Specular: .4}))
 	afterTrans := frame(t, s)
 	for idx, inst := range afterTrans.Draws {
 		switch inst.Name {
@@ -95,7 +95,7 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	}
 
 	// Atomic UV validation failure: BuildCuboid has UVs, so add an untextured
-	// mesh without UVs deeper in the subtree and verify textured SetMaterial
+	// mesh without UVs deeper in the subtree and verify textured ApplyMaterial
 	// fails without mutating any sibling.
 	noUV := quad(.5, .5, white, nil, false)
 	noUV.UV = nil
@@ -107,32 +107,32 @@ func TestSetMaterialSubtreeSharedLODAndAtomicErrors(t *testing.T) {
 	img.SetNRGBA(0, 0, color.NRGBA{255, 0, 0, 255})
 	tex, err := NewTexture(img)
 	check(t, err)
-	if err := s.SetMaterial(group, &Material{Texture: tex}); err == nil {
+	if err := s.ApplyMaterial(group, &Material{Texture: tex}); err == nil {
 		t.Fatal("expected error applying textured material to UV-less mesh")
 	}
 	afterErr := frame(t, s)
 	for idx, inst := range afterErr.Draws {
 		if inst.Name == "in-shared" && !afterErr.Draws[idx].Geometry.Material.Transparent {
-			t.Fatal("failed SetMaterial partially mutated sibling")
+			t.Fatal("failed ApplyMaterial partially mutated sibling")
 		}
 	}
 
 	// Clearing material with nil restores default shading across the subtree.
-	check(t, s.SetMaterial(group, nil))
+	check(t, s.ApplyMaterial(group, nil))
 	afterNil := frame(t, s)
 	for idx, inst := range afterNil.Draws {
 		if inst.Name == "in-shared" && afterNil.Draws[idx].Geometry.Material != nil {
-			t.Fatal("nil SetMaterial did not clear material")
+			t.Fatal("nil ApplyMaterial did not clear material")
 		}
 	}
 
 	// Invalid material arguments fail even on empty subtrees.
 	empty, err := s.Add(Root, "empty")
 	check(t, err)
-	if s.SetMaterial(empty, &Material{Metallic: 2}) == nil {
+	if s.ApplyMaterial(empty, &Material{Metallic: 2}) == nil {
 		t.Fatal("accepted out-of-range Metallic")
 	}
-	if s.SetMaterial(NodeID(99999), nil) == nil {
+	if s.ApplyMaterial(NodeID(99999), nil) == nil {
 		t.Fatal("accepted unknown root node")
 	}
 }
@@ -148,7 +148,7 @@ func TestSetMaterialOnDeformedMesh(t *testing.T) {
 	check(t, s.SetDeformation(id, Deformation{Morphs: []MorphTarget{morph}, Weights: []float32{1}}))
 
 	nmap := testNormalMap(t, color.NRGBA{128, 128, 255, 255})
-	check(t, s.SetMaterial(id, &Material{NormalMap: nmap, NormalStrength: 1, Specular: .5}))
+	check(t, s.ApplyMaterial(id, &Material{NormalMap: nmap, NormalStrength: 1, Specular: .5}))
 	f := frame(t, s)
 	check(t, validateFrame(f))
 	if f.Draws[0].Geometry.Material == nil || f.Draws[0].Geometry.Material.NormalMap != nmap || len(f.Draws[0].Geometry.Tangents) != len(g.Vertices) {
@@ -217,7 +217,7 @@ func TestMaterialBaseColorSoftwareShading(t *testing.T) {
 	if got := at(softwareRender(fZero), 24, 24); !closeRGB(got, fZero.Background, 1) {
 		t.Fatalf("zero-alpha BaseColor changed background: got %v, want %v", got, fZero.Background)
 	}
-	check(t, sTrans.SetMaterial(qID, &Material{Unlit: true, Transparent: true, BaseColor: color.RGBA{220, 40, 40, 128}}))
+	check(t, sTrans.ApplyMaterial(qID, &Material{Unlit: true, Transparent: true, BaseColor: color.RGBA{220, 40, 40, 128}}))
 	fHalf, err := sTrans.Frame(topCam, 48, 48)
 	check(t, err)
 	fHalf.Background = color.RGBA{20, 40, 80, 255}

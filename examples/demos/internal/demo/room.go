@@ -148,7 +148,7 @@ func (d *demo) roomKey(key string) (bool, error) {
 			if !r.lightmaps {
 				m.LightMap = nil
 			}
-			if err := d.scene.SetMaterial(s.id, &m); err != nil {
+			if err := d.scene.ApplyMaterial(s.id, &m); err != nil {
 				return true, err
 			}
 		}

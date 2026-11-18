@@ -102,13 +102,12 @@ func NewShaderORMMapWithParameters(source string, parameters [4]float32, fallbac
 	return NewShaderNormalMapWithParameters(source, parameters, fallback)
 }
 
-// SetORMMap replaces an existing ORM map without reuploading mesh buffers.
-func (s *Scene) SetORMMap(name string, t *Texture) error {
-	id, ok := s.Find(name)
+// SetNodeORMMap replaces a node's existing ORM map without reuploading mesh buffers.
+func (s *Scene) SetNodeORMMap(id NodeID, t *Texture) error {
+	n, ok := s.nodes[id]
 	if !ok {
-		return fmt.Errorf("nt3d: unknown node %q", name)
+		return fmt.Errorf("nt3d: unknown node %d", id)
 	}
-	n := s.nodes[id]
 	if !t.valid() || !t.data || n.geometry == nil {
 		return fmt.Errorf("nt3d: ORM replacement requires NewORMMap and ORM-mapped geometry")
 	}
@@ -152,13 +151,12 @@ func (s *Scene) SetORMMap(name string, t *Texture) error {
 	return nil
 }
 
-// SetEmissiveMap replaces an existing emissive map without reuploading mesh buffers.
-func (s *Scene) SetEmissiveMap(name string, t *Texture) error {
-	id, ok := s.Find(name)
+// SetNodeEmissiveMap replaces a node's existing emissive map without reuploading mesh buffers.
+func (s *Scene) SetNodeEmissiveMap(id NodeID, t *Texture) error {
+	n, ok := s.nodes[id]
 	if !ok {
-		return fmt.Errorf("nt3d: unknown node %q", name)
+		return fmt.Errorf("nt3d: unknown node %d", id)
 	}
-	n := s.nodes[id]
 	if !t.valid() || t.data || n.geometry == nil {
 		return fmt.Errorf("nt3d: emissive replacement requires a color texture and emissive-mapped geometry")
 	}
@@ -202,14 +200,14 @@ func (s *Scene) SetEmissiveMap(name string, t *Texture) error {
 	return nil
 }
 
-// SetNormalMap replaces an existing normal map without uploading mesh buffers.
-// Strength and sampling mode remain unchanged; use SetGeometry to change them.
-func (s *Scene) SetNormalMap(name string, t *Texture) error {
-	id, ok := s.Find(name)
+// SetNodeNormalMap replaces a node's existing normal map without uploading mesh
+// buffers. Strength and sampling mode remain unchanged; set the geometry to
+// change them.
+func (s *Scene) SetNodeNormalMap(id NodeID, t *Texture) error {
+	n, ok := s.nodes[id]
 	if !ok {
-		return fmt.Errorf("nt3d: unknown node %q", name)
+		return fmt.Errorf("nt3d: unknown node %d", id)
 	}
-	n := s.nodes[id]
 	if !t.valid() || !t.data || n.geometry == nil {
 		return fmt.Errorf("nt3d: normal replacement requires a normal map and normal-mapped geometry")
 	}
@@ -292,7 +290,7 @@ func NewShaderNormalMap(source string, fallback image.Image) (*Texture, error) {
 
 // NewShaderNormalMapWithParameters generates normal data on the GPU and uses
 // the supplied matching image in software. Filtering and mipmaps remain linear;
-// no sRGB conversion is applied. Use SetNormalMap to advance immutable snapshots.
+// no sRGB conversion is applied. Use SetNodeNormalMap to advance immutable snapshots.
 func NewShaderNormalMapWithParameters(source string, parameters [4]float32, fallback image.Image) (*Texture, error) {
 	t, err := NewShaderTextureWithParameters(source, parameters, fallback)
 	if err != nil {

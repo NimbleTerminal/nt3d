@@ -169,21 +169,21 @@ func TestSceneSetLODSharedPickAndMutators(t *testing.T) {
 		}
 	}
 
-	// SetTexture and SetNormalMap update textured/normal-mapped tiers even when coarser tiers are untextured.
-	check(t, s.SetTexture("prop", texB))
-	check(t, s.SetNormalMap("prop", nmapB))
+	// SetNodeTexture and SetNodeNormalMap update textured/normal-mapped tiers even when coarser tiers are untextured.
+	check(t, s.SetNodeTexture(named(t, s, "prop"), texB))
+	check(t, s.SetNodeNormalMap(named(t, s, "prop"), nmapB))
 	if s.nodes[id].lod[0].geometry.Material.Texture != texB || s.nodes[id].lod[0].geometry.Material.NormalMap != nmapB {
-		t.Fatal("SetTexture/SetNormalMap did not update textured LOD tier")
+		t.Fatal("SetNodeTexture/SetNodeNormalMap did not update textured LOD tier")
 	}
 
-	// SetOutline and SetToon propagate to all LOD tiers in the subtree.
+	// ApplyOutline and ApplyToon propagate to all LOD tiers in the subtree.
 	toon := ToonStyle{Bands: 3}
 	newOutline := OutlineStyle{Width: 3, Color: color.RGBA{1, 2, 3, 255}}
-	check(t, s.SetToon(Root, toon))
-	check(t, s.SetOutline(Root, newOutline))
+	check(t, s.ApplyToon(Root, toon))
+	check(t, s.ApplyOutline(Root, newOutline))
 	for i, l := range s.nodes[id].lod {
 		if l.geometry.Outline != newOutline || l.geometry.Material == nil || l.geometry.Material.Toon != toon {
-			t.Fatalf("tier %d did not receive SetOutline/SetToon: outline=%+v mat=%+v", i, l.geometry.Outline, l.geometry.Material)
+			t.Fatalf("tier %d did not receive ApplyOutline/ApplyToon: outline=%+v mat=%+v", i, l.geometry.Outline, l.geometry.Material)
 		}
 	}
 

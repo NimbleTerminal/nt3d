@@ -25,7 +25,7 @@ import (
 // a lit surface turns away from the viewer.
 //
 // Unlit materials ignore it. It applies to indexed triangles, as Material
-// does; Scene.SetToon changes it on geometry already in a scene.
+// does; Scene.ApplyToon changes it on geometry already in a scene.
 type ToonStyle struct {
 	Bands          int
 	Softness       float32
@@ -91,13 +91,13 @@ const (
 	toonSpot = .5
 )
 
-// SetToon changes the toon style of the indexed meshes in root's subtree,
+// ApplyToon changes the toon style of the indexed meshes now in root's subtree,
 // giving a material to those without one. The zero style turns it off. It
 // preserves animation, deformation, shared mesh buffers, and old frames, and
 // each node's other material settings; a material several nodes hold is
 // copied, never altered. Use Root to change the whole scene. Newly added
 // nodes keep their own style.
-func (s *Scene) SetToon(root NodeID, style ToonStyle) error {
+func (s *Scene) ApplyToon(root NodeID, style ToonStyle) error {
 	if err := style.validate(); err != nil {
 		return err
 	}

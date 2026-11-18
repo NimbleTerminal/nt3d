@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **Breaking: scene methods address nodes one way, by `NodeID`, and a method
+  that reaches a subtree says so.** The texture setters found their node by
+  name, alone among per-node setters, and five methods named `Set…` changed
+  every mesh under a node rather than the node.
+
+  | Before | After |
+  | --- | --- |
+  | `SetTexture(name, t)` | `SetNodeTexture(id, t)` |
+  | `SetNormalMap(name, t)` | `SetNodeNormalMap(id, t)` |
+  | `SetORMMap(name, t)` | `SetNodeORMMap(id, t)` |
+  | `SetEmissiveMap(name, t)` | `SetNodeEmissiveMap(id, t)` |
+  | `SetMaterial(root, m)` | `ApplyMaterial(root, m)` |
+  | `SetToon(root, style)` | `ApplyToon(root, style)` |
+  | `SetOutline(root, style)` | `ApplyOutline(root, style)` |
+  | `SetDisplacement(root, d)` | `ApplyDisplacement(root, d)` |
+  | `SetMaterialShader(root, shader)` | `ApplyMaterialShader(root, shader)` |
+
+  Behaviour is unchanged. Use the ID a setter returned, or `Find(name)`. An
+  `Apply` method changes the meshes under `root` when it is called and
+  remembers nothing, so nodes added later are untouched. `SetGeometry`,
+  `SetShared`, and `SetLabel` still take a name, because they create the node
+  when it is missing; each returns the ID.
+- `Scene.SetNodeLabel(id, label)` labels a node you already hold, as
+  `SetNodeGeometry` and `SetNodeShared` do for geometry.
+
 - **Breaking: every angle set on a camera or a light is in degrees, under a
   name that says what it is.** Orbit angles were in degrees under Greek
   letters while the field of view and spot cones were in radians.

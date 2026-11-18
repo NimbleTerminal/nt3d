@@ -146,10 +146,10 @@ func (d *demo) applyFurToon() error {
 		style = nt3d.ToonStyle{Bands: 3, Shade: toonShade}
 		ink = nt3d.OutlineStyle{Width: furLengths[d.fur.length], Units: nt3d.WorldUnits, Color: toonInk}
 	}
-	if err := d.scene.SetToon(d.group, style); err != nil {
+	if err := d.scene.ApplyToon(d.group, style); err != nil {
 		return err
 	}
-	return d.scene.SetOutline(d.fur.nodes[0], ink)
+	return d.scene.ApplyOutline(d.fur.nodes[0], ink)
 }
 
 func (d *demo) toggleFurToon() error {

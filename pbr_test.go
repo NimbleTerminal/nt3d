@@ -169,7 +169,7 @@ func TestORMMapAndSceneSetters(t *testing.T) {
 		t.Fatal("ORM B/G channels did not modulate metallic/roughness")
 	}
 
-	// Scene.SetORMMap and Scene.SetEmissiveMap bump TextureRevision without bumping Revision.
+	// Scene.SetNodeORMMap and Scene.SetNodeEmissiveMap bump TextureRevision without bumping Revision.
 	s := NewScene()
 	em1 := testTexture(t, color.RGBA{200, 40, 10, 255})
 	em2 := testTexture(t, color.RGBA{20, 180, 220, 255})
@@ -180,17 +180,17 @@ func TestORMMapAndSceneSetters(t *testing.T) {
 	check(t, err)
 	before, err := s.Frame(DefaultCamera(), 64, 64)
 	check(t, err)
-	check(t, s.SetORMMap("mesh", ormMetalSmooth))
+	check(t, s.SetNodeORMMap(named(t, s, "mesh"), ormMetalSmooth))
 	mid, err := s.Frame(DefaultCamera(), 64, 64)
 	check(t, err)
 	if before.Revision != mid.Revision || before.TextureRevision == mid.TextureRevision || mid.Draws[0].Geometry.Material.ORMMap != ormMetalSmooth {
-		t.Fatal("SetORMMap invalidated geometry revision or missed texture revision")
+		t.Fatal("SetNodeORMMap invalidated geometry revision or missed texture revision")
 	}
-	check(t, s.SetEmissiveMap("mesh", em2))
+	check(t, s.SetNodeEmissiveMap(named(t, s, "mesh"), em2))
 	after, err := s.Frame(DefaultCamera(), 64, 64)
 	check(t, err)
 	if mid.Revision != after.Revision || mid.TextureRevision == after.TextureRevision || after.Draws[0].Geometry.Material.EmissiveMap != em2 {
-		t.Fatal("SetEmissiveMap invalidated geometry revision or missed texture revision")
+		t.Fatal("SetNodeEmissiveMap invalidated geometry revision or missed texture revision")
 	}
 
 	// Procedural ORM constructor creates linear-data texture.
@@ -302,8 +302,8 @@ func TestPBRValidation(t *testing.T) {
 	ballID, err := s.SetGeometry("ball", base)
 	check(t, err)
 	for i, m := range badMaterials[:10] {
-		if s.SetMaterial(ballID, m) == nil {
-			t.Fatalf("SetMaterial case %d (%+v): expected validation error", i, m)
+		if s.ApplyMaterial(ballID, m) == nil {
+			t.Fatalf("ApplyMaterial case %d (%+v): expected validation error", i, m)
 		}
 	}
 
@@ -387,12 +387,12 @@ func TestPBRClearcoatGeometricNormalAndIBL(t *testing.T) {
 	fDull.Lighting = Lighting{}
 
 	revBefore := fDull.Revision
-	check(t, s.SetMaterial(ballID, coatBall.Material))
+	check(t, s.ApplyMaterial(ballID, coatBall.Material))
 	fCoat, err := s.Frame(cam, 80, 80)
 	check(t, err)
 	fCoat.Lighting = Lighting{}
 	if fCoat.Revision != revBefore {
-		t.Fatal("SetMaterial with Clearcoat unexpectedly bumped geometry Revision")
+		t.Fatal("ApplyMaterial with Clearcoat unexpectedly bumped geometry Revision")
 	}
 
 	var maxDull, maxCoat uint8
@@ -574,12 +574,12 @@ func TestPBRDielectricSpecularColorAndIntensity(t *testing.T) {
 		f0, err := s.Frame(cam, 96, 96)
 		check(t, err)
 		rev := f0.Revision
-		// Verify SetMaterial changing SpecularColor preserves mesh Revision (instance uniform only).
-		check(t, s.SetMaterial(id, &Material{Roughness: .22, SpecularColor: specCol}))
+		// Verify ApplyMaterial changing SpecularColor preserves mesh Revision (instance uniform only).
+		check(t, s.ApplyMaterial(id, &Material{Roughness: .22, SpecularColor: specCol}))
 		f, err := s.Frame(cam, 96, 96)
 		check(t, err)
 		if f.Revision != rev {
-			t.Fatal("SetMaterial changing SpecularColor unexpectedly bumped geometry Revision")
+			t.Fatal("ApplyMaterial changing SpecularColor unexpectedly bumped geometry Revision")
 		}
 		f.Linear = true
 		f.Background = black

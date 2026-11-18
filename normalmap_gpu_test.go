@@ -131,7 +131,7 @@ func TestGPUNormalMaps(t *testing.T) {
 	check(t, err)
 	uploads := r.uploads
 	for i := 0; i < 2; i++ {
-		check(t, s.SetNormalMap("mesh", testNormalMap(t, color.NRGBA{uint8(128 + i*80), 128, 255, 255})))
+		check(t, s.SetNodeNormalMap(named(t, s, "mesh"), testNormalMap(t, color.NRGBA{uint8(128 + i*80), 128, 255, 255})))
 		f, err = s.Frame(DefaultCamera(), 80, 80)
 		check(t, err)
 		_, err = r.Render(f)

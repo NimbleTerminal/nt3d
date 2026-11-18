@@ -214,7 +214,7 @@ lighting. Changes to static geometry or lighting require rebaking. Animated
 objects still need their own lighting; no probe grid is sampled from this atlas.
 
 Assign the lightmap and its UVs before `Scene.SetGeometry` or
-`NewSharedGeometry`. `Scene.SetMaterial` can replace or remove a lightmap while
+`NewSharedGeometry`. `Scene.ApplyMaterial` can replace or remove a lightmap while
 preserving earlier frame snapshots. Different lightmaps can share geometry but
 use separate draw batches. Hand-built frames must update `Frame.Revision` when
 changing geometry or adding/removing its UV extension, following the usual

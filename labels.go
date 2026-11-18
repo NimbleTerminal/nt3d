@@ -143,15 +143,26 @@ func (l Label) Geometry() (Geometry, error) {
 	return NewBillboard(tex, height*float32(w)/float32(h), height, opacity, l.Transparent, Billboard{Fixed: l.Fixed, Pixels: l.Pixels, NoPick: l.NoPick, Text: l.Text, Color: ink})
 }
 
-// SetLabel replaces a node's label or creates it under Root. Replacing the
-// label preserves its transform and children. Reparent attaches it to a mesh.
-// For many identical labels, build Geometry once and use NewSharedGeometry.
+// SetLabel gives the node called name a label, creating the node under Root
+// if there is none, as SetGeometry does. Replacing the label preserves its
+// transform and children. Reparent attaches it to a mesh. For many identical
+// labels, build Geometry once and use NewSharedGeometry.
 func (s *Scene) SetLabel(name string, label Label) (NodeID, error) {
 	g, err := label.Geometry()
 	if err != nil {
 		return 0, err
 	}
 	return s.SetGeometry(name, g)
+}
+
+// SetNodeLabel gives a node a label in place of whatever it showed, keeping
+// its place in the tree, its transform, and its children.
+func (s *Scene) SetNodeLabel(id NodeID, label Label) error {
+	g, err := label.Geometry()
+	if err != nil {
+		return err
+	}
+	return s.SetNodeGeometry(id, g)
 }
 
 // billboardWorld resolves orientation and pixel scale once, before all renderers

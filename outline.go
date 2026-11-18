@@ -140,10 +140,10 @@ func outlineNormals(vertices []Vertex) []uint32 {
 	return codes
 }
 
-// SetOutline changes the outline of existing geometry in root's subtree.
+// ApplyOutline changes the outline of the geometry now in root's subtree.
 // It preserves animation, deformation, shared mesh buffers, and old frames.
 // Use Root to change the whole scene. Newly added nodes keep their own style.
-func (s *Scene) SetOutline(root NodeID, style OutlineStyle) error {
+func (s *Scene) ApplyOutline(root NodeID, style OutlineStyle) error {
 	if err := style.validate(); err != nil {
 		return err
 	}

@@ -384,7 +384,7 @@ func (s *Scene) SetMaterialVariant(root NodeID, variant string) error {
 				}
 			}
 		}
-		if err := s.SetMaterial(b.node, target); err != nil {
+		if err := s.ApplyMaterial(b.node, target); err != nil {
 			return err
 		}
 	}

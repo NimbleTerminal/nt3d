@@ -100,7 +100,7 @@ type Material struct {
 	// and texture colors unchanged; pass A: 255 for opaque colors (such as opaque
 	// black color.RGBA{A: 255}) and non-zero RGB (such as color.RGBA{R: 255, G: 255,
 	// B: 255, A: 0}) for zero-opacity Transparent materials. Passed per instance so
-	// Scene.SetMaterial preserves uploaded GPU mesh buffers and SharedGeometry
+	// Scene.ApplyMaterial preserves uploaded GPU mesh buffers and SharedGeometry
 	// instancing.
 	BaseColor   color.RGBA
 	Unlit       bool
@@ -415,9 +415,11 @@ func vertexMaterialEqual(old, next Geometry) bool {
 	return true
 }
 
-// SetMaterial replaces the material of every indexed triangle mesh in root's
-// subtree (including LOD tiers). Pass nil to clear materials back to default
-// untextured surface shading.
+// ApplyMaterial replaces the material of every indexed triangle mesh in root's
+// subtree (including LOD tiers), root included, as the subtree is when it is
+// called: like every Apply method it remembers nothing, so a mesh added
+// afterwards keeps its own material. Pass nil to clear materials back to
+// default untextured surface shading.
 //
 // Input materials are copied and validated atomically across the subtree before
 // mutating any node: applying a textured, normal-mapped, ORM-mapped, or
@@ -431,7 +433,7 @@ func vertexMaterialEqual(old, next Geometry) bool {
 // adding/removing maps altogether) automatically re-encode affected mesh nodes
 // and detach modified SharedGeometry instances while preserving previous Frame
 // snapshots. Use Root to update the whole scene.
-func (s *Scene) SetMaterial(root NodeID, m *Material) error {
+func (s *Scene) ApplyMaterial(root NodeID, m *Material) error {
 	if err := validateMaterial(m); err != nil {
 		return err
 	}

@@ -148,7 +148,7 @@ func TestGPUOutlineDeformation(t *testing.T) {
 		if gpu.uploads != 1 {
 			t.Fatalf("pose %d uploaded mesh again: %d", step, gpu.uploads)
 		}
-		check(t, s.SetOutline(id, OutlineStyle{}))
+		check(t, s.ApplyOutline(id, OutlineStyle{}))
 		off, err := s.Frame(DefaultCamera(), 96, 96)
 		check(t, err)
 		noOutline, err := gpu.Render(off)
@@ -156,7 +156,7 @@ func TestGPUOutlineDeformation(t *testing.T) {
 		if coloredPixels(noOutline, outlineInk) != 0 {
 			t.Fatal("GPU toggle retained outline")
 		}
-		check(t, s.SetOutline(id, base.Outline))
+		check(t, s.ApplyOutline(id, base.Outline))
 		if gpu.uploads != 1 {
 			t.Fatal("outline toggle reuploaded mesh")
 		}

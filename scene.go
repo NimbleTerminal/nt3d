@@ -385,8 +385,12 @@ func (s *Scene) SetSplatBudget(n int) {
 	}
 }
 
-// SetGeometry replaces a named node's geometry, or creates a node under Root.
-// All slices and the material are copied. Texture pixels are already immutable.
+// SetGeometry replaces the geometry of the node called name, or creates that
+// node under Root, and returns its ID. It is a shortcut for Find or Add and
+// then SetNodeGeometry; SetShared and SetLabel are the only other methods
+// that take a name. Everything else addresses a node by the ID returned
+// here. All slices and the material are copied. Texture pixels are already
+// immutable.
 func (s *Scene) SetGeometry(name string, g Geometry) (NodeID, error) {
 	if err := g.Validate(); err != nil {
 		return 0, err
@@ -436,7 +440,7 @@ func prepareStoredGeometry(in Geometry) (sceneGeometry, error) {
 // SharedGeometry is a triangle mesh that many nodes show: a forest of one
 // tree, a field of markers. It is checked and copied once and held once;
 // the GPU uploads it once and draws all its nodes in view at once (one
-// instanced draw, or one per texture where SetTexture gave nodes their
+// instanced draw, or one per texture where SetNodeTexture gave nodes their
 // own), and picking indexes it once. It cannot change: to show something
 // else, make another and set it. Points, boxes, lines, and arrows are not
 // shared; they belong to each node's own geometry.
@@ -499,13 +503,13 @@ func (s *Scene) SetNodeShared(id NodeID, sg *SharedGeometry) error {
 	return nil
 }
 
-// SetTexture replaces only an existing texture, preserving mesh buffers.
-func (s *Scene) SetTexture(name string, t *Texture) error {
-	id, ok := s.Find(name)
+// SetNodeTexture replaces the base-color texture of a node that already has
+// one, keeping its mesh buffers: the cheap way to swap what a surface shows.
+func (s *Scene) SetNodeTexture(id NodeID, t *Texture) error {
+	n, ok := s.nodes[id]
 	if !ok {
-		return fmt.Errorf("nt3d: unknown node %q", name)
+		return fmt.Errorf("nt3d: unknown node %d", id)
 	}
-	n := s.nodes[id]
 	if !t.valid() || t.data || n.geometry == nil {
 		return errors.New("nt3d: texture replacement requires a valid texture and textured geometry")
 	}

@@ -98,7 +98,7 @@ func (d *demo) loadAnimatedSample(index, clip int) error {
 		}
 	}()
 	if state.outlined {
-		if err = d.scene.SetOutline(root, animatedOutline); err != nil {
+		if err = d.scene.ApplyOutline(root, animatedOutline); err != nil {
 			return err
 		}
 	}
@@ -236,7 +236,7 @@ func (d *demo) toggleAnimatedOutlines() error {
 	if state.outlined {
 		style = nt3d.OutlineStyle{}
 	}
-	if err := d.scene.SetOutline(state.group, style); err != nil {
+	if err := d.scene.ApplyOutline(state.group, style); err != nil {
 		return err
 	}
 	state.outlined = !state.outlined

@@ -145,7 +145,7 @@ func TestLightMapMaterialSnapshots(t *testing.T) {
 	id, err := s.SetGeometry("baked", g)
 	check(t, err)
 	before := frame(t, s)
-	check(t, s.SetMaterial(id, &Material{LightMap: b}))
+	check(t, s.ApplyMaterial(id, &Material{LightMap: b}))
 	after := frame(t, s)
 	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision {
 		t.Fatal("lightmap replacement must refresh bindings only")
@@ -153,7 +153,7 @@ func TestLightMapMaterialSnapshots(t *testing.T) {
 	if before.Draws[0].Geometry.Material.LightMap != a || after.Draws[0].Geometry.Material.LightMap != b {
 		t.Fatal("material snapshot changed")
 	}
-	check(t, s.SetMaterial(id, nil))
+	check(t, s.ApplyMaterial(id, nil))
 	removed := frame(t, s)
 	if removed.Revision == after.Revision {
 		t.Fatal("removing UV extension did not invalidate mesh")
@@ -162,7 +162,7 @@ func TestLightMapMaterialSnapshots(t *testing.T) {
 	g.Material = nil
 	bad, err := s.SetGeometry("missing-uv", g)
 	check(t, err)
-	if s.SetMaterial(bad, &Material{LightMap: a}) == nil {
+	if s.ApplyMaterial(bad, &Material{LightMap: a}) == nil {
 		t.Fatal("material override accepted missing UVs")
 	}
 }

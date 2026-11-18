@@ -88,7 +88,7 @@ func TestFrameStatsCullingVisibilityAndBatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetTexture("b", tex); err != nil {
+	if err := s.SetNodeTexture(named(t, s, "b"), tex); err != nil {
 		t.Fatal(err)
 	}
 	f, err = s.Frame(cam, 80, 60)

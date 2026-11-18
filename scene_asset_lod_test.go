@@ -291,7 +291,7 @@ func TestSceneAssetWithLODMultiPartSynchronizedBounds(t *testing.T) {
 			st2.Triangles, st2.DrawnInstances, st2.LODTierInstances[:3])
 	}
 
-	// Verify SetDisplacement pads lodRefBounds across all parts synchronously:
+	// Verify ApplyDisplacement pads lodRefBounds across all parts synchronously:
 	// At X = 16, unpadded distance is ~11.3 (> 10 -> LOD1 = 7 tris); with MaxDisplacement = 2.0,
 	// padded prop max X becomes ~6.7 so distance is ~9.3 (<= 10 -> LOD0 = 20 tris)!
 	disp, err := NewVertexDisplacement(
@@ -302,7 +302,7 @@ func TestSceneAssetWithLODMultiPartSynchronizedBounds(t *testing.T) {
 		},
 	)
 	check(t, err)
-	check(t, s.SetDisplacement(inst.Root, disp))
+	check(t, s.ApplyDisplacement(inst.Root, disp))
 	fDisp, err := s.Frame(camAt(16), 320, 240)
 	check(t, err)
 	if fDisp.Stats().Triangles != 20 {

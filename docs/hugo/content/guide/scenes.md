@@ -35,7 +35,19 @@ if err := scene.SetTransform(group, nt3dmath.RotationZ(.4)); err != nil { panic(
 
 Node IDs are stable and never reused, so an ID you hold either still means the same node or means nothing.
 
-nt3d copies what you give it: `SetGeometry` copies the slices, and a `Texture` holds its own snapshot of its pixels. Changing your data afterwards never changes the scene behind your back. `SetTexture` swaps a node's texture without touching its mesh.
+### How a method says which nodes it means
+
+Nodes are addressed by `NodeID`. Every method that reads or changes one node takes its ID first, and every method that makes a node returns the ID. The method's name tells you how far it reaches:
+
+| Name | Reaches | Examples |
+| --- | --- | --- |
+| `SetX`, `SetNodeX`, `NodeX` | The one node `id` names. (Transform and visibility are the node's own, though everything under it moves and hides with it.) | `SetTransform`, `SetNodeGeometry`, `SetNodeTexture`, `SetNodeData`, `NodeLight` |
+| `ApplyX` | Every mesh under `root` when it is called, `root` included. Nothing is remembered: a node added afterwards is not changed. Pass `Root` for the whole scene. | `ApplyMaterial`, `ApplyToon`, `ApplyOutline`, `ApplyDisplacement`, `ApplyMaterialShader` |
+| plural or scene-wide | What is under `root`, or the scene | `Lights(root)`, `Cameras(root)`, `SetLook`, `Bounds` |
+
+Names are for finding, not for addressing. `Find(name)` turns a name into an ID. Three shortcuts take a name because they create the node when it is missing, under `Root`, and replace its contents when it is there: `SetGeometry`, `SetShared`, and `SetLabel`. Each returns the ID, and each has a `SetNode…` form for a node you already hold.
+
+nt3d copies what you give it: `SetGeometry` copies the slices, and a `Texture` holds its own snapshot of its pixels. Changing your data afterwards never changes the scene behind your back. `SetNodeTexture` swaps a node's texture without touching its mesh.
 
 nt3d draws what you give it and nothing more: there are no axes, legends, palettes, or plot ranges. Those belong to whatever is built on top, such as a charting library.
 
@@ -84,7 +96,7 @@ for i, at := range places {
 
 A shared mesh is stored once, indexed for picking once, and uploaded to the GPU once, and the GPU draws all of its visible nodes in one instanced call. In a test of 2,500 spheres, the first frame took 43 ms instead of 189 ms, and each later frame 5.5 ms instead of 13.6 ms.
 
-Shared geometry can't change, and holds only triangles; points, boxes, lines, and arrows belong to each node. Nodes given different textures with `SetTexture` are drawn in separate batches, and transparent nodes are still drawn one by one so they blend in the right order. `SetNodeShared(id, sg)` shares by ID, and frames list shared geometry in `Frame.Shared`. Subtree appearance setters—`SetMaterial` (including per-instance `Material.BaseColor`), `SetMaterialVariant`, `SetDisplacement`, `SetMaterialShader`, `SetOutline`, and `SetToon`—preserve `SharedGeometry` instancing and uploaded GPU mesh buffers across matching instances.
+Shared geometry can't change, and holds only triangles; points, boxes, lines, and arrows belong to each node. Nodes given different textures with `SetNodeTexture` are drawn in separate batches, and transparent nodes are still drawn one by one so they blend in the right order. `SetNodeShared(id, sg)` shares by ID, and frames list shared geometry in `Frame.Shared`. Subtree appearance setters—`ApplyMaterial` (including per-instance `Material.BaseColor`), `SetMaterialVariant`, `ApplyDisplacement`, `ApplyMaterialShader`, `ApplyOutline`, and `ApplyToon`—preserve `SharedGeometry` instancing and uploaded GPU mesh buffers across matching instances.
 
 The [forest demo](../demos/#forest) grows thousands of trees from three shared meshes, and switches them to copies so you can compare.
 

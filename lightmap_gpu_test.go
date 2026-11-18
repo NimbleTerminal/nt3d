@@ -110,7 +110,7 @@ func TestGPULightMapSharedBindings(t *testing.T) {
 	check(t, err)
 	id, err := s.SetShared("b", shared)
 	check(t, err)
-	check(t, s.SetMaterial(id, &Material{LightMap: b}))
+	check(t, s.ApplyMaterial(id, &Material{LightMap: b}))
 	f := frame(t, s)
 	r := &gpuRenderer{}
 	defer r.Close()
@@ -119,7 +119,7 @@ func TestGPULightMapSharedBindings(t *testing.T) {
 	if len(r.draws) != 2 {
 		t.Fatalf("different lightmaps batched into %d draw(s)", len(r.draws))
 	}
-	check(t, s.SetMaterial(id, &Material{LightMap: a}))
+	check(t, s.ApplyMaterial(id, &Material{LightMap: a}))
 	_, err = r.Render(frame(t, s))
 	check(t, err)
 	if len(r.draws) != 1 {

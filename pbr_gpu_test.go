@@ -334,8 +334,8 @@ func TestGPUClearcoatIBLAndSetMaterialParity(t *testing.T) {
 	check(t, err)
 	uploadsBefore := r.uploads
 
-	// Live SetMaterial adding Clearcoat + Sheen reuses GPU mesh buffers with zero re-uploads.
-	check(t, s.SetMaterial(ballID, &Material{
+	// Live ApplyMaterial adding Clearcoat + Sheen reuses GPU mesh buffers with zero re-uploads.
+	check(t, s.ApplyMaterial(ballID, &Material{
 		PBR:                true,
 		Roughness:          .75,
 		Clearcoat:          1,
@@ -353,7 +353,7 @@ func TestGPUClearcoatIBLAndSetMaterialParity(t *testing.T) {
 	got, err := r.Render(f1)
 	check(t, err)
 	if r.uploads != uploadsBefore {
-		t.Fatalf("SetMaterial clearcoat+sheen triggered %d GPU geometry uploads; want 0", r.uploads-uploadsBefore)
+		t.Fatalf("ApplyMaterial clearcoat+sheen triggered %d GPU geometry uploads; want 0", r.uploads-uploadsBefore)
 	}
 	want := softwareRender(f1)
 	if mad := meanAbsDiff(got, want); mad > 3.0 {

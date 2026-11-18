@@ -428,23 +428,23 @@ func TestSetToonSubtree(t *testing.T) {
 	d, err := s.SetGeometry("d", mesh(nil))
 	check(t, err)
 
-	check(t, s.SetToon(a, ToonStyle{Bands: 3}))
+	check(t, s.ApplyToon(a, ToonStyle{Bands: 3}))
 	if got := toonBands(t, s); got[a] != 3 || got[b] != 3 || got[c] != -1 || got[d] > 0 {
-		t.Fatalf("bands after SetToon: %v", got)
+		t.Fatalf("bands after ApplyToon: %v", got)
 	}
 	if m := s.nodes[b].geometry.Material; m.Specular != .5 {
-		t.Fatalf("SetToon lost the material's other fields: %+v", m)
+		t.Fatalf("ApplyToon lost the material's other fields: %+v", m)
 	}
 	before := s.Revision()
-	check(t, s.SetToon(a, ToonStyle{Bands: 3}))
+	check(t, s.ApplyToon(a, ToonStyle{Bands: 3}))
 	if s.Revision() != before {
 		t.Fatal("identical toon style dirtied the scene")
 	}
-	check(t, s.SetToon(a, ToonStyle{}))
+	check(t, s.ApplyToon(a, ToonStyle{}))
 	if got := toonBands(t, s); got[a] != 0 || got[b] != 0 {
 		t.Fatalf("bands after disabling: %v", got)
 	}
-	if s.SetToon(NodeID(999999), ToonStyle{Bands: 2}) == nil || s.SetToon(a, ToonStyle{Bands: 1}) == nil {
+	if s.ApplyToon(NodeID(999999), ToonStyle{Bands: 2}) == nil || s.ApplyToon(a, ToonStyle{Bands: 1}) == nil {
 		t.Fatal("accepted a missing node or an invalid style")
 	}
 }
@@ -456,7 +456,7 @@ func TestSetToonDoesNotShareMaterials(t *testing.T) {
 	check(t, err)
 	y, err := s.SetGeometry("y", quad(.5, 1, white, shared, false))
 	check(t, err)
-	check(t, s.SetToon(x, ToonStyle{Bands: 2}))
+	check(t, s.ApplyToon(x, ToonStyle{Bands: 2}))
 	if got := toonBands(t, s); shared.Toon.Bands != 0 || got[x] != 2 || got[y] != 0 {
 		t.Fatalf("caller's material %d, bands %v", shared.Toon.Bands, got)
 	}
@@ -467,7 +467,7 @@ func TestSetToonPreservesBuffersAndPose(t *testing.T) {
 	old := frame(t, s)
 	rev := s.nodes[id].geometryRevision
 	style := ToonStyle{Bands: 2}
-	check(t, s.SetToon(Root, style))
+	check(t, s.ApplyToon(Root, style))
 	if s.nodes[id].deformation == nil || s.nodes[id].geometryRevision != rev {
 		t.Fatal("toon replaced mesh/deformation")
 	}

@@ -92,7 +92,7 @@ mat := &nt3d.Material{
 - **Roughness and prefiltered IBL.** `Roughness` (0 to 1) widens the GGX microfacet lobe and blurs [environment](../environment/) reflections across a lazily prefiltered six-level GGX equirectangular mip chain combined with a split-sum Fresnel BRDF. Without an environment, hemisphere ambient provides grazing specular reflections.
 - **Clearcoat.** `Clearcoat` (0 to 1) and `ClearcoatRoughness` (0 to 1) add an energy-conserving dielectric top coat (`IOR = 1.5`, `F0 = 0.04`) evaluated along the unperturbed geometric surface normal. Base diffuse, base specular, and sheen beneath the coat attenuate by `(1 - Clearcoat * Fc)`, while `NormalMap` detail (metallic car-paint flakes, wood grain, cobblestones) stays under a smooth glossy lacquer or rain-wet film with its own prefiltered environment IBL and GGX highlights.
 - **Sheen.** `SheenColor` (sRGB; black disables) and `SheenRoughness` (0 to 1) add an Estevez & Kulla Charlie microfiber grazing/retroreflective lobe with Neubelt visibility and directional-albedo energy scaling for velvet, satin, felt, and character clothing.
-- **Packed linear ORM maps.** `NewORMMap` snapshots a linear-data texture following glTF's channel layout: **R** scales indirect diffuse and specular ambient occlusion by `OcclusionStrength` (leaving direct lights unoccluded), **G** multiplies `Roughness`, and **B** multiplies `Metallic`. `NewShaderORMMap` and `NewShaderORMMapWithParameters` generate linear ORM mip chains on the GPU; `Scene.SetORMMap` swaps an existing ORM map without reuploading geometry.
+- **Packed linear ORM maps.** `NewORMMap` snapshots a linear-data texture following glTF's channel layout: **R** scales indirect diffuse and specular ambient occlusion by `OcclusionStrength` (leaving direct lights unoccluded), **G** multiplies `Roughness`, and **B** multiplies `Metallic`. `NewShaderORMMap` and `NewShaderORMMapWithParameters` generate linear ORM mip chains on the GPU; `Scene.SetNodeORMMap` swaps an existing ORM map without reuploading geometry.
 - **Composability.** PBR, Clearcoat, and Sheen compose with `Toon` (quantizing base GGX, clearcoat lacquer highlights, cloth sheen bands, and diffuse cel bands), `Transmission` / `Refraction` / `Absorption` (refracting behind diffuse before adding Fresnel reflections and GGX highlights), `NormalMap`, `Cutout`, and `Transparent`. Press `e` in the [lights demo](../demos/#lights) to compare `PBR`, `PBR ORM+glow`, `coat+sheen`, `shiny`, and `dull`.
 
 ### Emissive colors and maps
@@ -110,7 +110,7 @@ mat := &nt3d.Material{
 }
 ```
 
-`Emissive` is an sRGB color multiplied by `EmissiveIntensity` (default `1` when zero) and optional `EmissiveMap` (`NewTexture` or `NewShaderTexture`, replaceable via `Scene.SetEmissiveMap`). Emission is added before fog. Values with `EmissiveIntensity > 1` exceed `1.0` in HDR scene passes and software float buffers, driving selective glow when `Frame.PostProcess.Bloom` is active.
+`Emissive` is an sRGB color multiplied by `EmissiveIntensity` (default `1` when zero) and optional `EmissiveMap` (`NewTexture` or `NewShaderTexture`, replaceable via `Scene.SetNodeEmissiveMap`). Emission is added before fog. Values with `EmissiveIntensity > 1` exceed `1.0` in HDR scene passes and software float buffers, driving selective glow when `Frame.PostProcess.Bloom` is active.
 
 ## Shader textures
 
@@ -122,7 +122,7 @@ tex, err := nt3d.NewShaderTexture(source, fallback)
 
 The source defines `fn nt3dTexture(uv: vec2<f32>) -> vec4<f32>`, returning an opaque color, with UVs starting at the top left. The fallback image sets the texture's size and is what the software renderer shows.
 
-To animate one, pass parameters: `NewShaderTextureWithParameters(source, [4]float32{phase, 0, 0, 0}, fallback)` exposes them to the shader as `nt3dTextureParams`, a `vec4<f32>` uniform at group 0, binding 0. Make a new texture for each step and give it to `Scene.SetTexture`, with a fallback for the same step. When the source and size are unchanged, the renderer reuses its pipeline and only updates the uniform.
+To animate one, pass parameters: `NewShaderTextureWithParameters(source, [4]float32{phase, 0, 0, 0}, fallback)` exposes them to the shader as `nt3dTextureParams`, a `vec4<f32>` uniform at group 0, binding 0. Make a new texture for each step and give it to `Scene.SetNodeTexture`, with a fallback for the same step. When the source and size are unchanged, the renderer reuses its pipeline and only updates the uniform.
 
 Each frame, the GPU first draws the texture, then the scene that samples it, on the same device and command encoder; only the finished picture is read back. Shaders compile lazily, so a mistake in one is reported when the frame renders. Custom bindings aren't available.
 
@@ -167,7 +167,7 @@ disp, err := nt3d.NewVertexDisplacementWithParameters(
         }
     },
 )
-scene.SetDisplacement(root, disp)
+scene.ApplyDisplacement(root, disp)
 ```
 
 In WGSL, `NT3DVertexInput` supplies `(position, normal, world, uv, time)` and `nt3dDisplaceParam(i)` reads `vec4<f32>` parameter `i` (`0..15`). Because `in.world` carries each instance's world-space rest position, instanced `SharedGeometry` (such as foliage sway across thousands of shared trees) stays batched in a single draw call while varying smoothly across world space. `maxDisplacement` pads frustum-culling, shadow, and picking AABBs relative to rest bounds without accumulating drift or shifting `DropShadow` discs. Software rendering, CPU/GPU shadow maps, silhouette outlines, wireframe, and `Scene.Pick` / `GPUSession.Pick` all evaluate the displaced surface.
@@ -188,7 +188,7 @@ fn nt3dMaterial(in: NT3DMaterialInput) -> vec4<f32> {
 `
 
 matShader, err := nt3d.NewMaterialShaderWithParameters(bandWGSL, 0, [][4]float32{{3.0}}, fallbackFn)
-scene.SetMaterialShader(root, matShader)
+scene.ApplyMaterialShader(root, matShader)
 ```
 
 `NT3DMaterialInput` / `MaterialColorInput` supply `(world, normal, view, uv, color, time)` in **linear light** after vertex color/tint, base-color `Texture` sampling, and `NormalMap` perturbation, and before scene lighting (unless `Material.Unlit` is true), emissive, and fog. Returned RGB values remain unclamped above `1.0` so custom shaders can drive HDR `Bloom` and tone mapping directly, while returned alpha (`0..1`) feeds `Cutout` testing (including perforated directional/point/spot shadow maps and cutout outlines), alpha blending, and Weighted Blended OIT (`Frame.OIT`). Press `w` in the [procedural demo](../demos/#procedural-plasma) to toggle both hooks live.
@@ -221,7 +221,7 @@ it, and transparent meshes retain their vertex/texture opacity. Cutout
 materials keep their alpha test. Morphs and skinning use the current posed
 positions and normals; the GPU reuses its mesh buffers for the extra draw.
 For a loaded character or an already animated subtree, use
-`scene.SetOutline(root, nt3d.OutlineStyle{Width: 2})`. This preserves the
+`scene.ApplyOutline(root, nt3d.OutlineStyle{Width: 2})`. This preserves the
 current pose and shared buffers; pass a zero style to turn it off.
 
 Vertices that share a position with split normals (such as `BuildCuboid`,
@@ -248,7 +248,7 @@ every edge three or more faces share. Faces are joined by vertex position,
 so meshes with a vertex per face corner (`BuildCuboid`, faceted imports)
 work, and the diagonal across a flat quad never gets a line. Lines are depth
 tested and fogged like the hull, and like it leave picking and shadows
-alone. `Scene.SetOutline` changes the angle on geometry already in a scene;
+alone. `Scene.ApplyOutline` changes the angle on geometry already in a scene;
 nodes that show one `SharedGeometry` may each use their own.
 
 Crease lines work on rigid and deforming meshes (skinned, morphed, in-place
@@ -307,7 +307,7 @@ materials ignore `Toon`; points, boxes, lines, and splats are not
 affected. [Fur](#toon-fur) is meshes, and takes it. The GPU and software renderer agree away from band edges.
 
 For geometry already in a scene, such as a loaded or animated model,
-`scene.SetToon(root, style)` sets the style on every indexed mesh under
+`scene.ApplyToon(root, style)` sets the style on every indexed mesh under
 `root`, giving a material to those without one and keeping their other
 settings, poses, and buffers; the zero style turns it off.
 
@@ -320,16 +320,16 @@ with outlines and crease lines: `t` flips the look, `n` changes the bands, and
 [Shell fur](../fur/) takes toon shading as it is: the shells and fins share
 the skin's normals, so the whole coat lands in the same band at each point,
 with the strands still showing inside each tone. Set the style on the node
-that holds the skin, shells, and fins with `scene.SetToon`.
+that holds the skin, shells, and fins with `scene.ApplyToon`.
 
 Ink the skin only. An outline on the shells or fins fringes every strand,
-so `scene.SetOutline(root, …)` on a furred model is not what you want.
+so `scene.ApplyOutline(root, …)` on a furred model is not what you want.
 Give the skin a hull as wide as the fur is long, in world units, and the
 line sits at the tips:
 
 ```go
-scene.SetToon(coat, nt3d.ToonStyle{Bands: 3, Shade: shade})
-scene.SetOutline(skin, nt3d.OutlineStyle{Width: fur.Length, Units: nt3d.WorldUnits, Color: ink})
+scene.ApplyToon(coat, nt3d.ToonStyle{Bands: 3, Shade: shade})
+scene.ApplyOutline(skin, nt3d.OutlineStyle{Width: fur.Length, Units: nt3d.WorldUnits, Color: ink})
 ```
 
 World-unit outlines are clamped to 32 output pixels, which a very close
@@ -342,7 +342,7 @@ to see it.
 `NewShaderNormalMapWithParameters(source, parameters, fallback)` use the same
 `nt3dTexture` WGSL entry point, returning tangent-space XYZ encoded into RGB
 in [0,1]. Alpha is ignored. Assign the result to `NormalMap`, set
-`NormalStrength: 1`, and animate with `Scene.SetNormalMap`.
+`NormalStrength: 1`, and animate with `Scene.SetNodeNormalMap`.
 
 The render target and its mipmaps are linear data, without sRGB conversion.
 `NormalRepeat` chooses tiling or clamping. Software renders the supplied image,
@@ -401,12 +401,12 @@ See [Water](../water/) for a shoreline example and tiled mesh API.
 ## Replacing materials on a subtree
 
 For geometry already in a scene—such as a loaded glTF hierarchy, an animated
-character, `SharedGeometry` instances, or multi-tier `LOD` nodes—`Scene.SetMaterial`
+character, `SharedGeometry` instances, or multi-tier `LOD` nodes—`Scene.ApplyMaterial`
 replaces (or clears, when `nil`) the material on every indexed triangle mesh
 under `root`:
 
 ```go
-err := scene.SetMaterial(root, &nt3d.Material{
+err := scene.ApplyMaterial(root, &nt3d.Material{
     PBR:       true,
     Roughness: .25,
 })

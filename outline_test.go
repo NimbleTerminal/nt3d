@@ -200,7 +200,7 @@ func TestSetOutlinePreservesPoseAndSnapshots(t *testing.T) {
 	old := frame(t, s)
 	rev := s.nodes[id].geometryRevision
 	style := OutlineStyle{Width: 2, Color: outlineInk}
-	check(t, s.SetOutline(Root, style))
+	check(t, s.ApplyOutline(Root, style))
 	if s.nodes[id].deformation == nil || s.nodes[id].geometryRevision != rev {
 		t.Fatal("outline replaced mesh/deformation")
 	}
@@ -213,14 +213,14 @@ func TestSetOutlinePreservesPoseAndSnapshots(t *testing.T) {
 		t.Fatal("deformation lost outline")
 	}
 	before := s.Revision()
-	check(t, s.SetOutline(Root, style))
+	check(t, s.ApplyOutline(Root, style))
 	if s.Revision() != before {
 		t.Fatal("identical outline dirtied scene")
 	}
-	if s.SetOutline(NodeID(999999), style) == nil {
+	if s.ApplyOutline(NodeID(999999), style) == nil {
 		t.Fatal("accepted missing node")
 	}
-	check(t, s.SetOutline(id, OutlineStyle{}))
+	check(t, s.ApplyOutline(id, OutlineStyle{}))
 	if frame(t, s).Draws[0].Geometry.Outline.Width != 0 {
 		t.Fatal("disable ignored")
 	}

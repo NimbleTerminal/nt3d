@@ -178,7 +178,7 @@ func (d *demo) stepWaterTiles() error {
 			m.FlowStrength = .7
 		}
 		tile.wave.Geometry.Material = &m
-		if err := d.scene.SetMaterial(tile.mesh, &m); err != nil {
+		if err := d.scene.ApplyMaterial(tile.mesh, &m); err != nil {
 			return err
 		}
 		if err := tile.wave.Update(w.surface, d.animationTime); err != nil {

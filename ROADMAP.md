@@ -206,7 +206,7 @@ Nothing queued; the sections below are the open work.
   `Material.SheenRoughness` (`0..1`) add an Estevez & Kulla Charlie microfiber
   grazing/retroreflective lobe with Neubelt visibility, directional-albedo base
   energy scaling, ambient cloth sheen, and quantized cel cloth bands across
-  both WebGPU and software renderers while preserving `Scene.SetMaterial` GPU
+  both WebGPU and software renderers while preserving `Scene.ApplyMaterial` GPU
   mesh buffers and `SharedGeometry` instancing. `nt3d/mesh/gltf` promotes
   `KHR_materials_clearcoat` and `KHR_materials_sheen` out of
   `ignoredExtensions` into `supportedExtensions`. Showcased in `lights` (`e`
@@ -233,8 +233,8 @@ Nothing queued; the sections below are the open work.
 - **Data-driven shader hooks (`VertexDisplacement` and `MaterialShader`)**:
   `Geometry.Displacement` (`NewVertexDisplacement`,
   `NewVertexDisplacementWithParameters`, `WithParameters`, `WithMaxDisplacement`,
-  `Scene.SetDisplacement`) and `Material.Shader` (`NewMaterialShader`,
-  `NewMaterialShaderWithParameters`, `WithParameters`, `Scene.SetMaterialShader`)
+  `Scene.ApplyDisplacement`) and `Material.Shader` (`NewMaterialShader`,
+  `NewMaterialShaderWithParameters`, `WithParameters`, `Scene.ApplyMaterialShader`)
   pair immutable WGSL (`fn nt3dDisplace` / `fn nt3dMaterial` plus `Time` and up
   to `MaxShaderParameters = 16` `vec4` uniforms) with pure-Go fallbacks
   (`VertexDisplaceFunc` / `MaterialColorFunc`). WebGPU compiles lazily cached
@@ -250,7 +250,7 @@ Nothing queued; the sections below are the open work.
   toggles live wave displacement + crest material shader hooks).
 
 - **In-place fixed-topology mesh updates, `Material.EnvironmentReflect`, and
-  subtree `Scene.SetMaterial`**: `Scene.SetNodeVertices`,
+  subtree `Scene.ApplyMaterial`**: `Scene.SetNodeVertices`,
   `Scene.UpdateNodeVertices`, `Scene.SetNodeVerticesWithTangents`, and
   `(*nt3dwater.WaveTile).Apply` update animated mesh vertices and tangents
   without re-validating or cloning indices/UVs/materials, skip `O(V + I)` frame
@@ -260,7 +260,7 @@ Nothing queued; the sections below are the open work.
   buffer reallocations). `Material.EnvironmentReflect` opts classic
   `Reflectivity` and `PBR` surfaces into environment reflections while
   `Frame.EnvironmentBackgroundOnly` keeps diffuse environment SH lighting off
-  for the rest of the scene. `Scene.SetMaterial` atomically validates and
+  for the rest of the scene. `Scene.ApplyMaterial` atomically validates and
   replaces (or clears) materials across indexed meshes in a subtree—including
   `SharedGeometry`, `LOD` tiers, and deformed meshes—preserving GPU mesh
   buffers and instanced `SharedGeometry` when vertex-baked fields are unchanged.
@@ -287,8 +287,8 @@ Nothing queued; the sections below are the open work.
 - **Cook-Torrance GGX PBR, ORM maps, roughness-filtered IBL, HDR emissive
   materials, and glTF material extensions**: unified `Material` gains `PBR`,
   `Metallic`, `Roughness`, `IOR`, packed linear `ORMMap` (`NewORMMap`,
-  `NewShaderORMMap`, `Scene.SetORMMap`, `OcclusionStrength`), and HDR
-  `Emissive` / `EmissiveIntensity` / `EmissiveMap` (`Scene.SetEmissiveMap`) on
+  `NewShaderORMMap`, `Scene.SetNodeORMMap`, `OcclusionStrength`), and HDR
+  `Emissive` / `EmissiveIntensity` / `EmissiveMap` (`Scene.SetNodeEmissiveMap`) on
   both WebGPU (consolidated 8-binding material group + procedural GPU mip
   downsampling + 6-level GGX-prefiltered environment specular mip chain) and
   software, composing with `Toon` and `Transmission`. `mesh/gltf` decodes real
@@ -310,7 +310,7 @@ Nothing queued; the sections below are the open work.
   `mipmaps`, and `lights`), and `examples/gogpu` (`-msaa`, `-post`, `4`/`M`,
   `F12`/`X`).
 - **Toon shading, crease lines, and the toon demo** (`2d82e04`…): `Material.Toon`
-  / `ToonStyle` and `Scene.SetToon`, banded diffuse and cast shadows with a
+  / `ToonStyle` and `Scene.ApplyToon`, banded diffuse and cast shadows with a
   shade tint, flat specular, and rim; `OutlineStyle.Crease` for sharp-edge
   ink on opaque rigid meshes; both in the GPU and software renderers. The
   `toon` demo shows them on Spot, the robot, and a baked Flatiron block.

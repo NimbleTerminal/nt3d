@@ -37,7 +37,7 @@ func TestSceneGeometryRevisions(t *testing.T) {
 	check(t, err)
 	check(t, s.SetNodeGeometry(b, g))
 	before := frame(t, s)
-	check(t, s.SetTexture("b", testTexture(t, color.RGBA{0, 255, 0, 255})))
+	check(t, s.SetNodeTexture(named(t, s, "b"), testTexture(t, color.RGBA{0, 255, 0, 255})))
 	after := frame(t, s)
 	if before.Draws[0].Revision != after.Draws[0].Revision || before.Draws[0].Geometry.Material.Texture != tex {
 		t.Fatal("texture edit invalidated mesh or mutated snapshot")

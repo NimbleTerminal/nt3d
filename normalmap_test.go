@@ -91,7 +91,7 @@ func TestNormalMapReplacement(t *testing.T) {
 	before, err := s.Frame(DefaultCamera(), 80, 80)
 	check(t, err)
 	next := testNormalMap(t, color.NRGBA{128, 218, 218, 255})
-	check(t, s.SetNormalMap("mesh", next))
+	check(t, s.SetNodeNormalMap(named(t, s, "mesh"), next))
 	after, err := s.Frame(DefaultCamera(), 80, 80)
 	check(t, err)
 	if before.Revision != after.Revision || before.TextureRevision == after.TextureRevision || before.Draws[0].Geometry.Material.NormalMap == next {

@@ -2,6 +2,7 @@ package nt3d
 
 import (
 	"slices"
+	"testing"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
@@ -49,4 +50,14 @@ func drawsOf(geometry ...Geometry) []Draw {
 func placeAlone(f *Frame, world nt3dmath.Mat4) {
 	clearPlacements(f)
 	f.Draws[0].World = world
+}
+
+// named is the node called name, which the test expects to exist.
+func named(t testing.TB, s *Scene, name string) NodeID {
+	t.Helper()
+	id, ok := s.Find(name)
+	if !ok {
+		t.Fatalf("no node named %q", name)
+	}
+	return id
 }

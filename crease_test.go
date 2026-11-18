@@ -155,12 +155,12 @@ func TestCreaseValidation(t *testing.T) {
 	check(t, err)
 	for _, c := range []float32{-1, 181, float32(math.NaN())} {
 		style := OutlineStyle{Width: 2, Crease: c}
-		if style.validate() == nil || s.SetOutline(Root, style) == nil {
+		if style.validate() == nil || s.ApplyOutline(Root, style) == nil {
 			t.Fatalf("accepted crease %v", c)
 		}
 	}
 	for _, c := range []float32{0, 180} {
-		check(t, s.SetOutline(Root, OutlineStyle{Width: 2, Crease: c}))
+		check(t, s.ApplyOutline(Root, OutlineStyle{Width: 2, Crease: c}))
 	}
 }
 
@@ -194,7 +194,7 @@ func TestCreasedEligibility(t *testing.T) {
 		}
 	}
 	s, _, _ := animationSkinScene(t)
-	check(t, s.SetOutline(Root, style))
+	check(t, s.ApplyOutline(Root, style))
 	if f := frame(t, s); f.Draws[0].Geometry.Outline != style || !creased(&f.Draws[0].Geometry) {
 		t.Fatal("a deformed mesh skipped crease lines")
 	}
@@ -634,8 +634,8 @@ func TestCreaseSharedAngles(t *testing.T) {
 	check(t, err)
 	check(t, s.SetTransform(a, nt3dmath.Translation(nt3dmath.Vec3{X: -.6})))
 	check(t, s.SetTransform(b, nt3dmath.Translation(nt3dmath.Vec3{X: .6})))
-	check(t, s.SetOutline(a, creaseStyle))
-	check(t, s.SetOutline(b, OutlineStyle{Width: 2, Color: outlineInk}))
+	check(t, s.ApplyOutline(a, creaseStyle))
+	check(t, s.ApplyOutline(b, OutlineStyle{Width: 2, Color: outlineInk}))
 	f := creaseFrame(t, s)
 	img := softwareRender(f)
 	for i := range f.Draws {
