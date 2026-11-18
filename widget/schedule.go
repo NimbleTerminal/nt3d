@@ -167,15 +167,18 @@ func (m *Model) dress(f *nt3d.Frame) {
 
 // frame uses the exact encoding target but projects with physical display
 // aspect, which differs from pixel aspect in glyph mode and after rounding.
-func (m *Model) frame() Frame {
+func (m *Model) frame() (Frame, error) {
 	g := m.pic.RasterGeometry()
 	cam := m.camera
 	if cam.AspectRatio == 0 && g.DisplayAspect > 0 {
 		cam.AspectRatio = float64(float32(g.DisplayAspect))
 	}
-	f, _ := m.scene.Frame(cam, max(1, g.Pixels.X), max(1, g.Pixels.Y))
+	f, err := m.scene.Frame(cam, max(1, g.Pixels.X), max(1, g.Pixels.Y))
+	if err != nil {
+		return Frame{}, err
+	}
 	m.dress(&f)
-	return f
+	return f, nil
 }
 
 // ready reports whether a render can start: the view is started and open,
@@ -191,9 +194,14 @@ func (m *Model) schedule() tea.Cmd {
 	m.busy = true
 	m.dirty = false
 	resolutionCmd := m.resolution()
-	f := m.frame()
+	f, frameErr := m.frame()
 	geometry := m.pic.RasterGeometry()
 	id, seq, renderMode, r, cols, rows, fallBack, post := m.id, m.seq, m.renderMode, m.renderer, m.width, m.height, m.gpuFailure == FallBackOnGPUFailure, m.imageFilter
+	if frameErr != nil {
+		// The scene took no frame, so no renderer has anything to draw: the
+		// error is the frame's, whichever renderer was to draw it.
+		return tea.Batch(resolutionCmd, func() tea.Msg { return rendered{id: id, seq: seq, renderMode: renderMode, err: frameErr} })
+	}
 	return tea.Batch(resolutionCmd, func() tea.Msg {
 		start := time.Now()
 		var img image.Image

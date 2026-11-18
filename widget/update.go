@@ -167,7 +167,7 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		default:
 			return m, m.schedule()
 		}
-		m.camera = m.camera.Valid()
+		m.camera = adopt(m.camera)
 		m.lastInput = time.Now()
 		return m, m.changed(false)
 	case tea.MouseMsg:

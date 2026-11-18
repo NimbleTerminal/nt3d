@@ -19,6 +19,11 @@ packages and files and explains what holds the three renderers together.
 - **Angles on cameras and lights are degrees,** named for what they measure
   (`Elevation`, `Azimuth`, `FOV`, `InnerAngle`). Package `math` takes
   radians, as Go's `math` does. Convert where a file's radians come in.
+- **Wrong input is an error, not a correction.** `Geometry`, `Material`, and
+  `Camera` each have one set of rules (`Validate`), and the scene returns its
+  error. Only two things are corrected silently, and both are documented: a
+  zero means the default, and an orbit camera's angles and distance are held
+  to their limits.
 - **A zero value should draw something sensible.** `Draw{Geometry: g}` alone
   draws `g`. Prefer `Hidden`-style flags, where zero is the usual case.
 - **The engine links no terminal UI.** Only `widget` imports Bubble Tea; a

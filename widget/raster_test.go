@@ -20,7 +20,7 @@ func TestRasterTargetMatchesEncodedFrame(t *testing.T) {
 	drain(t, m, m.pic.SetMode(picture.PictureKitty))
 	m.shrink = .7
 	drain(t, m, m.resolution())
-	f := m.frame()
+	f := frameOf(t, m)
 	if f.Width != 289 || f.Height != 219 {
 		t.Fatalf("frame %dx%d, want 289x219", f.Width, f.Height)
 	}
@@ -45,7 +45,7 @@ func TestRasterTargetMatchesEncodedFrame(t *testing.T) {
 	}
 	m.forceGlyph = true
 	drain(t, m, m.pic.SetMode(picture.PictureGlyph))
-	f = m.frame()
+	f = frameOf(t, m)
 	if f.Width != 107 || f.Height != 86 || f.Matrix != m.camera.Matrix(float32(963.0/731)) {
 		t.Fatal("glyph target/aspect mismatch")
 	}
@@ -63,7 +63,7 @@ func TestStaleRasterFrameIsDrawnAgain(t *testing.T) {
 	if m.pic.RasterGeometry() == stale {
 		t.Fatal("raster did not change")
 	}
-	img, err := nt3d.NewSoftwareRenderer().Render(m.frame())
+	img, err := nt3d.NewSoftwareRenderer().Render(frameOf(t, m))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestRasterResolutionFollowsRenderModeAndBudget(t *testing.T) {
 	}
 	drain(t, m, m.SetRenderMode(WebGPU))
 	drain(t, m, m.resolution())
-	f := m.frame()
+	f := frameOf(t, m)
 	if f.Width <= 800 || f.Width*f.Height > nt3d.MaxFramePixels {
 		t.Fatal("GPU resolution not restored within budget")
 	}
@@ -132,7 +132,7 @@ func TestRasterResolutionFollowsRenderModeAndBudget(t *testing.T) {
 	m.forceGlyph = true
 	drain(t, m, m.pic.SetTerminal(false, 1, 2))
 	drain(t, m, m.SetSize(4096, 2160))
-	f = m.frame()
+	f = frameOf(t, m)
 	if f.Width*f.Height > nt3d.MaxFramePixels || f.Width != m.width || f.Height != 2*m.height {
 		t.Fatal("large glyph layout exceeds budget")
 	}

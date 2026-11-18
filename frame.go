@@ -214,6 +214,9 @@ func (s *Scene) StillFrame(camera Camera, width, height int) (Frame, error) {
 }
 
 func (s *Scene) frame(camera Camera, width, height int, still bool) (Frame, error) {
+	if err := camera.Validate(); err != nil {
+		return Frame{}, err
+	}
 	if err := s.UpdateDeformations(); err != nil {
 		return Frame{}, err
 	}

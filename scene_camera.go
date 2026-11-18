@@ -16,8 +16,11 @@ func (s *Scene) SetNodeCamera(id NodeID, camera Camera) error {
 	if n == nil || id == Root {
 		return fmt.Errorf("nt3d: invalid camera node")
 	}
+	camera.Pose = nt3dmath.Mat4{} // The node's transform places it.
+	if err := camera.Validate(); err != nil {
+		return err
+	}
 	camera = camera.Valid()
-	camera.Pose = nt3dmath.Mat4{}
 	n.camera = &camera
 	s.changed(false, false)
 	return nil

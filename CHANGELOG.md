@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Breaking: a camera that cannot mean what it says is an error.** A camera
+  used to be corrected silently, so a mistake drew some other view: a `FOV`
+  of 200 drew at 45, a `Far` nearer than `Near` turned both off, and a
+  mirrored `Pose` was dropped for the orbit camera. `Camera.Validate` now
+  reports these, and `Scene.Frame`, `Scene.StillFrame`, and
+  `Scene.SetNodeCamera` return its error, as they do for a geometry.
+
+  | A camera with | Before | After |
+  | --- | --- | --- |
+  | `FOV` negative or 180 and over | drew at 45 degrees | error |
+  | `Far` at or before `Near`, or either negative | automatic clipping | error |
+  | only one of `Xmag`, `Ymag` | both ignored | error |
+  | a flattened or mirrored `Pose` | the orbit camera | error |
+  | NaN or infinity anywhere | the default | error |
+  | negative `Distance`, `AspectRatio`, `ResumeAfter` | the default | error |
+  | zero `Distance`, `FOV`, `Near`, `Far`, extents | the default | the default |
+  | `Elevation` past ±89, `Distance` out of range | held to the limit | held to the limit |
+
+  Methods that cannot return an error (`Matrix`, `Eye`, `Orbit`, `Pick`, and
+  `Valid`) still compute with a corrected camera, so nothing panics. The
+  widget keeps an invalid camera as given and draws nothing with it: `Err`
+  reports why until a sound camera is set. The widget also used to discard an
+  error from `Scene.Frame`; it reports that too.
+
 - **Breaking: scene methods address nodes one way, by `NodeID`, and a method
   that reaches a subtree says so.** The texture setters found their node by
   name, alone among per-node setters, and five methods named `Set…` changed

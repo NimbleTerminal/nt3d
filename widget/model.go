@@ -166,8 +166,9 @@ func WithDefaultKeyBindings(enabled bool) Option {
 // WithRenderer transfers lifecycle ownership to the widget.
 func WithRenderer(r nt3d.Renderer) Option { return func(m *Model) { m.renderer = r } }
 
-// WithCamera sets the widget's initial sanitized camera.
-func WithCamera(c nt3d.Camera) Option { return func(m *Model) { m.camera = c.Valid() } }
+// WithCamera sets the widget's initial camera. One that fails
+// nt3d.Camera.Validate draws nothing, and Err reports it.
+func WithCamera(c nt3d.Camera) Option { return func(m *Model) { m.camera = adopt(c) } }
 
 // WithBackground sets the widget's initial opaque background color.
 func WithBackground(c color.Color) Option {
@@ -373,9 +374,21 @@ func (m *Model) Fit() tea.Cmd {
 	return m.SetCamera(m.camera.Fit(m.scene.Bounds(), aspect))
 }
 
-// SetCamera updates the widget's sanitized camera and schedules a render.
+// adopt is the camera the widget keeps for one it is given: as it is used,
+// with defaults filled in, when it is sound, and unchanged when it is not, so
+// that the frame taken with it reports what is wrong.
+func adopt(c nt3d.Camera) nt3d.Camera {
+	if c.Validate() != nil {
+		return c
+	}
+	return c.Valid()
+}
+
+// SetCamera updates the widget's camera and schedules a render. A camera
+// that fails nt3d.Camera.Validate draws nothing: Err reports it until a
+// sound one is set.
 func (m *Model) SetCamera(c nt3d.Camera) tea.Cmd {
-	m.camera = c.Valid()
+	m.camera = adopt(c)
 	m.wake++
 	return m.changed(false)
 }

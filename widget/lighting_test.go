@@ -14,7 +14,7 @@ import (
 func TestSetLighting(t *testing.T) {
 	m := New(scene(t), 20, 8)
 	defer m.Close()
-	if got := m.frame().Lighting; !reflect.DeepEqual(got, nt3d.DefaultLighting()) {
+	if got := frameOf(t, m).Lighting; !reflect.DeepEqual(got, nt3d.DefaultLighting()) {
 		t.Fatalf("default lighting %+v", got)
 	}
 	l := nt3d.Lighting{
@@ -22,7 +22,7 @@ func TestSetLighting(t *testing.T) {
 		Lights:  []nt3d.Light{{Kind: nt3d.PointLight, Position: nt3dmath.Vec3{Z: 2}, Range: 4}},
 	}
 	m.SetLighting(l)
-	if got := m.frame().Lighting; !reflect.DeepEqual(got, l) {
+	if got := frameOf(t, m).Lighting; !reflect.DeepEqual(got, l) {
 		t.Fatalf("lighting %+v, want %+v", got, l)
 	}
 }
@@ -34,7 +34,7 @@ func TestSetLightingCopiesLights(t *testing.T) {
 	defer m.Close()
 	l := nt3d.Lighting{Lights: []nt3d.Light{{Kind: nt3d.PointLight, Position: nt3dmath.Vec3{Z: 2}}}}
 	m.SetLighting(l)
-	f := m.frame()
+	f := frameOf(t, m)
 	l.Lights[0].Position.X = 5
 	if got := f.Lighting.Lights[0].Position.X; got != 0 {
 		t.Fatalf("frame's light moved with the caller's: X = %v", got)
@@ -47,12 +47,12 @@ func TestSceneEnvironmentReachesWidget(t *testing.T) {
 	defer m.Close()
 	e := nt3d.GradientEnvironment(color.RGBA{60, 100, 200, 255}, color.RGBA{200, 220, 240, 255}, color.RGBA{90, 80, 70, 255})
 	s.SetEnvironment(e)
-	f := m.frame()
+	f := frameOf(t, m)
 	if f.Environment != e {
 		t.Fatal("scene environment lost in widget frame")
 	}
 	s.SetEnvironment(nil)
-	if m.frame().Environment != nil || f.Environment != e {
+	if frameOf(t, m).Environment != nil || f.Environment != e {
 		t.Fatal("widget environment snapshot changed")
 	}
 }
@@ -70,7 +70,7 @@ func TestSceneLookReachesWidget(t *testing.T) {
 	s.SetLook(look)
 	m := New(s, 20, 8)
 	defer m.Close()
-	f := m.frame()
+	f := frameOf(t, m)
 	if f.Background != look.Background || f.Fog != look.Fog || f.PostProcess != look.PostProcess || f.Lighting.Ambient != look.Lighting.Ambient {
 		t.Fatalf("widget frame has background %v, fog %v, effects %v, ambient %v; want the scene's look", f.Background, f.Fog, f.PostProcess, f.Lighting.Ambient)
 	}
@@ -80,7 +80,7 @@ func TestSceneLookReachesWidget(t *testing.T) {
 	m.SetPostProcess(effects)
 	m.SetBackground(color.RGBA{200, 0, 0, 255})
 	m.SetLighting(nt3d.DefaultLighting())
-	f = m.frame()
+	f = frameOf(t, m)
 	if f.Fog != fog || f.PostProcess != effects || f.Background != (color.RGBA{200, 0, 0, 255}) || !reflect.DeepEqual(f.Lighting, nt3d.DefaultLighting()) {
 		t.Fatalf("widget frame has background %v, fog %v, effects %v, lighting %+v; want the widget's own", f.Background, f.Fog, f.PostProcess, f.Lighting)
 	}
@@ -91,7 +91,7 @@ func TestWidgetOptionsStandOverSceneLook(t *testing.T) {
 	s.SetLook(nt3d.Look{Background: color.RGBA{10, 20, 30, 255}, PostProcess: nt3d.PostProcess{Exposure: 1.5}})
 	m := New(s, 20, 8, WithBackground(color.RGBA{0, 200, 0, 255}), WithPostProcess(nt3d.PostProcess{Vignette: .5}))
 	defer m.Close()
-	f := m.frame()
+	f := frameOf(t, m)
 	if f.Background != (color.RGBA{0, 200, 0, 255}) || f.PostProcess != (nt3d.PostProcess{Vignette: .5}) {
 		t.Fatalf("widget frame has background %v and effects %v, want the options'", f.Background, f.PostProcess)
 	}

@@ -69,7 +69,7 @@ func TestSceneEditsAndResize(t *testing.T) {
 	m := New(s, 30, 10, WithRenderMode(Software))
 	defer m.Close()
 	m.started = true
-	old := m.frame()
+	old := frameOf(t, m)
 	id, _ := s.Find("point")
 	if err := s.SetTransform(id, nt3dmath.Translation(nt3dmath.Vec3{X: .2})); err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestSceneEditsAndResize(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("scene change not scheduled")
 	}
-	if next := m.frame(); old.Revision != next.Revision || next.Draws[0].World[12] != .2 {
+	if next := frameOf(t, m); old.Revision != next.Revision || next.Draws[0].World[12] != .2 {
 		t.Fatal("transform update")
 	}
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 20})
@@ -235,7 +235,7 @@ func TestFitShowsTheScene(t *testing.T) {
 	if m.Camera().Target != (nt3dmath.Vec3{X: 1000, Y: -500, Z: 40}) {
 		t.Fatalf("target %v", m.Camera().Target)
 	}
-	f := m.frame()
+	f := frameOf(t, m)
 	b := s.Bounds()
 	for _, p := range []nt3dmath.Vec3{b.Min, b.Max} {
 		if _, _, _, ok := f.Matrix.Project(p, f.Width, f.Height); !ok {
@@ -478,4 +478,46 @@ func TestFrameErrorKeepsHeldGPURenderer(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A camera the scene refuses is reported through Err instead of being drawn
+// as some other view, and a sound camera clears it.
+func TestInvalidCameraIsReported(t *testing.T) {
+	m := New(scene(t), 30, 10, WithRenderMode(Software), WithCamera(nt3d.Camera{FOV: 200}))
+	defer m.Close()
+	m.started = true
+	m.Update(m.schedule()().(rendered))
+	if m.Err() == nil || !strings.Contains(m.Err().Error(), "FOV") {
+		t.Fatalf("error %v, want the camera's FOV refused", m.Err())
+	}
+	if hit := m.Pick(15, 5); hit != nil {
+		t.Fatalf("picked %+v through a camera that draws nothing", hit)
+	}
+	m.SetCamera(nt3d.DefaultCamera())
+	m.busy, m.dirty = false, true
+	m.Update(m.schedule()().(rendered))
+	if m.Err() != nil {
+		t.Fatalf("error %v after a sound camera", m.Err())
+	}
+
+	// The picture above is still being presented, so SetCamera is held to
+	// the same on a view of its own.
+	set := New(scene(t), 30, 10, WithRenderMode(Software))
+	defer set.Close()
+	set.started = true
+	set.SetCamera(nt3d.Camera{Near: 10, Far: 5})
+	set.Update(set.schedule()().(rendered))
+	if set.Err() == nil || !strings.Contains(set.Err().Error(), "Far") {
+		t.Fatalf("error %v, want SetCamera's Far refused", set.Err())
+	}
+}
+
+// frameOf is the frame the widget would draw next.
+func frameOf(t testing.TB, m *Model) Frame {
+	t.Helper()
+	f, err := m.frame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
 }

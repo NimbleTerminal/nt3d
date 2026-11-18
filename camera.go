@@ -3,6 +3,8 @@
 package nt3d
 
 import (
+	"errors"
+	"fmt"
 	"math"
 
 	"nimbleterminal.dev/nt3d/math"
@@ -27,10 +29,16 @@ func (p Projection) String() string {
 
 // Camera's angles are in degrees: Elevation, Azimuth, and FOV, as every angle
 // set on a camera or a light is. (Package nt3dmath's functions take radians,
-// as Go's math does.) Distance and Target use scene world units. The default camera suits a scene centered
-// at the origin with a longest extent of roughly two units; Fit frames any
-// other. Unless explicitly overridden, clipping planes scale with Distance,
-// so a scene in millimeters or meters draws as well as one in units.
+// as Go's math does.) Distance and Target use scene world units. The default
+// camera suits a scene centered at the origin with a longest extent of
+// roughly two units; Fit frames any other. Unless explicitly overridden,
+// clipping planes scale with Distance, so a scene in millimeters or meters
+// draws as well as one in units.
+//
+// A zero field means its default, and the orbit values are held to their
+// limits, so a drag may add to them freely. Anything else that cannot mean
+// what it says is an error, which Validate reports and a scene returns when
+// it is given the camera.
 type Camera struct {
 	// Origin is an optional float64 world-space reference offset (e.g. ENU/UTM
 	// meters) added to the local Pose or Target/orbit camera position. Scene.Frame
@@ -77,6 +85,67 @@ func DefaultCamera() Camera {
 	return Camera{Elevation: 25, Azimuth: 40, Distance: 3.4, ResumeAfter: 2}
 }
 
+// Validate reports a field whose value cannot mean anything: a number that is
+// not finite, a negative where only a size makes sense, a FOV of 180 or more,
+// a Far at or before Near, only one of Xmag and Ymag, an unknown Projection,
+// or a Pose that is flattened or mirrored. Scene.Frame, Scene.StillFrame, and
+// Scene.SetNodeCamera return its error, as they do for a geometry that fails
+// its own Validate.
+//
+// Two things a camera corrects on purpose are not errors. A zero means the
+// default (Distance, FOV, clipping, extents, ResumeAfter). And orbit values
+// past their limits are held to them: Elevation within ±89 degrees, Azimuth
+// within a turn, Distance within what can be drawn, which is what lets a
+// drag add to them freely.
+func (c Camera) Validate() error {
+	for _, f := range []struct {
+		name     string
+		value    float64
+		negative bool // Whether a negative value means something.
+	}{
+		{"Elevation", c.Elevation, true}, {"Azimuth", c.Azimuth, true},
+		{"Distance", c.Distance, false}, {"FOV", c.FOV, false}, {"AspectRatio", c.AspectRatio, false},
+		{"Near", c.Near, false}, {"Far", c.Far, false}, {"Xmag", c.Xmag, false}, {"Ymag", c.Ymag, false},
+		{"ResumeAfter", c.ResumeAfter, false},
+		{"Target", float64(c.Target.X), true}, {"Target", float64(c.Target.Y), true}, {"Target", float64(c.Target.Z), true},
+		{"Origin", c.Origin[0], true}, {"Origin", c.Origin[1], true}, {"Origin", c.Origin[2], true},
+	} {
+		if !nt3dmath.IsFinite(f.value) {
+			return fmt.Errorf("nt3d: camera %s is not finite", f.name)
+		}
+		if f.value < 0 && !f.negative {
+			return fmt.Errorf("nt3d: camera %s is negative: %g", f.name, f.value)
+		}
+	}
+	switch {
+	case c.FOV >= 180:
+		return fmt.Errorf("nt3d: camera FOV must be below 180 degrees: %g", c.FOV)
+	case c.Far > 0 && c.Far <= c.Near:
+		return fmt.Errorf("nt3d: camera Far (%g) must be beyond Near (%g)", c.Far, c.Near)
+	case (c.Xmag > 0) != (c.Ymag > 0):
+		return errors.New("nt3d: camera Xmag and Ymag must be set together")
+	case c.Projection > Perspective:
+		return fmt.Errorf("nt3d: unknown camera Projection %d", c.Projection)
+	}
+	if c.Pose != (nt3dmath.Mat4{}) {
+		for _, v := range c.Pose {
+			if !nt3dmath.IsFinite(float64(v)) {
+				return errors.New("nt3d: camera Pose is not finite")
+			}
+		}
+		if _, ok := c.Pose.InverseAffine(); !ok {
+			return errors.New("nt3d: camera Pose is flattened and has no inverse")
+		}
+		if c.Pose.Determinant3() <= 0 {
+			return errors.New("nt3d: camera Pose is mirrored")
+		}
+	}
+	return nil
+}
+
+// valid is the camera as it is used: defaults filled in and orbit values held
+// to their limits. It also replaces what Validate refuses with a default, so
+// that the methods here that cannot return an error never compute with it.
 func (c Camera) valid() Camera {
 	if !nt3dmath.IsFinite(c.Elevation) {
 		c.Elevation = 25
@@ -242,7 +311,10 @@ func (c Camera) ray(x, y float32, cols, rows, cw, ch int) nt3dmath.Ray {
 	return nt3dmath.Ray{Origin: e.Add(r.Scale(nx * width).Add(u.Scale(ny * h))), Direction: f}
 }
 
-// Valid returns a sanitized camera.
+// Valid returns the camera as it is used: zeros replaced by their defaults
+// and orbit values held to their limits. It does not report a field that
+// cannot mean anything, and replaces it with a default; call Validate for
+// that.
 func (c Camera) Valid() Camera { return c.valid() }
 
 // Orbit returns the camera turned about its target: azimuth is added to

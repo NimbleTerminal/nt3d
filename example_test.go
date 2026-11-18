@@ -193,3 +193,22 @@ func ExampleScene_ApplyMaterial() {
 	// barge is metal: true
 	// ferry is metal: false
 }
+
+// A camera that cannot mean what it says is refused where it is used, with
+// the field named, instead of drawing some other view. Zeros are not
+// mistakes: they mean the defaults.
+func ExampleCamera_Validate() {
+	scene := nt3d.NewScene()
+	_, _ = scene.SetGeometry("ball", ball(color.RGBA{A: 255}))
+
+	camera := nt3d.DefaultCamera()
+	camera.Projection = nt3d.Perspective
+	camera.Near, camera.Far = 10, 5
+	_, err := scene.Frame(camera, 32, 32)
+	fmt.Println(err)
+
+	fmt.Println("the zero camera:", nt3d.Camera{}.Validate())
+	// Output:
+	// nt3d: camera Far (5) must be beyond Near (10)
+	// the zero camera: <nil>
+}
