@@ -73,12 +73,8 @@ func (d *gltfDecoder) decodeLights() error {
 				return errors.New("nt3dmesh: invalid KHR_lights_punctual intensity")
 			}
 		}
-		if intensity == 0 {
-			out.Color = color.RGBA{0, 0, 0, 255}
-			out.Intensity = 1
-		} else {
-			out.Intensity = float32(intensity)
-		}
+		// A zero Intensity would mean the default, so a light of none is off.
+		out.Intensity, out.Off = float32(intensity), intensity == 0
 
 		if src.Range != nil {
 			r := *src.Range

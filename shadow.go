@@ -21,10 +21,10 @@ type shadowView struct {
 	perspective bool
 }
 
-// shadowCaster is the index of the first light with Shadows, or -1.
+// shadowCaster is the index of the first light with Shadows that is on, or -1.
 func shadowCaster(l Lighting) int {
 	for i, light := range l.Lights {
-		if light.Shadows {
+		if light.Shadows && !light.Off {
 			return i
 		}
 	}

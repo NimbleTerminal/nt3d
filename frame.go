@@ -97,8 +97,8 @@ type Frame struct {
 	ReflectionProbes []ReflectionProbe
 	// Environment supplies a distant sky, diffuse light, and material reflections.
 	// Nil preserves the solid Background. EnvironmentStrength scales the light;
-	// zero means 1. EnvironmentBackgroundOnly disables its diffuse light and
-	// reflections, leaving it a backdrop. Reflection probes are independent of
+	// zero means 1, so EnvironmentBackgroundOnly is how to ask for none: it
+	// disables its diffuse light and reflections, leaving it a backdrop. Reflection probes are independent of
 	// it: one holding the sky lets surfaces inside its box reflect it.
 	Environment               *Environment
 	EnvironmentStrength       float32

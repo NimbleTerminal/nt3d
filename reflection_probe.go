@@ -19,7 +19,9 @@ const MaxReflectionProbes = 4
 // at Position, with the usual +Z-up, +X-center panorama orientation. Bounds is
 // both its axis-aligned influence volume and the box used for parallax correction.
 // Position must lie strictly inside the nonempty box. Strength >= 0 scales
-// radiance; zero means 1. Probes do not change diffuse lighting or the sky.
+// radiance; zero means 1, so Off is how to make a probe add nothing: it is
+// passed over, as if it were not in the list, and the next probe that holds
+// a surface lights it. Probes do not change diffuse lighting or the sky.
 //
 // Scene probes use world coordinates. In a hand-built Frame, Position and
 // Bounds use frame-relative coordinates, like Frame.Eye. Overlaps use the
@@ -29,6 +31,17 @@ type ReflectionProbe struct {
 	Position    nt3dmath.Vec3
 	Bounds      nt3dmath.AABB
 	Strength    float32
+	Off         bool
+}
+
+// probesOn reports whether any of the frame's reflection probes is on.
+func (f *Frame) probesOn() bool {
+	for i := range f.ReflectionProbes {
+		if !f.ReflectionProbes[i].Off {
+			return true
+		}
+	}
+	return false
 }
 
 func validReflectionProbes(probes []ReflectionProbe) error {
@@ -105,6 +118,9 @@ func boxProjectedDirection(probe ReflectionProbe, point, direction nt3dmath.Vec3
 
 func localReflection(f *Frame, point, direction nt3dmath.Vec3, roughness float32, filtered bool) indirectSample {
 	for _, probe := range f.ReflectionProbes {
+		if probe.Off {
+			continue
+		}
 		corrected, ok := boxProjectedDirection(probe, point, direction)
 		if !ok {
 			continue

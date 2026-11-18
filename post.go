@@ -52,17 +52,23 @@ const (
 // Bloom configures an HDR glow around bright pixels. Strength scales the glow
 // added back to the scene, 0..MaxBloomStrength; zero disables bloom. Threshold
 // is the linear brightness above which pixels contribute, with a smooth knee
-// (>= 0; zero means DefaultBloomThreshold). Radius controls how broadly the
-// glow spreads across mip levels, 0..1 (zero means DefaultBloomRadius).
+// (>= 0; zero means DefaultBloomThreshold). NoThreshold lets every pixel
+// contribute, which a zero Threshold cannot ask for. Radius controls how
+// broadly the glow spreads across mip levels, 0..1 (zero means
+// DefaultBloomRadius).
 type Bloom struct {
-	Strength  float32
-	Threshold float32
-	Radius    float32
+	Strength    float32
+	Threshold   float32
+	Radius      float32
+	NoThreshold bool
 }
 
 func (b Bloom) on() bool { return b.Strength > 0 }
 
 func (b Bloom) threshold() float32 {
+	if b.NoThreshold {
+		return 0
+	}
 	if b.Threshold == 0 {
 		return DefaultBloomThreshold
 	}

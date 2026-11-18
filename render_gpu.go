@@ -850,7 +850,9 @@ func (g *gpuRenderer) encode(dev *wgpu.Device, encoder *wgpu.CommandEncoder, f F
 	ub = append(ub, floats(inverse[:]...)...)
 	for i := 0; i < MaxReflectionProbes; i++ {
 		var record [12]float32
-		if i < len(f.ReflectionProbes) {
+		// A probe that is off leaves its record zero: the shader passes over
+		// a probe of no strength.
+		if i < len(f.ReflectionProbes) && !f.ReflectionProbes[i].Off {
 			p := f.ReflectionProbes[i]
 			strength := p.Strength
 			if strength == 0 {

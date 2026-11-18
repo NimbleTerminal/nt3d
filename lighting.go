@@ -22,10 +22,12 @@ type Lighting struct {
 
 // Ambient light reaches every surface, whichever way it faces: Sky's color
 // on surfaces facing up (+Z), Ground's facing down, blending between.
-// Equal colors give even ambient light. Intensity scales both; zero means 1.
+// Equal colors give even ambient light. Intensity scales both; zero means 1,
+// so Off is how to ask for no ambient light at all.
 type Ambient struct {
 	Sky, Ground color.RGBA
 	Intensity   float32
+	Off         bool
 }
 
 // LightKind is a Light's kind.
@@ -71,7 +73,12 @@ type Light struct {
 	Range      float32 // Point and Spot only.
 	InnerAngle float32 // Spot only: inner cone half-angle in degrees, 0..OuterAngle.
 	OuterAngle float32 // Spot only: outer cone half-angle in degrees, above 0 and below 90; 0 means 45.
-	Shadows    bool    // Only the first light with Shadows casts shadows.
+	Shadows    bool    // Only the first light with Shadows that is on casts shadows.
+	// Off makes the light give no light and cast no shadow, while it keeps
+	// its place in the list and its settings. It is how to ask for none:
+	// a zero Intensity means 1, so a light faded to zero by its Intensity
+	// alone would come back at full strength.
+	Off bool
 }
 
 // defaultKey is the default key light's intensity: with the default
@@ -90,6 +97,9 @@ func DefaultLighting() Lighting {
 }
 
 func (a Ambient) intensity() float32 {
+	if a.Off {
+		return 0
+	}
 	if a.Intensity == 0 {
 		return 1
 	}
@@ -97,6 +107,9 @@ func (a Ambient) intensity() float32 {
 }
 
 func (l Light) intensity() float32 {
+	if l.Off {
+		return 0
+	}
 	if l.Intensity == 0 {
 		return 1
 	}
@@ -201,7 +214,9 @@ func newRig(f *Frame) lightRig {
 			rl.cosOuter = cosOut
 			rl.invSpan = 1 / max(1e-4, cosIn-cosOut)
 		}
-		r.points = r.points || x.Kind != DirectionalLight
+		// A light that is off keeps its place, dark, so that an index into
+		// the frame's lights is still an index into the rig's.
+		r.points = r.points || x.Kind != DirectionalLight && !x.Off
 		r.lights = append(r.lights, rl)
 	}
 	return r

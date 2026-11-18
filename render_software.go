@@ -329,7 +329,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		if normalMapped && !framed {
 			tangent, bitangent = normalBasis(a, b, c)
 		}
-		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && (len(f.ReflectionProbes) > 0 || f.Environment != nil && !f.EnvironmentBackgroundOnly)
+		reflective := !pbr && material != nil && material.Reflectivity > 0 && !material.Unlit && (f.probesOn() || f.Environment != nil && !f.EnvironmentBackgroundOnly)
 		specular := !pbr && material != nil && material.Specular > 0 && !material.Unlit
 		hasNormals := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
 		lit := hasNormals && (material == nil || !material.Unlit) && !hull

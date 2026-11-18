@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **A way to say "none" where zero means the default.** `Light.Intensity`,
+  `Ambient.Intensity`, and `ReflectionProbe.Strength` treat zero as 1, so
+  none could not be asked for, and a value faded to exactly zero came back at
+  full strength. New flags say it: `Light.Off` (no light and no shadow; the
+  light keeps its place and settings), `Ambient.Off`, and
+  `ReflectionProbe.Off` (the probe is passed over). `Bloom.NoThreshold` lets
+  every pixel glow, which a zero `Threshold` could not ask for. The sky
+  already had `EnvironmentBackgroundOnly`. Nothing existing changes meaning.
+- A glTF light with zero intensity is read as `Off` with its color kept,
+  where it used to be read as a black light of intensity 1.
+
 - **Breaking: a camera that cannot mean what it says is an error.** A camera
   used to be corrected silently, so a mistake drew some other view: a `FOV`
   of 200 drew at 45, a `Far` nearer than `Near` turned both off, and a

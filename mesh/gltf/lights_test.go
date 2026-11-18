@@ -41,7 +41,7 @@ func TestGLTFKHRLightsPunctualSceneAndTransforms(t *testing.T) {
 				{
 					"name":      "fill-point",
 					"type":      "point",
-					"intensity": 0.0, // explicit zero intensity -> black light
+					"intensity": 0.0, // explicit zero intensity -> a light that is off
 					"range":     8.0,
 				},
 				{
@@ -104,8 +104,10 @@ func TestGLTFKHRLightsPunctualSceneAndTransforms(t *testing.T) {
 	}
 
 	offPoint := lights[1]
-	if offPoint.Kind != nt3d.PointLight || offPoint.Color != (color.RGBA{0, 0, 0, 255}) || offPoint.Range != 8 {
-		t.Fatalf("expected zero-intensity point light mapped to black, got %+v", offPoint)
+	// A light of zero intensity is off, and keeps its color for when an
+	// application turns it on.
+	if offPoint.Kind != nt3d.PointLight || !offPoint.Off || offPoint.Color == (color.RGBA{0, 0, 0, 255}) || offPoint.Range != 8 {
+		t.Fatalf("a zero-intensity point light should be off with its color kept, got %+v", offPoint)
 	}
 
 	// Unnamed node inherited light name "fill-point" in AssetNode and Scene.

@@ -212,3 +212,35 @@ func ExampleCamera_Validate() {
 	// nt3d: camera Far (5) must be beyond Near (10)
 	// the zero camera: <nil>
 }
+
+// A zero Intensity means the default, so it cannot say "none": Off does. A
+// light that is off keeps its place in the list and its settings.
+func ExampleLight() {
+	scene := nt3d.NewScene()
+	_, _ = scene.SetGeometry("ball", ball(color.RGBA{R: 200, G: 200, B: 200, A: 255}))
+	_ = scene.ApplyMaterial(nt3d.Root, nil) // Lit, unlike ball's own material.
+
+	look := scene.Look()
+	look.Lighting = nt3d.Lighting{
+		Ambient: nt3d.Ambient{Off: true},
+		Lights:  []nt3d.Light{{Kind: nt3d.DirectionalLight, Direction: nt3dmath.Vec3{X: 1, Y: -1, Z: 2}}},
+	}
+	renderer := nt3d.NewSoftwareRenderer()
+	defer renderer.Close()
+	center := func() color.RGBA {
+		scene.SetLook(look)
+		frame, _ := scene.StillFrame(nt3d.DefaultCamera(), 32, 32)
+		img, _ := renderer.Render(frame)
+		return rgba(img, 16, 16)
+	}
+
+	fmt.Println("lit:", center().R > 100)
+	look.Lighting.Lights[0].Intensity = 0 // Zero means 1: still lit.
+	fmt.Println("intensity zero:", center().R > 100)
+	look.Lighting.Lights[0].Off = true
+	fmt.Println("off:", center())
+	// Output:
+	// lit: true
+	// intensity zero: true
+	// off: {0 0 0 255}
+}
