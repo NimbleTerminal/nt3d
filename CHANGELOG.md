@@ -109,7 +109,8 @@
   `AspectRatio` of 1e-300, a `Far` that equals `Near` once both are float32,
   or a `Target` so far out that the orbit distance vanishes into it and the
   camera has no direction left to look in. For coordinates that large, use
-  `Origin`. `Valid` always returns a camera `Validate` accepts.
+  `Origin`. `Valid` always returns a camera `Validate` accepts: both read
+  one table of rules.
 
   Methods that cannot return an error (`Matrix`, `Eye`, `Orbit`, `Pick`, and
   `Valid`) still compute with a corrected camera, so nothing panics. The

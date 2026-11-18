@@ -3,6 +3,7 @@
 package nt3d
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math"
@@ -90,11 +91,10 @@ func DefaultCamera() Camera {
 // Validate reports a field whose value cannot mean anything: a number that is
 // not finite, a negative where only a size makes sense, a FOV of 180 or more,
 // a Far at or before Near, only one of Xmag and Ymag, an unknown Projection,
-// a Pose that is flattened or mirrored, or a lens value so large or small
-// that the projection, which is computed in float32, does not come out
-// finite. Scene.Frame, Scene.StillFrame, and
-// Scene.SetNodeCamera return its error, as they do for a geometry that fails
-// its own Validate.
+// a Pose that is flattened or mirrored, or values so large or small that the
+// view and projection, which are computed in float32, do not come out usable.
+// Scene.Frame, Scene.StillFrame, and Scene.SetNodeCamera return its error, as
+// they do for a geometry that fails its own Validate.
 //
 // Two things a camera corrects on purpose are not errors. A zero means the
 // default (Distance, FOV, clipping, extents, ResumeAfter). And orbit values
@@ -102,68 +102,185 @@ func DefaultCamera() Camera {
 // within a turn, Distance within what can be drawn, which is what lets a
 // drag add to them freely.
 func (c Camera) Validate() error {
-	for _, f := range []struct {
-		name     string
-		value    float64
-		negative bool // Whether a negative value means something.
-	}{
-		{"Elevation", c.Elevation, true}, {"Azimuth", c.Azimuth, true},
-		{"Distance", c.Distance, false}, {"FOV", c.FOV, false}, {"AspectRatio", c.AspectRatio, false},
-		{"Near", c.Near, false}, {"Far", c.Far, false}, {"Xmag", c.Xmag, false}, {"Ymag", c.Ymag, false},
-		{"ResumeAfter", c.ResumeAfter, false},
-		{"Target", float64(c.Target.X), true}, {"Target", float64(c.Target.Y), true}, {"Target", float64(c.Target.Z), true},
-		{"Origin", c.Origin[0], true}, {"Origin", c.Origin[1], true}, {"Origin", c.Origin[2], true},
-	} {
-		if !nt3dmath.IsFinite(f.value) {
-			return fmt.Errorf("nt3d: camera %s is not finite", f.name)
+	for _, rule := range cameraRules {
+		if why := rule.broken(&c); why != "" {
+			return errors.New("nt3d: camera " + why)
 		}
-		if f.value < 0 && !f.negative {
-			return fmt.Errorf("nt3d: camera %s is negative: %g", f.name, f.value)
-		}
-	}
-	// The projection is computed in float32, where a value that is finite as
-	// a float64 can still be zero or infinite.
-	for _, f := range []struct {
-		name  string
-		value float64
-	}{{"FOV", c.FOV}, {"AspectRatio", c.AspectRatio}, {"Near", c.Near}, {"Far", c.Far}, {"Xmag", c.Xmag}, {"Ymag", c.Ymag}} {
-		if v := float32(f.value); f.value != 0 && (v == 0 || math.IsInf(float64(v), 0)) {
-			return fmt.Errorf("nt3d: camera %s is outside what a float32 projection holds: %g", f.name, f.value)
-		}
-	}
-	switch {
-	case c.FOV >= 180:
-		return fmt.Errorf("nt3d: camera FOV must be below 180 degrees: %g", c.FOV)
-	case c.Far > 0 && float32(c.Far) <= float32(c.Near): // As the projection sees them.
-		return fmt.Errorf("nt3d: camera Far (%g) must be beyond Near (%g)", c.Far, c.Near)
-	case (c.Xmag > 0) != (c.Ymag > 0):
-		return errors.New("nt3d: camera Xmag and Ymag must be set together")
-	case c.Projection > Perspective:
-		return fmt.Errorf("nt3d: unknown camera Projection %d", c.Projection)
-	}
-	if c.Pose != (nt3dmath.Mat4{}) {
-		for _, v := range c.Pose {
-			if !nt3dmath.IsFinite(float64(v)) {
-				return errors.New("nt3d: camera Pose is not finite")
-			}
-		}
-		if _, ok := c.Pose.InverseAffine(); !ok {
-			return errors.New("nt3d: camera Pose is flattened and has no inverse")
-		}
-		if c.Pose.Determinant3() <= 0 {
-			return errors.New("nt3d: camera Pose is mirrored")
-		}
-	}
-	// Whatever the checks above let through in combination, the projection
-	// and the view themselves have to come out usable.
-	k := c.corrected() // Defaults filled in; the checks above leave nothing else to correct.
-	if !usable(k.projection(1)) {
-		return errors.New("nt3d: camera projection is out of range: FOV, AspectRatio, Near, Far, Xmag, or Ymag is too large or too small together")
-	}
-	if !k.placed() {
-		return errors.New("nt3d: camera Target, Distance, or Pose puts it too far out for float32 coordinates; use Origin for large ones")
 	}
 	return nil
+}
+
+// valid is the camera as it is used: defaults filled in and orbit values held
+// to their limits. Whatever breaks a rule it replaces with a default, so that
+// the methods here that cannot return an error never compute with it, and so
+// that Validate accepts whatever valid returns: both read cameraRules.
+func (c Camera) valid() Camera {
+	for _, rule := range cameraRules {
+		if rule.broken(&c) != "" {
+			rule.reset(&c)
+		}
+	}
+	return c.filled()
+}
+
+// filled is a camera with its defaults filled in and its orbit values held
+// to their limits: the corrections that are not mistakes.
+func (c Camera) filled() Camera {
+	if c.Distance == 0 {
+		c.Distance = 3.4
+	}
+	c.Distance = math.Max(minDistance, math.Min(maxDistance, c.Distance))
+	c.Elevation = math.Max(-89, math.Min(89, c.Elevation))
+	c.Azimuth = math.Mod(c.Azimuth, 360)
+	if c.ResumeAfter == 0 {
+		c.ResumeAfter = 2
+	}
+	return c
+}
+
+// A cameraRule is one thing a camera's fields have to satisfy.
+type cameraRule struct {
+	// broken says why the camera breaks the rule, naming the fields, or is
+	// empty when it holds. It may assume the rules before it hold.
+	broken func(c *Camera) string
+	// reset puts the fields the rule concerns back to their defaults.
+	reset func(c *Camera)
+}
+
+// sized reports why a field that holds a size cannot: it is not finite, or
+// is negative. A zero is the default, and no fault.
+func sized(name string, v float64) string {
+	switch {
+	case !nt3dmath.IsFinite(v):
+		return name + " is not finite"
+	case v < 0:
+		return fmt.Sprintf("%s is negative: %g", name, v)
+	}
+	return ""
+}
+
+// lens is sized for a value the projection reads, which also has to survive
+// conversion to float32, where the projection is computed: nothing but zero
+// may become zero or infinite.
+func lens(name string, v float64) string {
+	if why := sized(name, v); why != "" {
+		return why
+	}
+	if f := float32(v); v != 0 && (f == 0 || math.IsInf(float64(f), 0)) {
+		return fmt.Sprintf("%s is outside what a float32 projection holds: %g", name, v)
+	}
+	return ""
+}
+
+func finite3(name string, x, y, z float64) string {
+	if !nt3dmath.IsFinite(x) || !nt3dmath.IsFinite(y) || !nt3dmath.IsFinite(z) {
+		return name + " is not finite"
+	}
+	return ""
+}
+
+// cameraRules are the rules a camera's fields have to satisfy, in the order
+// they are checked: each field by itself first, then what the fields make
+// together. Validate reports the first one broken; valid resets it.
+var cameraRules = []cameraRule{
+	{func(c *Camera) string { return finite3("Elevation", c.Elevation, 0, 0) }, func(c *Camera) { c.Elevation = 25 }},
+	{func(c *Camera) string { return finite3("Azimuth", c.Azimuth, 0, 0) }, func(c *Camera) { c.Azimuth = 40 }},
+	{func(c *Camera) string { return sized("Distance", c.Distance) }, func(c *Camera) { c.Distance = 0 }},
+	{func(c *Camera) string { return sized("ResumeAfter", c.ResumeAfter) }, func(c *Camera) { c.ResumeAfter = 0 }},
+	{
+		func(c *Camera) string {
+			return finite3("Target", float64(c.Target.X), float64(c.Target.Y), float64(c.Target.Z))
+		},
+		func(c *Camera) { c.Target = nt3dmath.Vec3{} },
+	},
+	{func(c *Camera) string { return finite3("Origin", c.Origin[0], c.Origin[1], c.Origin[2]) }, func(c *Camera) { c.Origin = [3]float64{} }},
+	{
+		func(c *Camera) string {
+			if c.Projection > Perspective {
+				return fmt.Sprintf("Projection %d is unknown", c.Projection)
+			}
+			return ""
+		},
+		func(c *Camera) { c.Projection = Orthographic },
+	},
+	{
+		func(c *Camera) string {
+			if why := lens("FOV", c.FOV); why != "" {
+				return why
+			}
+			if c.FOV >= 180 {
+				return fmt.Sprintf("FOV must be below 180 degrees: %g", c.FOV)
+			}
+			return ""
+		},
+		func(c *Camera) { c.FOV = 0 },
+	},
+	{func(c *Camera) string { return lens("AspectRatio", c.AspectRatio) }, func(c *Camera) { c.AspectRatio = 0 }},
+	{
+		func(c *Camera) string {
+			if why := cmp.Or(lens("Near", c.Near), lens("Far", c.Far)); why != "" {
+				return why
+			}
+			if c.Far > 0 && float32(c.Far) <= float32(c.Near) { // As the projection sees them.
+				return fmt.Sprintf("Far (%g) must be beyond Near (%g)", c.Far, c.Near)
+			}
+			return ""
+		},
+		func(c *Camera) { c.Near, c.Far = 0, 0 },
+	},
+	{
+		func(c *Camera) string {
+			if why := cmp.Or(lens("Xmag", c.Xmag), lens("Ymag", c.Ymag)); why != "" {
+				return why
+			}
+			if (c.Xmag > 0) != (c.Ymag > 0) {
+				return "Xmag and Ymag must be set together"
+			}
+			return ""
+		},
+		func(c *Camera) { c.Xmag, c.Ymag = 0, 0 },
+	},
+	{
+		func(c *Camera) string {
+			if c.Pose == (nt3dmath.Mat4{}) {
+				return ""
+			}
+			for _, v := range c.Pose {
+				if !nt3dmath.IsFinite(float64(v)) {
+					return "Pose is not finite"
+				}
+			}
+			if _, ok := c.Pose.InverseAffine(); !ok {
+				return "Pose is flattened and has no inverse"
+			}
+			if c.Pose.Determinant3() <= 0 {
+				return "Pose is mirrored"
+			}
+			return ""
+		},
+		func(c *Camera) { c.Pose = nt3dmath.Mat4{} },
+	},
+	// Values that each pass can still combine into a projection or a view
+	// that does not come out usable. Then the lens or the placement as a
+	// whole falls back to its default, which always does.
+	{
+		func(c *Camera) string {
+			if !usable(c.filled().projection(1)) {
+				return "projection is out of range: FOV, AspectRatio, Near, Far, Xmag, or Ymag is too large or too small together"
+			}
+			return ""
+		},
+		func(c *Camera) { c.FOV, c.AspectRatio, c.Near, c.Far, c.Xmag, c.Ymag = 0, 0, 0, 0, 0, 0 },
+	},
+	{
+		func(c *Camera) string {
+			if !c.filled().placed() {
+				return "Target, Distance, or Pose puts it too far out for float32 coordinates; use Origin for large ones"
+			}
+			return ""
+		},
+		func(c *Camera) { c.Pose, c.Target = nt3dmath.Mat4{}, nt3dmath.Vec3{} },
+	},
 }
 
 // cameraLimit is the largest magnitude an entry of a camera's view or
@@ -183,88 +300,17 @@ func usable(m nt3dmath.Mat4) bool {
 	return true
 }
 
-// inFloat32 reports whether a lens value survives conversion to float32,
-// where the projection is computed: zero stays zero, and nothing else becomes
-// zero or infinite.
-func inFloat32(v float64) bool {
-	f := float32(v)
-	return v == 0 || f != 0 && !math.IsInf(float64(f), 0)
-}
-
-// valid is the camera as it is used: defaults filled in and orbit values held
-// to their limits. It also replaces what Validate refuses with a default, so
-// that the methods here that cannot return an error never compute with it,
-// and so that Validate accepts whatever it returns.
-func (c Camera) valid() Camera {
-	c = c.corrected()
-	// Values that each pass can still combine into a projection or a view
-	// that does not come out usable; then the lens or the placement as a
-	// whole falls back to its default, which always does.
-	if !usable(c.projection(1)) {
-		c.FOV, c.AspectRatio, c.Near, c.Far, c.Xmag, c.Ymag = 0, 0, 0, 0, 0, 0
-	}
-	if !c.placed() {
-		c.Pose, c.Target = nt3dmath.Mat4{}, nt3dmath.Vec3{}
-	}
-	return c
-}
-
-// placed reports whether a camera already corrected is somewhere its view
-// matrix can express, facing some way: far enough out, the orbit distance
-// vanishes into the target's float32 coordinates, the eye lands on the
-// target, and no direction is left to look in. Origin is left out: it is a
-// float64 offset that Scene.Frame takes off the camera and the nodes alike
-// before either becomes float32, so a large one is no fault of the camera's,
-// and is how to place a camera that far out.
+// placed reports whether a filled camera is somewhere its view matrix can
+// express, facing some way: far enough out, the orbit distance vanishes into
+// the target's float32 coordinates, the eye lands on the target, and no
+// direction is left to look in. Origin is left out: it is a float64 offset
+// that Scene.Frame takes off the camera and the nodes alike before either
+// becomes float32, so a large one is no fault of the camera's, and is how to
+// place a camera that far out.
 func (c Camera) placed() bool {
 	c.Origin = [3]float64{}
 	v := c.view()
 	return usable(v) && math.Abs(float64(v.Determinant3())-1) < .01 // A rotation, not a collapse.
-}
-
-// corrected applies valid's corrections field by field.
-func (c Camera) corrected() Camera {
-	if !nt3dmath.IsFinite(c.Elevation) {
-		c.Elevation = 25
-	}
-	if !nt3dmath.IsFinite(c.Azimuth) {
-		c.Azimuth = 40
-	}
-	c.Elevation = math.Max(-89, math.Min(89, c.Elevation))
-	c.Azimuth = math.Mod(c.Azimuth, 360)
-	if !nt3dmath.IsFinite(c.Distance) || c.Distance <= 0 {
-		c.Distance = 3.4
-	}
-	c.Distance = math.Max(minDistance, math.Min(maxDistance, c.Distance))
-	if !nt3dmath.IsFinite(float64(c.Target.X)) || !nt3dmath.IsFinite(float64(c.Target.Y)) || !nt3dmath.IsFinite(float64(c.Target.Z)) {
-		c.Target = nt3dmath.Vec3{}
-	}
-	if c.Projection != Perspective {
-		c.Projection = Orthographic
-	}
-	if !nt3dmath.IsFinite(c.ResumeAfter) || c.ResumeAfter <= 0 {
-		c.ResumeAfter = 2
-	}
-	if _, ok := c.Pose.InverseAffine(); c.Pose != (nt3dmath.Mat4{}) && (!ok || c.Pose.Determinant3() <= 0) {
-		c.Pose = nt3dmath.Mat4{}
-	}
-	if !nt3dmath.IsFinite(c.FOV) || c.FOV < 0 || c.FOV >= 180 || !inFloat32(c.FOV) {
-		c.FOV = 0
-	}
-	if !nt3dmath.IsFinite(c.AspectRatio) || c.AspectRatio < 0 || !inFloat32(c.AspectRatio) {
-		c.AspectRatio = 0
-	}
-	if !nt3dmath.IsFinite(c.Near) || !nt3dmath.IsFinite(c.Far) || c.Near < 0 || c.Far < 0 || !inFloat32(c.Near) || !inFloat32(c.Far) ||
-		c.Far > 0 && float32(c.Far) <= float32(c.Near) { // As the projection sees them.
-		c.Near, c.Far = 0, 0
-	}
-	if !nt3dmath.IsFinite(c.Xmag) || !nt3dmath.IsFinite(c.Ymag) || c.Xmag <= 0 || c.Ymag <= 0 || !inFloat32(c.Xmag) || !inFloat32(c.Ymag) {
-		c.Xmag, c.Ymag = 0, 0
-	}
-	if !nt3dmath.IsFinite(c.Origin[0]) || !nt3dmath.IsFinite(c.Origin[1]) || !nt3dmath.IsFinite(c.Origin[2]) {
-		c.Origin = [3]float64{}
-	}
-	return c
 }
 
 func (c Camera) relativeTo(origin [3]float64) Camera {
@@ -392,7 +438,7 @@ func (c Camera) RayFromCell(x, y, cols, rows, cellW, cellH int) nt3dmath.Ray {
 
 func (c Camera) ray(x, y float32, cols, rows, cw, ch int) nt3dmath.Ray {
 	c = c.valid()
-	e, r, u, f := c.basis()
+	e, r, u, f := c.rawBasis()
 	if cols < 1 || rows < 1 || cw < 1 || ch < 1 {
 		return nt3dmath.Ray{Origin: e, Direction: f}
 	}
@@ -448,7 +494,7 @@ func (c Camera) Pan(dx, dy float32, width, height int) Camera {
 		return c
 	}
 	c = c.valid()
-	_, r, u, _ := c.basis()
+	_, r, u, _ := c.rawBasis()
 	aspect := float32(width) / float32(height)
 	if c.AspectRatio > 0 {
 		aspect = float32(c.AspectRatio)
@@ -550,7 +596,8 @@ func (c Camera) LookDirection(eye, forward nt3dmath.Vec3) Camera {
 	c = c.valid()
 	// Compute the target from the clamped orientation to keep the eye fixed.
 	c.Target = nt3dmath.Vec3{}
-	c.Target = eye.Sub(c.Eye())
+	at, _, _, _ := c.rawBasis() // Already valid: only the target moved.
+	c.Target = eye.Sub(at)
 	return c
 }
 
@@ -566,7 +613,7 @@ func (c Camera) WorldEye() [3]float64 {
 	c = c.valid()
 	local := c
 	local.Origin = [3]float64{}
-	eye, _, _, _ := local.basis()
+	eye, _, _, _ := local.rawBasis()
 	return [3]float64{
 		c.Origin[0] + float64(eye.X),
 		c.Origin[1] + float64(eye.Y),
