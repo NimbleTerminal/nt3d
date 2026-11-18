@@ -7,52 +7,13 @@ package nt3dcurve
 import (
 	"fmt"
 	"math"
+
+	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
-// Vec3 is a float64 3D vector or position. Its memory layout matches nt3dcam.Vec3d.
-type Vec3 struct {
-	X, Y, Z float64
-}
-
-// Add returns a + b.
-func (a Vec3) Add(b Vec3) Vec3 { return Vec3{a.X + b.X, a.Y + b.Y, a.Z + b.Z} }
-
-// Sub returns a - b.
-func (a Vec3) Sub(b Vec3) Vec3 { return Vec3{a.X - b.X, a.Y - b.Y, a.Z - b.Z} }
-
-// Scale returns a * s.
-func (a Vec3) Scale(s float64) Vec3 { return Vec3{a.X * s, a.Y * s, a.Z * s} }
-
-// Dot returns the dot product a · b.
-func (a Vec3) Dot(b Vec3) float64 { return a.X*b.X + a.Y*b.Y + a.Z*b.Z }
-
-// Cross returns the cross product a × b.
-func (a Vec3) Cross(b Vec3) Vec3 {
-	return Vec3{a.Y*b.Z - a.Z*b.Y, a.Z*b.X - a.X*b.Z, a.X*b.Y - a.Y*b.X}
-}
-
-// LenSq returns |a|^2.
-func (a Vec3) LenSq() float64 { return a.X*a.X + a.Y*a.Y + a.Z*a.Z }
-
-// Len returns |a|.
-func (a Vec3) Len() float64 { return math.Sqrt(a.LenSq()) }
-
-// Normalize returns a / |a|, or zero if |a| == 0.
-func (a Vec3) Normalize() Vec3 {
-	n := a.Len()
-	if n == 0 {
-		return Vec3{}
-	}
-	inv := 1.0 / n
-	return Vec3{a.X * inv, a.Y * inv, a.Z * inv}
-}
-
-// IsFinite reports whether all components of a are finite numbers.
-func (a Vec3) IsFinite() bool {
-	return !math.IsNaN(a.X) && !math.IsInf(a.X, 0) &&
-		!math.IsNaN(a.Y) && !math.IsInf(a.Y, 0) &&
-		!math.IsNaN(a.Z) && !math.IsInf(a.Z, 0)
-}
+// Vec3 is a float64 3D vector or position: nt3dmath.Vec3d, under the name
+// this package has always used.
+type Vec3 = nt3dmath.Vec3d
 
 // Knot is a cubic Bezier anchor P with world-space handles In and Out.
 type Knot struct {

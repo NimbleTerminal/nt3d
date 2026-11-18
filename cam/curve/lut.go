@@ -204,7 +204,7 @@ func (l *LUT) unitTangent(si int, u float64) Vec3 {
 	d := sp.Deriv(u)
 	if n := d.Len(); n > 1e-11 {
 		inv := 1.0 / n
-		return Vec3{d.X * inv, d.Y * inv, d.Z * inv}
+		return Vec3{X: d.X * inv, Y: d.Y * inv, Z: d.Z * inv}
 	}
 	// Handle zero-velocity Bezier handles or degenerate spans deterministically.
 	const eps = 1e-5

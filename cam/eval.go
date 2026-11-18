@@ -39,9 +39,9 @@ func (p *Path) EvalOverrides(t time.Duration, ov EvalOverrides) CameraState {
 	movingBackward := loopReversed != segReverse
 
 	posCurve, tanCurve := p.lut.Eval(s)
-	pos := fromCurveVec(posCurve)
+	pos := posCurve
 
-	baseRot := p.evalLook(tEff, s, pos, fromCurveVec(tanCurve), movingBackward, res, ov.Target)
+	baseRot := p.evalLook(tEff, s, pos, tanCurve, movingBackward, res, ov.Target)
 
 	rollRad := nt3dease.Sample(p.rollKeys, tEff, 0)
 	if ov.RollRad != nil {
@@ -58,7 +58,7 @@ func (p *Path) EvalOverrides(t time.Duration, ov EvalOverrides) CameraState {
 
 	return CameraState{
 		Pos:       pos,
-		Rot:       fromFrameQuat(baseRot),
+		Rot:       baseRot,
 		FovY:      nt3dease.Sample(p.fovKeys, tEff, DefaultFovY),
 		FocusDist: nt3dease.Sample(p.focusKeys, tEff, 0),
 		Aperture:  nt3dease.Sample(p.apertKeys, tEff, 0),
@@ -195,6 +195,6 @@ func (p *Path) evalLookSegment(seg compiledLookSeg, t time.Duration, s float64, 
 				dir = Vec3d{Y: 1}
 			}
 		}
-		return nt3dframes.LookRotation(dir.toCurve(), p.worldUp.toCurve())
+		return nt3dframes.LookRotation(dir, p.worldUp)
 	}
 }

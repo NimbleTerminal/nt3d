@@ -12,10 +12,10 @@ func TestCatmullRomThroughPointsAndNoSelfIntersection(t *testing.T) {
 	// two long legs around a tiny sharp corner. Uniform Catmull-Rom overshoots
 	// and loops across itself on the tiny middle span; centripetal never does.
 	pts := []Vec3{
-		{0, 0, 0},
-		{10, 0, 0},
-		{10.05, 0.05, 0},
-		{10.05, 10, 0},
+		{X: 0, Y: 0, Z: 0},
+		{X: 10, Y: 0, Z: 0},
+		{X: 10.05, Y: 0.05, Z: 0},
+		{X: 10.05, Y: 10, Z: 0},
 	}
 	spans, err := BuildCatmullRomCentripetal(pts, false)
 	if err != nil {
@@ -67,12 +67,12 @@ func segmentsIntersect2D(a, b, c, d Vec3) bool {
 func TestArcLengthConstantSpeedProperty(t *testing.T) {
 	// Highly non-uniform 3D curve where raw spline parameter speed varies >20x.
 	pts := []Vec3{
-		{0, 0, 0},
-		{15, 2, 4},
-		{15.4, 2.5, 4.2},
-		{16, 3, 4},
-		{2, 20, -5},
-		{-8, 22, 3},
+		{X: 0, Y: 0, Z: 0},
+		{X: 15, Y: 2, Z: 4},
+		{X: 15.4, Y: 2.5, Z: 4.2},
+		{X: 16, Y: 3, Z: 4},
+		{X: 2, Y: 20, Z: -5},
+		{X: -8, Y: 22, Z: 3},
 	}
 	spans, err := BuildCatmullRomCentripetal(pts, false)
 	if err != nil {
@@ -115,8 +115,8 @@ func TestBezierAndBSplineCurves(t *testing.T) {
 	const R = 10.0
 	k := 4.0 * (math.Sqrt2 - 1.0) / 3.0 * R
 	knots := []Knot{
-		{P: Vec3{R, 0, 0}, In: Vec3{R, -k, 0}, Out: Vec3{R, k, 0}},
-		{P: Vec3{0, R, 0}, In: Vec3{k, R, 0}, Out: Vec3{-k, R, 0}},
+		{P: Vec3{X: R, Y: 0, Z: 0}, In: Vec3{X: R, Y: -k, Z: 0}, Out: Vec3{X: R, Y: k, Z: 0}},
+		{P: Vec3{X: 0, Y: R, Z: 0}, In: Vec3{X: k, Y: R, Z: 0}, Out: Vec3{X: -k, Y: R, Z: 0}},
 	}
 	bz, err := BuildBezier(knots, false)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestBezierAndBSplineCurves(t *testing.T) {
 	}
 
 	// Open clamped B-spline clamps to endpoints and stays inside convex hull.
-	bsPts := []Vec3{{0, 0, 0}, {2, 6, 1}, {5, -2, 3}, {8, 4, 2}, {10, 0, 0}}
+	bsPts := []Vec3{{X: 0, Y: 0, Z: 0}, {X: 2, Y: 6, Z: 1}, {X: 5, Y: -2, Z: 3}, {X: 8, Y: 4, Z: 2}, {X: 10, Y: 0, Z: 0}}
 	bs, err := BuildBSpline(bsPts, false)
 	if err != nil {
 		t.Fatal(err)

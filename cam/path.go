@@ -376,7 +376,7 @@ func NewPath(cfg PathConfig, opts ...Option) (*Path, error) {
 		return nil, err
 	}
 	lut := nt3dcurve.NewLUT(spans, bo.samplesPerSpan, cfg.Position.Closed)
-	transport := nt3dframes.NewParallelTransport(lut, worldUp.toCurve())
+	transport := nt3dframes.NewParallelTransport(lut, worldUp)
 
 	timingInit, timingSegs, err := compileTiming(cfg.Timing, cfg.Duration)
 	if err != nil {
@@ -496,13 +496,13 @@ func (p *Path) SampleCurve(count int) []Vec3d {
 	}
 	if count == 1 {
 		pos, _ := p.lut.Eval(0)
-		return []Vec3d{fromCurveVec(pos)}
+		return []Vec3d{pos}
 	}
 	out := make([]Vec3d, count)
 	inv := 1.0 / float64(count-1)
 	for i := range count {
 		pos, _ := p.lut.Eval(float64(i) * inv)
-		out[i] = fromCurveVec(pos)
+		out[i] = pos
 	}
 	return out
 }
@@ -520,7 +520,7 @@ func compilePosition(pos PositionTrack) ([]nt3dcurve.CubicSpan, error) {
 		}
 		knots := make([]nt3dcurve.Knot, len(pos.Knots))
 		for i, k := range pos.Knots {
-			knots[i] = nt3dcurve.Knot{P: k.P.toCurve(), In: k.In.toCurve(), Out: k.Out.toCurve()}
+			knots[i] = nt3dcurve.Knot{P: k.P, In: k.In, Out: k.Out}
 		}
 		return nt3dcurve.BuildBezier(knots, pos.Closed)
 	}
@@ -533,7 +533,7 @@ func compilePosition(pos PositionTrack) ([]nt3dcurve.CubicSpan, error) {
 	}
 	pts := make([]nt3dcurve.Vec3, len(pos.Points))
 	for i, pt := range pos.Points {
-		pts[i] = pt.toCurve()
+		pts[i] = pt
 	}
 	switch pos.Interp {
 	case InterpCatmullRomCentripetal:
@@ -631,7 +631,7 @@ func compileLook(segments []LookSegment) ([]compiledLookSeg, error) {
 			for k, qk := range s.Keys {
 				fkeys[k] = nt3dframes.Key{
 					T:    qk.T,
-					Q:    qk.Q.toFrame(),
+					Q:    qk.Q,
 					Ease: qk.Ease.toEase(nt3dease.Linear),
 				}
 			}
