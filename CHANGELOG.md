@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `nt3dmesh.Options.AssetOnly` decodes a glTF into `Model.Asset` alone,
+  leaving `Objects` empty. A glTF decode otherwise reads every primitive
+  twice, placed for the flat view and again in its own space for the asset;
+  a caller that only instantiates needs the second. `MaxTriangles` then
+  bounds what the asset holds, counting a shared mesh once.
+- Textures convert without allocating per pixel. `NewTexture`, and the glTF
+  occlusion-roughness-metallic packer, read JPEG and WebP images (`YCbCr`,
+  `NYCbCrA`), premultiplied `RGBA`, and `Gray` through their own accessors
+  instead of boxing each pixel's color; the pixels are identical. A 5 MB
+  glTF with WebP textures decodes in 211 ms instead of 300, with 38 thousand
+  allocations instead of 13.9 million, and in 181 ms and 126 MB with
+  `AssetOnly`, from 239 MB.
+- `nt3dgltf` internals: each material extension is a function and a row in
+  one table, which also declares it supported, in place of a 330-line
+  function; a test holds every extension name the package reads to the
+  tables. The scene-asset builder has its own file.
+
 - **Breaking: `Material.EnvironmentReflect` is removed.** It let one material
   reflect the environment when `EnvironmentBackgroundOnly` made it a backdrop.
   A reflection probe holding the same panorama does that for every reflective

@@ -203,6 +203,15 @@ type Options struct {
 	// as it comes: a SOG's palette stays a palette, other formats keep
 	// per-splat coefficients.
 	SHPalette SHPaletteMode
+	// AssetOnly builds only Model.Asset, for a format that supplies one
+	// (glTF), and leaves Objects empty. A glTF decode otherwise reads every
+	// primitive twice, once placed for the flat Objects and once in its own
+	// space for the asset; this reads it once. Use it when the model will be
+	// instantiated (SceneAsset.Instantiate) and its flat view is not wanted:
+	// Model's Triangles, Bounds, Geometry, and AddTo read Objects, and see
+	// nothing. MaxTriangles then bounds what the asset holds, so a mesh many
+	// nodes share counts once. Formats without an asset ignore it.
+	AssetOnly bool
 }
 
 // SHPaletteMode says whether a decoded Gaussian cloud shares its spherical

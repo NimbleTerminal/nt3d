@@ -72,6 +72,18 @@ func FuzzDecode(f *testing.F) {
 		if err == nil && m.Asset == nil {
 			t.Fatal("glTF without an asset")
 		}
+		// The asset alone, with no flat pass ahead of it to refuse the input
+		// first: whatever it accepts must still instantiate and draw.
+		only := *o
+		only.AssetOnly = true
+		am, aerr := Decode(data, &only)
+		if aerr != nil {
+			return
+		}
+		if am == nil || am.Asset == nil || len(am.Objects) != 0 {
+			t.Fatal("an asset-only decode without an asset, or with flat objects")
+		}
+		checkAsset(t, am)
 	})
 }
 

@@ -394,6 +394,19 @@ func wrapTexel(i, n int) int {
 	return i
 }
 
+// straightAlpha turns what Color.RGBA returns, 16-bit channels premultiplied
+// by alpha, into 8-bit straight alpha, exactly as color.NRGBAModel does.
+func straightAlpha(r, g, b, a uint32) color.NRGBA {
+	switch a {
+	case 0xffff:
+		return color.NRGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), 0xff}
+	case 0:
+		return color.NRGBA{}
+	}
+	r, g, b = r*0xffff/a, g*0xffff/a, b*0xffff/a
+	return color.NRGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), uint8(a >> 8)}
+}
+
 // NewTexture snapshots src, including images with nonzero bounds, of at most
 // 8192 pixels per side. Channels are sRGB-encoded, as images are; textures
 // are filtered in linear light, and mipmapped, so surfaces seen far off or
@@ -429,11 +442,33 @@ func NewTexture(src image.Image) (*Texture, error) {
 		}
 		return t, nil
 	}
+	// Every other kind is converted a pixel at a time. The kinds decoders
+	// hand back are read through their own accessors, which return values:
+	// At returns an interface, and boxing a color for each pixel would cost
+	// an allocation or two apiece.
+	var at func(x, y int) (r, g, b, a uint32)
+	switch img := src.(type) {
+	case *image.YCbCr:
+		at = func(x, y int) (r, g, b, a uint32) { return img.YCbCrAt(x, y).RGBA() }
+	case *image.NYCbCrA:
+		at = func(x, y int) (r, g, b, a uint32) { return img.NYCbCrAAt(x, y).RGBA() }
+	case *image.RGBA:
+		at = func(x, y int) (r, g, b, a uint32) { return img.RGBAAt(x, y).RGBA() }
+	case *image.Gray:
+		at = func(x, y int) (r, g, b, a uint32) { return img.GrayAt(x, y).RGBA() }
+	}
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			c := color.NRGBAModel.Convert(src.At(b.Min.X+x, b.Min.Y+y)).(color.NRGBA)
+			var c color.NRGBA
+			if at != nil {
+				c = straightAlpha(at(b.Min.X+x, b.Min.Y+y))
+			} else {
+				// Any other image: its colors may already be straight alpha,
+				// which the model passes through untouched.
+				c = color.NRGBAModel.Convert(src.At(b.Min.X+x, b.Min.Y+y)).(color.NRGBA)
+			}
 			i := (y*w + x) * 4
-			copy(t.pixels[i:i+4], []byte{c.R, c.G, c.B, c.A})
+			t.pixels[i], t.pixels[i+1], t.pixels[i+2], t.pixels[i+3] = c.R, c.G, c.B, c.A
 		}
 	}
 	return t, nil

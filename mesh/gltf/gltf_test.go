@@ -873,3 +873,49 @@ func TestGLTFGeneratedMatchesAuthored(t *testing.T) {
 		}
 	}
 }
+
+// The occlusion-roughness-metallic packer reads source images a pixel at a
+// time. Each kind of image gives the pixel the image package's own NRGBA
+// conversion does, without boxing a color to get it.
+func TestNRGBAPixelMatchesTheStandardConversion(t *testing.T) {
+	rect := image.Rect(0, 0, 8, 6)
+	ycbcr := image.NewYCbCr(rect, image.YCbCrSubsampleRatio420)
+	alpha := image.NewNYCbCrA(rect, image.YCbCrSubsampleRatio420)
+	premul := image.NewRGBA(rect)
+	gray := image.NewGray(rect)
+	wide := image.NewNRGBA64(rect)
+	for i := range ycbcr.Y {
+		ycbcr.Y[i], alpha.Y[i], alpha.A[i], gray.Pix[i] = byte(i*37), byte(i*11), byte(i*53), byte(i*29)
+	}
+	for i := range ycbcr.Cb {
+		ycbcr.Cb[i], ycbcr.Cr[i], alpha.Cb[i], alpha.Cr[i] = byte(i*71), byte(i*13), byte(i*91), byte(i*7)
+	}
+	for i := 0; i < len(premul.Pix); i += 4 {
+		a := byte(i * 5)
+		premul.Pix[i], premul.Pix[i+1], premul.Pix[i+2], premul.Pix[i+3] = a/2, a/3, a, a
+	}
+	for i := range wide.Pix {
+		wide.Pix[i] = byte(i * 17)
+	}
+	straight := image.NewNRGBA(rect)
+	for i := range straight.Pix {
+		straight.Pix[i] = byte(i * 23)
+	}
+	// An image of a kind with no accessor here, whose colors are already straight alpha.
+	other := struct{ image.Image }{straight}
+	for name, img := range map[string]image.Image{"YCbCr": ycbcr, "NYCbCrA": alpha, "RGBA": premul, "Gray": gray, "NRGBA64": wide, "other": other} {
+		for y := range rect.Dy() {
+			for x := range rect.Dx() {
+				want := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+				if got := nrgbaPixel(img, rect, x, y); got != want {
+					t.Fatalf("%s at %d,%d: %v, the image converts to %v", name, x, y, got, want)
+				}
+			}
+		}
+		if name != "NRGBA64" && name != "other" {
+			if allocs := testing.AllocsPerRun(50, func() { _ = nrgbaPixel(img, rect, 3, 2) }); allocs != 0 {
+				t.Errorf("%s: %v allocations for one pixel", name, allocs)
+			}
+		}
+	}
+}

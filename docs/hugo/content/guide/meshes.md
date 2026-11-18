@@ -101,6 +101,15 @@ PLY is how the [Stanford scanning repository](https://graphics.stanford.edu/data
 - `EXT_mesh_gpu_instancing` expands per-instance `TRANSLATION` (`VEC3` float), `ROTATION` (`VEC4` float or normalized `BYTE`/`SHORT` quaternions), and `SCALE` (`VEC3` float) accessors onto the node's mesh (leaving child nodes uninstanced, per the Khronos specification), accepted when listed in `extensionsRequired`.
 - Strips, fans, points, and lines are read. Missing normals are computed flat.
 
+A glTF model comes back in two views: `Model.Objects`, every primitive placed in the scene and flattened, and `Model.Asset`, the node hierarchy with each mesh in its own space, ready for `Instantiate`. Building both reads every primitive twice. If you only instantiate, ask for the asset alone:
+
+```go
+model, err := nt3dgltf.Decode(data, &nt3dmesh.Options{AssetOnly: true})
+inst, err := model.Asset.Instantiate(scene, nt3d.Root, "kit")
+```
+
+`Model.Objects` is then empty, so `Triangles`, `Bounds`, `Geometry`, and `AddTo` see nothing, and `MaxTriangles` bounds what the asset holds, counting a mesh many nodes share once. On a 5 MB textured model this took a seventh off the decode time and nearly a third off its memory.
+
 Files that require an extension nt3d can't honor, such as Draco compression, are refused. Animation, skins, and morph targets use the [generic animation API](../animation/). All glTF models retain their hierarchy in `Model.Asset`, including empty transform nodes. Undeformed static triangle primitives in `Model.Asset` automatically populate `AssetNode.Shared` (`*nt3d.SharedGeometry`), so repeated mesh nodes inside one `.glb`, `EXT_mesh_gpu_instancing` instances, and repeated `model.AddTo` / `SceneAsset.Instantiate` calls across a scene share a single GPU mesh upload, instanced draw batch, and BVH pick index (with mirrored static nodes sharing a reflected `*nt3d.SharedGeometry`). `AddTo` instantiates `Model.Asset` and `scene.AnimationClips(root)` exposes its clips. `Model.Objects`, `Bounds`, and `Geometry` keep the flattened rest-pose view for existing callers. Static mirrored nodes retain their ancestry, with reflections moved into primitive vertices; animated negative or singular scales remain unsupported by the scene graph.
 
 Normal maps use the [generic normal-map path](../normal-maps/). `KHR_texture_transform` applies scale, rotation, then offset to each supported texture slot's UVs, including its `texCoord` override. Base color and normal maps can use different UV sets and transforms (`Geometry.UV` and optional `Geometry.NormalUV`), while ORM and emissive maps share `Geometry.UV` (warning if a model authors distinct transforms on them). The extension is accepted when required. Authored `TANGENT` frames are used; without them the loader generates MikkTSpace-compatible ones (see [tangent frames](../normal-maps/#tangent-frames)).

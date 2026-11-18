@@ -104,5 +104,6 @@ Wireframe is a structural fallback, not the same picture: edges, points, and lab
 | Add a per-instance value | `transformRecord` in `render_geometry.go`, `Instance` in `wgsl/scene_bindings.wgsl`, and `instanceRecordSize`. |
 | Add a material rule | `checkMaterial` in `material.go`, the only place a material's own rules are written. |
 | Add shading | Both `render_software.go` (or `shading.go`) and the matching `wgsl/scene_*.wgsl`, with a `_gpu_test.go` that compares them. |
+| Honor a glTF material extension | A read function and a row in `materialExtensions` (`mesh/gltf/material_extensions.go`); any other extension gets a row in `documentExtensions`. A test holds every extension name in the source to those tables. |
 | Add a mesh format | A package under `mesh/` that registers a decoder with `nt3dmesh`, and a fuzz target with seeds under 1 KB. |
 | Add a demo | `examples/demos/internal/demo`, plus its task in `Taskfile.yml` and its entry in the gallery. |
