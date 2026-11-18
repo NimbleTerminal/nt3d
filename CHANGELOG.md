@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **The GPU keeps the frame's draw order, as software does.** Of two surfaces
+  at one depth the later draw shows, which `DrawOrder` relies on, but the
+  GPU broke it in two ways. It drew every vertex-colored mesh before any
+  textured one, so a textured mesh always won; it now draws geometry by
+  geometry. And it drew every instance of a shared mesh where the first was,
+  so of red, blue, red at one place it showed blue; an instance now joins the
+  earlier ones only when nothing drawn since overlaps it, which keeps
+  instancing wherever order cannot show.
+- A reflection probe far from the camera's `Origin` no longer keeps the whole
+  frame from drawing. Rebased into the frame's float32 coordinates its box
+  collapsed, and the frame was refused; such a probe is now left out.
+
 - An orthographic camera with only `Near` set keeps its far plane beyond
   `Near`. `Near` at or past the automatic far plane (200 units at the default
   distance) used to leave no depth, and a view matrix that was not finite, so

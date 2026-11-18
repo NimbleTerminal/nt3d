@@ -307,9 +307,64 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		key     geometryKey
 		members []int
 		blended bool
+		// What has been drawn since the group began, for deciding whether a
+		// later draw may still join it; see joins.
+		seen   int   // Draws up to here have been looked at.
+		others []int // Opaque draws since the first member that are not members.
+		closed bool  // Too much has been drawn since for it to take more.
 	}
 	var groups []*group
 	byKey := map[groupKey]*group{}
+	groupOf := make([]*group, len(f.Draws))
+	bounds := make([]nt3dmath.AABB, len(f.Draws))
+	bounded := make([]int8, len(f.Draws)) // 0 unknown, 1 bounded, -1 not.
+	// worldBounds is where a draw's geometry lies, when its bounds can be
+	// trusted to hold it: a shader or a pose may move vertices past them.
+	worldBounds := func(i int) (nt3dmath.AABB, bool) {
+		if bounded[i] == 0 {
+			bounded[i] = -1
+			d := &f.Draws[i]
+			if b := d.Geometry.Bounds; b.IsValid() && d.Geometry.Displacement == nil && d.state.posed == nil {
+				bounds[i], bounded[i] = b.Transformed(instance(f, i).World), 1
+			}
+		}
+		return bounds[i], bounded[i] > 0
+	}
+	// joins reports whether draw i may be drawn with grp, where grp is drawn,
+	// which is ahead of every draw since grp's first that is not a member.
+	// That is the frame's picture only if none of those could share a depth
+	// with it anywhere, and the frame's order is what decides between
+	// surfaces at one depth: so i joins only when its bounds overlap none of
+	// theirs. A run of instances with nothing between them always joins; a
+	// group that instanceReach other draws have followed takes no more, which
+	// bounds the search.
+	joins := func(grp *group, i int) bool {
+		if grp.closed {
+			return false
+		}
+		for k := grp.seen + 1; k < i; k++ {
+			if o := groupOf[k]; o != nil && o != grp && !o.blended {
+				if grp.others = append(grp.others, k); len(grp.others) > instanceReach {
+					grp.closed = true
+					return false
+				}
+			}
+		}
+		grp.seen = i
+		if len(grp.others) == 0 {
+			return true
+		}
+		b, ok := worldBounds(i)
+		if !ok {
+			return false
+		}
+		for _, k := range grp.others {
+			if o, ok := worldBounds(k); !ok || b.Min.X <= o.Max.X && o.Min.X <= b.Max.X && b.Min.Y <= o.Max.Y && o.Min.Y <= b.Max.Y && b.Min.Z <= o.Max.Z && o.Min.Z <= b.Max.Z {
+				return false
+			}
+		}
+		return true
+	}
 	g.nodes = make([]*gpuGeometry, len(f.Draws))
 	for i := range f.Draws {
 		geom, st := f.Draws[i].Geometry, &f.Draws[i].state
@@ -534,7 +589,8 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			continue
 		}
 		if transparent(&f.Draws[i].Geometry) || blendedPoints(&f.Draws[i].Geometry) {
-			groups = append(groups, &group{keys[i], []int{i}, true})
+			groupOf[i] = &group{key: keys[i], members: []int{i}, blended: true}
+			groups = append(groups, groupOf[i])
 			continue
 		}
 		var matShader *MaterialShader
@@ -562,12 +618,13 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			k.orm = textureKey{src: ormMap(&m), repeat: m.PBR.ORMRepeat, aniso: aniso}
 			k.emissive = textureKey{src: emissiveMap(&m), repeat: m.Emission.Repeat, aniso: aniso}
 		}
-		if grp := byKey[k]; grp != nil {
+		if grp := byKey[k]; grp != nil && joins(grp, i) {
 			grp.members = append(grp.members, i)
 		} else {
-			byKey[k] = &group{key: keys[i], members: []int{i}}
+			byKey[k] = &group{key: keys[i], members: []int{i}, seen: i}
 			groups = append(groups, byKey[k])
 		}
+		groupOf[i] = byKey[k]
 	}
 	g.draws, g.blendDraw = g.draws[:0], map[int]int{}
 	for _, grp := range groups {
@@ -599,6 +656,10 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 	}
 	return nil
 }
+
+// instanceReach is how many other draws may follow an instanced group before
+// it stops taking instances drawn after them; see joins in prepare.
+const instanceReach = 64
 
 // instanceSet takes a geometry's next set for this frame, sized for n
 // instances.

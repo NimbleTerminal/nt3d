@@ -1127,20 +1127,6 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 					}
 				}
 			}
-			if i == slotBox {
-				for _, d := range g.draws {
-					geom := &f.Draws[d.index].Geometry
-					if !mapped(*geom) || transparent(geom) || transmitting(geom) || d.geom.batches[slotTextured].count == 0 {
-						continue
-					}
-					if geom.Material != nil && geom.Material.cutout() {
-						g.setHookOrScenePipeline(pass, geom, g.cutoutPipeline, hookPipeCutout)
-					} else {
-						g.setHookOrScenePipeline(pass, geom, g.texturePipeline, hookPipeOpaque)
-					}
-					g.drawTextured(pass, f, d)
-				}
-			}
 			if i == slotUI || i == slotDynamic {
 				if i == slotUI && f.PostProcess.on() {
 					continue
@@ -1148,18 +1134,31 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 				g.drawBatch(pass, i, g.batches[i], g.batches[i].bind)
 				continue
 			}
+			// Each geometry's opaque primitives, geometry by geometry in the
+			// frame's order; see geometrySlots.
 			for _, d := range g.draws {
-				b := d.geom.batches[i]
-				switch {
-				case b.count == 0 || i == slotMesh && (mapped(f.Draws[d.index].Geometry) || transparent(&f.Draws[d.index].Geometry) || transmitting(&f.Draws[d.index].Geometry)) || i == slotPoint && blendedPoints(&f.Draws[d.index].Geometry):
-				case i == slotPoint && f.Draws[d.index].Geometry.PointStyle.Texture != nil:
-					g.drawSprite(pass, f, d)
-				case i == slotMesh:
-					g.setScenePipeline(pass, g.pipelines[slotMesh])
-					pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
-					pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
-				default:
-					g.drawBatch(pass, i, b, d.set.binds[i])
+				geom := &f.Draws[d.index].Geometry
+				for _, i := range geometrySlots {
+					if i == slotBox && mapped(*geom) && !transparent(geom) && !transmitting(geom) && d.geom.batches[slotTextured].count > 0 {
+						if geom.Material != nil && geom.Material.cutout() {
+							g.setHookOrScenePipeline(pass, geom, g.cutoutPipeline, hookPipeCutout)
+						} else {
+							g.setHookOrScenePipeline(pass, geom, g.texturePipeline, hookPipeOpaque)
+						}
+						g.drawTextured(pass, f, d)
+					}
+					b := d.geom.batches[i]
+					switch {
+					case b.count == 0 || i == slotMesh && (mapped(*geom) || transparent(geom) || transmitting(geom)) || i == slotPoint && blendedPoints(geom):
+					case i == slotPoint && geom.PointStyle.Texture != nil:
+						g.drawSprite(pass, f, d)
+					case i == slotMesh:
+						g.setScenePipeline(pass, g.pipelines[slotMesh])
+						pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
+						pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
+					default:
+						g.drawBatch(pass, i, b, d.set.binds[i])
+					}
 				}
 			}
 		}

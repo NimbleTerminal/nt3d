@@ -176,3 +176,34 @@ func TestReflectionProbeHDRAndDiffuseIsolation(t *testing.T) {
 		t.Fatal("probe changed diffuse lighting")
 	}
 }
+
+// A reflection probe far from the camera's Origin cannot keep its box once
+// it is rebased into the frame's float32 coordinates: its bounds and capture
+// position round to the same number. Such a probe lights nothing the frame
+// can show, so it is left out of the frame, which still draws.
+func TestReflectionProbeFarFromOriginIsLeftOut(t *testing.T) {
+	s := NewScene()
+	ball, err := BuildSphere(Sphere{Radius: .5, Segments: 12, Rings: 6, Color: color.RGBA{200, 200, 200, 255}})
+	check(t, err)
+	id, err := s.SetGeometry("ball", ball)
+	check(t, err)
+	far := [3]float64{1e9, 0, 0}
+	check(t, s.SetNodeOrigin(id, far))
+	near, away := testProbe(t, color.NRGBA{255, 0, 0, 255}), testProbe(t, color.NRGBA{0, 255, 0, 255})
+	near.Position, near.Bounds = nt3dmath.Vec3{X: 1e9}, probeBounds(nt3dmath.Vec3{X: 1e9 - 128, Y: -2, Z: -2}, nt3dmath.Vec3{X: 1e9 + 128, Y: 2, Z: 2})
+	check(t, s.SetReflectionProbes([]ReflectionProbe{away, near})) // away spans X -2..2, around the world's origin.
+
+	camera := DefaultCamera()
+	camera.Origin = far
+	f, err := s.StillFrame(camera, 32, 32)
+	check(t, err)
+	if err := validateFrame(f); err != nil {
+		t.Fatalf("a far probe keeps the whole frame from drawing: %v", err)
+	}
+	if len(f.ReflectionProbes) != 1 || f.ReflectionProbes[0].Environment != near.Environment {
+		t.Fatalf("want only the probe around the camera's origin, got %d probes", len(f.ReflectionProbes))
+	}
+	if _, err := NewSoftwareRenderer().Render(f); err != nil {
+		t.Fatal(err)
+	}
+}

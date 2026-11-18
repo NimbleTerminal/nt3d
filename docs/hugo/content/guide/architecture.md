@@ -85,7 +85,8 @@ Wireframe is a structural fallback, not the same picture: edges, points, and lab
 ## The GPU renderer's shape
 
 - **Shared and per-view state.** Everything created once per device (the shader module, layouts, pipelines, uploaded geometry and textures) lives in `gpuShared`, behind its mutex, and is counted by the views that use it. Each `gpuRenderer` is one view: its own uniforms, instance buffers, targets, and a copy of the shared pipelines it reads without the lock.
-- **Slots.** A primitive kind is a slot (`slotPoint`, `slotMesh`, `slotBox`, …). Geometry keeps a batch of records per slot, and `slotDrawOrder` is the order a pass draws them.
+- **Slots.** A primitive kind is a slot (`slotPoint`, `slotMesh`, `slotBox`, …), and geometry keeps a batch of records per slot. A pass draws geometry by geometry in the frame's order, each one's slots in `geometrySlots` order, never slot by slot: of two surfaces at one depth the later draw shows, as software has it.
+- **Instancing.** Draws of one shared geometry are drawn together, where the first of them is. A later one joins only if no draw since overlaps its bounds, since that is the only case where drawing it early could change the picture.
 - **Caches.** Uploaded geometry is keyed by `Draw.Shared`, else by `Draw.Node` and `Draw.Revision`, else by the frame's `Revision` and the draw's position. What a frame does not use is released when the next frame is prepared; hook programs are released after going unused for a while.
 
 ## Threads

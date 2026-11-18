@@ -35,8 +35,15 @@ var slotEntryPoints = [slotPipelines]string{
 	slotArrow:   "vs_arrow",
 }
 
-// slotDrawOrder is the order a scene pass draws its slots in: the frame's
-// dynamic lines first, then each geometry's primitives, and the overlays
-// last, over everything. Textured triangles follow the boxes, and drop
-// shadows and blended geometry are drawn where the pass reaches slotUI.
-var slotDrawOrder = [...]int{slotDynamic, slotPoint, slotMesh, slotBox, slotLine, slotArrow, slotUI}
+// slotDrawOrder is the order of a scene pass: the frame's dynamic lines
+// first; then, where slotPoint stands, every geometry's opaque primitives;
+// and the overlays last, over everything. Drop shadows and blended geometry
+// are drawn where the pass reaches slotUI.
+var slotDrawOrder = [...]int{slotDynamic, slotPoint, slotUI}
+
+// geometrySlots is the order one geometry's opaque primitives are drawn in.
+// A pass draws geometry by geometry in the frame's order, not slot by slot:
+// of two surfaces at one depth the later draw shows, whatever kinds of
+// primitive they are. Textured triangles, which have a slot of their own,
+// are drawn just before the boxes.
+var geometrySlots = [...]int{slotPoint, slotMesh, slotBox, slotLine, slotArrow}

@@ -72,16 +72,24 @@ func (s *Scene) SetReflectionProbes(probes []ReflectionProbe) error {
 // ReflectionProbes returns a detached snapshot in world coordinates.
 func (s *Scene) ReflectionProbes() []ReflectionProbe { return slices.Clone(s.reflectionProbes) }
 
+// reflectionProbesRelative is the scene's probes in a frame's coordinates,
+// which are float32 around origin. A probe far enough from origin loses its
+// box there: its bounds and capture position round to the same number. It
+// lights nothing the frame can show, and a frame holding it would be refused
+// whole, so it is left out.
 func (s *Scene) reflectionProbesRelative(origin [3]float64) []ReflectionProbe {
-	out := s.ReflectionProbes()
 	shift := func(v nt3dmath.Vec3) nt3dmath.Vec3 {
 		return nt3dmath.Vec3{X: float32(float64(v.X) - origin[0]), Y: float32(float64(v.Y) - origin[1]), Z: float32(float64(v.Z) - origin[2])}
 	}
-	for i := range out {
-		p := &out[i]
-		p.Position = shift(p.Position)
-		p.Bounds.Min = shift(p.Bounds.Min)
-		p.Bounds.Max = shift(p.Bounds.Max)
+	if len(s.reflectionProbes) == 0 {
+		return nil
+	}
+	out := make([]ReflectionProbe, 0, len(s.reflectionProbes))
+	for _, p := range s.reflectionProbes {
+		p.Position, p.Bounds.Min, p.Bounds.Max = shift(p.Position), shift(p.Bounds.Min), shift(p.Bounds.Max)
+		if lo, at, hi := p.Bounds.Min, p.Position, p.Bounds.Max; lo.X < at.X && at.X < hi.X && lo.Y < at.Y && at.Y < hi.Y && lo.Z < at.Z && at.Z < hi.Z {
+			out = append(out, p)
+		}
 	}
 	return out
 }

@@ -216,3 +216,62 @@ func TestDrawOrderDecidesCoincidentSurfaces(t *testing.T) {
 		t.Fatalf("with red in a later layer the center is %v, want red", got)
 	}
 }
+
+// coincidentMixed is two coincident balls of different kinds of primitive: a
+// red one colored by its vertices, in redLayer, and a blue one colored by a
+// texture, in layer 0. The red ball is added first.
+func coincidentMixed(t *testing.T, redLayer int) Frame {
+	t.Helper()
+	s := NewScene()
+	red, err := BuildSphere(Sphere{Radius: .7, Segments: 24, Rings: 12, Color: color.RGBA{255, 0, 0, 255}, Material: &Material{Shading: ShadeUnlit}})
+	check(t, err)
+	id, err := s.SetGeometry("red", red)
+	check(t, err)
+	blue, err := BuildSphere(Sphere{Radius: .7, Segments: 24, Rings: 12, Color: color.RGBA{255, 255, 255, 255}, Material: &Material{Shading: ShadeUnlit, Texture: testTexture(t, color.RGBA{0, 0, 255, 255})}})
+	check(t, err)
+	_, err = s.SetGeometry("blue", blue)
+	check(t, err)
+	check(t, s.SetNodeDrawOrder(id, DrawOrder{Layer: redLayer}))
+	f, err := s.StillFrame(DefaultCamera(), 64, 64)
+	check(t, err)
+	return f
+}
+
+// coincidentShared is three coincident balls in the order red, blue, red,
+// where the two red ones are instances of one shared mesh.
+func coincidentShared(t *testing.T) Frame {
+	t.Helper()
+	s := NewScene()
+	ball := func(c color.RGBA) Geometry {
+		g, err := BuildSphere(Sphere{Radius: .7, Segments: 24, Rings: 12, Color: c, Material: &Material{Shading: ShadeUnlit}})
+		check(t, err)
+		return g
+	}
+	red, err := NewSharedGeometry(ball(color.RGBA{255, 0, 0, 255}))
+	check(t, err)
+	_, err = s.SetShared("red 1", red)
+	check(t, err)
+	_, err = s.SetGeometry("blue", ball(color.RGBA{0, 0, 255, 255}))
+	check(t, err)
+	_, err = s.SetShared("red 2", red)
+	check(t, err)
+	f, err := s.StillFrame(DefaultCamera(), 64, 64)
+	check(t, err)
+	return f
+}
+
+// Draw order decides between coincident surfaces whatever they are made of:
+// a vertex-colored mesh and a textured one, or instances of a shared mesh
+// with another mesh drawn between them.
+func TestDrawOrderHoldsAcrossKindsAndInstances(t *testing.T) {
+	red, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 0, 255, 255}
+	if got := at(softwareRender(coincidentMixed(t, 0)), 32, 32); got != blue {
+		t.Fatalf("the textured ball added last shows %v, want blue", got)
+	}
+	if got := at(softwareRender(coincidentMixed(t, 1)), 32, 32); got != red {
+		t.Fatalf("with the vertex-colored ball in a later layer the center is %v, want red", got)
+	}
+	if got := at(softwareRender(coincidentShared(t)), 32, 32); got != red {
+		t.Fatalf("red, blue, red shows %v, want the red drawn last", got)
+	}
+}
