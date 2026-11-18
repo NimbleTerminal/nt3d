@@ -38,6 +38,22 @@ func invalidCameras() map[string]Camera {
 		"Pose":        {Pose: mirrored},
 		"Pose ":       {Pose: nt3dmath.Mat4{0: 1}}, // Flattened: no inverse.
 		"Pose  ":      {Pose: nt3dmath.Mat4{0: float32(nan), 5: 1, 10: 1, 15: 1}},
+		// Finite, but outside what the projection, which is float32, can hold.
+		"Far  ":         {Projection: Perspective, Far: 1e300},
+		"Near ":         {Projection: Perspective, Near: 1e300},
+		"Near  ":        {Near: 1e-300, Far: 1},
+		"AspectRatio ":  {AspectRatio: 1e-300},
+		"AspectRatio  ": {AspectRatio: 1e300},
+		"FOV   ":        {Projection: Perspective, FOV: 1e-300},
+		"Xmag  ":        {Xmag: 1e-300, Ymag: 1e-300},
+		"Ymag ":         {Xmag: 1, Ymag: 1e300},
+		// Each value fits, but the projection or view built from them does not.
+		"Near   ": {Projection: Perspective, Near: 1e20, Far: 1e21},
+		"FOV    ": {Projection: Perspective, FOV: 1e-40},
+		"Target ": {Target: nt3dmath.Vec3{X: 3e38, Y: 3e38, Z: 3e38}},
+		"Pose   ": {Pose: nt3dmath.Translation(nt3dmath.Vec3{X: 3e38, Y: 3e38, Z: 3e38})},
+		// Far beyond Near as float64, but the same number as float32.
+		"Far   ": {Near: 1e6, Far: 1e6 + 1e-3},
 	}
 }
 
@@ -102,5 +118,27 @@ func TestSceneRejectsAnInvalidCamera(t *testing.T) {
 	}
 	if _, err := s.NodeCamera(id); err == nil {
 		t.Error("a refused camera was kept on the node")
+	}
+}
+
+// Valid, which corrects a camera, always returns one Validate accepts: what
+// it cannot make sense of it replaces with a default. The widget and the
+// camera-path bridge rely on that when they hand a corrected camera to a
+// scene.
+func TestValidCameraPassesValidate(t *testing.T) {
+	s := NewScene()
+	for field, c := range invalidCameras() {
+		v := c.Valid()
+		if err := v.Validate(); err != nil {
+			t.Errorf("%s: Valid returned a camera Validate refuses: %v\n%+v", field, err, v)
+			continue
+		}
+		f, err := s.Frame(v, 32, 24)
+		if err == nil {
+			err = validateFrame(f)
+		}
+		if err != nil {
+			t.Errorf("%s: the corrected camera does not draw: %v", field, err)
+		}
 	}
 }

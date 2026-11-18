@@ -55,8 +55,10 @@ type Camera struct {
 	// AspectRatio overrides viewport aspect when positive.
 	AspectRatio float64
 	// Near and Far independently override automatic clipping when positive.
-	// Near > 0 with Far == 0 means an infinite perspective far plane.
-	// Orthographic cameras with explicit Far allow Near == 0.
+	// Near > 0 with Far == 0 means an infinite perspective far plane; an
+	// orthographic camera keeps its automatic far plane, moved out beyond
+	// Near when Near reaches it. Orthographic cameras with explicit Far allow
+	// Near == 0.
 	Near, Far float64
 	// Xmag and Ymag are orthographic half extents; both zero use Distance.
 	Xmag, Ymag float64
@@ -88,7 +90,9 @@ func DefaultCamera() Camera {
 // Validate reports a field whose value cannot mean anything: a number that is
 // not finite, a negative where only a size makes sense, a FOV of 180 or more,
 // a Far at or before Near, only one of Xmag and Ymag, an unknown Projection,
-// or a Pose that is flattened or mirrored. Scene.Frame, Scene.StillFrame, and
+// a Pose that is flattened or mirrored, or a lens value so large or small
+// that the projection, which is computed in float32, does not come out
+// finite. Scene.Frame, Scene.StillFrame, and
 // Scene.SetNodeCamera return its error, as they do for a geometry that fails
 // its own Validate.
 //
@@ -117,10 +121,20 @@ func (c Camera) Validate() error {
 			return fmt.Errorf("nt3d: camera %s is negative: %g", f.name, f.value)
 		}
 	}
+	// The projection is computed in float32, where a value that is finite as
+	// a float64 can still be zero or infinite.
+	for _, f := range []struct {
+		name  string
+		value float64
+	}{{"FOV", c.FOV}, {"AspectRatio", c.AspectRatio}, {"Near", c.Near}, {"Far", c.Far}, {"Xmag", c.Xmag}, {"Ymag", c.Ymag}} {
+		if v := float32(f.value); f.value != 0 && (v == 0 || math.IsInf(float64(v), 0)) {
+			return fmt.Errorf("nt3d: camera %s is outside what a float32 projection holds: %g", f.name, f.value)
+		}
+	}
 	switch {
 	case c.FOV >= 180:
 		return fmt.Errorf("nt3d: camera FOV must be below 180 degrees: %g", c.FOV)
-	case c.Far > 0 && c.Far <= c.Near:
+	case c.Far > 0 && float32(c.Far) <= float32(c.Near): // As the projection sees them.
 		return fmt.Errorf("nt3d: camera Far (%g) must be beyond Near (%g)", c.Far, c.Near)
 	case (c.Xmag > 0) != (c.Ymag > 0):
 		return errors.New("nt3d: camera Xmag and Ymag must be set together")
@@ -140,13 +154,76 @@ func (c Camera) Validate() error {
 			return errors.New("nt3d: camera Pose is mirrored")
 		}
 	}
+	// Whatever the checks above let through in combination, the projection
+	// and the view themselves have to come out usable.
+	k := c.corrected() // Defaults filled in; the checks above leave nothing else to correct.
+	if !usable(k.projection(1)) {
+		return errors.New("nt3d: camera projection is out of range: FOV, AspectRatio, Near, Far, Xmag, or Ymag is too large or too small together")
+	}
+	if !k.placed() {
+		return errors.New("nt3d: camera Target, Distance, or Pose puts it too far out for float32 coordinates; use Origin for large ones")
+	}
 	return nil
+}
+
+// cameraLimit is the largest magnitude an entry of a camera's view or
+// projection matrix may have: far past any use, and small enough that the
+// two multiply, and scale by a viewport's aspect, without overflowing
+// float32.
+const cameraLimit = 1e15
+
+// usable reports whether a view or projection matrix is finite and within
+// cameraLimit.
+func usable(m nt3dmath.Mat4) bool {
+	for _, v := range m {
+		if !(v >= -cameraLimit && v <= cameraLimit) { // False for NaN, too.
+			return false
+		}
+	}
+	return true
+}
+
+// inFloat32 reports whether a lens value survives conversion to float32,
+// where the projection is computed: zero stays zero, and nothing else becomes
+// zero or infinite.
+func inFloat32(v float64) bool {
+	f := float32(v)
+	return v == 0 || f != 0 && !math.IsInf(float64(f), 0)
 }
 
 // valid is the camera as it is used: defaults filled in and orbit values held
 // to their limits. It also replaces what Validate refuses with a default, so
-// that the methods here that cannot return an error never compute with it.
+// that the methods here that cannot return an error never compute with it,
+// and so that Validate accepts whatever it returns.
 func (c Camera) valid() Camera {
+	c = c.corrected()
+	// Values that each pass can still combine into a projection or a view
+	// that does not come out usable; then the lens or the placement as a
+	// whole falls back to its default, which always does.
+	if !usable(c.projection(1)) {
+		c.FOV, c.AspectRatio, c.Near, c.Far, c.Xmag, c.Ymag = 0, 0, 0, 0, 0, 0
+	}
+	if !c.placed() {
+		c.Pose, c.Target = nt3dmath.Mat4{}, nt3dmath.Vec3{}
+	}
+	return c
+}
+
+// placed reports whether a camera already corrected is somewhere its view
+// matrix can express, facing some way: far enough out, the orbit distance
+// vanishes into the target's float32 coordinates, the eye lands on the
+// target, and no direction is left to look in. Origin is left out: it is a
+// float64 offset that Scene.Frame takes off the camera and the nodes alike
+// before either becomes float32, so a large one is no fault of the camera's,
+// and is how to place a camera that far out.
+func (c Camera) placed() bool {
+	c.Origin = [3]float64{}
+	v := c.view()
+	return usable(v) && math.Abs(float64(v.Determinant3())-1) < .01 // A rotation, not a collapse.
+}
+
+// corrected applies valid's corrections field by field.
+func (c Camera) corrected() Camera {
 	if !nt3dmath.IsFinite(c.Elevation) {
 		c.Elevation = 25
 	}
@@ -171,16 +248,17 @@ func (c Camera) valid() Camera {
 	if _, ok := c.Pose.InverseAffine(); c.Pose != (nt3dmath.Mat4{}) && (!ok || c.Pose.Determinant3() <= 0) {
 		c.Pose = nt3dmath.Mat4{}
 	}
-	if !nt3dmath.IsFinite(c.FOV) || c.FOV < 0 || c.FOV >= 180 {
+	if !nt3dmath.IsFinite(c.FOV) || c.FOV < 0 || c.FOV >= 180 || !inFloat32(c.FOV) {
 		c.FOV = 0
 	}
-	if !nt3dmath.IsFinite(c.AspectRatio) || c.AspectRatio < 0 {
+	if !nt3dmath.IsFinite(c.AspectRatio) || c.AspectRatio < 0 || !inFloat32(c.AspectRatio) {
 		c.AspectRatio = 0
 	}
-	if !nt3dmath.IsFinite(c.Near) || !nt3dmath.IsFinite(c.Far) || c.Near < 0 || c.Far < 0 || c.Far > 0 && c.Far <= c.Near {
+	if !nt3dmath.IsFinite(c.Near) || !nt3dmath.IsFinite(c.Far) || c.Near < 0 || c.Far < 0 || !inFloat32(c.Near) || !inFloat32(c.Far) ||
+		c.Far > 0 && float32(c.Far) <= float32(c.Near) { // As the projection sees them.
 		c.Near, c.Far = 0, 0
 	}
-	if !nt3dmath.IsFinite(c.Xmag) || !nt3dmath.IsFinite(c.Ymag) || c.Xmag <= 0 || c.Ymag <= 0 {
+	if !nt3dmath.IsFinite(c.Xmag) || !nt3dmath.IsFinite(c.Ymag) || c.Xmag <= 0 || c.Ymag <= 0 || !inFloat32(c.Xmag) || !inFloat32(c.Ymag) {
 		c.Xmag, c.Ymag = 0, 0
 	}
 	if !nt3dmath.IsFinite(c.Origin[0]) || !nt3dmath.IsFinite(c.Origin[1]) || !nt3dmath.IsFinite(c.Origin[2]) {
@@ -220,7 +298,11 @@ func (c Camera) extents(aspect float32) (float32, float32) {
 }
 
 func (c Camera) basis() (eye, right, up, forward nt3dmath.Vec3) {
-	c = c.valid()
+	return c.valid().rawBasis()
+}
+
+// rawBasis is basis for a camera already corrected.
+func (c Camera) rawBasis() (eye, right, up, forward nt3dmath.Vec3) {
 	if c.Pose != (nt3dmath.Mat4{}) {
 		eye = c.Pose.Point(nt3dmath.Vec3{})
 		forward = c.Pose.Direction(nt3dmath.Vec3{Z: -1}).Normalize()
@@ -243,14 +325,24 @@ func (c Camera) basis() (eye, right, up, forward nt3dmath.Vec3) {
 // viewport aspect ratio (width over height), using [0, 1] clip depth.
 func (c Camera) Matrix(aspect float32) nt3dmath.Mat4 {
 	c = c.valid()
+	return c.projection(aspect).Mul(c.view())
+}
+
+// view is the world-to-eye matrix of a camera already corrected.
+func (c Camera) view() nt3dmath.Mat4 {
+	e, r, u, f := c.rawBasis()
+	return nt3dmath.Mat4{r.X, u.X, -f.X, 0, r.Y, u.Y, -f.Y, 0, r.Z, u.Z, -f.Z, 0, -r.Dot(e), -u.Dot(e), f.Dot(e), 1}
+}
+
+// projection is the eye-to-clip matrix of a camera already corrected, for a
+// viewport of the given aspect.
+func (c Camera) projection(aspect float32) nt3dmath.Mat4 {
 	if aspect <= 0 {
 		aspect = 1
 	}
 	if c.AspectRatio > 0 {
 		aspect = float32(c.AspectRatio)
 	}
-	e, r, u, f := c.basis()
-	view := nt3dmath.Mat4{r.X, u.X, -f.X, 0, r.Y, u.Y, -f.Y, 0, r.Z, u.Z, -f.Z, 0, -r.Dot(e), -u.Dot(e), f.Dot(e), 1}
 	near, far := float32(c.Distance*nearPlane), float32(c.Distance*farPlane)
 	if c.Near > 0 {
 		near = float32(c.Near)
@@ -264,6 +356,12 @@ func (c Camera) Matrix(aspect float32) nt3dmath.Mat4 {
 		if c.Near == 0 && near >= far {
 			near = far * float32(nearPlane/farPlane)
 		}
+	}
+	// A near-only override can be at or beyond the automatic far plane, which
+	// would leave no depth: keep the automatic depth beyond it. (A perspective
+	// camera with only Near has no far plane at all.)
+	if c.Far == 0 && near >= far {
+		far += near
 	}
 	var p nt3dmath.Mat4
 	if c.Projection == Perspective {
@@ -284,7 +382,7 @@ func (c Camera) Matrix(aspect float32) nt3dmath.Mat4 {
 		p[10] = 1 / (near - far)
 		p[14] = near / (near - far)
 	}
-	return p.Mul(view)
+	return p
 }
 
 // RayFromCell returns a ray through a cell center, accounting for cell dimensions.

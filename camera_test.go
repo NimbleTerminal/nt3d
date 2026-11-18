@@ -194,3 +194,31 @@ func TestCameraForwardAndBasis(t *testing.T) {
 		t.Fatalf("orbit Forward %v, want %v", orbit.Forward(), wantOrbitForward)
 	}
 }
+
+// An orthographic camera with only Near set keeps its automatic far plane,
+// and the far plane stays beyond Near however far out Near is put: depth runs
+// from 0 at Near to 1 at a far plane the automatic depth beyond it. Near at
+// or past the automatic far plane used to leave no depth at all, and a view
+// matrix that was not finite.
+func TestOrthographicNearOnlyClipping(t *testing.T) {
+	automatic := DefaultCamera().Distance * farPlane // 200 at the default distance.
+	for _, near := range []float64{.5, automatic, 3 * automatic} {
+		c := DefaultCamera()
+		c.Near, c.Pose = near, nt3dmath.Identity()
+		if err := c.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		far := automatic
+		if near >= far {
+			far = near + automatic
+		}
+		m := c.Matrix(1)
+		for _, d := range []float64{near, (near + far) / 2, far} {
+			_, _, z, w := m.Transform(nt3dmath.Vec3{Z: -float32(d)})
+			want := (d - near) / (far - near)
+			if got := float64(z / w); math.IsNaN(got) || math.Abs(got-want) > 1e-4 {
+				t.Fatalf("near %g depth at %g: got %g want %g", near, d, got, want)
+			}
+		}
+	}
+}

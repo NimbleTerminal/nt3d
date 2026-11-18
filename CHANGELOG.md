@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- An orthographic camera with only `Near` set keeps its far plane beyond
+  `Near`. `Near` at or past the automatic far plane (200 units at the default
+  distance) used to leave no depth, and a view matrix that was not finite, so
+  nothing was drawn.
+- `FuzzCamera` holds that `Camera.Valid` always satisfies `Camera.Validate`,
+  and that a camera `Validate` accepts gives a frame a renderer accepts. It
+  found the two entries above.
+
 - **Breaking: `Material` is grouped by feature, and says what kind of surface
   it is in two fields.** It was 43 flat fields whose lighting model was
   chosen by which of them were non-zero: sliding `Roughness` to zero turned a
@@ -83,6 +91,13 @@
   | negative `Distance`, `AspectRatio`, `ResumeAfter` | the default | error |
   | zero `Distance`, `FOV`, `Near`, `Far`, extents | the default | the default |
   | `Elevation` past ±89, `Distance` out of range | held to the limit | held to the limit |
+
+  `Validate` also refuses a camera whose numbers are finite but more than
+  its view and projection, which are float32, can hold: a `Far` of 1e300, an
+  `AspectRatio` of 1e-300, a `Far` that equals `Near` once both are float32,
+  or a `Target` so far out that the orbit distance vanishes into it and the
+  camera has no direction left to look in. For coordinates that large, use
+  `Origin`. `Valid` always returns a camera `Validate` accepts.
 
   Methods that cannot return an error (`Matrix`, `Eye`, `Orbit`, `Pick`, and
   `Valid`) still compute with a corrected camera, so nothing panics. The
