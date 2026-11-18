@@ -539,7 +539,7 @@ func (g *gpuRenderer) ensureHookShadowPipeline(dev *wgpu.Device, prog *gpuHookPr
 		d.Fragment = &wgpu.FragmentState{
 			Module:     prog.shader,
 			EntryPoint: fragment,
-			Targets:    []gputypes.ColorTargetState{{Format: gputypes.TextureFormatR8Unorm, WriteMask: 0}},
+			Targets:    []gputypes.ColorTargetState{{Format: gputypes.TextureFormatR8Unorm, WriteMask: gputypes.ColorWriteMaskAll}},
 		}
 	}
 	var err error

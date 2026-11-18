@@ -456,8 +456,8 @@ fn resolveToneMap(rgb: vec3<f32>, mode: i32) -> vec3<f32> {
 		let d = uv - vec2<f32>(0.5);
 		let r2 = dot(d, d);
 		let t = clamp((r2 - 0.05) / (0.55 - 0.05), 0.0, 1.0);
-		let smooth = t * t * (3.0 - 2.0 * t);
-		rgb *= max(0.0, 1.0 - pr.grading.w * smooth);
+		let fade = t * t * (3.0 - 2.0 * t); // Not "smooth": WGSL reserves it, and browsers refuse it.
+		rgb *= max(0.0, 1.0 - pr.grading.w * fade);
 	}
 
 	if pr.resolve.y > 0.5 {

@@ -105,6 +105,10 @@ move to Done with their commit; git history has the details.
   differs from the convention.
 - [ ] **Re-record the cloud poster** with `task tapes -- cloud`; `web/assets/cloud.png`
   is a `--snapshot` of the demo for now.
+- [ ] **Report the dropped write mask upstream**: `gogpu/wgpu`'s browser
+  layer sets a color target's `writeMask` only when it is above zero, so a
+  mask of none becomes the browser's default of all. nt3d's cutout shadow
+  shader writes its scratch target to avoid needing one.
 - [ ] **Report the shader translator bug upstream**: WGSL functions named
   `texture…` are miscompiled (an empty body, and the call turned into a
   texture constructor); nt3d avoids the name.

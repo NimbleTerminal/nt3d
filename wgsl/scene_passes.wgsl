@@ -28,7 +28,11 @@ struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>,
  }
  return o;
 }
-@fragment fn fs_shadow_cutout(o:ShadowOut) {
+// A cutout's shadow is depth alone, but the pass carries a scratch color
+// target, and a browser refuses a target the fragment stage does not write
+// unless its write mask is zero, which the browser binding cannot say (it
+// omits a zero mask, and the default is every channel). So it is written.
+@fragment fn fs_shadow_cutout(o:ShadowOut)->@location(0) vec4<f32> {
  let t=sampleMap(o.uv,vec2<f32>(0.0),vec2<f32>(0.0),o.repeat);
  var a=t.a;
  if nt3dHasMaterial {
@@ -36,6 +40,7 @@ struct ShadowOut { @builtin(position) clip:vec4<f32>, @location(0) uv:vec2<f32>,
   a=nt3d_material(o.world,n,viewAt(o.world),o.uv,vec4<f32>(t.rgb*o.color,t.a)).a;
  }
  if a<o.cut {discard;}
+ return vec4<f32>(0.0);
 }
 
 // Drop bounds are local; transform every corner before fitting the world disc.

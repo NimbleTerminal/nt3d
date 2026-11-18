@@ -93,6 +93,8 @@ under *Migrating* below.
   reached its automatic far plane.
 - A reflection probe far from the camera's `Origin` kept the whole frame
   from drawing.
+- In browsers, post-processing never drew and cutout shadows raised a
+  pipeline error; both work now.
 - Two decoder panics on malformed glTF and PLY files.
 - `nt3dwidget` closed its GPU renderer when a software or wireframe frame
   was refused, and discarded errors from `Scene.Frame`.
@@ -410,6 +412,13 @@ culling, and the camera packages use them in place of their own copies.
 - **A reflection probe far from the camera's `Origin` no longer keeps the
   whole frame from drawing.** Rebased into the frame's float32 coordinates
   its box collapsed, and the frame was refused; such a probe is now left out.
+- **Two faults only a browser showed.** The post-processing resolve shader
+  named a variable `smooth`, which WGSL reserves: browsers refused the
+  module, so post-processing never drew there, while the native translator
+  accepted it. And the cutout shadow pipeline asked for a color write mask
+  of zero, which the browser binding omits, leaving the browser's default of
+  every channel on a target the shader did not write; the shader now writes
+  it. Both were in v0.11.1.
 - **Two decoder panics on malformed files.** A glTF/GLB document with `null`
   in any array of objects (materials, scenes, cameras, mesh primitives,
   animation channels and samplers, and the rest) is refused by name, such as

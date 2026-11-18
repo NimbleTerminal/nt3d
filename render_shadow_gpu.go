@@ -82,7 +82,7 @@ func shadowPass(encoder *wgpu.CommandEncoder, view *wgpu.TextureView) (*wgpu.Ren
 func (g *gpuRenderer) shadowPipeline(dev *wgpu.Device, layout *wgpu.PipelineLayout, vertex, fragment string) (*wgpu.RenderPipeline, error) {
 	d := &wgpu.RenderPipelineDescriptor{Label: vertex + fragment, Layout: layout, Vertex: wgpu.VertexState{Module: g.shader, EntryPoint: vertex}, Primitive: gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack}, DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual}, Multisample: gputypes.DefaultMultisampleState()}
 	if fragment != "" {
-		d.Fragment = &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatR8Unorm, WriteMask: 0}}}
+		d.Fragment = &wgpu.FragmentState{Module: g.shader, EntryPoint: fragment, Targets: []gputypes.ColorTargetState{{Format: gputypes.TextureFormatR8Unorm, WriteMask: gputypes.ColorWriteMaskAll}}}
 	}
 	return dev.CreateRenderPipeline(d)
 }
