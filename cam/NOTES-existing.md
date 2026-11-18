@@ -24,7 +24,7 @@ This document surveys `nt3d`'s current camera, scene, and animation architecture
   - Note: `nt3d.Camera` does not yet carry `FocusDist` or `Aperture` fields; `CameraState` carries them for Nebula / future Depth-of-Field post-processing.
 
 ### Render loop & animation today (`renderer.go`, `animation.go`, `widget/`)
-- **Render loop**: `Scene.Frame(camera, width, height)` (`renderer.go:174-245`) snapshots visible scene nodes, world `Mat4` transforms, `Camera.Matrix(aspect)`, `Eye`, and `Forward` into an immutable `Frame` value consumed identically by WebGPU (`GPURenderer` / `GPUSession`), `SoftwareRenderer`, and `RenderWireframe`.
+- **Render loop**: `Scene.Frame(camera, width, height)` (`frame.go`) snapshots visible scene nodes, world `Mat4` transforms, `Camera.Matrix(aspect)`, `Eye`, and `Forward` into an immutable `Frame` value consumed identically by WebGPU (`GPURenderer` / `GPUSession`), `SoftwareRenderer`, and `RenderWireframe`.
 - **`nt3dwidget.Model`** (`widget/model.go`, `widget/update.go`): holds `camera nt3d.Camera`, supports `SetCamera` / `Camera`, mouse orbit/pan/zoom, `WithDefaultKeyBindings(false)` for host-driven controls, and `WithFrameDecorator(func(*nt3d.Frame))` for dynamic debug overlays (`Frame.DynamicLines`).
 - **Scene animation (`animation.go`)**: `AnimationClip` and `Track` implement glTF 2.0 keyframe playback (`Translation`, `Rotation` XYZW quaternions, `Scale`, `MorphWeights`, `UserChannel`) with `Linear` (shortest-arc `slerp` via `mixQ` for rotations), `Step`, and Hermite `CubicSpline`, plus `Once`, `Loop`, and `PingPong` time wrapping (`animation.go:261-278`). All `Track` times and values are `float32`, without arc-length parameterization or parallel-transport frames.
 

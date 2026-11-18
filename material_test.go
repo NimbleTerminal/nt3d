@@ -373,3 +373,42 @@ func TestSceneAssetMaterialVariants(t *testing.T) {
 		t.Fatal("accepted out-of-range variant index")
 	}
 }
+
+// A material's rules are written once: a geometry's Validate and the
+// material's own check refuse the same faults with the same words.
+func TestMaterialRulesAreSharedByGeometryAndMaterial(t *testing.T) {
+	box, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 1, Y: 1, Z: 1}})
+	check(t, err)
+	for name, m := range map[string]Material{
+		"metallic":      {Metallic: 2},
+		"roughness":     {Roughness: -1},
+		"ior":           {IOR: .5},
+		"threshold":     {Threshold: 2},
+		"shininess":     {Specular: .5, Shininess: 2000},
+		"reflectivity":  {Reflectivity: 1.5},
+		"transmission":  {Transmission: .5, Unlit: true},
+		"cutout blend":  {Transparent: true, Cutout: true},
+		"flow strength": {FlowStrength: -1},
+		"emissive":      {EmissiveIntensity: -1},
+		"occlusion":     {OcclusionStrength: 2},
+		"clearcoat":     {Clearcoat: 2},
+	} {
+		want := validateMaterial(&m)
+		if want == nil {
+			t.Errorf("%s: the material's own check accepted it", name)
+			continue
+		}
+		g := box
+		g.Material = &m
+		if got := g.Validate(); got == nil || got.Error() != want.Error() {
+			t.Errorf("%s: geometry says %v, material says %v", name, got, want)
+		}
+	}
+	// A map needs a UV for every vertex, which only the geometry can know.
+	g := box
+	g.UV = nil
+	g.Material = &Material{Texture: testTexture(t, color.RGBA{255, 0, 0, 255})}
+	if validateMaterial(g.Material) != nil || g.Validate() == nil {
+		t.Error("a textured mesh without UVs should fail the geometry's check and pass the material's own")
+	}
+}

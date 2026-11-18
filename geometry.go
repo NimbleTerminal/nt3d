@@ -318,76 +318,8 @@ func validateGeometryCert(g Geometry, certifiedMesh bool) error {
 	if len(g.UV) != 0 && len(g.UV) != len(g.Vertices) {
 		return fmt.Errorf("nt3d: UV length mismatch")
 	}
-	if textured(g) && (!g.Material.Texture.valid() || g.Material.Texture.data || len(g.UV) != len(g.Vertices)) {
-		return fmt.Errorf("nt3d: invalid texture or missing UVs")
-	}
-	if m := g.Material; m != nil {
-		if m.Shader != nil && !m.Shader.valid() {
-			return fmt.Errorf("nt3d: invalid material shader")
-		}
-		if !validFloat(m.Transmission, m.Refraction, m.Absorption.X, m.Absorption.Y, m.Absorption.Z) || m.Transmission < 0 || m.Transmission > 1 || m.Refraction < 0 || m.Refraction > 1 || m.Absorption.X < 0 || m.Absorption.Y < 0 || m.Absorption.Z < 0 {
-			return fmt.Errorf("nt3d: invalid transmission, refraction, or absorption")
-		}
-		if m.Transmission > 0 && (m.Transparent || m.Cutout || m.EdgeOn || m.Unlit) {
-			return fmt.Errorf("nt3d: transmission requires a lit, non-blended surface")
-		}
-
-		if !validFloat(m.FlowPhase, m.FlowStrength) || m.FlowStrength < 0 {
-			return fmt.Errorf("nt3d: flow phase must be finite and strength nonnegative")
-		}
-		if m.FlowMap != nil && (m.FlowMap.texture == nil || m.NormalMap == nil) {
-			return fmt.Errorf("nt3d: flow requires a valid flow map and normal map")
-		}
-		if !validFloat(m.NormalStrength) {
-			return fmt.Errorf("nt3d: non-finite normal strength")
-		}
-		if m.NormalMap != nil && (!m.NormalMap.valid() || !m.NormalMap.data || len(g.UV) != len(g.Vertices)) {
-			return fmt.Errorf("nt3d: normal map requires NewNormalMap and vertex UVs")
-		}
-		if !validFloat(m.Metallic, m.Roughness, m.IOR, m.SpecularIntensity, m.Clearcoat, m.ClearcoatRoughness, m.SheenRoughness, m.OcclusionStrength, m.EmissiveIntensity) {
-			return fmt.Errorf("nt3d: non-finite PBR or emissive parameter")
-		}
-		if m.SpecularIntensity < 0 {
-			return fmt.Errorf("nt3d: specular intensity must be nonnegative")
-		}
-		if m.Metallic < 0 || m.Metallic > 1 || m.Roughness < 0 || m.Roughness > 1 {
-			return fmt.Errorf("nt3d: metallic and roughness must be 0..1")
-		}
-		if m.Clearcoat < 0 || m.Clearcoat > 1 || m.ClearcoatRoughness < 0 || m.ClearcoatRoughness > 1 || m.SheenRoughness < 0 || m.SheenRoughness > 1 {
-			return fmt.Errorf("nt3d: clearcoat and sheen parameters must be 0..1")
-		}
-		if m.IOR != 0 && (m.IOR < 1 || m.IOR > 3) {
-			return fmt.Errorf("nt3d: IOR must be 0 or 1..3")
-		}
-		if m.OcclusionStrength < 0 || m.OcclusionStrength > 1 {
-			return fmt.Errorf("nt3d: occlusion strength must be 0..1")
-		}
-		if m.ORMMap != nil && (!m.ORMMap.valid() || !m.ORMMap.data || len(g.UV) != len(g.Vertices)) {
-			return fmt.Errorf("nt3d: ORM map requires NewORMMap and vertex UVs")
-		}
-		if m.EmissiveIntensity < 0 {
-			return fmt.Errorf("nt3d: emissive intensity must be nonnegative")
-		}
-		if m.EmissiveMap != nil && (!m.EmissiveMap.valid() || m.EmissiveMap.data || len(g.UV) != len(g.Vertices)) {
-			return fmt.Errorf("nt3d: emissive map requires a color texture and vertex UVs")
-		}
-	}
-	if g.Material != nil && (!validFloat(g.Material.Threshold) || g.Material.Threshold < 0 || g.Material.Threshold > 1) {
-		return fmt.Errorf("nt3d: cutout threshold must be 0..1")
-	}
-	if m := g.Material; m != nil && (!validFloat(m.Specular, m.Shininess) || m.Specular < 0 || m.Specular > 1 || m.Shininess != 0 && (m.Shininess < 1 || m.Shininess > 1024)) {
-		return fmt.Errorf("nt3d: specular must be 0..1 and shininess 1..1024")
-	}
-	if g.Material != nil {
-		if err := g.Material.Toon.validate(); err != nil {
-			return err
-		}
-	}
-	if m := g.Material; m != nil && (!validFloat(m.Reflectivity) || m.Reflectivity < 0 || m.Reflectivity > 1) {
-		return fmt.Errorf("nt3d: reflectivity must be 0..1")
-	}
-	if m := g.Material; m != nil && m.Transparent && (m.Cutout || m.EdgeOn) {
-		return fmt.Errorf("nt3d: a transparent material cannot be a cutout")
+	if err := checkMaterial(g.Material, len(g.UV) == len(g.Vertices)); err != nil {
+		return err
 	}
 	if !certifiedMesh {
 		for _, uv := range g.UV {

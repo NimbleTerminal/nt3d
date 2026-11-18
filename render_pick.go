@@ -6,14 +6,12 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"image"
 	"math"
 	"slices"
 
 	"github.com/gogpu/gputypes"
 	"github.com/gogpu/wgpu"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
-	gpuimage "nimbleterminal.dev/ntgpuimage"
 )
 
 const depthPick1xHeader = `
@@ -409,71 +407,4 @@ func (s *GPUSession) Pick(scene *Scene, camera Camera, f Frame, x, y, tolerance 
 		}
 	}
 	return scene.Pick(camera, f, x, y, tolerance)
-}
-
-// RenderToImage encodes and renders f into an internal offscreen target on the
-// session's device and reads the resolved RGBA8 pixels back into an
-// *image.NRGBA, reusing all geometry, splat, texture, and pipeline caches held
-// by the session.
-func (s *GPUSession) RenderToImage(f Frame) (*image.NRGBA, error) {
-	s.g.mu.Lock()
-	defer s.g.mu.Unlock()
-	if s.g.closed || s.dev == nil {
-		return nil, fmt.Errorf("%w: session closed", ErrGPUUnavailable)
-	}
-	if err := validateFrame(f); err != nil {
-		return nil, err
-	}
-	if w, h := s.g.r.Size(); w != f.Width || h != f.Height {
-		if err := s.g.r.Resize(f.Width, f.Height); err != nil {
-			return nil, err
-		}
-	}
-	img, _, err := s.g.r.Render(context.Background(), func(frame *gpuimage.Frame) error {
-		return s.g.encode(frame.Device, frame.Encoder, f, GPUTarget{
-			Color:  frame.Color,
-			Format: gputypes.TextureFormatRGBA8Unorm,
-			Width:  f.Width,
-			Height: f.Height,
-		})
-	})
-	return img, err
-}
-
-// RenderToImageInto encodes and renders f into an internal offscreen target on
-// the session's device and reads the resolved RGBA8 pixels back into dst,
-// avoiding a per-frame image allocation during multi-frame captures.
-func (s *GPUSession) RenderToImageInto(f Frame, dst *image.NRGBA) error {
-	s.g.mu.Lock()
-	defer s.g.mu.Unlock()
-	if s.g.closed || s.dev == nil {
-		return fmt.Errorf("%w: session closed", ErrGPUUnavailable)
-	}
-	if err := validateFrame(f); err != nil {
-		return err
-	}
-	if dst == nil {
-		return fmt.Errorf("nt3d: nil destination image")
-	}
-	if dst.Bounds().Dx() != f.Width || dst.Bounds().Dy() != f.Height {
-		return fmt.Errorf("nt3d: destination image size %dx%d does not match frame size %dx%d",
-			dst.Bounds().Dx(), dst.Bounds().Dy(), f.Width, f.Height)
-	}
-	if w, h := s.g.r.Size(); w != f.Width || h != f.Height {
-		if err := s.g.r.Resize(f.Width, f.Height); err != nil {
-			return err
-		}
-	}
-	if _, err := s.g.r.RenderToTexture(context.Background(), func(frame *gpuimage.Frame) error {
-		return s.g.encode(frame.Device, frame.Encoder, f, GPUTarget{
-			Color:  frame.Color,
-			Format: gputypes.TextureFormatRGBA8Unorm,
-			Width:  f.Width,
-			Height: f.Height,
-		})
-	}); err != nil {
-		return err
-	}
-	_, err := s.g.r.ReadPixelsInto(context.Background(), dst)
-	return err
 }
