@@ -359,13 +359,19 @@ func (d *demo) setupToon() error {
 		return err
 	}
 	paint(ground, toonGround)
-	for name, g := range map[string]nt3d.Geometry{"ground": *ground, "roads": roadRibbons(roads, toonRoadWidth, toonRoadLift-lift, toonRoad)} {
-		id, err := d.scene.Add(d.toon.street, name)
+	// In a fixed order, the roads after the ground they lie on: the order
+	// nodes are added is the order they are drawn, and ranging over a map
+	// here made it, and so the picture, differ from run to run.
+	for _, part := range []struct {
+		name string
+		g    nt3d.Geometry
+	}{{"ground", *ground}, {"roads", roadRibbons(roads, toonRoadWidth, toonRoadLift-lift, toonRoad)}} {
+		id, err := d.scene.Add(d.toon.street, part.name)
 		if err != nil {
 			return err
 		}
-		if err = d.scene.SetNodeGeometry(id, g); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+		if err = d.scene.SetNodeGeometry(id, part.g); err != nil {
+			return fmt.Errorf("%s: %w", part.name, err)
 		}
 	}
 
