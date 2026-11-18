@@ -33,13 +33,13 @@ camera_path:
     fov: [{t: 0s, v: 55}, {t: 12s, v: 35, ease: ease-in-out}]
 `)
 
-path, err := nt3dcamspec.Compile(raw, nt3dcam.WithResolver(nt3d.SceneResolver(scene, nil)))
+path, err := nt3dcamspec.Compile(raw, nt3dcam.WithResolver(nt3dcamscene.SceneResolver(scene, nil)))
 if err != nil {
     log.Fatal(err)
 }
 
 state := path.Eval(4500 * time.Millisecond)
-camera := nt3d.CameraFromState(state)
+camera := nt3dcamscene.CameraFromState(state)
 ```
 
 ## Architecture Highlights

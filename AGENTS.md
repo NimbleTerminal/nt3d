@@ -21,6 +21,8 @@ packages and files and explains what holds the three renderers together.
 - **The engine links no terminal UI.** Only `widget` imports Bubble Tea; a
   test fails if the root package, `water`, `fur`, `mesh`, `clod`, `cam`, `sh`,
   `aabbtree`, or `math` does.
+- **The engine knows nothing of camera paths.** `nt3d/cam` does not import the
+  engine and the engine does not import it; `nt3d/cam/scene` joins them.
 - **Shading is written twice,** in Go and in WGSL. Change both, and add or
   extend a `_gpu_test.go` that compares them.
 - **Go and WGSL layouts are mirrored by hand.** A layout test compares byte

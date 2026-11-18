@@ -44,7 +44,8 @@ Dependencies point one way: everything builds on `math`, the engine builds on a 
 | `nt3dclod` | `nt3d/clod` | Clustering many items for budgeted drawing | `math` |
 | `nt3daabbtree` | `nt3d/aabbtree` | Dynamic bounding-volume tree | `math` |
 | `nt3dcam` | `nt3d/cam` and below | Declarative camera paths, in float64 | nothing of nt3d's |
-| **`nt3d`** | `nt3d` | Scene, frame, the three renderers, picking | `math`, `sh`, `clod`, `cam` |
+| **`nt3d`** | `nt3d` | Scene, frame, the three renderers, picking | `math`, `sh`, `clod` |
+| `nt3dcamscene` | `nt3d/cam/scene` | Joins camera paths to a scene: states to cameras, targets by node name, a path drawn into a frame | the engine, `cam` |
 | `nt3dmesh` | `nt3d/mesh` | Reading and writing mesh files | the engine |
 | `nt3dgltf`, `nt3dspz`, `nt3dsog` | `nt3d/mesh/…` | Formats that register themselves with `nt3dmesh` | `mesh` |
 | `nt3dwater`, `nt3dfur` | `nt3d/water`, `nt3d/fur` | Geometry builders for particular effects | the engine |
@@ -62,7 +63,7 @@ The root package is one flat package. Its files are named for what they hold:
 | **Frame** | `frame.go` (`Frame`, `Draw`, `Scene.Frame`, `StillFrame`, validation), `stats.go`, `cull.go`, `overlay.go` |
 | **Geometry** | `geometry.go` (the type and its checks), `primitives.go`, `shapes.go`, `heightfield.go`, `geometry_ops.go`, `tangents.go`, `crease.go` and `outline.go` (outline edges), `points.go`, `gaussian.go`, `gaussian_pack.go`, `sh_palette.go` (Gaussian splats), `labels.go`, `limits.go` (size limits) |
 | **Appearance** | `material.go` (the type and its one set of rules), `texture.go`, `texture_encode.go`, `hdr.go`, `normalmap.go`, `lightmap.go`, `flowmap.go`, `pbr.go`, `toon.go`, `lighting.go`, `environment.go`, `reflection_probe.go`, `reflection.go`, `post.go`, `shader_hooks.go`, `shader_names.go` (names hooks may not take) |
-| **Camera** | `camera.go`, `clipping.go`, `near.go`, `camera_path.go` (bridge to `nt3dcam`) |
+| **Camera** | `camera.go`, `clipping.go`, `near.go` |
 | **Picking** | `pick.go`, `bvh.go`, `render_pick.go` (GPU depth) |
 | **Renderers, shared** | `renderer.go` (the interface, `Snapshot`), `shading.go`, `shadow.go`, `indirect.go`, `blend.go`, `splat_budget.go`, `transmission.go`, `linear.go` |
 | **Software** | `render_software.go`, `software.go`, `post_software.go`, `supersample.go`, `stroke.go` |

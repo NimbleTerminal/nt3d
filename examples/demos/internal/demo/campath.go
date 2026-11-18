@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"nimbleterminal.dev/nt3d"
 	nt3dcam "nimbleterminal.dev/nt3d/cam"
+	nt3dcamscene "nimbleterminal.dev/nt3d/cam/scene"
 	nt3dcamspec "nimbleterminal.dev/nt3d/cam/spec"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
@@ -370,7 +371,7 @@ func (d *demo) setupCamPath() error {
 	}
 
 	paths := make(map[string]*nt3dcam.Path, 2)
-	cp.resolver = nt3d.SceneResolver(d.scene, paths)
+	cp.resolver = nt3dcamscene.SceneResolver(d.scene, paths)
 
 	cp.flythrough, err = nt3dcamspec.Compile([]byte(flythroughSpecYAML), nt3dcam.WithResolver(cp.resolver))
 	if err != nil {
@@ -514,7 +515,7 @@ func (d *demo) followCamPath() tea.Cmd {
 		return nil
 	}
 	st := d.evalCamPathState(cp.playhead)
-	return d.view.SetCamera(nt3d.CameraFromState(st))
+	return d.view.SetCamera(nt3dcamscene.CameraFromState(st))
 }
 
 func (d *demo) decorateCamPath(f *nt3d.Frame) {
@@ -541,7 +542,7 @@ func (d *demo) decorateCamPath(f *nt3d.Frame) {
 		return
 	}
 
-	baseOpts := nt3d.CameraPathOverlayOptions{
+	baseOpts := nt3dcamscene.CameraPathOverlayOptions{
 		Resolver:   cp.resolver,
 		LineWidth:  3.5,
 		CurveColor: color.RGBA{R: 15, G: 115, B: 235, A: 255},
@@ -549,14 +550,14 @@ func (d *demo) decorateCamPath(f *nt3d.Frame) {
 	if !cp.riding {
 		// In Director Orbit view, draw both paths (companion + full active frustum & look ray).
 		if cp.preset == camPresetSwitcher {
-			nt3d.AppendCameraPathOverlay(f, cp.flythrough, cp.playhead, baseOpts)
+			nt3dcamscene.AppendCameraPathOverlay(f, cp.flythrough, cp.playhead, baseOpts)
 			orbitOpts := baseOpts
 			orbitOpts.CurveColor = color.RGBA{R: 20, G: 185, B: 135, A: 255}
 			orbitOpts.FrustumColor = color.RGBA{R: 245, G: 185, B: 30, A: 255}
-			nt3d.AppendCameraPathOverlay(f, cp.orbit, cp.playhead, orbitOpts)
+			nt3dcamscene.AppendCameraPathOverlay(f, cp.orbit, cp.playhead, orbitOpts)
 			return
 		}
-		nt3d.AppendCameraPathOverlay(f, d.activeCamPath(), cp.playhead, baseOpts)
+		nt3dcamscene.AppendCameraPathOverlay(f, d.activeCamPath(), cp.playhead, baseOpts)
 		return
 	}
 
@@ -566,7 +567,7 @@ func (d *demo) decorateCamPath(f *nt3d.Frame) {
 	if cp.preset == camPresetOrbit {
 		companion = cp.flythrough
 	}
-	nt3d.AppendCameraPathOverlay(f, companion, cp.playhead, baseOpts)
+	nt3dcamscene.AppendCameraPathOverlay(f, companion, cp.playhead, baseOpts)
 }
 
 func (d *demo) activeMarkerName() string {

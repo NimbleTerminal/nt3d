@@ -1,6 +1,13 @@
 // Copyright (c) 2026 Neomantra Corp.
 
-package nt3d
+// Package nt3dcamscene joins declarative camera paths (package nt3dcam) to an
+// nt3d scene: it turns an evaluated camera state into an nt3d.Camera and
+// back, resolves a path's "node:<name>" and "path:<name>" targets against a
+// scene, and draws a path into a frame for inspection.
+//
+// It is the only package that imports both; the engine itself knows nothing
+// of camera paths, and nt3dcam nothing of the engine.
+package nt3dcamscene
 
 import (
 	"image/color"
@@ -8,19 +15,20 @@ import (
 	"strings"
 	"time"
 
+	"nimbleterminal.dev/nt3d"
 	nt3dcam "nimbleterminal.dev/nt3d/cam"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
 // CameraFromState converts a float64 evaluated CameraState into an nt3d.Camera.
 //
-// Pos is stored in Camera.Origin (with Pose holding only the orthonormal
-// camera-to-world rotation) so Scene.Frame and Scene.Pick subtract the camera
+// Pos is stored in nt3d.Camera.Origin (with Pose holding only the orthonormal
+// camera-to-world rotation) so nt3d.Scene.Frame and nt3d.Scene.Pick subtract the camera
 // position in float64 before float32 matrix construction, avoiding precision
 // jitter even at geographic (ENU/UTM) coordinates. Orbit fields (Target,
 // Distance, Alpha, Beta) are also initialized along the viewing ray so
 // interactive mouse Orbit/Pan handoff works seamlessly from the current pose.
-func CameraFromState(state nt3dcam.CameraState) Camera {
+func CameraFromState(state nt3dcam.CameraState) nt3d.Camera {
 	rot := state.Rot.Normalize()
 	r, u, f := rot.Basis()
 	back := f.Scale(-1)
@@ -48,7 +56,7 @@ func CameraFromState(state nt3dcam.CameraState) Camera {
 	alpha := math.Max(-89, math.Min(89, math.Asin(math.Max(-1, math.Min(1, -f.Z)))*180/math.Pi))
 	beta := math.Atan2(-f.Y, -f.X) * 180 / math.Pi
 
-	c := Camera{
+	c := nt3d.Camera{
 		Origin:      [3]float64{state.Pos.X, state.Pos.Y, state.Pos.Z},
 		Pose:        pose,
 		YFOV:        fov,
@@ -58,17 +66,17 @@ func CameraFromState(state nt3dcam.CameraState) Camera {
 		Alpha:       alpha,
 		Beta:        beta,
 		Target:      nt3dmath.Vec3{X: float32(f.X * dist), Y: float32(f.Y * dist), Z: float32(f.Z * dist)},
-		Projection:  Perspective,
+		Projection:  nt3d.Perspective,
 		ResumeAfter: 2,
 	}
-	return c.valid()
+	return c.Valid()
 }
 
 // StateFromCamera extracts a float64 nt3dcam.CameraState from an nt3d.Camera,
-// preserving Camera.Origin precision for blending between interactive cameras
+// preserving nt3d.Camera.Origin precision for blending between interactive cameras
 // and declarative camera paths.
-func StateFromCamera(c Camera) nt3dcam.CameraState {
-	c = c.valid()
+func StateFromCamera(c nt3d.Camera) nt3dcam.CameraState {
+	c = c.Valid()
 	eye64 := c.WorldEye()
 	r, u, f := c.Basis()
 	fov := c.YFOV
@@ -93,14 +101,14 @@ func StateFromCamera(c Camera) nt3dcam.CameraState {
 // scene s (using exact float64 NodeWorldPosition) and "path:<name>" against an
 // optional map of named camera paths at timestamp t.
 //
-// Because Scene mutations are single-goroutine, do not mutate s concurrently
+// Because nt3d.Scene mutations are single-goroutine, do not mutate s concurrently
 // while evaluating paths bound to this resolver.
-func SceneResolver(s *Scene, paths map[string]*nt3dcam.Path) nt3dcam.Resolver {
+func SceneResolver(s *nt3d.Scene, paths map[string]*nt3dcam.Path) nt3dcam.Resolver {
 	return &sceneResolver{scene: s, paths: paths}
 }
 
 type sceneResolver struct {
-	scene *Scene
+	scene *nt3d.Scene
 	paths map[string]*nt3dcam.Path
 }
 
@@ -187,7 +195,7 @@ func DefaultCameraPathOverlayOptions() CameraPathOverlayOptions {
 //
 // All positions subtract f.Origin in float64 before float32 conversion so the
 // overlay aligns jitter-free in both local and geographic-scale frames.
-func AppendCameraPathOverlay(f *Frame, path *nt3dcam.Path, t time.Duration, opts ...CameraPathOverlayOptions) {
+func AppendCameraPathOverlay(f *nt3d.Frame, path *nt3dcam.Path, t time.Duration, opts ...CameraPathOverlayOptions) {
 	if f == nil || path == nil {
 		return
 	}
@@ -231,7 +239,7 @@ func AppendCameraPathOverlay(f *Frame, path *nt3dcam.Path, t time.Duration, opts
 		o.HideFrustum = in.HideFrustum
 		o.HideLookRay = in.HideLookRay
 	}
-	if o.LineWidth > 0 && validFloat(o.LineWidth) {
+	if o.LineWidth > 0 && !math.IsNaN(float64(o.LineWidth)) && !math.IsInf(float64(o.LineWidth), 0) {
 		clamped := min(float32(32), max(float32(1), o.LineWidth))
 		if clamped > f.DynamicLineWidth {
 			f.DynamicLineWidth = clamped
@@ -247,12 +255,12 @@ func AppendCameraPathOverlay(f *Frame, path *nt3dcam.Path, t time.Duration, opts
 	}
 	addSeg := func(a, b nt3dcam.Vec3d, col color.RGBA) {
 		va, vb := toFrame(a), toFrame(b)
-		if !finiteVec(va) || !finiteVec(vb) {
+		if !finite(va) || !finite(vb) {
 			return
 		}
 		f.DynamicLines = append(f.DynamicLines,
-			Vertex{Position: va, Color: col},
-			Vertex{Position: vb, Color: col},
+			nt3d.Vertex{Position: va, Color: col},
+			nt3d.Vertex{Position: vb, Color: col},
 		)
 	}
 
@@ -358,4 +366,11 @@ func AppendCameraPathOverlay(f *Frame, path *nt3dcam.Path, t time.Duration, opts
 		addSeg(hatL, hatApex, o.FrustumColor)
 		addSeg(hatR, hatApex, o.FrustumColor)
 	}
+}
+
+// The distance range nt3d.Camera keeps its Distance within.
+const minDistance, maxDistance = 1e-4, 1e7
+
+func finite(v nt3dmath.Vec3) bool {
+	return nt3dmath.IsFinite(float64(v.X)) && nt3dmath.IsFinite(float64(v.Y)) && nt3dmath.IsFinite(float64(v.Z))
 }

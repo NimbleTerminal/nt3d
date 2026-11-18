@@ -227,7 +227,7 @@ Only `cmd/toon` embeds the block, robot, and cow.
 - **Closed orbit**: a periodic closed spline locked onto `"node:beacon"` while pulling focal length from `28mm` wide to `70mm` portrait telephoto (`nt3dcam.FocalMMToFovY` on a 24 mm vertical full-frame gate).
 - **Camera switcher**: causal crossfades (`nt3dcam.Switch`) between the flythrough and orbit paths over a 16-second loop.
 
-`[` and `]` cycle presets, `k` detaches to an interactive director orbit camera (or re-attaches to ride the path; dragging or zooming also detaches smoothly), `,` and `.` scrub the playhead backward and forward by 0.5 s, `b` toggles the 3D spline, control-point, target-ray, and live camera frustum overlay (`nt3d.AppendCameraPathOverlay`), `a` pauses playback, and **Enter** restarts at `t = 0`. `1` / `2` / `3` select GPU, software, and wireframe.
+`[` and `]` cycle presets, `k` detaches to an interactive director orbit camera (or re-attaches to ride the path; dragging or zooming also detaches smoothly), `,` and `.` scrub the playhead backward and forward by 0.5 s, `b` toggles the 3D spline, control-point, target-ray, and live camera frustum overlay (`nt3dcamscene.AppendCameraPathOverlay`), `a` pauses playback, and **Enter** restarts at `t = 0`. `1` / `2` / `3` select GPU, software, and wireframe.
 
 ## Gobkit characters
 

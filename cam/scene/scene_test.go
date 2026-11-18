@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Neomantra Corp.
 
-package nt3d
+package nt3dcamscene
 
 import (
 	"image/color"
@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"nimbleterminal.dev/nt3d"
 	nt3dcam "nimbleterminal.dev/nt3d/cam"
 	nt3dcamspec "nimbleterminal.dev/nt3d/cam/spec"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
@@ -51,13 +52,13 @@ func TestCameraFromStateAndStateFromCameraRoundTrip(t *testing.T) {
 
 func TestGeographicCameraOriginZeroJitterParity(t *testing.T) {
 	// At 5,839,600 m, float32 ULP spacing is 0.5 m (50 cm quantization!).
-	// Camera-relative float64 Origin subtraction must produce pixel-identical
+	// nt3d.Camera-relative float64 Origin subtraction must produce pixel-identical
 	// renders and sub-micrometer Pick WorldPosition parity with a local (0,0,0) scene.
 	const geoX, geoY, geoZ = 5_839_600.125, -4_507_520.375, 250.625
 
-	buildScene := func(offset [3]float64) (*Scene, Camera) {
-		s := NewScene()
-		tile, err := s.Add(Root, "tile")
+	buildScene := func(offset [3]float64) (*nt3d.Scene, nt3d.Camera) {
+		s := nt3d.NewScene()
+		tile, err := s.Add(nt3d.Root, "tile")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,9 +75,9 @@ func TestGeographicCameraOriginZeroJitterParity(t *testing.T) {
 		if err := s.SetTransform(boxNode, nt3dmath.Translation(nt3dmath.Vec3{X: 1.25, Y: 3.5, Z: 0.75})); err != nil {
 			t.Fatal(err)
 		}
-		mat := Material{Roughness: 0.7}
-		g := Geometry{
-			Boxes:    []Box{{Min: nt3dmath.Vec3{X: -0.8, Y: -0.8, Z: -0.8}, Size: nt3dmath.Vec3{X: 1.6, Y: 1.6, Z: 1.6}, Color: color.RGBA{R: 220, G: 90, B: 50, A: 255}, Datum: 42}},
+		mat := nt3d.Material{Roughness: 0.7}
+		g := nt3d.Geometry{
+			Boxes:    []nt3d.Box{{Min: nt3dmath.Vec3{X: -0.8, Y: -0.8, Z: -0.8}, Size: nt3dmath.Vec3{X: 1.6, Y: 1.6, Z: 1.6}, Color: color.RGBA{R: 220, G: 90, B: 50, A: 255}, Datum: 42}},
 			Material: &mat,
 		}
 		if err := s.SetNodeGeometry(boxNode, g); err != nil {
@@ -90,8 +91,8 @@ func TestGeographicCameraOriginZeroJitterParity(t *testing.T) {
 		if err := s.SetTransform(lightNode, nt3dmath.Translation(nt3dmath.Vec3{X: -2.0, Y: 0.5, Z: 4.0})); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.SetNodeLight(lightNode, Light{
-			Kind:      PointLight,
+		if err := s.SetNodeLight(lightNode, nt3d.Light{
+			Kind:      nt3d.PointLight,
 			Color:     color.RGBA{R: 255, G: 245, B: 230, A: 255},
 			Intensity: 18,
 			Range:     30,
@@ -133,7 +134,7 @@ func TestGeographicCameraOriginZeroJitterParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sw := NewSoftwareRenderer()
+	sw := nt3d.NewSoftwareRenderer()
 	defer sw.Close()
 	imgLocal, err := sw.Render(fLocal)
 	if err != nil {
@@ -173,8 +174,8 @@ func TestGeographicCameraOriginZeroJitterParity(t *testing.T) {
 }
 
 func TestSceneResolverPathTargetAndOverlay(t *testing.T) {
-	s := NewScene()
-	beacon, err := s.Add(Root, "beacon")
+	s := nt3d.NewScene()
+	beacon, err := s.Add(nt3d.Root, "beacon")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,8 +244,8 @@ camera_path:
 	}
 
 	// Render chasePath overlay from an external observer camera and verify it draws cleanly.
-	obsCam := DefaultCamera().LookAt(nt3dmath.Vec3{X: -12, Y: -10, Z: 10}, nt3dmath.Vec3{X: 2, Y: 3, Z: 3})
-	obsCam.Projection = Perspective
+	obsCam := nt3d.DefaultCamera().LookAt(nt3dmath.Vec3{X: -12, Y: -10, Z: 10}, nt3dmath.Vec3{X: 2, Y: 3, Z: 3})
+	obsCam.Projection = nt3d.Perspective
 	f, err := s.Frame(obsCam, 200, 150)
 	if err != nil {
 		t.Fatal(err)
@@ -255,7 +256,7 @@ camera_path:
 		t.Fatalf("expected non-empty paired DynamicLines, got %d vertices", len(f.DynamicLines))
 	}
 
-	sw := NewSoftwareRenderer()
+	sw := nt3d.NewSoftwareRenderer()
 	defer sw.Close()
 	img, err := sw.Render(f)
 	if err != nil {

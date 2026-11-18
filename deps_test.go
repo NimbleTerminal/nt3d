@@ -22,3 +22,18 @@ func TestEngineLinksNoTerminalUI(t *testing.T) {
 		}
 	}
 }
+
+// Camera paths are built on their own, in float64, and joined to a scene by
+// nt3d/cam/scene. The engine does not import them, so a program that never
+// flies a path does not build one.
+func TestEngineDoesNotImportCameraPaths(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", ".").Output()
+	if err != nil {
+		t.Skipf("go list is unavailable: %v", err)
+	}
+	for _, dep := range strings.Fields(string(out)) {
+		if strings.HasPrefix(dep, "nimbleterminal.dev/nt3d/cam") {
+			t.Errorf("package nt3d imports %s", dep)
+		}
+	}
+}

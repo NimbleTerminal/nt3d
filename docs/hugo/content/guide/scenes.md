@@ -45,7 +45,7 @@ Transforms are `nt3dmath.Mat4` values: translations, rotations, and scales, comb
 
 Moving things is cheap. The GPU keeps each node's mesh in its local coordinates, so moving the camera, moving a node, or hiding one only changes a matrix, never re-uploads the mesh. Replacing one node's geometry uploads just that node; adding and removing nodes leaves the others' buffers alone.
 
-For geographic or astronomical worlds where coordinates exceed `float32`'s ~7 decimal digits of precision, `scene.SetNodeOrigin(id, [3]float64{x, y, z})` attaches a double-precision world-offset origin (`NodeOrigin`, `NodeWorldPosition`). When paired with `Camera.Origin` (set automatically by `CameraFromState`), `Scene.Frame` and `Scene.Pick` subtract the camera's origin in `float64` before building `float32` render and BVH transforms—eliminating vertex, shadow, and ray-picking jitter megameters from `(0, 0, 0)` with zero overhead when origins are unset.
+For geographic or astronomical worlds where coordinates exceed `float32`'s ~7 decimal digits of precision, `scene.SetNodeOrigin(id, [3]float64{x, y, z})` attaches a double-precision world-offset origin (`NodeOrigin`, `NodeWorldPosition`). When paired with `Camera.Origin` (set automatically by `nt3dcamscene.CameraFromState`), `Scene.Frame` and `Scene.Pick` subtract the camera's origin in `float64` before building `float32` render and BVH transforms—eliminating vertex, shadow, and ray-picking jitter megameters from `(0, 0, 0)` with zero overhead when origins are unset.
 
 ## Draw order
 

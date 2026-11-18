@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Breaking: the camera-path bridge has its own package.** `CameraFromState`,
+  `StateFromCamera`, `SceneResolver`, `AppendCameraPathOverlay`, and
+  `CameraPathOverlayOptions` move from package `nt3d` to
+  `nimbleterminal.dev/nt3d/cam/scene` (package `nt3dcamscene`), under the same
+  names. The engine no longer imports `nt3d/cam`, so a program that does not
+  use camera paths does not build them.
+
 - `MaxVectors` is renamed `MaxArrows`, which is what it limits.
 - Orientation for people and agents changing or using the engine: the package
   documentation describes the Scene, Frame, Renderer pipeline and where things
