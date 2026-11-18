@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `MaxVectors` is renamed `MaxArrows`, which is what it limits.
+- Orientation for people and agents changing or using the engine: the package
+  documentation describes the Scene, Frame, Renderer pipeline and where things
+  are; the guide gains an Architecture page mapping packages and files and
+  the rules that keep the renderers in step; `AGENTS.md` states the
+  repository's invariants and workflow; and the root package and widget have
+  compiled examples for the pipeline, draw order, node data, the look, editing
+  a frame, and building one by hand.
+
 - Shader hooks: a hook whose WGSL declares a name the scene shader uses is
   refused by `NewVertexDisplacement` and `NewMaterialShader` with an error
   naming it. Hooks are compiled into the scene shader's module and share its

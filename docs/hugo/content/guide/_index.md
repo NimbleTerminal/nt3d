@@ -19,4 +19,5 @@ How to build scenes with nt3d, render them, and show them in a terminal.
 - [Picking](picking/)
 - [The widget](widget/)
 - [Demos](demos/)
+- [Architecture](architecture/)
 - [Development](development/)

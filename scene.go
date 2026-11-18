@@ -603,7 +603,7 @@ func (s *Scene) Clear() {
 	}
 }
 
-// Bounds returns visible world-space bounds, without chart range policy.
+// Bounds returns the world-space bounds of everything visible.
 func (s *Scene) Bounds() (b nt3dmath.AABB) {
 	_ = s.UpdateDeformations() // On an invalid procedural pose retain the last valid mesh.
 	for _, id := range s.order {

@@ -108,13 +108,13 @@ The **[nt3d User Guide](https://nimbleterminal.github.io/nt3d/docs/)** walks thr
 - **Shading & effects**: [Materials & toon shading](https://nimbleterminal.github.io/nt3d/docs/guide/materials/) · [Normal maps](https://nimbleterminal.github.io/nt3d/docs/guide/normal-maps/) · [Environment & SH lighting](https://nimbleterminal.github.io/nt3d/docs/guide/environment/) · [Shell fur](https://nimbleterminal.github.io/nt3d/docs/guide/fur/) · [Water & waves](https://nimbleterminal.github.io/nt3d/docs/guide/water/)
 - **Assets & motion**: [Meshes, glTF & Gaussian splats](https://nimbleterminal.github.io/nt3d/docs/guide/meshes/) · [Animation](https://nimbleterminal.github.io/nt3d/docs/guide/animation/) · [Particles](https://nimbleterminal.github.io/nt3d/docs/guide/particles/)
 - **Scale & interaction**: [Clustered LOD (`clod`)](https://nimbleterminal.github.io/nt3d/docs/guide/clustering/) · [Spatial index (`aabbtree`)](https://nimbleterminal.github.io/nt3d/docs/guide/spatial-index/) · [Labels](https://nimbleterminal.github.io/nt3d/docs/guide/labels/) · [Picking](https://nimbleterminal.github.io/nt3d/docs/guide/picking/)
-- **Demos & project docs**: [Demos guide](https://nimbleterminal.github.io/nt3d/docs/guide/demos/) · [Development](https://nimbleterminal.github.io/nt3d/docs/guide/development/) · [CHANGELOG.md](./CHANGELOG.md) · [MIGRATION.md](./MIGRATION.md) · [ROADMAP.md](./ROADMAP.md)
+- **Demos & project docs**: [Demos guide](https://nimbleterminal.github.io/nt3d/docs/guide/demos/) · [Architecture](https://nimbleterminal.github.io/nt3d/docs/guide/architecture/) · [Development](https://nimbleterminal.github.io/nt3d/docs/guide/development/) · [CHANGELOG.md](./CHANGELOG.md) · [MIGRATION.md](./MIGRATION.md) · [ROADMAP.md](./ROADMAP.md)
 
 The guide's Markdown source lives in [`docs/hugo/content/guide/`](./docs/hugo/content/guide/). To preview it locally, initialize the theme submodule (`git submodule update --init`) and run `task docs:hugo:serve` (requires [Hugo](https://gohugo.io/) extended).
 
 ## Open Collaboration
 
-Run `task ci` before submitting changes. See the [Development guide](./docs/hugo/content/guide/development.md) and [ROADMAP.md](./ROADMAP.md) for architecture notes, GPU and fuzz testing, and planned work.
+Run `task ci` before submitting changes. [AGENTS.md](./AGENTS.md) states the repository's rules, the [Architecture](./docs/hugo/content/guide/architecture.md) page maps the packages and files, the [Development guide](./docs/hugo/content/guide/development.md) covers GPU and fuzz testing, and [ROADMAP.md](./ROADMAP.md) lists planned work.
 
 Contributions and feedback are welcome. Please adhere to our [Code of Conduct](./CODE_OF_CONDUCT.md).
 

@@ -8,8 +8,8 @@ import (
 	"slices"
 )
 
-// MaxVectors is the maximum number of arrows in a single Geometry.
-const MaxVectors = 100_000
+// MaxArrows is the maximum number of arrows in a single Geometry.
+const MaxArrows = 100_000
 
 // Arrow is an unlit screen-facing stroke. Width and HeadSize are pixels.
 // Datum is an application-defined picking identifier.

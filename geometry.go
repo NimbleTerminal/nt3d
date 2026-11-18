@@ -275,7 +275,7 @@ func validateGeometryCert(g Geometry, certifiedMesh bool) error {
 	if !validWidth(g.LineWidth) {
 		return fmt.Errorf("nt3d: invalid line width")
 	}
-	if len(g.Arrows) > MaxVectors {
+	if len(g.Arrows) > MaxArrows {
 		return fmt.Errorf("nt3d: arrow count exceeds cap")
 	}
 	for _, a := range g.Arrows {
