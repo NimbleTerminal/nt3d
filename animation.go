@@ -113,40 +113,19 @@ func (c AnimationClip) Validate() error {
 	return nil
 }
 func dot4(a, b []float32) float32 { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3] }
+
+// Rotation tracks hold quaternions as four packed floats, X, Y, Z, W; the
+// arithmetic is nt3dmath.Quat's.
+func quatOf(q []float32) nt3dmath.Quat { return nt3dmath.Quat{X: q[0], Y: q[1], Z: q[2], W: q[3]} }
+
 func normalizeQ(q []float32) {
-	l := float32(math.Sqrt(float64(dot4(q, q))))
-	if l == 0 {
-		q[0], q[1], q[2], q[3] = 0, 0, 0, 1
-		return
-	}
-	for i := range q {
-		q[i] /= l
-	}
+	n := quatOf(q).Normalize()
+	q[0], q[1], q[2], q[3] = n.X, n.Y, n.Z, n.W
 }
+
 func mixQ(a, b []float32, t float32) []float32 {
-	a = slices.Clone(a)
-	b = slices.Clone(b)
-	normalizeQ(a)
-	normalizeQ(b)
-	d := dot4(a, b)
-	if d < 0 {
-		for i := range b {
-			b[i] = -b[i]
-		}
-		d = -d
-	}
-	x, y := 1-t, t
-	if d < .9995 {
-		theta := math.Acos(float64(d))
-		den := math.Sin(theta)
-		x = float32(math.Sin(float64(1-t)*theta) / den)
-		y = float32(math.Sin(float64(t)*theta) / den)
-	}
-	for i := range a {
-		a[i] = x*a[i] + y*b[i]
-	}
-	normalizeQ(a)
-	return a
+	q := quatOf(a).Slerp(quatOf(b), t)
+	return []float32{q.X, q.Y, q.Z, q.W}
 }
 func (t Track) sample(at float64) []float32 {
 	n, w := len(t.Times), t.Width
@@ -187,13 +166,6 @@ func (t Track) sample(at float64) []float32 {
 		normalizeQ(out)
 	}
 	return out
-}
-
-// TRS composes translation, a normalized XYZW quaternion, and scale.
-func TRS(t nt3dmath.Vec3, q [4]float32, s nt3dmath.Vec3) nt3dmath.Mat4 {
-	normalizeQ(q[:])
-	x, y, z, w := q[0], q[1], q[2], q[3]
-	return nt3dmath.Mat4{(1 - 2*(y*y+z*z)) * s.X, 2 * (x*y + z*w) * s.X, 2 * (x*z - y*w) * s.X, 0, 2 * (x*y - z*w) * s.Y, (1 - 2*(x*x+z*z)) * s.Y, 2 * (y*z + x*w) * s.Y, 0, 2 * (x*z + y*w) * s.Z, 2 * (y*z - x*w) * s.Z, (1 - 2*(x*x+y*y)) * s.Z, 0, t.X, t.Y, t.Z, 1}
 }
 
 // Animation is a scene-bound player. Call Step on the scene's owning goroutine.
@@ -351,10 +323,10 @@ func (a *Animation) SampleBlend(seconds float64, weight float32) error {
 						basis[k*4+j] /= *lens[k]
 					}
 				}
-				q := matrixQ(basis)
-				qv = mixQ(q[:], v, weight)
+				q := basis.Rotation()
+				qv = mixQ([]float32{q.X, q.Y, q.Z, q.W}, v, weight)
 			}
-			m = TRS(nt3dmath.Vec3{X: m[12], Y: m[13], Z: m[14]}, [4]float32(qv), sc)
+			m = nt3dmath.TRS(nt3dmath.Vec3{X: m[12], Y: m[13], Z: m[14]}, quatOf(qv), sc)
 		}
 		scales[t.Node] = sc
 		matrices[t.Node] = m
@@ -377,34 +349,4 @@ func (a *Animation) SampleBlend(seconds float64, weight float32) error {
 	a.lastMode = a.Mode
 	a.lastRevision = a.Scene.Revision()
 	return nil
-}
-func matrixQ(m nt3dmath.Mat4) [4]float32 {
-	for k := range 3 {
-		l := float32(math.Sqrt(float64(m[k*4]*m[k*4] + m[k*4+1]*m[k*4+1] + m[k*4+2]*m[k*4+2])))
-		for j := range 3 {
-			m[k*4+j] /= l
-		}
-	}
-	var q [4]float32
-	tr := m[0] + m[5] + m[10]
-	if tr > 0 {
-		s := float32(math.Sqrt(float64(tr+1))) * 2
-		q = [4]float32{(m[6] - m[9]) / s, (m[8] - m[2]) / s, (m[1] - m[4]) / s, s / 4}
-	} else {
-		i := 0
-		if m[5] > m[0] {
-			i = 1
-		}
-		if m[10] > m[i*5] {
-			i = 2
-		}
-		j, k := (i+1)%3, (i+2)%3
-		s := float32(math.Sqrt(float64(1+m[i*5]-m[j*5]-m[k*5]))) * 2
-		q[i] = s / 4
-		q[j] = (m[j*4+i] + m[i*4+j]) / s
-		q[k] = (m[k*4+i] + m[i*4+k]) / s
-		q[3] = (m[j*4+k] - m[k*4+j]) / s
-	}
-	normalizeQ(q[:])
-	return q
 }

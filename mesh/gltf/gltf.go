@@ -237,29 +237,24 @@ func (s sideFiles) ReadFile(name string) ([]byte, error) {
 	return data, nil
 }
 
-// mat4 is a column-major affine transform in float64, as glTF stores them.
-type mat4 [16]float64
+// mat4 is a column-major affine transform in float64, as glTF stores them:
+// nt3dmath.Mat4d.
+type mat4 = nt3dmath.Mat4d
 
-func (a mat4) mul(b mat4) (m mat4) {
-	for c := range 4 {
-		for r := range 4 {
-			for k := range 4 {
-				m[c*4+r] += a[k*4+r] * b[c*4+k]
-			}
-		}
-	}
-	return m
+// point32 places a vertex: the transform is applied in float64 and the
+// result rounded once.
+func point32(a mat4, p [3]float32) nt3dmath.Vec3 {
+	return a.Point(nt3dmath.Vec3d{X: float64(p[0]), Y: float64(p[1]), Z: float64(p[2])}).Vec3()
 }
 
-func (a mat4) point(p [3]float32) nt3dmath.Vec3 {
-	x, y, z := float64(p[0]), float64(p[1]), float64(p[2])
-	return nt3dmath.Vec3{X: float32(a[0]*x + a[4]*y + a[8]*z + a[12]), Y: float32(a[1]*x + a[5]*y + a[9]*z + a[13]), Z: float32(a[2]*x + a[6]*y + a[10]*z + a[14])}
-}
+// direction32 turns a direction by a's linear part, as positions turn:
+// tangents, unlike normals, follow the surface.
+func direction32(a mat4, v nt3dmath.Vec3) nt3dmath.Vec3 { return a.Direction(v.D()).Vec3() }
 
-// normal turns a normal by the inverse transpose of a's linear part, which
+// transformNormal turns a normal by the inverse transpose of a's linear part, which
 // is the cofactor matrix up to a positive scale (when a does not mirror)
 // that normalizing removes.
-func (a mat4) normal(n [3]float32) nt3dmath.Vec3 {
+func transformNormal(a mat4, n [3]float32) nt3dmath.Vec3 {
 	c0 := [3]float64{a[0], a[1], a[2]}
 	c1 := [3]float64{a[4], a[5], a[6]}
 	c2 := [3]float64{a[8], a[9], a[10]}
@@ -269,33 +264,13 @@ func (a mat4) normal(n [3]float32) nt3dmath.Vec3 {
 	r0, r1, r2 := cross(c1, c2), cross(c2, c0), cross(c0, c1)
 	x, y, z := float64(n[0]), float64(n[1]), float64(n[2])
 	v := nt3dmath.Vec3{X: float32(r0[0]*x + r1[0]*y + r2[0]*z), Y: float32(r0[1]*x + r1[1]*y + r2[1]*z), Z: float32(r0[2]*x + r1[2]*y + r2[2]*z)}
-	if a.det() < 0 {
+	if a.Determinant3() < 0 {
 		v = v.Scale(-1)
 	}
 	if v.Dot(v) == 0 {
 		return v
 	}
 	return v.Normalize()
-}
-
-// direction turns a direction by a's linear part, as positions turn:
-// tangents, unlike normals, follow the surface.
-func (a mat4) direction(v nt3dmath.Vec3) nt3dmath.Vec3 {
-	x, y, z := float64(v.X), float64(v.Y), float64(v.Z)
-	return nt3dmath.Vec3{X: float32(a[0]*x + a[4]*y + a[8]*z), Y: float32(a[1]*x + a[5]*y + a[9]*z), Z: float32(a[2]*x + a[6]*y + a[10]*z)}
-}
-
-func (a mat4) det() float64 {
-	return a[0]*(a[5]*a[10]-a[9]*a[6]) - a[4]*(a[1]*a[10]-a[9]*a[2]) + a[8]*(a[1]*a[6]-a[5]*a[2])
-}
-
-func (a mat4) finite() bool {
-	for _, v := range a {
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return false
-		}
-	}
-	return true
 }
 
 // yUp turns glTF's Y-up to nt3d's Z-up: (x, y, z) becomes (x, -z, y).
@@ -309,24 +284,9 @@ func local(n *gltf.Node) mat4 {
 	return trsMat4(n.TranslationOrDefault(), n.RotationOrDefault(), n.ScaleOrDefault())
 }
 
+// trsMat4 composes a node's translation, rotation (XYZW), and scale.
 func trsMat4(t [3]float64, q [4]float64, s [3]float64) mat4 {
-	x, y, z, w := q[0], q[1], q[2], q[3]
-	if l := math.Sqrt(x*x + y*y + z*z + w*w); l > 0 {
-		x, y, z, w = x/l, y/l, z/l, w/l
-	}
-	r := mat4{
-		1 - 2*(y*y+z*z), 2 * (x*y + z*w), 2 * (x*z - y*w), 0,
-		2 * (x*y - z*w), 1 - 2*(x*x+z*z), 2 * (y*z + x*w), 0,
-		2 * (x*z + y*w), 2 * (y*z - x*w), 1 - 2*(x*x+y*y), 0,
-		0, 0, 0, 1,
-	}
-	for c := range 3 {
-		for k := range 3 {
-			r[c*4+k] *= s[c]
-		}
-	}
-	r[12], r[13], r[14] = t[0], t[1], t[2]
-	return r
+	return nt3dmath.TRSd(nt3dmath.Vec3d{X: t[0], Y: t[1], Z: t[2]}, nt3dmath.Quatd{X: q[0], Y: q[1], Z: q[2], W: q[3]}, nt3dmath.Vec3d{X: s[0], Y: s[1], Z: s[2]})
 }
 
 // maxVisits bounds the nodes walked, as nodes reached by several paths are
@@ -382,8 +342,8 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 		return fmt.Errorf("nt3dmesh: glTF scene reaches more than %d nodes", maxVisits)
 	}
 	n := d.doc.Nodes[i]
-	world := parent.mul(local(n))
-	if !world.finite() {
+	world := parent.Mul(local(n))
+	if !world.IsFinite() {
 		return fmt.Errorf("nt3dmesh: glTF node %d has a non-finite transform", i)
 	}
 	insts, instanced, err := d.nodeInstances(i)
@@ -407,8 +367,8 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 				return fmt.Errorf("nt3dmesh: glTF scene reaches more than %d nodes", maxVisits)
 			}
 			for _, inst := range insts {
-				instWorld := world.mul(inst)
-				if !instWorld.finite() {
+				instWorld := world.Mul(inst)
+				if !instWorld.IsFinite() {
 					return fmt.Errorf("nt3dmesh: glTF node %d has a non-finite instance transform", i)
 				}
 				for _, p := range mesh.Primitives {
@@ -1267,7 +1227,7 @@ func (b *gltfBuilder) start() {
 }
 
 func (b *gltfBuilder) place(i uint32) (nt3dmath.Vec3, error) {
-	p := b.world.point(b.positions[i])
+	p := point32(b.world, b.positions[i])
 	if !validCoordinate(p.X, p.Y, p.Z) {
 		return p, fmt.Errorf("nt3dmesh: glTF %s vertex is non-finite or exceeds coordinate limits", b.name)
 	}
@@ -1277,7 +1237,7 @@ func (b *gltfBuilder) place(i uint32) (nt3dmath.Vec3, error) {
 func (b *gltfBuilder) triangles(v []uint32) error {
 	b.material = b.nt3dMaterial()
 	first := len(b.d.m.Objects)
-	mirror := b.world.det() < 0 // Mirroring turns faces inside out; turn them back.
+	mirror := b.world.Determinant3() < 0 // Mirroring turns faces inside out; turn them back.
 	if b.anyNormal && b.tangents == nil {
 		b.generateTangents(v, mirror)
 	}
@@ -1358,7 +1318,7 @@ func (b *gltfBuilder) generateTangents(v []uint32, mirror bool) {
 	seen := map[uint32][]nt3d.Tangent{}
 	for k := range b.corners {
 		c := &b.corners[k]
-		if d := b.world.direction(c.Direction); d.Dot(d) > 0 {
+		if d := direction32(b.world, c.Direction); d.Dot(d) > 0 {
 			c.Direction = d.Normalize()
 		}
 		// glTF's green points up the image, against V, where MikkTSpace
@@ -1413,10 +1373,10 @@ func (b *gltfBuilder) face(tri [3]uint32, at [3]int, back bool) error {
 		var tangent *nt3d.Tangent
 		if b.tangents != nil {
 			t := b.tangents[i]
-			if d := b.world.direction(t.Direction); d.Dot(d) > 0 {
+			if d := direction32(b.world, t.Direction); d.Dot(d) > 0 {
 				t.Direction = d.Normalize()
 			}
-			if b.world.det() < 0 {
+			if b.world.Determinant3() < 0 {
 				t.W = -t.W
 			}
 			tangent = &t
@@ -1434,7 +1394,7 @@ func (b *gltfBuilder) face(tri [3]uint32, at [3]int, back bool) error {
 		}
 		n := flat
 		if b.normals != nil {
-			n = b.world.normal(b.normals[i])
+			n = transformNormal(b.world, b.normals[i])
 			if back {
 				n = n.Scale(-1)
 			}

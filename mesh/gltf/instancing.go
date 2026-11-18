@@ -158,10 +158,10 @@ func (d *gltfDecoder) nodeInstances(nodeIndex int) ([]mat4, bool, error) {
 			s = [3]float64{float64(v[0]), float64(v[1]), float64(v[2])}
 		}
 		inst := trsMat4(t, q, s)
-		if !inst.finite() {
+		if !inst.IsFinite() {
 			return nil, false, errors.New("nt3dmesh: non-finite EXT_mesh_gpu_instancing transform")
 		}
-		if _, invOK := matrix32(inst).InverseAffine(); !invOK {
+		if _, invOK := inst.Mat4().InverseAffine(); !invOK {
 			return nil, false, errors.New("nt3dmesh: singular EXT_mesh_gpu_instancing transform")
 		}
 		transforms[k] = inst

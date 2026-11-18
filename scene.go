@@ -144,32 +144,19 @@ func (s *Scene) world(id NodeID) nt3dmath.Mat4 {
 	return s.localWorld(id)
 }
 
-func mulMat4d(a, b [16]float64) (m [16]float64) {
-	for c := range 4 {
-		for r := range 4 {
-			m[c*4+r] = a[r]*b[c*4] +
-				a[4+r]*b[c*4+1] +
-				a[8+r]*b[c*4+2] +
-				a[12+r]*b[c*4+3]
-		}
-	}
-	return m
-}
-
-func (s *Scene) world64(id NodeID) [16]float64 {
+// world64 is id's world transform composed in float64, each node's origin
+// added to its translation before it is multiplied in.
+func (s *Scene) world64(id NodeID) nt3dmath.Mat4d {
 	var local [32]NodeID
 	chain := s.ancestry(local[:0], id)
-	m := [16]float64{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
+	m := nt3dmath.IdentityD()
 	for i := len(chain) - 1; i >= 0; i-- {
 		n := s.nodes[chain[i]]
-		var b [16]float64
-		for k := range 16 {
-			b[k] = float64(n.Local[k])
-		}
+		b := n.Local.D()
 		b[12] += n.origin[0]
 		b[13] += n.origin[1]
 		b[14] += n.origin[2]
-		m = mulMat4d(m, b)
+		m = m.Mul(b)
 	}
 	return m
 }
@@ -182,11 +169,7 @@ func (s *Scene) worldRelative(id NodeID, ref [3]float64) nt3dmath.Mat4 {
 	m[12] -= ref[0]
 	m[13] -= ref[1]
 	m[14] -= ref[2]
-	var out nt3dmath.Mat4
-	for k := range 16 {
-		out[k] = float32(m[k])
-	}
-	return out
+	return m.Mat4()
 }
 
 // SetNodeOrigin sets an optional float64 local translation offset (in meters,

@@ -25,12 +25,6 @@ type cachedMeshPiece struct {
 	variants map[int]*nt3d.Material
 }
 
-func matrix32(m mat4) (out nt3dmath.Mat4) {
-	for i, v := range m {
-		out[i] = float32(v)
-	}
-	return
-}
 func vec(v [3]float32) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v[0], Y: v[1], Z: v[2]} }
 
 // assetTake counts what one primitive's decoder read toward the asset's
@@ -55,7 +49,7 @@ func (d *gltfDecoder) sceneAsset() error {
 	left := d.o.ByteLimit()
 	d.decodedLeft = &left
 	asset := &nt3d.SceneAsset{
-		Nodes:    []nt3d.AssetNode{{Name: "Y-up", Parent: -1, Local: matrix32(yUp)}},
+		Nodes:    []nt3d.AssetNode{{Name: "Y-up", Parent: -1, Local: yUp.Mat4()}},
 		Variants: slices.Clone(d.variantNames),
 	}
 	ids := map[int]int{}
@@ -99,7 +93,7 @@ func (d *gltfDecoder) sceneAsset() error {
 		}
 		ids[i] = len(asset.Nodes)
 		n := d.doc.Nodes[i]
-		asset.Nodes = append(asset.Nodes, nt3d.AssetNode{Name: n.Name, Parent: p, Local: matrix32(local(n))})
+		asset.Nodes = append(asset.Nodes, nt3d.AssetNode{Name: n.Name, Parent: p, Local: local(n).Mat4()})
 		visiting[i] = false
 		return nil
 	}
@@ -183,7 +177,7 @@ func (d *gltfDecoder) sceneAsset() error {
 		if instanced {
 			instLocals = make([]nt3dmath.Mat4, len(insts))
 			for k, inst := range insts {
-				instLocals[k] = matrix32(inst)
+				instLocals[k] = inst.Mat4()
 			}
 		} else {
 			instLocals = []nt3dmath.Mat4{nt3dmath.Identity()}
