@@ -2,171 +2,284 @@
 
 ## Unreleased
 
-- **The GPU keeps the frame's draw order, as software does.** Of two surfaces
-  at one depth the later draw shows, which `DrawOrder` relies on, but the
-  GPU broke it in two ways. It drew every vertex-colored mesh before any
-  textured one, so a textured mesh always won; it now draws geometry by
-  geometry. And it drew every instance of a shared mesh where the first was,
-  so of red, blue, red at one place it showed blue; an instance now joins the
-  earlier ones only when nothing drawn since overlaps it, which keeps
-  instancing wherever order cannot show.
-- A reflection probe far from the camera's `Origin` no longer keeps the whole
-  frame from drawing. Rebased into the frame's float32 coordinates its box
-  collapsed, and the frame was refused; such a probe is now left out.
+This release reshapes the API so that it is hard to misuse, and it breaks
+most programs that use nt3d. A frame is one list of draws; a material says
+what kind of surface it is instead of being inferred from which fields are
+set; scene methods address nodes one way; every angle on a camera or light is
+in degrees; and a camera or material that cannot mean what it says is an
+error where it used to be corrected or ignored. Alongside that, a scene can
+now say its own draw order, look, and per-node data; the GPU draws in the
+frame's order as software does; baked lightmaps and local reflection probes
+are new; and the engine no longer links a terminal UI.
 
-- An orthographic camera with only `Near` set keeps its far plane beyond
-  `Near`. `Near` at or past the automatic far plane (200 units at the default
-  distance) used to leave no depth, and a view matrix that was not finite, so
-  nothing was drawn.
-- `FuzzCamera` holds that `Camera.Valid` always satisfies `Camera.Validate`,
-  and that a camera `Validate` accepts gives a frame a renderer accepts. It
-  found the two entries above.
+### Breaking changes
 
-- **Breaking: `Material` is grouped by feature, and says what kind of surface
-  it is in two fields.** It was 43 flat fields whose lighting model was
-  chosen by which of them were non-zero: sliding `Roughness` to zero turned a
-  PBR material into a Blinn-Phong one, and fields of the model not in use
-  were ignored without a word.
+**These will not compile until updated.** Each has a before-and-after table
+under *Migrating* below.
 
-  `Shading` is the lighting model (`ShadePhong`, the zero value; `ShadePBR`;
-  `ShadeUnlit`) and `Alpha` is what alpha does (`AlphaOpaque`, the zero value;
-  `AlphaCutout`; `AlphaEdgeOn`; `AlphaTransparent`). The rest are groups,
-  each off while it is zero, and each of type field-name-plus-`Style`.
+| What | Before | After |
+| --- | --- | --- |
+| A frame's contents | `Frame.Geometry`, `Instances`, `GeometryRevisions`, `Shared`; `Instance` | `Frame.Draws`, a slice of `Draw`; `Hidden` in place of `Visible` |
+| A material's fields | 43 flat fields; `PBR`, `Unlit`, `Transparent`, `Cutout`, `EdgeOn` flags | `Shading` and `Alpha`, and the groups `Phong`, `PBR`, `Normal`, `Emission`, `Transmission` |
+| Per-node texture setters | `SetTexture(name, …)` and three more, by name | `SetNodeTexture(id, …)` and three more, by `NodeID` |
+| Methods that change a subtree | `SetMaterial`, `SetToon`, `SetOutline`, `SetDisplacement`, `SetMaterialShader` | `ApplyMaterial`, `ApplyToon`, `ApplyOutline`, `ApplyDisplacement`, `ApplyMaterialShader` |
+| Camera angles | `Alpha`, `Beta` in degrees; `YFOV` in radians | `Elevation`, `Azimuth`, `FOV`, all in degrees |
+| Spot light cones | `InnerCone`, `OuterCone` in radians | `InnerAngle`, `OuterAngle` in degrees |
+| Camera-path bridge | `nt3d.CameraFromState` and four more | the same names in `nimbleterminal.dev/nt3d/cam/scene` |
+| `TRS` | `nt3d.TRS(t, [4]float32, s)` | `nt3dmath.TRS(t, nt3dmath.Quat, s)` |
+| Widget options | `WithEffects(pp)`; `WithPostProcess(fn)` | `WithPostProcess(pp)`; `WithImageFilter(fn)` |
+| `Material.EnvironmentReflect` | a field | removed; use a reflection probe |
+| `MaxVectors` | a constant | `MaxArrows` |
 
-  | Before | After |
-  | --- | --- |
-  | `PBR: true`, or any PBR field non-zero | `Shading: ShadePBR` |
-  | `Unlit: true` | `Shading: ShadeUnlit` |
-  | `Transparent: true` | `Alpha: AlphaTransparent` |
-  | `Cutout: true` | `Alpha: AlphaCutout` |
-  | `Cutout: true, EdgeOn: true` | `Alpha: AlphaEdgeOn` |
-  | `Specular`, `Shininess`, `Reflectivity` | `Phong: PhongStyle{Specular, Shininess, Reflectivity}` |
-  | `Metallic`, `Roughness`, `IOR`, `ORMMap`, `ORMRepeat`, `OcclusionStrength` | `PBR: PBRStyle{…}`, same names |
-  | `Clearcoat`, `ClearcoatRoughness` | `PBR.Clearcoat: ClearcoatStyle{Amount, Roughness}` |
-  | `SheenColor`, `SheenRoughness` | `PBR.Sheen: SheenStyle{Color, Roughness}` |
-  | `SpecularColor`, `SpecularIntensity` | `PBR.Specular: SpecularStyle{Color, Intensity, Strength, Off}` |
-  | `NormalMap`, `NormalStrength`, `NormalRepeat` | `Normal: NormalStyle{Map, Strength, Repeat}` |
-  | `FlowMap`, `FlowPhase`, `FlowStrength`, `FlowRepeat` | `Normal.Flow: FlowStyle{Map, Phase, Strength, Repeat}` |
-  | `Emissive`, `EmissiveIntensity`, `EmissiveMap`, `EmissiveRepeat` | `Emission: EmissionStyle{Color, Intensity, Map, Repeat}` |
-  | `Transmission`, `Refraction`, `Absorption` | `Transmission: TransmissionStyle{Amount, Refraction, Absorption}` |
+**These compile, and behave differently.** They are the ones to read.
 
-  `Texture`, `Repeat`, `FullSize`, `Tint`, `BaseColor`, `Threshold`, `Toon`,
-  `LightMap`, and `Shader` are unchanged.
+- **A material is PBR only when it says `Shading: ShadePBR`.** Setting
+  `Roughness`, `Metallic`, or another PBR field no longer switches it. A
+  group that belongs to a lighting model the material does not use (`PBR` on
+  a `ShadePhong` material, `Phong` on a `ShadePBR` one) is now an error when
+  the geometry reaches a scene; it used to be ignored.
+- **A normal map with `Strength` left zero is at full strength.** Zero used
+  to mean off, so a map set alone did nothing. To have none, leave the map
+  out.
+- **A bad camera is an error.** `Scene.Frame`, `StillFrame`, and
+  `SetNodeCamera` return one for a `FOV` of 180 or more, a `Far` at or before
+  `Near`, only one of `Xmag` and `Ymag`, a mirrored `Pose`, a NaN, or a
+  `Target` too far out for float32. All of these used to be corrected
+  silently and draw some other view.
+- **The GPU draws in the frame's order.** Of two surfaces at one depth the
+  later draw shows, as in software. A picture that relied on textured meshes
+  always winning, or on instances of a shared mesh drawing together, changes.
+- **The PBR highlight's strength is no longer in `SpecularColor`'s alpha.**
+  It is `PBR.Specular.Strength`, with `Off` for none; the color's alpha is
+  ignored.
+- **A geometry copied out of a frame carries no hidden state.** Code that
+  edits a frame by assigning to a scene-made draw's `Geometry` should replace
+  the whole `Draw`.
+- **A shader hook that declares a name the scene shader uses is refused when
+  it is made,** in software too. It never compiled on a GPU, but software
+  accepted it.
+- **glTF reading.** A light of zero intensity is read as `Off` with its
+  color, where it was a black light. A document with `null` in an array of
+  objects is refused, including a null nothing refers to. A normal texture
+  of zero scale is left out.
 
-  What changes besides the names:
+### Added
 
-  - **Nothing switches the model by being set.** A material is PBR when its
-    `Shading` is `ShadePBR` and not otherwise. Code that relied on a PBR
-    field to make a material PBR must say `Shading: ShadePBR`.
-  - **A group for another model is an error.** `PBR` on a material that is
-    not `ShadePBR`, or `Phong` on one that is not `ShadePhong`, is refused
-    when the geometry reaches a scene, where it used to be ignored.
-  - **`Normal.Strength` left zero means 1,** like every other strength; it
-    used to mean off, so a normal map set alone did nothing. To have none,
-    leave the map out.
-  - **The PBR highlight's strength is `PBR.Specular.Strength`, and `Off`
-    removes it.** It used to be carried in `SpecularColor`'s alpha, which is
-    now ignored.
-  - **`PBR.NoOcclusion`** ignores the ORM map's occlusion channel, which a
-    zero `OcclusionStrength` cannot ask for.
-  - **`Material.Validate`** is new: the rules a scene applies, callable
-    before there is a scene.
+- **A scene says more about its frames**: `SetNodeDrawOrder` (layer, then
+  key, then the order added), `SetNodeData` (your own value on a node, back
+  from picks and draws), `StillFrame` (a frame that depends on the scene and
+  camera alone), and `SetLook` (background, lighting, fog, environment, and
+  post-processing, set where the scene is built).
+- **Validation you can call**: `Material.Validate` and `Camera.Validate`,
+  the rules a scene applies, beside `Geometry.Validate`.
+- **Flags that say "none"** where a zero means the default: `Light.Off`,
+  `Ambient.Off`, `ReflectionProbe.Off`, `Bloom.NoThreshold`,
+  `PBR.NoOcclusion`, `PBR.Specular.Off`.
+- **Baked and local lighting**: `NewLightMap` and `Material.LightMap` for
+  baked irradiance, `ReflectionProbe` for local reflections, and SSAO applied
+  to indirect light only.
+- **`nt3dmath` holds all the math**, in float32 and now float64: `Vec3d`,
+  `Quatd`, `Mat4d`, `Quat`, `TRS`, `Mat4.Inverse`, and the ray and culling
+  tests.
+- `Geometry.Clone`, `Scene.SetNodeLabel`, and
+  `nt3dmesh.Options.AssetOnly`, which decodes a glTF into its asset alone.
 
-  The glTF reader maps `specularFactor` to `Strength` or `Off`, and leaves
-  out a normal texture whose scale is zero.
+### Fixed
 
-- **A way to say "none" where zero means the default.** `Light.Intensity`,
-  `Ambient.Intensity`, and `ReflectionProbe.Strength` treat zero as 1, so
-  none could not be asked for, and a value faded to exactly zero came back at
-  full strength. New flags say it: `Light.Off` (no light and no shadow; the
-  light keeps its place and settings), `Ambient.Off`, and
-  `ReflectionProbe.Off` (the probe is passed over). `Bloom.NoThreshold` lets
-  every pixel glow, which a zero `Threshold` could not ask for. The sky
-  already had `EnvironmentBackgroundOnly`. Nothing existing changes meaning.
-- A glTF light with zero intensity is read as `Off` with its color kept,
-  where it used to be read as a black light of intensity 1.
+- The GPU ignored the frame's draw order between vertex-colored and textured
+  meshes, and between instances of a shared mesh and a mesh drawn between
+  them.
+- An orthographic camera with only `Near` set drew nothing once `Near`
+  reached its automatic far plane.
+- A reflection probe far from the camera's `Origin` kept the whole frame
+  from drawing.
+- Two decoder panics on malformed glTF and PLY files.
+- `nt3dwidget` closed its GPU renderer when a software or wireframe frame
+  was refused, and discarded errors from `Scene.Frame`.
+- `nt3dwater.WaveTile.RestBounds` returned bounds that were treated as empty.
 
-- **Breaking: a camera that cannot mean what it says is an error.** A camera
-  used to be corrected silently, so a mistake drew some other view: a `FOV`
-  of 200 drew at 45, a `Far` nearer than `Near` turned both off, and a
-  mirrored `Pose` was dropped for the orbit camera. `Camera.Validate` now
-  reports these, and `Scene.Frame`, `Scene.StillFrame`, and
-  `Scene.SetNodeCamera` return its error, as they do for a geometry.
+### Faster and smaller
 
-  | A camera with | Before | After |
-  | --- | --- | --- |
-  | `FOV` negative or 180 and over | drew at 45 degrees | error |
-  | `Far` at or before `Near`, or either negative | automatic clipping | error |
-  | only one of `Xmag`, `Ymag` | both ignored | error |
-  | a flattened or mirrored `Pose` | the orbit camera | error |
-  | NaN or infinity anywhere | the default | error |
-  | negative `Distance`, `AspectRatio`, `ResumeAfter` | the default | error |
-  | zero `Distance`, `FOV`, `Near`, `Far`, extents | the default | the default |
-  | `Elevation` past ±89, `Distance` out of range | held to the limit | held to the limit |
+- A 5 MB glTF with WebP textures decodes in 211 ms instead of 300, with 38
+  thousand allocations instead of 13.9 million.
+- `Scene.Frame` makes three allocations however many nodes it draws, where
+  it made two per node.
+- A program that does not use `nt3dwidget` no longer builds Bubble Tea, Lip
+  Gloss, or bubblezone, and one that does not use camera paths no longer
+  builds `nt3d/cam`.
+- GPU shader-hook programs that go unused are released.
 
-  `Validate` also refuses a camera whose numbers are finite but more than
-  its view and projection, which are float32, can hold: a `Far` of 1e300, an
-  `AspectRatio` of 1e-300, a `Far` that equals `Near` once both are float32,
-  or a `Target` so far out that the orbit distance vanishes into it and the
-  camera has no direction left to look in. For coordinates that large, use
-  `Origin`. `Valid` always returns a camera `Validate` accepts: both read
-  one table of rules.
+<details>
+<summary><b>Migrating</b>: every breaking change, with before and after</summary>
 
-  Methods that cannot return an error (`Matrix`, `Eye`, `Orbit`, `Pick`, and
-  `Valid`) still compute with a corrected camera, so nothing panics. The
-  widget keeps an invalid camera as given and draws nothing with it: `Err`
-  reports why until a sound camera is set. The widget also used to discard an
-  error from `Scene.Frame`; it reports that too.
+#### A frame is one list of draws
 
-- **Breaking: scene methods address nodes one way, by `NodeID`, and a method
-  that reaches a subtree says so.** The texture setters found their node by
-  name, alone among per-node setters, and five methods named `Set…` changed
-  every mesh under a node rather than the node.
+`Frame.Geometry`, `Instances`, `GeometryRevisions`, and `Shared`, four slices
+kept in step by index, are one slice, `Frame.Draws`, and `Instance` is gone.
+A `Draw` holds a node's `Geometry`, `World`, `Node`, `Name`, `Data`,
+`Revision`, and `Shared`, and is `Hidden` rather than not `Visible`, so that
+`Draw{Geometry: g}` alone draws `g` where it lies: a zero `World` is the
+identity.
 
-  | Before | After |
-  | --- | --- |
-  | `SetTexture(name, t)` | `SetNodeTexture(id, t)` |
-  | `SetNormalMap(name, t)` | `SetNodeNormalMap(id, t)` |
-  | `SetORMMap(name, t)` | `SetNodeORMMap(id, t)` |
-  | `SetEmissiveMap(name, t)` | `SetNodeEmissiveMap(id, t)` |
-  | `SetMaterial(root, m)` | `ApplyMaterial(root, m)` |
-  | `SetToon(root, style)` | `ApplyToon(root, style)` |
-  | `SetOutline(root, style)` | `ApplyOutline(root, style)` |
-  | `SetDisplacement(root, d)` | `ApplyDisplacement(root, d)` |
-  | `SetMaterialShader(root, shader)` | `ApplyMaterialShader(root, shader)` |
+| Before | After |
+| --- | --- |
+| `f.Geometry[i]` | `f.Draws[i].Geometry` |
+| `f.Instances[i].World`, `.Node`, `.Name` | `f.Draws[i].World`, `.Node`, `.Name` |
+| `f.Instances[i].Visible = false` | `f.Draws[i].Hidden = true` |
+| `f.GeometryRevisions[i]`, `f.Shared[i]` | `f.Draws[i].Revision`, `f.Draws[i].Shared` |
+| `Frame{Geometry: []Geometry{g}}` | `Frame{Draws: []Draw{{Geometry: g}}}` |
+| reordering all four slices | `Scene.SetNodeDrawOrder`, or reorder `Draws` |
 
-  Behaviour is unchanged. Use the ID a setter returned, or `Find(name)`. An
-  `Apply` method changes the meshes under `root` when it is called and
-  remembers nothing, so nodes added later are untouched. `SetGeometry`,
-  `SetShared`, and `SetLabel` still take a name, because they create the node
-  when it is missing; each returns the ID.
-- `Scene.SetNodeLabel(id, label)` labels a node you already hold, as
-  `SetNodeGeometry` and `SetNodeShared` do for geometry.
+Per-node GPU caching is now per draw: a draw with a nonzero `Revision` needs
+a `Node` that is nonzero and its alone, and a frame may mix cached and
+uncached draws.
 
-- **Breaking: every angle set on a camera or a light is in degrees, under a
-  name that says what it is.** Orbit angles were in degrees under Greek
-  letters while the field of view and spot cones were in radians.
+`Geometry` is plain data. Its eight unexported fields (certificates,
+partial-update ranges, skin pose, rest bounds, level-of-detail tier) moved
+beside it into the `Draw`, so every field of a `Geometry` is the
+application's, and a geometry copied out of a frame carries nothing with it.
+A frame edited by assigning to a scene-made draw's `Geometry` should replace
+the whole `Draw` instead.
 
-  | Before | After |
-  | --- | --- |
-  | `Camera.Alpha` (degrees) | `Camera.Elevation` (degrees) |
-  | `Camera.Beta` (degrees) | `Camera.Azimuth` (degrees) |
-  | `Camera.YFOV` (radians, zero is π/4) | `Camera.FOV` (degrees, zero is 45) |
-  | `Light.InnerCone`, `OuterCone` (radians) | `Light.InnerAngle`, `OuterAngle` (degrees, zero outer is 45) |
+#### `Material` is grouped by feature
 
-  The renames are what make this safe: code that still sets the old fields
-  fails to compile instead of meaning another angle. Multiply a radian value
-  by `180 / math.Pi`. `nt3dmath`'s functions keep radians, as Go's `math`
-  does, and glTF cameras and lights, which store radians, are converted when
-  read.
+`Material` was 43 flat fields whose lighting model was chosen by which of
+them were non-zero: sliding `Roughness` to zero turned a PBR material into a
+Blinn-Phong one, and fields of the model not in use were ignored without a
+word.
 
-- `Geometry.Clone` returns a copy that can be edited without touching the
-  original: every slice, the material, and the billboard are copied, and what
-  a geometry only points at and never changes is shared. A test walks
-  `Geometry`'s fields, so one added later cannot be left out.
-- **Breaking: `nt3dwidget` options are named for what they take.** The
-  option that took an `nt3d.PostProcess` was called `WithEffects`, and
-  `WithPostProcess` took an image function.
+`Shading` is the lighting model (`ShadePhong`, the zero value; `ShadePBR`;
+`ShadeUnlit`) and `Alpha` is what alpha does (`AlphaOpaque`, the zero value;
+`AlphaCutout`; `AlphaEdgeOn`; `AlphaTransparent`). The rest are groups, each
+off while it is zero, and each of type field-name-plus-`Style`.
+
+| Before | After |
+| --- | --- |
+| `PBR: true`, or any PBR field non-zero | `Shading: ShadePBR` |
+| `Unlit: true` | `Shading: ShadeUnlit` |
+| `Transparent: true` | `Alpha: AlphaTransparent` |
+| `Cutout: true` | `Alpha: AlphaCutout` |
+| `Cutout: true, EdgeOn: true` | `Alpha: AlphaEdgeOn` |
+| `Specular`, `Shininess`, `Reflectivity` | `Phong: PhongStyle{Specular, Shininess, Reflectivity}` |
+| `Metallic`, `Roughness`, `IOR`, `ORMMap`, `ORMRepeat`, `OcclusionStrength` | `PBR: PBRStyle{…}`, same names |
+| `Clearcoat`, `ClearcoatRoughness` | `PBR.Clearcoat: ClearcoatStyle{Amount, Roughness}` |
+| `SheenColor`, `SheenRoughness` | `PBR.Sheen: SheenStyle{Color, Roughness}` |
+| `SpecularColor`, `SpecularIntensity` | `PBR.Specular: SpecularStyle{Color, Intensity, Strength, Off}` |
+| `NormalMap`, `NormalStrength`, `NormalRepeat` | `Normal: NormalStyle{Map, Strength, Repeat}` |
+| `FlowMap`, `FlowPhase`, `FlowStrength`, `FlowRepeat` | `Normal.Flow: FlowStyle{Map, Phase, Strength, Repeat}` |
+| `Emissive`, `EmissiveIntensity`, `EmissiveMap`, `EmissiveRepeat` | `Emission: EmissionStyle{Color, Intensity, Map, Repeat}` |
+| `Transmission`, `Refraction`, `Absorption` | `Transmission: TransmissionStyle{Amount, Refraction, Absorption}` |
+
+`Texture`, `Repeat`, `FullSize`, `Tint`, `BaseColor`, `Threshold`, `Toon`,
+`LightMap`, and `Shader` are unchanged.
+
+What changes besides the names:
+
+- **Nothing switches the model by being set.** A material is PBR when its
+  `Shading` is `ShadePBR` and not otherwise. Code that relied on a PBR field
+  to make a material PBR must say `Shading: ShadePBR`.
+- **A group for another model is an error.** `PBR` on a material that is not
+  `ShadePBR`, or `Phong` on one that is not `ShadePhong`, is refused when the
+  geometry reaches a scene, where it used to be ignored.
+- **`Normal.Strength` left zero means 1,** like every other strength; it used
+  to mean off, so a normal map set alone did nothing. To have none, leave the
+  map out.
+- **The PBR highlight's strength is `PBR.Specular.Strength`, and `Off`
+  removes it.** It used to be carried in `SpecularColor`'s alpha, which is
+  now ignored.
+- **`PBR.NoOcclusion`** ignores the ORM map's occlusion channel, which a zero
+  `OcclusionStrength` cannot ask for.
+
+`Material.EnvironmentReflect` is removed. It let one material reflect the
+environment when `EnvironmentBackgroundOnly` made it a backdrop. A reflection
+probe holding the same panorama does that for every reflective surface inside
+its box, and is independent of the setting:
+`scene.SetReflectionProbes([]nt3d.ReflectionProbe{{Environment: sky,
+Position: p, Bounds: box}})`. Where the environment lights the frame the
+field did nothing and can simply be deleted.
+
+#### Scene methods address nodes by `NodeID`
+
+The texture setters found their node by name, alone among per-node setters,
+and five methods named `Set…` changed every mesh under a node rather than the
+node.
+
+| Before | After |
+| --- | --- |
+| `SetTexture(name, t)` | `SetNodeTexture(id, t)` |
+| `SetNormalMap(name, t)` | `SetNodeNormalMap(id, t)` |
+| `SetORMMap(name, t)` | `SetNodeORMMap(id, t)` |
+| `SetEmissiveMap(name, t)` | `SetNodeEmissiveMap(id, t)` |
+| `SetMaterial(root, m)` | `ApplyMaterial(root, m)` |
+| `SetToon(root, style)` | `ApplyToon(root, style)` |
+| `SetOutline(root, style)` | `ApplyOutline(root, style)` |
+| `SetDisplacement(root, d)` | `ApplyDisplacement(root, d)` |
+| `SetMaterialShader(root, shader)` | `ApplyMaterialShader(root, shader)` |
+
+Behaviour is unchanged. Use the ID a setter returned, or `Find(name)`. An
+`Apply` method changes the meshes under `root` when it is called and
+remembers nothing, so nodes added later are untouched. `SetGeometry`,
+`SetShared`, and `SetLabel` still take a name, because they create the node
+when it is missing; each returns the ID.
+
+#### Angles are in degrees
+
+Orbit angles were in degrees under Greek letters while the field of view and
+spot cones were in radians.
+
+| Before | After |
+| --- | --- |
+| `Camera.Alpha` (degrees) | `Camera.Elevation` (degrees) |
+| `Camera.Beta` (degrees) | `Camera.Azimuth` (degrees) |
+| `Camera.YFOV` (radians, zero is π/4) | `Camera.FOV` (degrees, zero is 45) |
+| `Light.InnerCone`, `OuterCone` (radians) | `Light.InnerAngle`, `OuterAngle` (degrees, zero outer is 45) |
+
+The renames are what make this safe: code that still sets the old fields
+fails to compile instead of meaning another angle. Multiply a radian value by
+`180 / math.Pi`. `nt3dmath`'s functions keep radians, as Go's `math` does,
+and glTF cameras and lights, which store radians, are converted when read.
+
+#### A camera that cannot mean what it says is an error
+
+A camera used to be corrected silently, so a mistake drew some other view.
+`Camera.Validate` now reports these, and `Scene.Frame`, `Scene.StillFrame`,
+and `Scene.SetNodeCamera` return its error, as they do for a geometry.
+
+| A camera with | Before | After |
+| --- | --- | --- |
+| `FOV` negative or 180 and over | drew at 45 degrees | error |
+| `Far` at or before `Near`, or either negative | automatic clipping | error |
+| only one of `Xmag`, `Ymag` | both ignored | error |
+| a flattened or mirrored `Pose` | the orbit camera | error |
+| NaN or infinity anywhere | the default | error |
+| negative `Distance`, `AspectRatio`, `ResumeAfter` | the default | error |
+| numbers too large or small for float32 | an empty or broken frame | error |
+| zero `Distance`, `FOV`, `Near`, `Far`, extents | the default | the default |
+| `Elevation` past ±89, `Distance` out of range | held to the limit | held to the limit |
+
+"Too large or small for float32" covers a camera whose numbers are finite
+but more than its view and projection can hold: a `Far` of 1e300, an
+`AspectRatio` of 1e-300, a `Far` that equals `Near` once both are float32, or
+a `Target` so far out that the orbit distance vanishes into it and the camera
+has no direction left to look in. For coordinates that large, use `Origin`.
+
+Methods that cannot return an error (`Matrix`, `Eye`, `Orbit`, `Pick`, and
+`Valid`) still compute with a corrected camera, so nothing panics, and
+`Valid` always returns a camera `Validate` accepts. `nt3dwidget` keeps an
+invalid camera as given and draws nothing with it: `Err` reports why until a
+sound camera is set.
+
+#### Smaller moves and renames
+
+- **The camera-path bridge has its own package.** `CameraFromState`,
+  `StateFromCamera`, `SceneResolver`, `AppendCameraPathOverlay`, and
+  `CameraPathOverlayOptions` move from package `nt3d` to
+  `nimbleterminal.dev/nt3d/cam/scene` (package `nt3dcamscene`), under the same
+  names.
+- **`nt3d.TRS` moves to `nt3dmath.TRS`,** and takes its rotation as an
+  `nt3dmath.Quat` rather than a `[4]float32`.
+- **`MaxVectors` is renamed `MaxArrows`,** which is what it limits.
+- **`nt3dwidget` options are named for what they take.**
 
   | Before | After |
   | --- | --- |
@@ -175,197 +288,216 @@
 
   The two old meanings of `WithPostProcess` take different types, so code
   that still means the function fails to compile rather than misbehaving.
+- In the camera packages, `nt3dcam.Vec3d`, `nt3dcam.Quatd`,
+  `nt3dcurve.Vec3`, and `nt3dframes.Quat` are now aliases of
+  `nt3dmath.Vec3d` and `nt3dmath.Quatd`. Code using them is unchanged, though
+  `go vet` now asks for field names in their struct literals.
 
-- Math written two and three times over now lives once in `nt3dmath`, which
-  gains a float64 family beside the float32 one:
-  - `Vec3d`, `Quatd`, and `Mat4d`, with `TRSd`, for transforms that carry
-    geographic origins, matrices read from files, and camera paths. `D` and
-    `Vec3`/`Quat`/`Mat4` convert between the families.
-  - `Quat`, a float32 quaternion with `Normalize` and `Slerp`, `TRS`, and
-    `Mat4.Rotation`.
-  - `Mat4.Inverse`, for any invertible matrix, projections included.
-  - `RayProbe` and `AABB.Hits`, the ray-against-box test, and
-    `Mat4.Outside`, the culling test.
+</details>
 
-  The scene, the glTF decoder, the BVH, `nt3daabbtree`, `nt3dclod`, picking,
-  and culling use them in place of their own copies. In the camera packages,
-  `nt3dcam.Vec3d`, `nt3dcam.Quatd`, `nt3dcurve.Vec3`, and `nt3dframes.Quat`
-  are now aliases of `nt3dmath.Vec3d` and `nt3dmath.Quatd`, so the four are
-  two types and convert without ceremony; code using them is unchanged,
-  though `go vet` now asks for field names in their struct literals.
-- **Breaking:** `nt3d.TRS` moves to `nt3dmath.TRS`, and takes its rotation as
-  an `nt3dmath.Quat` rather than a `[4]float32`.
+<details>
+<summary><b>What's new</b>, in detail</summary>
 
+#### What a scene can say about its frames
+
+Applications had been editing frames after they were made to get these.
+
+- **Draw order.** `Scene.SetNodeDrawOrder(id, DrawOrder{Layer, Key})` places
+  a node, and the nodes under it, among those a frame draws: by layer, then
+  key, then the order they were added. Blended geometry can be put after what
+  shows through it, and a scene that loads in the background can draw the
+  same way every time. The sorted order is kept between frames.
+- **Node data.** `Scene.SetNodeData(id, v)` attaches an application's own
+  value to a node. It comes back from `NodeData`, `Node.Data`, `Draw.Data`,
+  and `Hit.Data`, so nothing has to be encoded into node names.
+  `SceneAsset.Instantiate` now documents how it names its nodes.
+- **Stills.** `Scene.StillFrame` takes a frame that depends on the scene and
+  camera alone: levels of detail are chosen by distance, and the hysteresis
+  memory `Scene.Frame` keeps is neither read nor written. A capture no longer
+  needs `SetLODHysteresis(0)` around it. `nt3dwidget`'s `Snapshot` uses it.
+- **Look.** `Scene.SetLook(Look{...})` holds the background, lighting, fog,
+  environment settings, and post-processing, and every frame starts out with
+  them, so a scene is lit where it is built instead of on each frame.
+  `SetEnvironment` sets the look's `Environment`. Light positions are world
+  space and follow `Camera.Origin`. `nt3dwidget` draws the scene's look
+  unless it was given a setting of its own (`WithBackground`, `SetFog`,
+  `SetLighting`, `WithPostProcess`, and the rest).
+
+#### Saying "none" where zero means the default
+
+`Light.Intensity`, `Ambient.Intensity`, and `ReflectionProbe.Strength` treat
+zero as 1, so none could not be asked for, and a value faded to exactly zero
+came back at full strength. Flags say it: `Light.Off` (no light and no
+shadow; the light keeps its place and settings), `Ambient.Off`, and
+`ReflectionProbe.Off` (the probe is passed over). `Bloom.NoThreshold` lets
+every pixel glow, which a zero `Threshold` could not ask for. The sky already
+had `EnvironmentBackgroundOnly`. Nothing existing changes meaning, and the
+caller still has to set the flag: a strength animated down to exactly zero
+without it comes back at full.
+
+#### Lighting
+
+- **Baked lightmaps.** `NewLightMap` and `NewHDRLightMap`,
+  `Material.LightMap`, and an independent `Geometry.LightMapUV` consume
+  externally baked linear HDR irradiance. GPU and software replace indirect
+  diffuse, preserve direct, specular, and emissive lighting, and share
+  half-float mip filtering. UVs survive cloning, clipping, merging, and
+  normal rebuilding.
+- **Reflection probes.** `ReflectionProbe` is an authored local panorama
+  with a capture position and an influence box, giving box-projected PBR,
+  clearcoat, and classic reflections on GPU and software.
+  `Scene.SetReflectionProbes` holds up to four, in order; surfaces no probe
+  covers keep the environment's lighting.
+- **SSAO darkens indirect light only,** on WebGPU and complete software
+  frames, leaving direct lights, emission, and unlit surfaces alone. It
+  combines with a material's own occlusion by taking the lesser visibility,
+  and adds an opaque geometry pass before shading; with SSAO off there is
+  still one scene pass.
+- `task room` is an interactive cutaway-room demo with separate probe and
+  lightmap toggles, in the terminal, the native gallery, and the web.
+
+#### `nt3dmath`
+
+Math written two and three times over now lives once in `nt3dmath`, which
+gains a float64 family beside the float32 one:
+
+- `Vec3d`, `Quatd`, and `Mat4d`, with `TRSd`, for transforms that carry
+  geographic origins, matrices read from files, and camera paths. `D` and
+  `Vec3`/`Quat`/`Mat4` convert between the families.
+- `Quat`, a float32 quaternion with `Normalize` and `Slerp`, `TRS`, and
+  `Mat4.Rotation`.
+- `Mat4.Inverse`, for any invertible matrix, projections included.
+- `RayProbe` and `AABB.Hits`, the ray-against-box test, and `Mat4.Outside`,
+  the culling test.
+
+The scene, the glTF decoder, the BVH, `nt3daabbtree`, `nt3dclod`, picking,
+culling, and the camera packages use them in place of their own copies.
+
+#### Smaller additions
+
+- `Material.Validate` and `Camera.Validate` report what a scene would
+  refuse, before there is a scene.
+- `Geometry.Clone` returns a copy that can be edited without touching the
+  original: every slice, the material, and the billboard are copied, and
+  what a geometry only points at and never changes is shared.
+- `Scene.SetNodeLabel(id, label)` labels a node you already hold, as
+  `SetNodeGeometry` and `SetNodeShared` do for geometry.
 - `nt3dmesh.Options.AssetOnly` decodes a glTF into `Model.Asset` alone,
   leaving `Objects` empty. A glTF decode otherwise reads every primitive
   twice, placed for the flat view and again in its own space for the asset;
   a caller that only instantiates needs the second. `MaxTriangles` then
   bounds what the asset holds, counting a shared mesh once.
-- Textures convert without allocating per pixel. `NewTexture`, and the glTF
-  occlusion-roughness-metallic packer, read JPEG and WebP images (`YCbCr`,
-  `NYCbCrA`), premultiplied `RGBA`, and `Gray` through their own accessors
-  instead of boxing each pixel's color; the pixels are identical. A 5 MB
-  glTF with WebP textures decodes in 211 ms instead of 300, with 38 thousand
-  allocations instead of 13.9 million, and in 181 ms and 126 MB with
-  `AssetOnly`, from 239 MB.
-- `nt3dgltf` internals: each material extension is a function and a row in
-  one table, which also declares it supported, in place of a 330-line
-  function; a test holds every extension name the package reads to the
-  tables. The scene-asset builder has its own file.
 
-- **Breaking: `Material.EnvironmentReflect` is removed.** It let one material
-  reflect the environment when `EnvironmentBackgroundOnly` made it a backdrop.
-  A reflection probe holding the same panorama does that for every reflective
-  surface inside its box, and is independent of the setting:
-  `scene.SetReflectionProbes([]nt3d.ReflectionProbe{{Environment: sky,
-  Position: p, Bounds: box}})`. Where the environment lights the frame the
-  field did nothing and can simply be deleted.
+</details>
 
-- **Breaking: the camera-path bridge has its own package.** `CameraFromState`,
-  `StateFromCamera`, `SceneResolver`, `AppendCameraPathOverlay`, and
-  `CameraPathOverlayOptions` move from package `nt3d` to
-  `nimbleterminal.dev/nt3d/cam/scene` (package `nt3dcamscene`), under the same
-  names. The engine no longer imports `nt3d/cam`, so a program that does not
-  use camera paths does not build them.
+<details>
+<summary><b>Fixes, performance, and internals</b>, in detail</summary>
 
-- `MaxVectors` is renamed `MaxArrows`, which is what it limits.
-- Orientation for people and agents changing or using the engine: the package
-  documentation describes the Scene, Frame, Renderer pipeline and where things
-  are; the guide gains an Architecture page mapping packages and files and
-  the rules that keep the renderers in step; `AGENTS.md` states the
-  repository's invariants and workflow; and the root package and widget have
-  compiled examples for the pipeline, draw order, node data, the look, editing
-  a frame, and building one by hand.
+#### Fixes
 
-- Shader hooks: a hook whose WGSL declares a name the scene shader uses is
-  refused by `NewVertexDisplacement` and `NewMaterialShader` with an error
-  naming it. Hooks are compiled into the scene shader's module and share its
-  names, so such a hook never compiled on a GPU; it now fails when it is
-  made, in software too, instead of on the first GPU frame with the shader
-  translator's message. A displacement and a material shader on one mesh that
-  both declare a name fail that frame the same way.
-- GPU hook programs no frame has drawn for 600 frames are released, and
-  compiled again if their source returns. They were kept until the renderer
-  closed, so an application that generates shader sources grew without bound.
-- GPU renderer internals, with no change in what is drawn: the unreachable
-  single-renderer code path beside the shared device state is removed (some
-  300 lines); primitive slots, their entry points, and the draw order are
-  named rather than numbered; the scene shader is ten files by topic under
-  `wgsl/`, joined into the same module text; and tests hold the byte counts Go
-  writes for the scene uniform, instance, mesh, and point records to the
-  structs the shader declares.
-
-- The engine no longer links the terminal UI stack. `RenderWireframe` was the
-  root package's only use of ntcanvas, whose single package brought Bubble
-  Tea, Lip Gloss, and bubblezone to every importer, `water` and `fur`
-  included. It now uses `nimbleterminal.dev/ntcanvas/grid` (ntcanvas v0.2.0),
-  which imports none of them, and wireframe output is unchanged. Only
-  `nt3dwidget` imports Bubble Tea, so a program that does not use the widget
-  no longer builds it.
-
-- **Breaking: a frame is one list of draws.** `Frame.Geometry`, `Instances`,
-  `GeometryRevisions`, and `Shared`, four slices kept in step by index, are
-  one slice, `Frame.Draws`, and `Instance` is gone. A `Draw` holds a node's
-  `Geometry`, `World`, `Node`, `Name`, `Data`, `Revision`, and `Shared`, and
-  is `Hidden` rather than not `Visible`, so that `Draw{Geometry: g}` alone
-  draws `g` where it lies: a zero `World` is the identity. To migrate:
-
-  | Before | After |
-  | --- | --- |
-  | `f.Geometry[i]` | `f.Draws[i].Geometry` |
-  | `f.Instances[i].World`, `.Node`, `.Name` | `f.Draws[i].World`, `.Node`, `.Name` |
-  | `f.Instances[i].Visible = false` | `f.Draws[i].Hidden = true` |
-  | `f.GeometryRevisions[i]`, `f.Shared[i]` | `f.Draws[i].Revision`, `f.Draws[i].Shared` |
-  | `Frame{Geometry: []Geometry{g}}` | `Frame{Draws: []Draw{{Geometry: g}}}` |
-  | reordering all four slices | `Scene.SetNodeDrawOrder`, or reorder `Draws` |
-
-  Per-node GPU caching is now per draw: a draw with a nonzero `Revision`
-  needs a `Node` that is nonzero and its alone, and a frame may mix cached and
-  uncached draws. `Scene.Frame` makes three allocations however many nodes
-  it draws.
-
-- **Breaking in behaviour only: `Geometry` is plain data.** Its eight
-  unexported fields (certificates, partial-update ranges, skin pose, rest
-  bounds, level-of-detail tier) moved beside it into the `Draw`, so every
-  field of a `Geometry` is the application's, and a geometry copied out of a
-  frame carries nothing with it. A frame edited by assigning to a scene-made
-  draw's `Geometry` should replace the whole `Draw` instead.
-
-- Four additions close gaps in what a scene could say about its frames, which
-  applications had been working around by editing frames after they were
-  made. Nothing existing changes.
-
-  - **Draw order.** `Scene.SetNodeDrawOrder(id, DrawOrder{Layer, Key})` places
-    a node, and the nodes under it, among those a frame draws: by layer, then
-    key, then the order they were added. Blended geometry can be put after
-    what shows through it, and a scene that loads in the background can draw
-    the same way every time, without reordering `Frame.Geometry`,
-    `Instances`, `GeometryRevisions`, and `Shared` by hand. The sorted order
-    is kept between frames.
-  - **Node data.** `Scene.SetNodeData(id, v)` attaches an application's own
-    value to a node. It comes back from `NodeData`, `Node.Data`,
-    `Instance.Data`, and `Hit.Data`, so nothing has to be encoded into node
-    names. `SceneAsset.Instantiate` now documents how it names its nodes.
-  - **Stills.** `Scene.StillFrame` takes a frame that depends on the scene and
-    camera alone: levels of detail are chosen by distance, and the hysteresis
-    memory `Scene.Frame` keeps is neither read nor written. A capture no
-    longer needs `SetLODHysteresis(0)` around it. `nt3dwidget`'s `Snapshot`
-    uses it.
-  - **Look.** `Scene.SetLook(Look{...})` holds the background, lighting, fog,
-    environment settings, and post-processing, and every frame starts out
-    with them, so a scene is lit where it is built instead of on each frame.
-    `SetEnvironment` sets the look's `Environment`. Light positions are world
-    space and follow `Camera.Origin`. `nt3dwidget` draws the scene's look
-    unless it was given a setting of its own (`WithBackground`, `SetFog`,
-    `SetLighting`, `WithPostProcess`, and the rest).
-
-- Fix two decoder panics on malformed files. A glTF/GLB document with `null`
+- **The GPU keeps the frame's draw order, as software does.** Of two surfaces
+  at one depth the later draw shows, which `DrawOrder` relies on, but the GPU
+  broke it in two ways. It drew every vertex-colored mesh before any textured
+  one, so a textured mesh always won; it now draws geometry by geometry. And
+  it drew every instance of a shared mesh where the first was, so of red,
+  blue, red at one place it showed blue; an instance now joins the earlier
+  ones only when nothing drawn since overlaps it, which keeps instancing
+  wherever order cannot show.
+- **An orthographic camera with only `Near` set keeps its far plane beyond
+  `Near`.** `Near` at or past the automatic far plane (200 units at the
+  default distance) used to leave no depth, and a view matrix that was not
+  finite, so nothing was drawn.
+- **A reflection probe far from the camera's `Origin` no longer keeps the
+  whole frame from drawing.** Rebased into the frame's float32 coordinates
+  its box collapsed, and the frame was refused; such a probe is now left out.
+- **Two decoder panics on malformed files.** A glTF/GLB document with `null`
   in any array of objects (materials, scenes, cameras, mesh primitives,
   animation channels and samplers, and the rest) is refused by name, such as
   `materials[0] is null`, including a null nothing refers to, which was
   accepted before. A PLY range grid whose `num_cols` × `num_rows` overflows
   is skipped like any other size that does not match the element.
-
-- `Scene.Frame` allocates its slices once a call instead of twice a node:
-  10,000 nodes cost 6 allocations and 8.9 MB, from 20,078 and 43.7 MB, in a
-  little over half the time. Frames are unchanged.
-
-- `nt3dwidget`: a frame that software or wireframe mode was asked for and
-  refused no longer closes the GPU renderer held for WebGPU mode. Only a GPU
-  fallback lets it go, as documented.
-
-- `nt3dwater.WaveTile.RestBounds` returns a valid `AABB`; it returned one
+- **Shader hooks.** A hook whose WGSL declares a name the scene shader uses
+  is refused by `NewVertexDisplacement` and `NewMaterialShader` with an error
+  naming it. Hooks are compiled into the scene shader's module and share its
+  names, so such a hook never compiled on a GPU; it now fails when it is
+  made, in software too, instead of on the first GPU frame with the shader
+  translator's message. A displacement and a material shader on one mesh
+  that both declare a name fail that frame the same way.
+- **`nt3dwidget`.** A frame that software or wireframe mode was asked for
+  and refused no longer closes the GPU renderer held for WebGPU mode; only a
+  GPU fallback lets it go, as documented. An error from `Scene.Frame` is
+  reported through `Err`, where it was discarded.
+- **`nt3dwater.WaveTile.RestBounds`** returns a valid `AABB`; it returned one
   that `IsValid`, `Transformed`, and culling treated as empty.
+- **glTF.** A light with zero intensity is read as `Off` with its color
+  kept, where it was a black light of intensity 1. `specularFactor` maps to
+  `PBR.Specular.Strength` or `Off`, and a normal texture whose scale is zero
+  is left out.
 
-- `task ci` type-checks the `webgpu`-tagged GPU tests in every module (`go vet
-  -tags webgpu`), which no CI step compiled before. Running them still takes
-  `task test-gpu` and a GPU.
+#### Performance
 
-- Add `task room`: an interactive cutaway-room demo with independent local
-  probe and lightmap toggles, a moving polished sphere, bundled synthetic HDR
-  fixtures, and terminal, native-gallery, and web entry points.
+- **Textures convert without allocating per pixel.** `NewTexture`, and the
+  glTF occlusion-roughness-metallic packer, read JPEG and WebP images
+  (`YCbCr`, `NYCbCrA`), premultiplied `RGBA`, and `Gray` through their own
+  accessors instead of boxing each pixel's color; the pixels are identical. A
+  5 MB glTF with WebP textures decodes in 211 ms instead of 300, with 38
+  thousand allocations instead of 13.9 million, and in 181 ms and 126 MB with
+  `AssetOnly`, from 239 MB.
+- **`Scene.Frame` makes three allocations however many nodes it draws.** It
+  made two per node: 10,000 nodes cost 20,078 allocations and 43.7 MB, which
+  the first step of this work cut to 8.9 MB in a little over half the time.
+- **GPU hook programs no frame has drawn for 600 frames are released,** and
+  compiled again if their source returns. They were kept until the renderer
+  closed, so an application that generates shader sources grew without bound.
 
-- Consume externally baked linear HDR irradiance through `NewLightMap` /
-  `NewHDRLightMap`, `Material.LightMap`, and independent `Geometry.LightMapUV`.
-  GPU and software replace indirect diffuse, preserve direct/specular/emissive
-  lighting, and share half-float mip filtering. UVs survive cloning, clipping,
-  merging, and normal rebuilding; material replacements preserve snapshots.
+#### Dependencies
 
-- Add authored local `ReflectionProbe` panoramas with capture positions,
-  influence boxes, and box-projected PBR, clearcoat, and classic reflections
-  on GPU and software. `Scene.SetReflectionProbes` snapshots up to four
-  ordered probes; uncovered surfaces retain environment lighting. LDR/HDR
-  textures share the existing environment cache and roughness filtering.
+- **The engine no longer links the terminal UI stack.** `RenderWireframe`
+  was the root package's only use of ntcanvas, whose single package brought
+  Bubble Tea, Lip Gloss, and bubblezone to every importer, `water` and `fur`
+  included. It now uses `nimbleterminal.dev/ntcanvas/grid` (ntcanvas v0.2.0),
+  which imports none of them, and wireframe output is unchanged. Only
+  `nt3dwidget` imports Bubble Tea.
+- **The engine no longer imports `nt3d/cam`,** so a program that does not
+  use camera paths does not build them.
 
-- Extract internal Go/WGSL indirect-light sampling from material response,
-  with premultiplied radiance and coverage composition for future local and
-  screen-space sources. Preserve hemisphere, SH, GGX, clearcoat, and toon
-  lighting, with source occlusion that leaves coverage unchanged.
+#### Internals and tooling
 
-- Apply SSAO within indirect lighting on WebGPU and complete software frames,
-  preserving direct lights, emission, and unlit surfaces. Combine screen-space
-  and material AO by minimum visibility. SSAO now adds an opaque geometry
-  pass before shading; disabled SSAO retains the single scene pass.
+- **Orientation for people and agents.** The package documentation describes
+  the Scene, Frame, Renderer pipeline and where things are; the guide gains
+  an Architecture page mapping packages and files and the rules that keep
+  the renderers in step; `AGENTS.md` states the repository's invariants and
+  workflow; and the root package and widget have compiled examples for the
+  pipeline, draw order, node data, the look, materials, cameras, lights,
+  editing a frame, and building one by hand.
+- **Conventions held by tests.** Tests fail if the engine links a terminal
+  UI or camera paths, if the byte counts Go writes for the scene uniform,
+  instance, mesh, and point records differ from the structs the shader
+  declares, if a scene method finds its node by name, if a `Material` group
+  is not named for its field, or if `Geometry.Clone` misses a field.
+- **Fuzzing.** `FuzzCamera` holds that `Camera.Valid` always satisfies
+  `Camera.Validate`, and that a camera `Validate` accepts gives a frame a
+  renderer accepts; it found the orthographic and float32-range camera
+  faults above. The glTF fuzz target gains seeds aimed at the places where
+  the reader has to translate a file into nt3d's stricter rules.
+- **GPU renderer,** with no change in what is drawn beyond the draw-order
+  fix: the unreachable single-renderer code path beside the shared device
+  state is removed (some 300 lines); primitive slots, their entry points,
+  and the draw order are named rather than numbered; and the scene shader is
+  ten files by topic under `wgsl/`, joined into the same module text.
+- **Indirect light** is sampled apart from material response in Go and
+  WGSL, with premultiplied radiance and coverage, ready for further local
+  and screen-space sources.
+- **`nt3dgltf`.** Each material extension is a function and a row in one
+  table, which also declares it supported, in place of a 330-line function;
+  a test holds every extension name the package reads to the tables.
+- **Camera.** The rules a camera has to satisfy are stated once, in a table
+  that both `Validate` and the correction read.
+- **`task ci`** type-checks the `webgpu`-tagged GPU tests in every module
+  (`go vet -tags webgpu`), which no CI step compiled before. Running them
+  still takes `task test-gpu` and a GPU.
+
+</details>
 
 ## v0.11.1 (2026-11-16)
 
