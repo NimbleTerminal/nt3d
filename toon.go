@@ -151,6 +151,62 @@ func (s *Scene) ApplyToon(root NodeID, style ToonStyle) error {
 	return nil
 }
 
+// ApplyPointToon changes PointStyle.ToonBands on point and Gaussian geometries
+// now in root's subtree (0 disables it, or 2..8 cel bands). It preserves old
+// frames and level-of-detail clusters.
+func (s *Scene) ApplyPointToon(root NodeID, bands int) error {
+	if bands != 0 && (bands < 2 || bands > 8) {
+		return fmt.Errorf("nt3d: point toon bands must be 0 or 2..8")
+	}
+	if s.nodes[root] == nil {
+		return fmt.Errorf("nt3d: unknown point toon root %d", root)
+	}
+	changed := false
+	restyle := func(old *sceneGeometry) *sceneGeometry {
+		if old == nil || len(old.Points) == 0 || old.PointStyle.ToonBands == bands {
+			return nil
+		}
+		g := *old
+		g.PointStyle.ToonBands = bands
+		if g.stored != nil {
+			st := *g.stored
+			st.style = g.PointStyle
+			g.stored = &st
+		}
+		if g.pointUpdate != nil {
+			pu := *g.pointUpdate
+			pu.style = g.PointStyle
+			g.pointUpdate = &pu
+		}
+		return &g
+	}
+	pending := []NodeID{root}
+	for len(pending) > 0 {
+		id := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		n := s.nodes[id]
+		pending = append(pending, n.Children...)
+		if len(n.lod) > 0 {
+			for i := range n.lod {
+				if g := restyle(n.lod[i].geometry); g != nil {
+					n.lod[i].geometry = g
+					changed = true
+				}
+			}
+			n.geometry = n.lod[0].geometry
+			continue
+		}
+		if g := restyle(n.geometry); g != nil {
+			n.geometry = g
+			changed = true
+		}
+	}
+	if changed {
+		s.changed(false, false)
+	}
+	return nil
+}
+
 // toonParams is the style a material's lit triangles are shaded with: zero
 // unless it is toon and lit.
 func toonParams(m *Material) ToonStyle {

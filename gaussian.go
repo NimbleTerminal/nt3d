@@ -115,7 +115,10 @@ func (f *Frame) gaussianColor(g *Geometry, index int, world, shFromWorld nt3dmat
 	rgb := nt3dsh.Evaluate(coefficients, shFromWorld.Direction(ray))
 	for k := range rgb {
 		rgb[k] = max(0, rgb[k]+.5)
-		if f.Linear {
+	}
+	rgb = posterizeSRGB(rgb, g.PointStyle.ToonBands)
+	if f.Linear {
+		for k := range rgb {
 			rgb[k] = float32(decodeSRGB(float64(rgb[k])))
 		}
 	}

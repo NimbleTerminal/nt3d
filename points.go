@@ -28,6 +28,9 @@ type PointStyle struct {
 	Frame uint32
 	// SHDCOnly disables directional coefficients without discarding them.
 	SHDCOnly bool
+	// ToonBands quantizes each point or Gaussian's color brightness into flat
+	// cel bands, 2 to 8, preserving hue and chroma; zero disables it.
+	ToonBands int
 	// Precise keeps a Gaussian geometry's float GPU records: 48-byte axes and
 	// float spherical harmonics, as the software renderer draws them. Without
 	// it, the default, the GPU stores half-float axes and byte coefficients at
@@ -81,6 +84,9 @@ const MaxPointPixels = 256
 func validPointStyle(s PointStyle) error {
 	if !validFloat(s.SoftDistance) || s.SoftDistance < 0 {
 		return fmt.Errorf("nt3d: soft particle distance must be finite and nonnegative")
+	}
+	if s.ToonBands != 0 && (s.ToonBands < 2 || s.ToonBands > 8) {
+		return fmt.Errorf("nt3d: point toon bands must be 0 or 2..8")
 	}
 
 	if s.Shape > GaussianPoint || s.Units > WorldUnits || s.Blend > AdditiveBlend {
@@ -210,6 +216,21 @@ func (s *pointSorter) radix() []uint32 {
 		order, spareOrder = spareOrder, order
 	}
 	return order // Four passes: back in s.order.
+}
+
+// posterizeSRGB snaps sRGB brightness into flat cel bands while preserving hue
+// and chroma; bands below 2 leave rgb unchanged.
+func posterizeSRGB(rgb [3]float32, bands int) [3]float32 {
+	if bands < 2 {
+		return rgb
+	}
+	m := max(rgb[0], rgb[1], rgb[2])
+	if m <= .00001 {
+		return [3]float32{}
+	}
+	q := toonBand(min(1, m), bands, .02)
+	k := q / m
+	return [3]float32{rgb[0] * k, rgb[1] * k, rgb[2] * k}
 }
 
 // spriteRect returns normalized cell offset and size, with overflow-safe wrap.

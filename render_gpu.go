@@ -76,6 +76,7 @@ type gpuBatch struct {
 
 type scenePipelineSet struct {
 	pipelines           [slotPipelines]*wgpu.RenderPipeline
+	holdoutPipeline     *wgpu.RenderPipeline
 	blendPipelines      [2]*wgpu.RenderPipeline
 	pointBlends         [2][3]*wgpu.RenderPipeline
 	dropPipeline        *wgpu.RenderPipeline
@@ -90,6 +91,9 @@ type scenePipelineSet struct {
 func (ps *scenePipelineSet) release() {
 	if ps.environmentPipeline != nil {
 		ps.environmentPipeline.Release()
+	}
+	if ps.holdoutPipeline != nil {
+		ps.holdoutPipeline.Release()
 	}
 	if ps.dropPipeline != nil {
 		ps.dropPipeline.Release()
@@ -414,8 +418,9 @@ type gpuRenderer struct {
 	procDownGroup          *wgpu.BindGroupLayout
 	procDownPipes          [2]*wgpu.RenderPipeline
 	// Transparent meshes' back faces, then front faces: untextured and textured.
-	blendPipelines [2]*wgpu.RenderPipeline
-	textureBlends  [2]*wgpu.RenderPipeline
+	holdoutPipeline *wgpu.RenderPipeline
+	blendPipelines  [2]*wgpu.RenderPipeline
+	textureBlends   [2]*wgpu.RenderPipeline
 	// Points bind their records and order in place of items: opaque points
 	// through pipelines[0], blended ones through pointBlends, alpha then
 	// additive, hard then soft then Gaussian. Alpha points read the sort's
@@ -1030,12 +1035,14 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 			}
 			if i == slotUI {
 				for _, d := range g.draws {
-					if !transparent(&f.Draws[d.index].Geometry) {
+					geom := &f.Draws[d.index].Geometry
+					if !transparent(geom) && !holdout(geom) {
 						g.drawOutline(pass, f, d)
 					}
 				}
 				for _, d := range g.draws {
-					if !transparent(&f.Draws[d.index].Geometry) && !transmitting(&f.Draws[d.index].Geometry) {
+					geom := &f.Draws[d.index].Geometry
+					if !transparent(geom) && !transmitting(geom) && !holdout(geom) {
 						g.drawCrease(pass, f, d)
 					}
 				}
@@ -1126,6 +1133,16 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 						}
 					}
 				}
+				for _, d := range g.draws {
+					if holdout(&f.Draws[d.index].Geometry) {
+						g.drawOutline(pass, f, d)
+					}
+				}
+				for _, d := range g.draws {
+					if holdout(&f.Draws[d.index].Geometry) {
+						g.drawCrease(pass, f, d)
+					}
+				}
 			}
 			if i == slotUI || i == slotDynamic {
 				if i == slotUI && f.PostProcess.on() {
@@ -1153,7 +1170,11 @@ func (g *gpuRenderer) drawScene(f Frame, snapshot, oitActive, load, prepass bool
 					case i == slotPoint && geom.PointStyle.Texture != nil:
 						g.drawSprite(pass, f, d)
 					case i == slotMesh:
-						g.setScenePipeline(pass, g.pipelines[slotMesh])
+						pipe := g.pipelines[slotMesh]
+						if holdout(geom) {
+							pipe = g.holdoutPipeline
+						}
+						g.setScenePipeline(pass, pipe)
 						pass.SetBindGroup(0, d.set.binds[slotMesh], nil)
 						pass.Draw(gputypes.DrawArgs{VertexCount: b.count, InstanceCount: d.count})
 					default:
@@ -1269,6 +1290,7 @@ func (g *gpuRenderer) multisample() gputypes.MultisampleState {
 func (g *gpuRenderer) currentPipelineSet() scenePipelineSet {
 	return scenePipelineSet{
 		pipelines:           g.pipelines,
+		holdoutPipeline:     g.holdoutPipeline,
 		blendPipelines:      g.blendPipelines,
 		pointBlends:         g.pointBlends,
 		dropPipeline:        g.dropPipeline,
@@ -1283,6 +1305,7 @@ func (g *gpuRenderer) currentPipelineSet() scenePipelineSet {
 
 func (g *gpuRenderer) applyPipelineSet(ps scenePipelineSet) {
 	g.pipelines = ps.pipelines
+	g.holdoutPipeline = ps.holdoutPipeline
 	g.blendPipelines = ps.blendPipelines
 	g.pointBlends = ps.pointBlends
 	g.dropPipeline = ps.dropPipeline
@@ -1318,6 +1341,9 @@ func (g *gpuRenderer) createCorePipelineSet(dev *wgpu.Device, samples int) (ps s
 		if err != nil {
 			return ps, err
 		}
+	}
+	if ps.holdoutPipeline, err = holdoutPipelineMS(dev, g.layout, g.shader, ms); err != nil {
+		return ps, err
 	}
 	for i, entry := range []string{"vs_mesh_back", "vs_mesh"} {
 		if ps.blendPipelines[i], err = blendPipelineMS(dev, g.layout, g.shader, entry, "fs_main", i, ms); err != nil {
@@ -1364,6 +1390,20 @@ func (g *gpuRenderer) activateSampleCount(dev *wgpu.Device, msaa bool) error {
 	g.sampleIdx = idx
 	g.applyPipelineSet(g.msaaSets[idx])
 	return nil
+}
+
+// holdoutPipelineMS draws a depth-only occluder with zero-alpha blending so
+// browsers that drop zero color write masks still leave color untouched.
+func holdoutPipelineMS(dev *wgpu.Device, layout *wgpu.PipelineLayout, shader *wgpu.ShaderModule, ms gputypes.MultisampleState) (*wgpu.RenderPipeline, error) {
+	blend := gputypes.BlendStateAlpha()
+	return dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "holdout mesh", Layout: layout,
+		Vertex:       wgpu.VertexState{Module: shader, EntryPoint: "vs_holdout"},
+		Primitive:    gputypes.PrimitiveState{Topology: gputypes.PrimitiveTopologyTriangleList, CullMode: gputypes.CullModeBack},
+		DepthStencil: &wgpu.DepthStencilState{Format: gputypes.TextureFormatDepth32Float, DepthWriteEnabled: true, DepthCompare: gputypes.CompareFunctionLessEqual},
+		Multisample:  ms,
+		Fragment:     &wgpu.FragmentState{Module: shader, EntryPoint: "fs_holdout", Targets: []gputypes.ColorTargetState{{Format: sceneFormat, Blend: &blend, WriteMask: gputypes.ColorWriteMaskAll}}},
+	})
 }
 
 // blendPipelineMS draws a transparent mesh's back faces (side 0) or front faces

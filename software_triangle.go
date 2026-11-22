@@ -53,6 +53,20 @@ func (pass *softwareMeshPass) drawTriangle(m, world, normals *nt3dmath.Mat4, ver
 	blended := side == backFaces || side == frontFaces || side == outlineTransparent
 	var corners [3]clipCorner
 	for k, i := range index {
+		if material != nil && material.holdout() && !hull {
+			wp := world.Point(vertices[i].Position)
+			if material.DepthOffset > 0 {
+				dir := pass.frame.Forward
+				if pass.frame.Perspective {
+					if v := wp.Sub(pass.frame.Eye); v.Dot(v) > 1e-10 {
+						dir = v.Normalize()
+					}
+				}
+				wp = wp.Add(dir.Scale(material.DepthOffset))
+			}
+			corners[k].x, corners[k].y, corners[k].z, corners[k].w = pass.frame.Matrix.Transform(wp)
+			continue
+		}
 		corners[k].x, corners[k].y, corners[k].z, corners[k].w = m.Transform(vertices[i].Position)
 		if len(uv) > 0 {
 			corners[k].uv = uv[i]
@@ -144,7 +158,7 @@ type softwareTriangle struct {
 	a, b, c  *clipCorner
 	material *Material
 
-	hull, blended, textured, cutout, fullSize, directTexture             bool
+	hull, holdout, blended, textured, cutout, fullSize, directTexture    bool
 	perspective, mappedColor, located, needsNormal, normalMapped, framed bool
 	lit, toon, pbr, reflective, specular, emissive, hasHook              bool
 
@@ -168,6 +182,10 @@ func (pass *softwareMeshPass) raster(a, b, c *clipCorner, material *Material, si
 				continue
 			}
 			s := surfaceSample{px: px, py: py, depth: tri.depth(w)}
+			if tri.holdout {
+				pass.dst.putDepth(x, y, s.depth)
+				continue
+			}
 			if tri.perspective {
 				s.q = w.perspective(a.w, b.w, c.w)
 			}
@@ -203,6 +221,10 @@ func (tri *softwareTriangle) prepare(side int, mapped bool) {
 	m, f := tri.material, tri.pass.frame
 	a, b, c := tri.a, tri.b, tri.c
 	tri.hull = side < 0
+	tri.holdout = m != nil && m.holdout() && !tri.hull
+	if tri.holdout {
+		return
+	}
 	tri.blended = side == backFaces || side == frontFaces || side == outlineTransparent
 	tri.textured = m != nil && m.Texture != nil
 	tri.hasHook = m != nil && m.Shader != nil && (!tri.hull || m.cutout() || tri.blended)

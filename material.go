@@ -51,6 +51,13 @@ const (
 	// layers of one non-convex mesh, can blend out of order. Wireframe and
 	// picking treat them as opaque.
 	AlphaTransparent
+	// AlphaHoldout writes depth without drawing the surface's color, so an
+	// invisible proxy mesh hides draws and blended points behind it while
+	// leaving the background and nearer splats untouched. Its Outline
+	// (silhouette hull and Crease lines) still draws opaquely over the scene,
+	// after blended points, at the unshifted surface. Shading must be
+	// ShadeUnlit, with no Texture, maps, emission, or Shader.
+	AlphaHoldout
 )
 
 // Material is how triangles look. The zero value is an opaque, untextured
@@ -100,6 +107,11 @@ type Material struct {
 	// taps, which would average it thin again.
 	Alpha     AlphaMode
 	Threshold float32
+	// DepthOffset pushes an AlphaHoldout mesh's written depth away from the
+	// viewer along the view ray, in world units (>= 0), so noisy splats on the
+	// front of a proxy surface are not clipped while silhouettes and creases
+	// stay on the unshifted surface.
+	DepthOffset float32
 
 	// Phong is the highlight and reflection of a ShadePhong material.
 	Phong PhongStyle
@@ -280,6 +292,7 @@ func (m *Material) cutout() bool {
 }
 func (m *Material) edgeOn() bool  { return m != nil && m.Alpha == AlphaEdgeOn }
 func (m *Material) blended() bool { return m != nil && m.Alpha == AlphaTransparent }
+func (m *Material) holdout() bool { return m != nil && m.Alpha == AlphaHoldout }
 
 // normalStrength is how strongly the normal map applies: zero without a map,
 // and 1 when its Strength is left zero.
@@ -302,6 +315,11 @@ func (m Material) Validate() error { return checkMaterial(&m, true) }
 // transparent reports whether a geometry's triangles are blended.
 func transparent(g *Geometry) bool {
 	return g.Material != nil && g.Material.blended() && len(g.Indices) > 0
+}
+
+// holdout reports whether a geometry writes depth without surface color.
+func holdout(g *Geometry) bool {
+	return g.Material != nil && g.Material.holdout() && len(g.Indices) > 0
 }
 
 func transmitting(g *Geometry) bool {
@@ -355,8 +373,17 @@ func checkMaterial(m *Material, hasUV bool) error {
 	if m.Shading > ShadeUnlit {
 		return fmt.Errorf("nt3d: unknown material Shading %d", m.Shading)
 	}
-	if m.Alpha > AlphaTransparent {
+	if m.Alpha > AlphaHoldout {
 		return fmt.Errorf("nt3d: unknown material Alpha %d", m.Alpha)
+	}
+	if !validFloat(m.DepthOffset) || m.DepthOffset < 0 {
+		return errors.New("nt3d: depth offset must be finite and nonnegative")
+	}
+	if m.DepthOffset > 0 && m.Alpha != AlphaHoldout {
+		return errors.New("nt3d: DepthOffset requires AlphaHoldout")
+	}
+	if m.Alpha == AlphaHoldout && (m.Shading != ShadeUnlit || m.Texture != nil || m.Shader != nil || m.Emission != (EmissionStyle{}) || m.Normal != (NormalStyle{}) || m.LightMap != nil) {
+		return errors.New("nt3d: AlphaHoldout requires an untextured ShadeUnlit material")
 	}
 	// A group that belongs to another lighting model is a mistake, not a
 	// switch: it would otherwise be ignored without a word.
@@ -502,7 +529,7 @@ func textureBindingsEqual(a, b *Material) bool {
 // vertex/extension records, allowing instance-uniform and texture-binding
 // changes to reuse existing uploaded mesh buffers and SharedGeometry batches.
 func vertexMaterialEqual(old, next Geometry) bool {
-	if mapped(old) != mapped(next) || transparent(&old) != transparent(&next) {
+	if mapped(old) != mapped(next) || transparent(&old) != transparent(&next) || holdout(&old) != holdout(&next) {
 		return false
 	}
 	if !mapped(next) {

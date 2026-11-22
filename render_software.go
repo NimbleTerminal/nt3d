@@ -249,12 +249,26 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 		distance := f.eyeDistance(world.Point(p.Position))
 		c := p.Color
-		rgb := [3]float32{dst.fromPixel(c.R), dst.fromPixel(c.G), dst.fromPixel(c.B)}
+		var rgb [3]float32
 		if len(g.GaussianSH) > 0 {
 			rgb = f.gaussianColor(g, i, world, shFromWorld)
 			for k := range rgb {
 				rgb[k] *= 255
 			}
+		} else if style.ToonBands >= 2 {
+			srgb := posterizeSRGB([3]float32{float32(c.R) / 255, float32(c.G) / 255, float32(c.B) / 255}, style.ToonBands)
+			c = color.RGBA{encodeOpaque8(srgb[0]), encodeOpaque8(srgb[1]), encodeOpaque8(srgb[2]), c.A}
+			if linear {
+				for k := range rgb {
+					rgb[k] = float32(decodeSRGB(float64(srgb[k]))) * 255
+				}
+			} else {
+				for k := range rgb {
+					rgb[k] = srgb[k] * 255
+				}
+			}
+		} else {
+			rgb = [3]float32{dst.fromPixel(c.R), dst.fromPixel(c.G), dst.fromPixel(c.B)}
 		}
 		alpha := min(1, float32(c.A)/255*float32(step))
 		if style.Shape == GaussianPoint {
@@ -416,7 +430,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		mesh.drawMesh(&m, &world, &normals, g, verts, &material, side)
 	}
 	for gi := range f.Draws {
-		if !transparent(&f.Draws[gi].Geometry) {
+		if !transparent(&f.Draws[gi].Geometry) && !holdout(&f.Draws[gi].Geometry) {
 			drawOutline(gi, outlineOpaque)
 		}
 	}
@@ -494,7 +508,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 	}
 	for gi := range f.Draws {
-		if !transparent(&f.Draws[gi].Geometry) && !transmitting(&f.Draws[gi].Geometry) {
+		if !transparent(&f.Draws[gi].Geometry) && !transmitting(&f.Draws[gi].Geometry) && !holdout(&f.Draws[gi].Geometry) {
 			drawCrease(gi)
 		}
 	}
@@ -699,6 +713,16 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			s := &slots[k>>10&4095]
 			i, scale := unpackLOD(indices[order[next]])
 			drawPoint(s.g, s.world, &s.m, int(i), s.step, s.shFromWorld, scale)
+		}
+	}
+	for gi := range f.Draws {
+		if holdout(&f.Draws[gi].Geometry) {
+			drawOutline(gi, outlineOpaque)
+		}
+	}
+	for gi := range f.Draws {
+		if holdout(&f.Draws[gi].Geometry) {
+			drawCrease(gi)
 		}
 	}
 	drawOverlays(img, f)

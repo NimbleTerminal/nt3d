@@ -121,7 +121,7 @@ fn gaussianSHColor(index:u32,world:vec3<f32>)->vec3<f32> {
   }
   let at=16u+(index*perPoint+k)*3u;rgb+=nt3dSHBasis(k,direction)*vec3<f32>(gaussianSH[at],gaussianSH[at+1u],gaussianSH[at+2u]);
  }
- return decode(max(rgb,vec3<f32>(0.0)));
+ return decode(posterizePoint(max(rgb,vec3<f32>(0.0)),instances[0].toonStyle.z));
 }
 // END_POINT_ONLY
 

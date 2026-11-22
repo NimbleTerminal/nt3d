@@ -152,7 +152,7 @@ func TestWGSLLayoutRules(t *testing.T) {
 
 // The encoder for an instance writes exactly the record the shader declares.
 func TestInstanceRecordIsItsDeclaredSize(t *testing.T) {
-	record := transformRecord(nt3dmath.Identity(), 0, 0, 0, false, true, OutlineStyle{}, false, 0, [8]float32{}, ToonStyle{}, [4]float32{}, [4]float32{}, [4]float32{}, [4]float32{})
+	record := transformRecord(nt3dmath.Identity(), 0, 0, 0, false, true, OutlineStyle{}, false, 0, [8]float32{}, ToonStyle{}, 0, [4]float32{}, [4]float32{}, [4]float32{}, [4]float32{})
 	if len(record) != instanceRecordSize {
 		t.Fatalf("an instance record is %d bytes, instanceRecordSize is %d", len(record), instanceRecordSize)
 	}

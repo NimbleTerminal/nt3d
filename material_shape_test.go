@@ -30,7 +30,9 @@ func TestShadingModelIsExplicit(t *testing.T) {
 		"Phong fields on PBR":   {Material{Shading: ShadePBR, Phong: PhongStyle{Specular: .5}}, "ShadePhong"},
 		"Phong fields on unlit": {Material{Shading: ShadeUnlit, Phong: PhongStyle{Reflectivity: .5}}, "ShadePhong"},
 		"an unknown model":      {Material{Shading: ShadeUnlit + 1}, "Shading"},
-		"an unknown alpha mode": {Material{Alpha: AlphaTransparent + 1}, "Alpha"},
+		"an unknown alpha mode": {Material{Alpha: AlphaHoldout + 1}, "Alpha"},
+		"lit holdout":           {Material{Alpha: AlphaHoldout}, "ShadeUnlit"},
+		"depth offset non-hold": {Material{Shading: ShadeUnlit, DepthOffset: .1}, "AlphaHoldout"},
 	} {
 		err := c.m.Validate()
 		if err == nil {

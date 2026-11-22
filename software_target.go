@@ -43,6 +43,16 @@ func (dst *softwareTarget) accumulate() {
 	}
 }
 
+func (dst *softwareTarget) putDepth(x, y int, z float32) {
+	if x < 0 || y < 0 || x >= dst.width || y >= dst.height || z < 0 || z > 1 {
+		return
+	}
+	i := y*dst.width + x
+	if z <= dst.depth[i]+.00001 {
+		dst.depth[i] = z
+	}
+}
+
 func (dst *softwareTarget) put(x, y int, z float32, c color.RGBA) {
 	if x < 0 || y < 0 || x >= dst.width || y >= dst.height || z < 0 || z > 1 {
 		return

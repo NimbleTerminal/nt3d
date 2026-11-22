@@ -231,6 +231,7 @@ type transformState struct {
 	emissive                          [4]float32
 	outline                           OutlineStyle
 	toon                              ToonStyle // Zero unless a lit mesh's material is toon.
+	pointToon                         int
 	unlit                             bool
 	world                             nt3dmath.Mat4
 	specular, shininess, reflectivity float32
@@ -302,6 +303,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 		shader       *MaterialShader
 		cutoff       float32
 		transmitting bool
+		holdout      bool
 	}
 	type group struct {
 		key     geometryKey
@@ -608,6 +610,7 @@ func (g *gpuRenderer) prepareGeometry(dev *wgpu.Device, f Frame, drawn []bool) e
 			shader:       matShader,
 			cutoff:       cutoff,
 			transmitting: transmitting(&geom),
+			holdout:      holdout(&geom),
 		}
 		if mapped(geom) {
 			m := materialOrZero(geom.Material)
@@ -787,6 +790,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 		states[k].outline = f.Draws[i].Geometry.Outline
 		states[k].unlit = m != nil && m.unlit()
 		states[k].toon = toonParams(m)
+		states[k].pointToon = f.Draws[i].Geometry.PointStyle.ToonBands
 		if m != nil && m.Phong.Specular > 0 && !m.unlit() {
 			states[k].specular, states[k].shininess = m.Phong.Specular, m.shininess()
 		}
@@ -805,7 +809,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 	}
 	data := make([]byte, 0, instanceRecordSize*len(states))
 	for _, st := range states {
-		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.extension, st.optics, st.toon, st.pbr, st.emissive, st.coat, st.sheen)...)
+		data = append(data, transformRecord(st.world, st.specular, st.shininess, st.reflectivity, st.procedural, true, st.outline, st.unlit, st.extension, st.optics, st.toon, st.pointToon, st.pbr, st.emissive, st.coat, st.sheen)...)
 	}
 	s.last = states
 	return dev.Queue().WriteBuffer(s.transform, 0, data)
@@ -818,7 +822,7 @@ func writeTransforms(dev *wgpu.Device, s *instanceSet, f Frame, members []int) e
 // unlit flag, reflection F0, and where the mesh's extension records start (its index
 // count; the shader cannot trust arrayLength, which Metal reports from
 // the allocation, not the binding).
-func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32, optics [8]float32, toon ToonStyle, pbr [4]float32, emissive [4]float32, coat [4]float32, sheen [4]float32) []byte {
+func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity float32, procedural, visible bool, outline OutlineStyle, unlit bool, extension uint32, optics [8]float32, toon ToonStyle, pointToon int, pbr [4]float32, emissive [4]float32, coat [4]float32, sheen [4]float32) []byte {
 	inv, _ := world.InverseAffine()
 	normal := inv.Transpose()
 	normal[12], normal[13], normal[14], normal[15] = specular, shininess, 0, 0
@@ -842,8 +846,8 @@ func transformRecord(world nt3dmath.Mat4, specular, shininess, reflectivity floa
 	data = appendFloats(data, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, outlineW)
 	data = appendFloats(data, optics[:]...)
 	shade := toon.shade()
-	// toonStyle.z is spare.
-	data = appendFloats(data, shade[0], shade[1], shade[2], toon.Rim, float32(toon.Bands), toon.Softness, 0, toon.ShadowSoftness)
+	// toonStyle.z carries PointStyle.ToonBands for point and Gaussian draws.
+	data = appendFloats(data, shade[0], shade[1], shade[2], toon.Rim, float32(toon.Bands), toon.Softness, float32(pointToon), toon.ShadowSoftness)
 	return appendFloats(data, pbr[0], pbr[1], pbr[2], pbr[3], emissive[0], emissive[1], emissive[2], emissive[3], coat[0], coat[1], coat[2], coat[3], sheen[0], sheen[1], sheen[2], sheen[3])
 }
 
@@ -857,7 +861,7 @@ func writeTransform(dev *wgpu.Device, buffer *wgpu.Buffer, world nt3dmath.Mat4, 
 	}
 	pbr, specPacked := pbrParams(m, false)
 	em := emissiveFactor(m, false)
-	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(world, specular, shininess, reflectivity, false, visible, OutlineStyle{}, m != nil && m.unlit(), 0, [8]float32{}, toonParams(m), pbr, [4]float32{em[0], em[1], em[2], specPacked}, coatParams(m), sheenParams(m, false)))
+	return dev.Queue().WriteBuffer(buffer, 0, transformRecord(world, specular, shininess, reflectivity, false, visible, OutlineStyle{}, m != nil && m.unlit(), 0, [8]float32{}, toonParams(m), 0, pbr, [4]float32{em[0], em[1], em[2], specPacked}, coatParams(m), sheenParams(m, false)))
 }
 
 // uploadData uploads a geometry batch's records, to be bound per instance set.

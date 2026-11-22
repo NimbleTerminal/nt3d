@@ -1,4 +1,13 @@
 // BEGIN_POINT_ONLY
+// posterizePoint snaps a point or Gaussian's sRGB brightness into flat cel
+// bands while preserving hue and chroma; bands below 2 leave srgb unchanged.
+fn posterizePoint(srgb:vec3<f32>,bands:f32)->vec3<f32> {
+ if bands<1.5 {return srgb;}
+ let m=max(srgb.r,max(srgb.g,srgb.b));
+ if m<=0.00001 {return vec3<f32>(0.0);}
+ let q=toonBand(min(1.0,m),bands,0.02);
+ return srgb*(q/m);
+}
 // A point is a quad about its center, of its radius on screen: a pixel
 // radius as it is, a world radius by the projection's vertical scale at the
 // point's depth (the matrix's clip-y row over w), clamped to half a pixel
@@ -11,7 +20,8 @@ fn pointOutput(vi:u32,packed:u32)->Out {
  if f8>0u && f8<255u {lodScale=inverseSqrt(f32(f8)/255.0);}
  let p=points[index];let corner=corners[vi];
  let c=vec4<f32>(f32(p.color&255u),f32((p.color>>8u)&255u),f32((p.color>>16u)&255u),f32(p.color>>24u))/255.0;
- var o=output(vec3<f32>(p.x,p.y,p.z),vec3<f32>(0.0),vec4<f32>(c.rgb,0.0));
+ let srgb=posterizePoint(c.rgb,instances[0].toonStyle.z);
+ var o=output(vec3<f32>(p.x,p.y,p.z),vec3<f32>(0.0),vec4<f32>(srgb,0.0));
  var r=p.radius*lodScale;
  if r<0.0 {
   let row=vec3<f32>(u.matrix[0][1],u.matrix[1][1],u.matrix[2][1]);
@@ -30,6 +40,21 @@ fn pointOutput(vi:u32,packed:u32)->Out {
 fn meshOutput(vi:u32,ii:u32,side:f32)->Out {let p=items[vi];let bc=instanceBaseColor(ii);var o=output(p.a.xyz,p.b.xyz*side,vec4<f32>(p.color.rgb,f32(ii)));o.color=vec4<f32>(o.color.rgb*bc.rgb,p.a.w*bc.a);o.optics.w=f32(ii)+1.0;if instances[ii].normal[0].w>0.5 {o.normal=vec3<f32>(0.0);o.spec=vec2<f32>(0.0);}return o;}
 @vertex fn vs_mesh(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,1.0);}
 @vertex fn vs_mesh_back(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {return meshOutput(vi,ii,-1.0);}
+@vertex fn vs_holdout(@builtin(vertex_index) vi:u32,@builtin(instance_index) ii:u32)->Out {
+ let p=items[vi];let inst=instances[ii];
+ var o:Out;o.uv=vec2<f32>(0.0);o.point=0.0;o.color=vec4<f32>(0.0);
+ if inst.normal[3][3]==0.0 {o.clip=vec4<f32>(0.0,0.0,2.0,1.0);return o;}
+ var wp=(inst.world*vec4<f32>(p.a.xyz,1.0)).xyz;
+ let off=inst.absorption.x;
+ if off>0.0 {
+  var dir=u.forward.xyz;
+  if u.eye.w>0.5 {let v=wp-u.eye.xyz;let l=length(v);if l>0.00001 {dir=v/l;}}
+  wp+=dir*off;
+ }
+ o.clip=u.matrix*vec4<f32>(wp,1.0);
+ return o;
+}
+@fragment fn fs_holdout(o:Out)->@location(0) vec4<f32> {return vec4<f32>(0.0);}
 // Depth-clip the centerline before expanding it in pixel space.
 struct StrokeClip { a:vec4<f32>, b:vec4<f32>, t0:f32, t1:f32, visible:u32 };
 fn clipStroke(a:vec4<f32>,b:vec4<f32>)->StrokeClip {
