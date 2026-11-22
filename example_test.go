@@ -269,3 +269,22 @@ func ExampleMaterial() {
 	// glass: <nil>
 	// confused: nt3d: material sets its PBR group but its Shading is not ShadePBR
 }
+
+// BuildDecal clips a target mesh's front-facing triangles to an oriented box
+// and assigns planar UVs, lifting the clipped surface slightly off the wall.
+func ExampleBuildDecal() {
+	wall, _ := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 8, Y: 1, Z: 4}})
+	decal, err := nt3d.BuildDecal(wall, nt3d.Decal{
+		Center:       nt3dmath.Vec3{Y: -0.5},
+		Normal:       nt3dmath.Vec3{Y: -1},
+		Up:           nt3dmath.Vec3{Z: 1},
+		Width:        2,
+		Height:       1.5,
+		Depth:        0.4,
+		NormalOffset: 0.01,
+		Material:     &nt3d.Material{Shading: nt3d.ShadeUnlit, Alpha: nt3d.AlphaTransparent},
+	})
+	fmt.Println("err:", err, "has triangles:", len(decal.Indices) > 0)
+	// Output:
+	// err: <nil> has triangles: true
+}
