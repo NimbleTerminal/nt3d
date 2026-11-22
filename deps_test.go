@@ -10,7 +10,7 @@ import (
 // program. Whoever imports it, or water, fur, mesh, and the rest that build on
 // it, must not inherit the terminal UI stack: only package widget may.
 func TestEngineLinksNoTerminalUI(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", ".", "./water", "./fur", "./mesh/...", "./clod", "./cam/...", "./sh", "./aabbtree", "./collide", "./gamepad", "./math").Output()
+	out, err := exec.Command("go", "list", "-deps", ".", "./water", "./fur", "./mesh/...", "./clod", "./cam/...", "./sh", "./aabbtree", "./collide", "./math").Output()
 	if err != nil {
 		t.Skipf("go list is unavailable: %v", err)
 	}

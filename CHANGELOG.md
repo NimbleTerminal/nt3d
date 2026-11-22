@@ -8,7 +8,6 @@
 - **Depth-only holdout proxy meshes with ink outlines**: `AlphaHoldout` and `Material.DepthOffset` write scene depth without drawing surface color (using zero-alpha blending on WebGPU so browser color-mask defaults stay untouched), while drawing `OutlineStyle` silhouettes and `Crease` ink lines over blended splats.
 - **Projected mesh decals and runtime Gaussian patches**: `BuildDecal` clips target triangles to an oriented box with planar `[0, 1]²` UVs and normal lift, while `GaussianCloud` and `BuildFlatGaussians` insert and remove surface-aligned 3DGS patches inside a single depth-sorted cloud (preserving SH palettes).
 - **Kinematic capsule collision (`nt3d/collide`)**: Z-up `float64` triangle-mesh BVH ray casts and `MoveCapsule` collide-and-slide with slope limits, curb step-up, and downward ground snapping.
-- **Cross-platform gamepad polling (`nt3d/gamepad`)**: `CGO_ENABLED=0` controller polling over W3C `navigator.getGamepads()` on `js/wasm`, `GameController.framework` on macOS, and `/dev/input/js*` on Linux.
 
 ## v0.12.0 (2026-11-18)
 
