@@ -1,0 +1,459 @@
+// Copyright (c) 2026 Neomantra Corp.
+
+package nt3dcollide
+
+import (
+	"math"
+
+	nt3dmath "nimbleterminal.dev/nt3d/math"
+)
+
+// MoveConfig tunes kinematic capsule movement against a Mesh.
+type MoveConfig struct {
+	// MaxSlopeDeg is the steepest walkable slope from horizontal, in degrees
+	// (0..89; zero defaults to 50).
+	MaxSlopeDeg float64
+	// StepHeight is the tallest vertical ledge a grounded capsule steps onto,
+	// in meters (>= 0; zero disables stepping).
+	StepHeight float64
+	// GroundSnap is how far downward a grounded capsule snaps to stay glued to
+	// ramps and crests when not jumping, in meters (>= 0).
+	GroundSnap float64
+	// SkinWidth is the small separation margin maintained from surfaces, in
+	// meters (zero defaults to 0.005).
+	SkinWidth float64
+}
+
+func (c MoveConfig) normalized() (minWalkZ, stepH, snap, skin float64) {
+	slope := c.MaxSlopeDeg
+	if !(slope > 0) {
+		slope = 50
+	}
+	slope = math.Min(89, slope)
+	minWalkZ = math.Cos(slope * math.Pi / 180)
+	stepH = math.Max(0, c.StepHeight)
+	snap = math.Max(0, c.GroundSnap)
+	skin = c.SkinWidth
+	if !(skin > 0) {
+		skin = 0.005
+	}
+	return minWalkZ, stepH, snap, skin
+}
+
+// MoveResult reports the capsule's resolved pose, velocity, and contacts after
+// MoveCapsule.
+type MoveResult struct {
+	Position     nt3dmath.Vec3d
+	Velocity     nt3dmath.Vec3d
+	Grounded     bool
+	GroundNormal nt3dmath.Vec3d
+	HitWall      bool
+	WallNormal   nt3dmath.Vec3d
+	ImpactSpeed  float64
+}
+
+// MoveCapsule advances a capsule with base at pos by vel*dt, resolving
+// penetrations, sliding along walls and slopes, stepping up low curbs when
+// grounded, and snapping onto walkable slopes.
+func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasGrounded bool, cfg MoveConfig) MoveResult {
+	if !finiteVec(pos) {
+		return MoveResult{}
+	}
+	if !finiteVec(vel) {
+		vel = nt3dmath.Vec3d{}
+	}
+	res := MoveResult{
+		Position:     pos,
+		Velocity:     vel,
+		GroundNormal: nt3dmath.Vec3d{Z: 1},
+	}
+	if m == nil || len(m.tris) == 0 || !(dt > 0) || !nt3dmath.IsFinite(dt) {
+		return res
+	}
+	cap.Radius = math.Max(1e-3, cap.Radius)
+	cap.Height = math.Max(float64(2*cap.Radius), cap.Height)
+	minWalkZ, stepH, snapDist, skin := cfg.normalized()
+
+	initialVel := vel
+	curPos := pos
+	curVel := vel
+
+	// Resolve any initial overlap first so a capsule spawned touching a surface
+	// starts cleanly separated.
+	curPos, _ = depenetrate(m, cap, curPos, skin, minWalkZ, &res, initialVel, false)
+
+	totalDisp := vecLen(vecScale(curVel, dt))
+	maxStep := math.Max(0.05, float64(cap.Radius*0.5))
+	steps := max(1, min(32, int(math.Ceil(totalDisp/maxStep))))
+	subDt := dt / float64(steps)
+
+	for range steps {
+		rem := subDt
+		var planes [4]nt3dmath.Vec3d
+		nPlanes := 0
+		for iter := range 4 {
+			_ = iter
+			if !(rem > 1e-9) || vecLenSq(curVel) <= 1e-14 {
+				break
+			}
+			want := vecAdd(curPos, vecScale(curVel, rem))
+			resolved, contacts := depenetrate(m, cap, want, skin, minWalkZ, &res, initialVel, true)
+			if len(contacts) == 0 {
+				curPos = resolved
+				break
+			}
+
+			// Try stepping over a low curb when grounded or moving mostly horizontally.
+			if stepH > 0 && (wasGrounded || res.Grounded) && hasWallContact(contacts, minWalkZ) {
+				if stepped, ok := tryStepUp(m, cap, curPos, vecScale(curVel, rem), stepH, skin, minWalkZ); ok {
+					horizGain := math.Hypot(stepped.X-curPos.X, stepped.Y-curPos.Y)
+					slideGain := math.Hypot(resolved.X-curPos.X, resolved.Y-curPos.Y)
+					if horizGain > slideGain+1e-3 {
+						curPos = stepped
+						res.Grounded = true
+						if curVel.Z < 0 {
+							curVel.Z = 0
+						}
+						break
+					}
+				}
+			}
+
+			curPos = resolved
+			for _, n := range contacts {
+				if dot(curVel, n) >= 0 {
+					continue
+				}
+				duplicate := false
+				for k := range nPlanes {
+					if dot(planes[k], n) > 0.995 {
+						duplicate = true
+						break
+					}
+				}
+				if !duplicate && nPlanes < len(planes) {
+					planes[nPlanes] = n
+					nPlanes++
+				}
+			}
+			curVel = clipVelocity(curVel, planes[:nPlanes])
+			break
+		}
+	}
+
+	// Ground probe and downward snap when grounded (or landing with vel.Z <= 0).
+	probeDist := float64(skin * 4)
+	if wasGrounded && initialVel.Z <= 0.05 && snapDist > probeDist {
+		probeDist = snapDist
+	}
+	if initialVel.Z <= 0.05 {
+		if snappedZ, gNorm, ok := probeGround(m, cap, curPos, probeDist, skin, minWalkZ); ok {
+			curPos.Z = snappedZ
+			res.Grounded = true
+			res.GroundNormal = gNorm
+			if into := dot(curVel, gNorm); into < 0 {
+				curVel = vecSub(curVel, vecScale(gNorm, into))
+			}
+		}
+	}
+
+	res.Position = curPos
+	res.Velocity = curVel
+	return res
+}
+
+func hasWallContact(normals []nt3dmath.Vec3d, minWalkZ float64) bool {
+	for _, n := range normals {
+		if n.Z < minWalkZ && n.Z > -0.7 {
+			return true
+		}
+	}
+	return false
+}
+
+func clipVelocity(v nt3dmath.Vec3d, planes []nt3dmath.Vec3d) nt3dmath.Vec3d {
+	switch len(planes) {
+	case 0:
+		return v
+	case 1:
+		d := dot(v, planes[0])
+		if d < 0 {
+			return vecSub(v, vecScale(planes[0], d))
+		}
+		return v
+	case 2:
+		out := v
+		for _, n := range planes {
+			if d := dot(out, n); d < 0 {
+				out = vecSub(out, vecScale(n, d))
+			}
+		}
+		if dot(out, planes[0]) < -1e-6 || dot(out, planes[1]) < -1e-6 {
+			crease := cross(planes[0], planes[1])
+			l := vecLen(crease)
+			if !(l > 1e-6) {
+				return nt3dmath.Vec3d{}
+			}
+			crease = vecScale(crease, 1/l)
+			return vecScale(crease, dot(v, crease))
+		}
+		return out
+	default:
+		return nt3dmath.Vec3d{}
+	}
+}
+
+func tryStepUp(m *Mesh, cap Capsule, start, delta nt3dmath.Vec3d, stepH, skin, minWalkZ float64) (nt3dmath.Vec3d, bool) {
+	up := nt3dmath.Vec3d{X: start.X, Y: start.Y, Z: start.Z + stepH}
+	if overlapsAny(m, cap, up) {
+		return nt3dmath.Vec3d{}, false
+	}
+	across := nt3dmath.Vec3d{X: up.X + delta.X, Y: up.Y + delta.Y, Z: up.Z}
+	var dummy MoveResult
+	across, _ = depenetrate(m, cap, across, skin, minWalkZ, &dummy, nt3dmath.Vec3d{}, false)
+	snappedZ, _, ok := probeGround(m, cap, across, stepH+skin*2, skin, minWalkZ)
+	if !ok || snappedZ < start.Z-skin*2 || snappedZ > start.Z+stepH+skin*2 {
+		return nt3dmath.Vec3d{}, false
+	}
+	landed := nt3dmath.Vec3d{X: across.X, Y: across.Y, Z: snappedZ}
+	if overlapsAny(m, cap, landed) {
+		return nt3dmath.Vec3d{}, false
+	}
+	return landed, true
+}
+
+func overlapsAny(m *Mesh, cap Capsule, pos nt3dmath.Vec3d) bool {
+	lo, hi := cap.Bounds(pos, 0)
+	segA, segB := cap.Segment(pos)
+	hit := false
+	m.queryBox(lo, hi, func(t Triangle) {
+		if hit {
+			return
+		}
+		sp, tp := closestSegmentTriangle(segA, segB, t)
+		if vecLenSq(vecSub(sp, tp)) < float64((cap.Radius-1e-4)*(cap.Radius-1e-4)) {
+			hit = true
+		}
+	})
+	return hit
+}
+
+func probeGround(m *Mesh, cap Capsule, pos nt3dmath.Vec3d, maxDrop, skin, minWalkZ float64) (snappedZ float64, normal nt3dmath.Vec3d, ok bool) {
+	r := cap.Radius
+	lo := nt3dmath.Vec3d{X: pos.X - r, Y: pos.Y - r, Z: pos.Z - maxDrop - skin*2}
+	hi := nt3dmath.Vec3d{X: pos.X + r, Y: pos.Y + r, Z: pos.Z + r + skin*2}
+	bestZ := math.Inf(-1)
+	r2 := float64(r * r)
+	probeCenter := nt3dmath.Vec3d{X: pos.X, Y: pos.Y, Z: pos.Z + r}
+
+	m.queryBox(lo, hi, func(t Triangle) {
+		if t.Normal.Z < minWalkZ {
+			return
+		}
+		// Closest point on the walkable triangle to the bottom sphere's XY/3D center.
+		cp := closestPointTriangle(probeCenter, t.A, t.B, t.C)
+		dx, dy := pos.X-cp.X, pos.Y-cp.Y
+		dxy2 := float64(dx*dx) + float64(dy*dy)
+		if dxy2 >= float64((r-1e-5)*(r-1e-5)) {
+			return
+		}
+		// Exact height of the triangle plane at (pos.X, pos.Y) when inside, or
+		// hemisphere support over the closest edge/vertex cp.
+		supportZ := cp.Z + math.Sqrt(math.Max(0, r2-dxy2)) - r + skin
+		if supportZ <= pos.Z+skin*4 && supportZ >= pos.Z-maxDrop-skin*2 && supportZ > bestZ {
+			bestZ = supportZ
+			normal = t.Normal
+			ok = true
+		}
+	})
+	return bestZ, normal, ok
+}
+
+func depenetrate(m *Mesh, cap Capsule, pos nt3dmath.Vec3d, skin, minWalkZ float64, res *MoveResult, impactRef nt3dmath.Vec3d, record bool) (nt3dmath.Vec3d, []nt3dmath.Vec3d) {
+	var contacts []nt3dmath.Vec3d
+	targetR := cap.Radius + skin
+	for pass := range 4 {
+		_ = pass
+		lo, hi := cap.Bounds(pos, skin+1e-3)
+		var near []Triangle
+		m.queryBox(lo, hi, func(t Triangle) { near = append(near, t) })
+		moved := false
+		for _, t := range near {
+			segA, segB := cap.Segment(pos)
+			sp, tp := closestSegmentTriangle(segA, segB, t)
+			diff := vecSub(sp, tp)
+			d2 := vecLenSq(diff)
+			if d2 >= float64(targetR*targetR) {
+				continue
+			}
+			var n nt3dmath.Vec3d
+			var pen float64
+			if d2 > 1e-14 {
+				d := math.Sqrt(d2)
+				n = vecScale(diff, 1/d)
+				pen = targetR - d
+			} else {
+				n = t.Normal
+				if dot(vecSub(segA, t.A), n) < 0 {
+					n = vecScale(n, -1)
+				}
+				pen = targetR
+			}
+			pos = vecAdd(pos, vecScale(n, pen))
+			moved = true
+			if record {
+				contacts = append(contacts, n)
+				into := -dot(impactRef, n)
+				if into > res.ImpactSpeed {
+					res.ImpactSpeed = into
+				}
+				if n.Z >= minWalkZ {
+					res.Grounded = true
+					if n.Z > res.GroundNormal.Z || !res.Grounded {
+						res.GroundNormal = n
+					}
+				} else if n.Z > -0.7 {
+					res.HitWall = true
+					res.WallNormal = n
+				}
+			}
+		}
+		if !moved {
+			break
+		}
+	}
+	return pos, contacts
+}
+
+// closestSegmentTriangle returns the closest pair of points (on segment [p, q]
+// and on triangle t).
+func closestSegmentTriangle(p, q nt3dmath.Vec3d, t Triangle) (segPt, triPt nt3dmath.Vec3d) {
+	bestD2 := math.Inf(1)
+	consider := func(sp, tp nt3dmath.Vec3d) {
+		d2 := vecLenSq(vecSub(sp, tp))
+		if d2 < bestD2 {
+			bestD2 = d2
+			segPt, triPt = sp, tp
+		}
+	}
+
+	// Endpoints against triangle.
+	consider(p, closestPointTriangle(p, t.A, t.B, t.C))
+	consider(q, closestPointTriangle(q, t.A, t.B, t.C))
+
+	// Segment against each of the three triangle edges.
+	edges := [3][2]nt3dmath.Vec3d{{t.A, t.B}, {t.B, t.C}, {t.C, t.A}}
+	for _, e := range edges {
+		sp, ep := closestSegmentSegment(p, q, e[0], e[1])
+		consider(sp, ep)
+	}
+
+	// Segment crossing the triangle's plane in its interior.
+	pq := vecSub(q, p)
+	denom := dot(pq, t.Normal)
+	if math.Abs(denom) > 1e-12 {
+		s := dot(vecSub(t.A, p), t.Normal) / denom
+		if s > 0 && s < 1 {
+			sp := vecAdd(p, vecScale(pq, s))
+			consider(sp, closestPointTriangle(sp, t.A, t.B, t.C))
+		}
+	}
+	return segPt, triPt
+}
+
+// closestPointTriangle implements Ericson's Voronoi-region closest point on
+// triangle (a, b, c) to point p.
+func closestPointTriangle(p, a, b, c nt3dmath.Vec3d) nt3dmath.Vec3d {
+	ab := vecSub(b, a)
+	ac := vecSub(c, a)
+	ap := vecSub(p, a)
+	d1 := dot(ab, ap)
+	d2 := dot(ac, ap)
+	if d1 <= 0 && d2 <= 0 {
+		return a
+	}
+
+	bp := vecSub(p, b)
+	d3 := dot(ab, bp)
+	d4 := dot(ac, bp)
+	if d3 >= 0 && d4 <= d3 {
+		return b
+	}
+
+	vc := float64(d1*d4) - float64(d3*d2)
+	if vc <= 0 && d1 >= 0 && d3 <= 0 {
+		v := d1 / (d1 - d3)
+		return vecAdd(a, vecScale(ab, v))
+	}
+
+	cp := vecSub(p, c)
+	d5 := dot(ab, cp)
+	d6 := dot(ac, cp)
+	if d6 >= 0 && d5 <= d6 {
+		return c
+	}
+
+	vb := float64(d5*d2) - float64(d1*d6)
+	if vb <= 0 && d2 >= 0 && d6 <= 0 {
+		w := d2 / (d2 - d6)
+		return vecAdd(a, vecScale(ac, w))
+	}
+
+	va := float64(d3*d6) - float64(d5*d4)
+	if va <= 0 && (d4-d3) >= 0 && (d5-d6) >= 0 {
+		w := (d4 - d3) / ((d4 - d3) + (d5 - d6))
+		return vecAdd(b, vecScale(vecSub(c, b), w))
+	}
+
+	denom := 1 / (va + vb + vc)
+	v := float64(vb * denom)
+	w := float64(vc * denom)
+	return vecAdd(a, vecAdd(vecScale(ab, v), vecScale(ac, w)))
+}
+
+func closestSegmentSegment(p1, q1, p2, q2 nt3dmath.Vec3d) (c1, c2 nt3dmath.Vec3d) {
+	d1 := vecSub(q1, p1)
+	d2 := vecSub(q2, p2)
+	r := vecSub(p1, p2)
+	a := dot(d1, d1)
+	e := dot(d2, d2)
+	f := dot(d2, r)
+
+	var s, t float64
+	switch {
+	case a <= eps && e <= eps:
+		return p1, p2
+	case a <= eps:
+		t = clamp01(f / e)
+	default:
+		c := dot(d1, r)
+		if e <= eps {
+			s = clamp01(-c / a)
+		} else {
+			b := dot(d1, d2)
+			denom := float64(a*e) - float64(b*b)
+			if denom != 0 {
+				s = clamp01((float64(b*f) - float64(c*e)) / denom)
+			}
+			t = (float64(b*s) + f) / e
+			if t < 0 {
+				t = 0
+				s = clamp01(-c / a)
+			} else if t > 1 {
+				t = 1
+				s = clamp01((b - c) / a)
+			}
+		}
+	}
+	return vecAdd(p1, vecScale(d1, s)), vecAdd(p2, vecScale(d2, t))
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
