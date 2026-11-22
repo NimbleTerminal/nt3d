@@ -66,11 +66,6 @@ move to Done with their commit; git history has the details.
 
 ## Robustness
 
-- [ ] **Split the software renderer's triangle function.** One function of
-  about 1,100 lines in `render_software.go` draws every mesh, with the
-  lighting models, maps, and blend modes all inline; nothing in it can be
-  tested or read on its own. Decide with it whether the non-linear lighting
-  mode it carries is still wanted.
 - [ ] **Check glTF decoding against files from other encoders.** The KTX2
   and meshopt tests read fixtures nt3d's own test code wrote, so a shared
   misreading of the formats would pass. Fixtures from `gltfpack` or
@@ -115,6 +110,10 @@ move to Done with their commit; git history has the details.
 
 ## Done
 
+- **Split software triangle rendering.** Mesh faces and drop shadows share
+  the top-left coverage rule. Surface evaluation handles texturing, normals,
+  material hooks, and cutout for both the color pass and the AO depth prepass.
+  Hand-built frames retain their encoded-color default through `Frame.Linear`.
 - **`Material` grouped by feature, with its lighting model explicit**:
   `Shading` and `Alpha` say what kind of surface it is, and `Phong`, `PBR`,
   `Normal`, `Emission`, `Transmission`, and `Toon` are groups that are off

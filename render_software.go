@@ -1,4 +1,4 @@
-// nt3d - Copyright (c) 2026 Neomantra Corp.
+// Copyright (c) 2026 Neomantra Corp.
 
 package nt3d
 
@@ -131,8 +131,6 @@ func softwareDrawDepthHDR(f Frame, scale int, depth []float32, wantHDR bool) (*i
 func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []float32, prepass bool) (*image.RGBA, []float32, []float32) {
 	px := float32(scale)
 	inverseScene, _ := f.Matrix.Inverse()
-	var opaqueColor []byte
-	var opaqueDepth []float32
 	right, up, _ := f.skyBasis()
 	right, up = right.Normalize(), up.Normalize()
 	img := image.NewRGBA(image.Rect(0, 0, f.Width, f.Height))
@@ -143,41 +141,16 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	}
 	// Surfaces are shaded in 0..255, in linear light or as encoded, as the
 	// frame works; pixels are 8-bit sRGB.
-	linear, rig, aniso := f.Linear, newRig(&f), f.anisotropy()
+	linear, rig := f.Linear, newRig(&f)
 	drawn := f.drawn(px)
 	if rig.shadowLight >= 0 && !prepass {
 		rig.shadow = buildShadowMap(&f, drawn, softwareShadowSize(&f))
 	}
-	toPixel := func(v float32) uint8 {
-		if linear {
-			return encode8(v / 255)
-		}
-		return uint8(max(0, min(255, v+.5)))
-	}
-	fromPixel := func(p uint8) float32 {
-		if linear {
-			return srgbDecode[p] * 255
-		}
-		return float32(p)
-	}
-	// acc holds the blended pixels' color with headroom above 255, as the
-	// GPU's float target does, so a splat whose color evaluates above 1 is
-	// clamped once, in the pixel, rather than at every blend over it. The
-	// first blended fragment allocates it from what is drawn so far; put
-	// keeps it current after that.
-	var acc []float32
-	accumulate := func() {
-		if acc != nil {
-			return
-		}
-		acc = make([]float32, len(depth)*3)
-		for i := range depth {
-			off := i * 4
-			acc[i*3], acc[i*3+1], acc[i*3+2] = fromPixel(img.Pix[off]), fromPixel(img.Pix[off+1]), fromPixel(img.Pix[off+2])
-		}
-	}
+	dst := softwareTarget{img: img, depth: depth, width: f.Width, height: f.Height, linear: linear}
+	mesh := softwareMeshPass{frame: &f, dst: &dst, rig: &rig, scale: px, aniso: f.anisotropy(),
+		prepass: prepass, ao: ao, inverseScene: inverseScene, right: right, up: up}
 	if !prepass && (wantHDR || (f.Environment != nil && f.Environment.hdr && linear)) {
-		accumulate()
+		dst.accumulate()
 	}
 	if f.Environment != nil && !prepass {
 		right, up, forward := f.skyBasis()
@@ -188,66 +161,28 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				c := f.Environment.sample(ray)
 				px := color.RGBA{encode8(c[0]), encode8(c[1]), encode8(c[2]), 255}
 				img.SetRGBA(x, y, px)
-				if acc != nil {
+				if dst.acc != nil {
 					i := (y*f.Width + x) * 3
 					if linear {
-						acc[i], acc[i+1], acc[i+2] = max(0, c[0])*255, max(0, c[1])*255, max(0, c[2])*255
+						dst.acc[i], dst.acc[i+1], dst.acc[i+2] = max(0, c[0])*255, max(0, c[1])*255, max(0, c[2])*255
 					} else {
-						acc[i], acc[i+1], acc[i+2] = float32(px.R), float32(px.G), float32(px.B)
+						dst.acc[i], dst.acc[i+1], dst.acc[i+2] = float32(px.R), float32(px.G), float32(px.B)
 					}
 				}
-			}
-		}
-	}
-	put := func(x, y int, z float32, c color.RGBA) {
-		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
-			return
-		}
-		i := y*f.Width + x
-		if z <= depth[i]+.00001 {
-			depth[i] = z
-			off := i * 4
-			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = c.R, c.G, c.B
-			if acc != nil {
-				acc[i*3], acc[i*3+1], acc[i*3+2] = fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)
-			}
-		}
-	}
-	putWork := func(x, y int, z float32, rgb [3]float32) {
-		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
-			return
-		}
-		i := y*f.Width + x
-		if z <= depth[i]+.00001 {
-			if acc == nil && (rgb[0] > 255 || rgb[1] > 255 || rgb[2] > 255) {
-				accumulate()
-			}
-			depth[i] = z
-			off := i * 4
-			img.Pix[off], img.Pix[off+1], img.Pix[off+2] = toPixel(rgb[0]), toPixel(rgb[1]), toPixel(rgb[2])
-			if acc != nil {
-				acc[i*3], acc[i*3+1], acc[i*3+2] = max(0, rgb[0]), max(0, rgb[1]), max(0, rgb[2])
 			}
 		}
 	}
 	// Fog mixes toward its color, in the working space.
 	fogged := f.Fog.on()
 	fc := f.Fog.color(&f)
-	fogWork := [3]float32{fromPixel(fc.R), fromPixel(fc.G), fromPixel(fc.B)}
-	fogRGB := func(rgb *[3]float32, d float32) {
-		if k := f.Fog.amount(d); k > 0 {
-			for i := range rgb {
-				rgb[i] += (fogWork[i] - rgb[i]) * k
-			}
-		}
-	}
+	mesh.fogColor = [3]float32{dst.fromPixel(fc.R), dst.fromPixel(fc.G), dst.fromPixel(fc.B)}
 	fogColor := func(c color.RGBA, d float32) color.RGBA {
 		if !fogged {
 			return c
 		}
-		rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
-		fogRGB(&rgb, d)
-		return color.RGBA{toPixel(rgb[0]), toPixel(rgb[1]), toPixel(rgb[2]), c.A}
+		rgb := [3]float32{dst.fromPixel(c.R), dst.fromPixel(c.G), dst.fromPixel(c.B)}
+		mesh.fogRGB(&rgb, d)
+		return color.RGBA{dst.toPixel(rgb[0]), dst.toPixel(rgb[1]), dst.toPixel(rgb[2]), c.A}
 	}
 	// strokeFog fogs a stroke from world points a to b, or is nil.
 	strokeFog := func(a, b nt3dmath.Vec3) func(color.RGBA, float32) color.RGBA {
@@ -256,447 +191,9 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 		return func(c color.RGBA, t float32) color.RGBA { return fogColor(c, f.eyeDistance(a.Add(b.Sub(a).Scale(t)))) }
 	}
-	var oitAccum []float32
-	var oitReveal []float32
-	oitMode := false
-	// blend mixes a transparent fragment over the pixel (or into WBOIT
-	// accumulation when oitMode is active), if no surface hides it, leaving
-	// the depth for what lies behind.
-	blend := func(x, y int, z float32, rgb [3]float32, alpha float32) {
-		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
-			return
-		}
-		i := y*f.Width + x
-		if z <= depth[i]+.00001 {
-			alpha = max(0, min(1, alpha))
-			if oitMode {
-				aw := alpha * oitWeight(z, alpha)
-				ao := i * 4
-				oitAccum[ao] += rgb[0] * aw
-				oitAccum[ao+1] += rgb[1] * aw
-				oitAccum[ao+2] += rgb[2] * aw
-				oitAccum[ao+3] += aw
-				oitReveal[i] *= 1 - alpha
-				return
-			}
-			accumulate()
-			off, a := i*4, acc[i*3:i*3+3]
-			for k, v := range rgb {
-				a[k] = v*alpha + a[k]*(1-alpha)
-				img.Pix[off+k] = toPixel(a[k])
-			}
-		}
-	}
-	// add adds a fragment's color, times alpha, to the pixel, if no surface
-	// hides it, leaving the depth for what lies behind, as blend does.
-	add := func(x, y int, z float32, rgb [3]float32, alpha float32) {
-		if x < 0 || y < 0 || x >= f.Width || y >= f.Height || z < 0 || z > 1 {
-			return
-		}
-		i := y*f.Width + x
-		if z <= depth[i]+.00001 {
-			accumulate()
-			off, a := i*4, acc[i*3:i*3+3]
-			for k, v := range rgb {
-				a[k] += v * alpha
-				img.Pix[off+k] = toPixel(a[k])
-			}
-		}
-	}
-	// raster fills a clip-space triangle that lies past the near plane, if
-	// it shows the side drawn: front faces, or for transparent geometry's
-	// first pass, back faces. A transparent material's corners carry their
-	// opacity in cut.
-	raster := func(a, b, c *clipCorner, material *Material, side int, isMapped bool) {
-		textured := material != nil && material.Texture != nil
-		hull := side < 0
-		blended := side == backFaces || side == frontFaces || side == outlineTransparent
-		hasMatShader := material != nil && material.Shader != nil && (!hull || material.cutout() || blended)
-		cutout := material != nil && material.cutout() && (textured || hasMatShader)
-		fullSize := textured && material.FullSize && material.Texture.shader == ""
-		back := side == backFaces || hull
-		pbr := pbrActive(material) && !hull
-		emissive := emissiveActive(material) && !hull
-		emissiveMul := emissiveFactor(material, linear)
-		hasBaseColor := material != nil && material.BaseColor != (color.RGBA{})
-		directTexture := textured && !hasMatShader && !linear && material.unlit() && !material.Tint && !hasBaseColor && !fogged && !blended && !hull && !emissive
-		normalMapped := material.normalStrength() != 0 && (!material.unlit() || hasMatShader) && !hull
-		var tangent, bitangent nt3dmath.Vec3
-		// A mesh with frames has one at every corner, so any nonzero
-		// handedness (lerped at a cut edge, they can cancel at one corner
-		// only) says so; the pixel's sign is interpolated, as on the GPU.
-		framed := normalMapped && (a.tangentW != 0 || b.tangentW != 0 || c.tangentW != 0)
-		if normalMapped && !framed {
-			tangent, bitangent = normalBasis(a, b, c)
-		}
-		reflective := !pbr && material != nil && material.Phong.Reflectivity > 0 && !material.unlit() && (f.probesOn() || f.Environment != nil && !f.EnvironmentBackgroundOnly)
-		specular := !pbr && material != nil && material.Phong.Specular > 0 && !material.unlit()
-		hasNormals := a.normal != (nt3dmath.Vec3{}) || b.normal != (nt3dmath.Vec3{}) || c.normal != (nt3dmath.Vec3{})
-		lit := hasNormals && (material == nil || !material.unlit()) && !hull
-		// Whether pixels need the world point, and so perspective weights.
-		toon := material != nil && material.Toon.on() && !material.unlit()
-		located := fogged || hasMatShader || lit && (pbr || specular || reflective || material != nil && material.Transmission.Amount > 0 || rig.points || rig.shadow != nil || toon && material.Toon.Rim > 0)
-		hasMapped := isMapped
-		perspective := blended || textured || lit || fogged || hasMapped || hasMatShader
-		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
-		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
-		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
-		area := (x1-x0)*(y2-y0) - (y1-y0)*(x2-x0)
-		if back && area <= .000001 || !back && area >= -.000001 {
-			return
-		} // CCW faces become clockwise with screen Y down
-		// A pixel center on an edge belongs to one triangle, by the top-left
-		// rule the GPU follows, so a transparent shared edge blends once.
-		// Each edge runs as it would around the triangle wound clockwise on
-		// screen (positive area): a top edge runs right along a row, a left
-		// edge up.
-		sign := float32(1)
-		if area < 0 {
-			sign = -1
-		}
-		owns := func(xa, ya, xb, yb float32) bool {
-			dx, dy := (xb-xa)*sign, (yb-ya)*sign
-			return dy < 0 || dy == 0 && dx > 0
-		}
-		own0, own1, own2 := owns(x1, y1, x2, y2), owns(x2, y2, x0, y0), owns(x0, y0, x1, y1)
-		loX, hiX := max(0, int(math.Floor(float64(min(x0, x1, x2))))), min(f.Width-1, int(math.Ceil(float64(max(x0, x1, x2)))))
-		loY, hiY := max(0, int(math.Floor(float64(min(y0, y1, y2))))), min(f.Height-1, int(math.Ceil(float64(max(y0, y1, y2)))))
-		for y := loY; y <= hiY; y++ {
-			for x := loX; x <= hiX; x++ {
-				px, py := float32(x)+.5, float32(y)+.5
-				e0 := edge(x1, y1, x2, y2, px, py) * sign
-				e1 := edge(x2, y2, x0, y0, px, py) * sign
-				e2 := edge(x0, y0, x1, y1, px, py) * sign
-				if e0 < 0 || e1 < 0 || e2 < 0 || e0 == 0 && !own0 || e1 == 0 && !own1 || e2 == 0 && !own2 {
-					continue
-				}
-				u, v := e0*sign/area, e1*sign/area
-				t := 1 - u - v
-				mix := func(k int) float32 { return u*a.shade[k] + v*b.shade[k] + t*c.shade[k] }
-				rgb := [3]float32{mix(0), mix(1), mix(2)}
-				// Perspective-correct weights, for what varies other than
-				// linearly across the screen.
-				var q0, q1, q2 float32
-				if perspective {
-					q0, q1, q2 = u/a.w, v/b.w, t/c.w
-					sum := q0 + q1 + q2
-					q0, q1, q2 = q0/sum, q1/sum, q2/sum
-				}
-				if hasMapped && !textured {
-					for k := range rgb {
-						rgb[k] = q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]
-					}
-				}
-				var opacity float32
-				if blended {
-					opacity = q0*a.cut + q1*b.cut + q2*c.cut
-				}
-				var texAlpha float32 = 1
-				if textured {
-					uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
-					// Textures sample the mip level for how far their texels
-					// spread across a pixel, found from the coordinates a
-					// pixel right and a pixel down, as the GPU's derivatives
-					// find it. Cutouts sample their own chain at that level,
-					// trilinearly, with no anisotropic taps, which would
-					// average their alpha thin again; FullSize materials, shader
-					// cutouts, and outline hulls (as the GPU's outline pass does)
-					// sample level 0.
-					var tex [4]float32
-					switch {
-					case cutout && (fullSize || hull || material.Texture.shader != ""):
-						tex = material.Texture.sampleLinear(uv, material.Repeat, 0, true)
-					case cutout:
-						lod := textureLOD(material.Texture, uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1))
-						tex = material.Texture.sampleLinear(uv, material.Repeat, lod, true)
-					case fullSize:
-						tex = material.Texture.sampleLinear(uv, material.Repeat, 0, false)
-					default:
-						tex = material.Texture.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.Repeat, aniso)
-					}
-					if cutout && !hasMatShader && tex[3] < q0*a.cut+q1*b.cut+q2*c.cut {
-						continue // Cut out: neither color nor depth.
-					}
-					// Even an authored white tint can interpolate a fraction away
-					// from 1. Keep the original float path in that case: near a
-					// byte boundary its rounding can change the output.
-					if directTexture && (q0*a.shade[0]+q1*b.shade[0]+q2*c.shade[0])/255 == 1 {
-						put(x, y, u*z0+v*z1+t*z2, color.RGBA{encodeOpaque8(tex[0]), encodeOpaque8(tex[1]), encodeOpaque8(tex[2]), 255})
-						continue
-					}
-					// White, or the tint, times the texture, in the working
-					// space: linear light, or encoded.
-					tint := func(k int) float32 { return (q0*a.shade[k] + q1*b.shade[k] + q2*c.shade[k]) / 255 }
-					work := func(v float32) float32 {
-						if linear {
-							return v * 255
-						}
-						return float32(encodeSRGB(float64(v))) * 255
-					}
-					if !hull {
-						rgb = [3]float32{work(tex[0]) * tint(0), work(tex[1]) * tint(1), work(tex[2]) * tint(2)}
-					}
-					texAlpha = tex[3]
-					opacity *= tex[3]
-				}
-				var p nt3dmath.Vec3
-				if located {
-					// The world point, exact under perspective: distance from
-					// the camera and from point lights is not affine, so it
-					// is found here, when something needs it.
-					p = a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
-				}
-				var shadeN, geometric nt3dmath.Vec3
-				hasShadeN := false
-				if lit || (hasMatShader && !hull && hasNormals) {
-					if n := a.normal.Scale(q0).Add(b.normal.Scale(q1)).Add(c.normal.Scale(q2)); n.Dot(n) != 0 {
-						n = n.Scale(1 / float32(math.Sqrt(float64(n.Dot(n)))))
-						geometric = n
-						if normalMapped {
-							uv := UV{q0*a.normalUV.U + q1*b.normalUV.U + q2*c.normalUV.U, q0*a.normalUV.V + q1*b.normalUV.V + q2*c.normalUV.V}
-							flow := UV{q0*a.flow.U + q1*b.flow.U + q2*c.flow.U, q0*a.flow.V + q1*b.flow.V + q2*c.flow.V}
-							sample := flowNormalSample(material, uv, normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), normalUVAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), flow, aniso)
-							t, bt := tangent, bitangent
-							if framed {
-								// The vertices' frame, interpolated as the
-								// normal is; W × (N × T) is its bitangent.
-								t = a.tangent.Scale(q0).Add(b.tangent.Scale(q1)).Add(c.tangent.Scale(q2))
-								bt = n.Cross(t)
-								if q0*a.tangentW+q1*b.tangentW+q2*c.tangentW < 0 {
-									bt = bt.Scale(-1)
-								}
-							}
-							n = perturbNormal(n, t, bt, sample, material.normalStrength())
-						}
-						shadeN = n
-						hasShadeN = true
-					}
-				}
-				if hasMatShader {
-					uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
-					baseA := texAlpha
-					if blended {
-						baseA = opacity
-					}
-					base := [4]float32{1, 1, 1, baseA}
-					if !hull {
-						for k := range 3 {
-							v := rgb[k] / 255
-							if !linear {
-								v = float32(decodeSRGB(float64(min(1, max(0, v)))))
-							}
-							base[k] = v
-						}
-					}
-					matOut := evalMaterialColor(material.Shader, p, shadeN, f.viewAt(p), uv, base)
-					if cutout && matOut[3] < q0*a.cut+q1*b.cut+q2*c.cut {
-						continue
-					}
-					if blended {
-						opacity = matOut[3]
-					}
-					if !hull {
-						for k := range 3 {
-							if linear {
-								rgb[k] = matOut[k] * 255
-							} else {
-								rgb[k] = float32(encodeSRGB(float64(min(1, matOut[k])))) * 255
-							}
-						}
-					}
-				}
-				if prepass {
-					putWork(x, y, u*z0+v*z1+t*z2, rgb)
-					continue
-				}
-				rig := rig // Per-fragment light sources must not leak into later primitives.
-				rig.bakedDiffuse = indirectSample{}
-				if lit && material != nil && material.LightMap != nil {
-					aa, bb, cc := *a, *b, *c
-					aa.uv, bb.uv, cc.uv = a.lightMapUV, b.lightMapUV, c.lightMapUV
-					uv := UV{q0*aa.uv.U + q1*bb.uv.U + q2*cc.uv.U, q0*aa.uv.V + q1*bb.uv.V + q2*cc.uv.V}
-					sample := material.LightMap.texture.sampleFootprint(uv, uvAt(&aa, &bb, &cc, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(&aa, &bb, &cc, x0, y0, x1, y1, x2, y2, area, px, py+1), false, aniso)
-					rig.bakedDiffuse = lightMapDiffuse(sample, linear)
-				}
-				rig.screenOcclusion = 0
-				if ao != nil && !blended && (material == nil || material.Transmission.Amount == 0) {
-					rig.screenOcclusion = 1 - ao[y*f.Width+x]
-				}
-				if lit && hasShadeN {
-					n := shadeN
-					{
-						if pbr {
-							orm := [3]float32{1, 1, 1}
-							if material.PBR.ORMMap != nil {
-								uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
-								s := material.PBR.ORMMap.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.PBR.ORMRepeat, aniso)
-								orm = [3]float32{s[0], s[1], s[2]}
-							}
-							base := [3]float32{rgb[0] / 255, rgb[1] / 255, rgb[2] / 255}
-							diffOut, specOut := pbrShade(base, &rig, &f, material, orm, n, p, geometric, f.viewAt(p))
-							rgb = [3]float32{diffOut[0] * 255, diffOut[1] * 255, diffOut[2] * 255}
-							if material.Transmission.Amount > 0 && opaqueColor != nil {
-								transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
-							}
-							for k := range rgb {
-								rgb[k] += specOut[k] * 255
-							}
-						} else {
-							var rim [3]float32
-							if toon {
-								rim = rig.toonLight(&rgb, material.Toon, n, p, geometric, f.viewAt(p))
-							} else {
-								rig.lightNormal(&rgb, n, p, geometric)
-							}
-							if material != nil && material.Transmission.Amount > 0 && opaqueColor != nil {
-								transmitSoftware(&rgb, material, n, right, up, float32(x)+.5, float32(y)+.5, u*z0+v*z1+t*z2, f.Width, f.Height, inverseScene, opaqueColor, opaqueDepth, fromPixel)
-							}
-							if reflective {
-								reflectSceneEnvironment(&rgb, &f, p, material.Phong.Reflectivity, n, f.viewAt(p), 1-rig.screenOcclusion)
-							}
-							if specular {
-								var s [3]float32
-								if toon {
-									s = rig.toonHighlight(material, n, p, f.viewAt(p), geometric)
-								} else {
-									s = rig.highlightNormal(material, n, p, f.viewAt(p), geometric)
-								}
-								for k := range rgb {
-									rgb[k] += s[k] * 255
-								}
-							}
-							if toon && material.Toon.Rim > 0 {
-								for k := range rgb {
-									rgb[k] += rim[k] * 255
-								}
-							}
-						}
-					}
-				}
-				if emissive {
-					em := [3]float32{1, 1, 1}
-					if material.Emission.Map != nil {
-						uv := UV{q0*a.uv.U + q1*b.uv.U + q2*c.uv.U, q0*a.uv.V + q1*b.uv.V + q2*c.uv.V}
-						s := material.Emission.Map.sampleFootprint(uv, uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px+1, py), uvAt(a, b, c, x0, y0, x1, y1, x2, y2, area, px, py+1), material.Emission.Repeat, aniso)
-						for k := range em {
-							em[k] = s[k]
-							if !linear {
-								em[k] = float32(encodeSRGB(float64(em[k])))
-							}
-						}
-					}
-					for k := range rgb {
-						rgb[k] += emissiveMul[k] * em[k] * 255
-					}
-				}
-				if fogged {
-					fogRGB(&rgb, f.eyeDistance(p))
-				}
-				if blended {
-					blend(x, y, u*z0+v*z1+t*z2, rgb, opacity)
-					continue
-				}
-				putWork(x, y, u*z0+v*z1+t*z2, rgb)
-			}
-		}
-	}
-	// tri draws a local-space triangle: m takes it to clip space, and normals
-	// takes its normals to world space, where the light is. A triangle that
-	// crosses the near plane is cut there, as the GPU does, not discarded.
-	// side chooses the faces drawn, and how: opaque front faces, or a
-	// transparent geometry's back or front faces.
-	tri := func(m, world, normals *nt3dmath.Mat4, vertices []Vertex, index [3]uint32, uv, normalUV, lightMapUV []UV, tangents []Tangent, material *Material, side int, outline OutlineStyle, isMapped bool) {
-		hull := side < 0
-		back := side == backFaces || hull
-		blended := side == backFaces || side == frontFaces || side == outlineTransparent
-		var corners [3]clipCorner
-		for k, i := range index {
-			corners[k].x, corners[k].y, corners[k].z, corners[k].w = m.Transform(vertices[i].Position)
-			if len(uv) > 0 {
-				corners[k].uv = uv[i]
-				corners[k].normalUV = uv[i]
-				corners[k].flow = materialFlow(material, uv[i])
-			}
-			if len(lightMapUV) > 0 {
-				corners[k].lightMapUV = lightMapUV[i]
-			}
-			if len(normalUV) > 0 {
-				corners[k].normalUV = normalUV[i]
-			}
-			if len(tangents) > 0 {
-				// Tangents turn with positions, not as normals do; a back
-				// face's negated normal turns the handedness instead.
-				corners[k].tangent, corners[k].tangentW = world.Direction(tangents[i].Direction), tangents[i].W
-				if side == backFaces {
-					corners[k].tangentW = -tangents[i].W
-				}
-			}
-			if hull {
-				expandOutline(&corners[k], normals.Direction(vertices[i].Normal), &f, f.outlineWidth(outline, corners[k].w, px))
-			}
-		}
-		// Most triangles lie wholly past the near plane: cull those facing
-		// away before lighting them.
-		whole := corners[0].z >= 0 && corners[1].z >= 0 && corners[2].z >= 0
-		if whole && (min(corners[0].w, corners[1].w, corners[2].w) <= 0 || facing(&corners[0], &corners[1], &corners[2]) == back) {
-			return
-		}
-		unlit, textured := material.unlit(), material != nil && material.Texture != nil
-		hasMatShader := material != nil && material.Shader != nil && !hull
-		baseMul, baseAlpha, hasBaseColor := baseColorFactors(material, linear)
-		for k, i := range index {
-			c, n := vertices[i].Color, vertices[i].Normal
-			if side == backFaces {
-				n = n.Scale(-1) // Lit as seen from behind.
-			}
-			if blended {
-				corners[k].cut = (float32(c.A) / 255) * baseAlpha
-			} else if textured && material.edgeOn() {
-				corners[k].cut = edgeOnCut(material.threshold(), normals.Direction(n), f.viewAt(world.Point(vertices[i].Position)))
-			} else if material != nil {
-				corners[k].cut = material.threshold()
-			}
-			if (unlit && !hasMatShader) || hull {
-				n = nt3dmath.Vec3{}
-			}
-			corners[k].world = world.Point(vertices[i].Position)
-			if dir := normals.Direction(n); dir.Dot(dir) != 0 {
-				corners[k].normal = dir.Normalize()
-			}
-			if textured && !material.Tint {
-				c = color.RGBA{255, 255, 255, 255}
-			}
-			if hull {
-				c = outline.Color
-			}
-			// The surface's own color, in the working space; it is lit
-			// per pixel.
-			if linear {
-				corners[k].shade = [3]float32{srgbDecode[c.R] * 255, srgbDecode[c.G] * 255, srgbDecode[c.B] * 255}
-			} else {
-				corners[k].shade = [3]float32{float32(c.R), float32(c.G), float32(c.B)}
-			}
-			if hasBaseColor && !hull {
-				corners[k].shade[0] *= baseMul[0]
-				corners[k].shade[1] *= baseMul[1]
-				corners[k].shade[2] *= baseMul[2]
-			}
-		}
-		if whole {
-			raster(&corners[0], &corners[1], &corners[2], material, side, isMapped)
-			return
-		}
-		var storage [4]clipCorner
-		polygon := clipNear(corners, &storage)
-		for k := 1; k+1 < len(polygon); k++ {
-			if polygon[0].w > 0 && polygon[k].w > 0 && polygon[k+1].w > 0 {
-				raster(&polygon[0], &polygon[k], &polygon[k+1], material, side, isMapped)
-			}
-		}
-	}
 	dynWidth := lineWidth(f.DynamicLineWidth) * px
 	for i := 0; i+1 < len(f.DynamicLines); i += 2 {
-		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], dynWidth, 0, .00002, put, strokeFog(f.DynamicLines[i].Position, f.DynamicLines[i+1].Position))
+		rasterStroke(f, f.DynamicLines[i], f.DynamicLines[i+1], dynWidth, 0, .00002, dst.put, strokeFog(f.DynamicLines[i].Position, f.DynamicLines[i+1].Position))
 	}
 	// Interactive frames sample screen-space marks (points, lines, arrows),
 	// which stay legible thinned. Every triangle is drawn: sampling surfaces
@@ -752,7 +249,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 		distance := f.eyeDistance(world.Point(p.Position))
 		c := p.Color
-		rgb := [3]float32{fromPixel(c.R), fromPixel(c.G), fromPixel(c.B)}
+		rgb := [3]float32{dst.fromPixel(c.R), dst.fromPixel(c.G), dst.fromPixel(c.B)}
 		if len(g.GaussianSH) > 0 {
 			rgb = f.gaussianColor(g, i, world, shFromWorld)
 			for k := range rgb {
@@ -769,7 +266,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				c = fogColor(c, distance)
 			case AlphaBlend:
 				if fogged {
-					fogRGB(&rgb, distance)
+					mesh.fogRGB(&rgb, distance)
 				}
 			case AdditiveBlend:
 				// Fog fades an additive point out, rather than toward its color.
@@ -803,15 +300,15 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 					}
 					opacity := pixelAlpha * tex[3]
 					if style.Blend == AdditiveBlend {
-						add(sx, sy, z, tinted, opacity*(1-f.Fog.amount(distance)))
+						dst.add(sx, sy, z, tinted, opacity*(1-f.Fog.amount(distance)))
 					} else {
 						if fogged {
-							fogRGB(&tinted, distance)
+							mesh.fogRGB(&tinted, distance)
 						}
 						if style.Blend == AlphaBlend {
-							blend(sx, sy, z, tinted, opacity)
+							dst.blend(sx, sy, z, tinted, opacity)
 						} else {
-							putWork(sx, sy, z, tinted)
+							dst.putWork(sx, sy, z, tinted)
 						}
 					}
 					continue
@@ -827,11 +324,11 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				}
 				switch style.Blend {
 				case OpaqueBlend:
-					put(sx, sy, z, c)
+					dst.put(sx, sy, z, c)
 				case AlphaBlend:
-					blend(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
+					dst.blend(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
 				default:
-					add(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
+					dst.add(sx, sy, z, rgb, pixelAlpha*softness(style.Shape, d2/(radius*radius)))
 				}
 			}
 		}
@@ -863,30 +360,27 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 		if !transparent(&f.Draws[gi].Geometry) && !transmitting(&f.Draws[gi].Geometry) {
 			verts := displacedVertices(&g, world)
-			isMapped := mapped(g)
-			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&local.Matrix, &world, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
-			}
+			mesh.drawMesh(&local.Matrix, &world, &normals, &g, verts, g.Material, opaqueFaces)
 		}
 		for _, b := range g.Boxes {
 			v := boxVertices(b)
 			for j := 0; j < len(v); j += 3 {
-				tri(&local.Matrix, &world, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, nil, nil, opaqueFaces, OutlineStyle{}, false)
+				mesh.drawTriangle(&local.Matrix, &world, &normals, v, [3]uint32{uint32(j), uint32(j + 1), uint32(j + 2)}, nil, nil, nil, nil, nil, opaqueFaces, OutlineStyle{}, false)
 			}
 		}
 		lineStep := 2 * sampled(len(g.Lines)/2, 20000)
 		for i := 0; i+1 < len(g.Lines); i += lineStep {
-			rasterStroke(local, g.Lines[i], g.Lines[i+1], lineWidth(g.LineWidth)*px, 0, lineBias, put, strokeFog(world.Point(g.Lines[i].Position), world.Point(g.Lines[i+1].Position)))
+			rasterStroke(local, g.Lines[i], g.Lines[i+1], lineWidth(g.LineWidth)*px, 0, lineBias, dst.put, strokeFog(world.Point(g.Lines[i].Position), world.Point(g.Lines[i+1].Position)))
 		}
 		arrowStep := sampled(len(g.Arrows), 10000)
 		for i := 0; i < len(g.Arrows); i += arrowStep {
 			a := g.Arrows[i]
-			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, put, strokeFog(world.Point(a.Start), world.Point(a.End)))
+			rasterStroke(local, Vertex{Position: a.Start, Color: a.Color}, Vertex{Position: a.End, Color: a.Color}, lineWidth(a.Width)*px, a.HeadSize*px, 0, dst.put, strokeFog(world.Point(a.Start), world.Point(a.End)))
 		}
 	}
 
 	if prepass {
-		return img, depth, acc
+		return img, depth, dst.acc
 	}
 
 	// Opaque hulls share the surface depth buffer. Draw after all opaque
@@ -918,10 +412,8 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				}
 			}
 		}
-		isMapped := mapped(*g)
-		for i := 0; i+2 < len(g.Indices); i += 3 {
-			tri(&m, &world, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, &material, side, g.Outline, isMapped)
-		}
+
+		mesh.drawMesh(&m, &world, &normals, g, verts, &material, side)
 	}
 	for gi := range f.Draws {
 		if !transparent(&f.Draws[gi].Geometry) {
@@ -954,7 +446,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		hasTex := g.Material != nil && g.Material.Texture != nil
 		hasMatShader := g.Material != nil && g.Material.Shader != nil
 		isCutout := !isTrans && g.Material != nil && g.Material.cutout() && (hasTex || hasMatShader)
-		inkWork := [3]float32{fromPixel(ink.R), fromPixel(ink.G), fromPixel(ink.B)}
+		inkWork := [3]float32{dst.fromPixel(ink.R), dst.fromPixel(ink.G), dst.fromPixel(ink.B)}
 		for i := 0; i+1 < len(segments); i += 2 {
 			a, b := segments[i], segments[i+1]
 			width := g.Outline.Width * px
@@ -964,7 +456,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			}
 			wa, wb := world.Point(a.pos), world.Point(b.pos)
 			if !isTrans && !isCutout {
-				rasterStroke(local, Vertex{Position: a.pos, Color: ink}, Vertex{Position: b.pos, Color: ink}, width, 0, lineBias, put, strokeFog(wa, wb))
+				rasterStroke(local, Vertex{Position: a.pos, Color: ink}, Vertex{Position: b.pos, Color: ink}, width, 0, lineBias, dst.put, strokeFog(wa, wb))
 				continue
 			}
 			rasterCreaseStroke(local, a.pos, b.pos, width, lineBias, func(x, y int, z, wt float32) {
@@ -986,7 +478,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 					if fogged {
 						c = fogColor(c, f.eyeDistance(wp))
 					}
-					put(x, y, z, c)
+					dst.put(x, y, z, c)
 					return
 				}
 				alpha := (a.opacity*(1-wt) + b.opacity*wt) * creaseBaseAlpha * texAlpha
@@ -995,9 +487,9 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 				}
 				rgb := inkWork
 				if fogged {
-					fogRGB(&rgb, f.eyeDistance(wp))
+					mesh.fogRGB(&rgb, f.eyeDistance(wp))
 				}
-				blend(x, y, z, rgb, alpha)
+				dst.blend(x, y, z, rgb, alpha)
 			})
 		}
 	}
@@ -1009,55 +501,28 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 
 	// rasterDisc draws a clipped shadow triangle without writing depth.
 	rasterDisc := func(a, b, c *clipCorner) {
-		x0, y0, z0 := (a.x/a.w+1)*float32(f.Width)*.5, (1-a.y/a.w)*float32(f.Height)*.5, a.z/a.w
-		x1, y1, z1 := (b.x/b.w+1)*float32(f.Width)*.5, (1-b.y/b.w)*float32(f.Height)*.5, b.z/b.w
-		x2, y2, z2 := (c.x/c.w+1)*float32(f.Width)*.5, (1-c.y/c.w)*float32(f.Height)*.5, c.z/c.w
-		area := (x1-x0)*(y2-y0) - (y1-y0)*(x2-x0)
-		if area > -.000001 && area < .000001 {
+		screen := projectTriangle(a, b, c, f.Width, f.Height)
+		if screen.area > -.000001 && screen.area < .000001 {
 			return
 		}
-		// A pixel center on an edge belongs to one triangle, by the top-left
-		// rule the GPU follows, so a transparent shared edge blends once.
-		// Each edge runs as it would around the triangle wound clockwise on
-		// screen (positive area): a top edge runs right along a row, a left
-		// edge up.
-		sign := float32(1)
-		if area < 0 {
-			sign = -1
-		}
-		owns := func(xa, ya, xb, yb float32) bool {
-			dx, dy := (xb-xa)*sign, (yb-ya)*sign
-			return dy < 0 || dy == 0 && dx > 0
-		}
-		own0, own1, own2 := owns(x1, y1, x2, y2), owns(x2, y2, x0, y0), owns(x0, y0, x1, y1)
-		loX, hiX := max(0, int(math.Floor(float64(min(x0, x1, x2))))), min(f.Width-1, int(math.Ceil(float64(max(x0, x1, x2)))))
-		loY, hiY := max(0, int(math.Floor(float64(min(y0, y1, y2))))), min(f.Height-1, int(math.Ceil(float64(max(y0, y1, y2)))))
-		for y := loY; y <= hiY; y++ {
-			for x := loX; x <= hiX; x++ {
-				px, py := float32(x)+.5, float32(y)+.5
-				e0 := edge(x1, y1, x2, y2, px, py) * sign
-				e1 := edge(x2, y2, x0, y0, px, py) * sign
-				e2 := edge(x0, y0, x1, y1, px, py) * sign
-				if e0 < 0 || e1 < 0 || e2 < 0 || e0 == 0 && !own0 || e1 == 0 && !own1 || e2 == 0 && !own2 {
+		for y := screen.loY; y <= screen.hiY; y++ {
+			for x := screen.loX; x <= screen.hiX; x++ {
+				w, ok := screen.coverage(float32(x)+.5, float32(y)+.5)
+				if !ok {
 					continue
 				}
-				u, v := e0*sign/area, e1*sign/area
-				t := 1 - u - v
-				q0, q1, q2 := u/a.w, v/b.w, t/c.w
-				sum := q0 + q1 + q2
-				q0, q1, q2 = q0/sum, q1/sum, q2/sum
-				du := q0*a.uv.U + q1*b.uv.U + q2*c.uv.U
-				dv := q0*a.uv.V + q1*b.uv.V + q2*c.uv.V
-				d2 := du*du + dv*dv
+				q := w.perspective(a.w, b.w, c.w)
+				uv := q.uv(a.uv, b.uv, c.uv)
+				d2 := uv.U*uv.U + uv.V*uv.V
 				if d2 > 1 {
 					continue
 				}
 				rgb := [3]float32{}
 				if fogged {
-					p := a.world.Scale(q0).Add(b.world.Scale(q1)).Add(c.world.Scale(q2))
-					fogRGB(&rgb, f.eyeDistance(p))
+					p := a.world.Scale(q.a).Add(b.world.Scale(q.b)).Add(c.world.Scale(q.c))
+					mesh.fogRGB(&rgb, f.eyeDistance(p))
 				}
-				blend(x, y, u*z0+v*z1+t*z2+lineBias, rgb, a.cut*(1-d2)*(1-d2))
+				dst.blend(x, y, screen.depth(w)+lineBias, rgb, a.cut*(1-d2)*(1-d2))
 			}
 		}
 	}
@@ -1089,8 +554,8 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 	// Capture opaque color and depth once. Transmitters write scene depth but
 	// never sample one another, independent of geometry submission order.
 	if needsSceneSnapshot(f, drawn) {
-		opaqueColor = append([]byte(nil), img.Pix...)
-		opaqueDepth = append([]float32(nil), depth...)
+		mesh.opaqueColor = append([]byte(nil), img.Pix...)
+		mesh.opaqueDepth = append([]float32(nil), depth...)
 		for gi := range f.Draws {
 			g := &f.Draws[gi].Geometry
 			if !drawn[gi] || !transmitting(g) {
@@ -1098,13 +563,10 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			}
 			world := f.Draws[gi].world()
 			verts := displacedVertices(g, world)
-			isMapped := mapped(*g)
 			m := f.Matrix.Mul(world)
 			inv, _ := world.InverseAffine()
 			normals := inv.Transpose()
-			for i := 0; i+2 < len(g.Indices); i += 3 {
-				tri(&m, &world, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, opaqueFaces, OutlineStyle{}, isMapped)
-			}
+			mesh.drawMesh(&m, &world, &normals, g, verts, g.Material, opaqueFaces)
 		}
 		for gi := range f.Draws {
 			if transmitting(&f.Draws[gi].Geometry) {
@@ -1113,13 +575,13 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 	}
 	if hasOITWork(f, drawn) {
-		accumulate()
-		oitAccum = make([]float32, len(depth)*4)
-		oitReveal = make([]float32, len(depth))
-		for i := range oitReveal {
-			oitReveal[i] = 1
+		dst.accumulate()
+		dst.oitAccum = make([]float32, len(depth)*4)
+		dst.oitReveal = make([]float32, len(depth))
+		for i := range dst.oitReveal {
+			dst.oitReveal[i] = 1
 		}
-		oitMode = true
+		dst.oitMode = true
 		for gi := range f.Draws {
 			g := &f.Draws[gi].Geometry
 			if !drawn[gi] || !transparent(g) {
@@ -1128,29 +590,26 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			drawOutline(gi, outlineTransparent)
 			world := f.Draws[gi].world()
 			verts := displacedVertices(g, world)
-			isMapped := mapped(*g)
 			m := f.Matrix.Mul(world)
 			inverse, _ := world.InverseAffine()
 			normals := inverse.Transpose()
 			for _, side := range []int{backFaces, frontFaces} {
-				for i := 0; i+2 < len(g.Indices); i += 3 {
-					tri(&m, &world, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
-				}
+				mesh.drawMesh(&m, &world, &normals, g, verts, g.Material, side)
 			}
 			drawCrease(gi)
 		}
-		oitMode = false
-		for i, rev := range oitReveal {
+		dst.oitMode = false
+		for i, rev := range dst.oitReveal {
 			if rev >= .99999 {
 				continue
 			}
-			wSum := max(oitAccum[i*4+3], 1e-5)
+			wSum := max(dst.oitAccum[i*4+3], 1e-5)
 			cov := 1 - rev
-			off, a := i*4, acc[i*3:i*3+3]
+			off, a := i*4, dst.acc[i*3:i*3+3]
 			for k := range 3 {
-				avg := oitAccum[i*4+k] / wSum
+				avg := dst.oitAccum[i*4+k] / wSum
 				a[k] = avg*cov + a[k]*(1-cov)
-				img.Pix[off+k] = toPixel(a[k])
+				img.Pix[off+k] = dst.toPixel(a[k])
 			}
 		}
 	}
@@ -1217,13 +676,10 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 			if transparent(g) {
 				drawOutline(gi, outlineTransparent)
 				verts := displacedVertices(g, world)
-				isMapped := mapped(*g)
 				inverse, _ := world.InverseAffine()
 				normals := inverse.Transpose()
 				for _, side := range []int{backFaces, frontFaces} {
-					for i := 0; i+2 < len(g.Indices); i += 3 {
-						tri(&m, &world, &normals, verts, [3]uint32{g.Indices[i], g.Indices[i+1], g.Indices[i+2]}, g.UV, g.NormalUV, g.LightMapUV, g.Tangents, g.Material, side, OutlineStyle{}, isMapped)
-					}
+					mesh.drawMesh(&m, &world, &normals, g, verts, g.Material, side)
 				}
 				if !f.OIT {
 					drawCrease(gi)
@@ -1246,39 +702,7 @@ func softwareDrawWithAO(f Frame, scale int, depth []float32, wantHDR bool, ao []
 		}
 	}
 	drawOverlays(img, f)
-	return img, depth, acc
-}
-
-// edge is twice the signed area of the triangle a, b, p: zero on the line
-// through a and b. Each product is rounded before subtracting, so the
-// compiler cannot fuse them: the edge from b to a is then exactly the
-// negative, and triangles sharing it agree which side a pixel is on.
-func edge(xa, ya, xb, yb, px, py float32) float32 {
-	return float32((xa-px)*(yb-py)) - float32((ya-py)*(xb-px))
-}
-
-// uvAt is a triangle's perspective-correct texture coordinate at a screen
-// point, inside it or not.
-func uvAt(a, b, c *clipCorner, x0, y0, x1, y1, x2, y2, area, px, py float32) UV {
-	u := ((x1-px)*(y2-py) - (y1-py)*(x2-px)) / area
-	v := ((x2-px)*(y0-py) - (y2-py)*(x0-px)) / area
-	q0, q1, q2 := u/a.w, v/b.w, (1-u-v)/c.w
-	sum := q0 + q1 + q2
-	return UV{(q0*a.uv.U + q1*b.uv.U + q2*c.uv.U) / sum, (q0*a.uv.V + q1*b.uv.V + q2*c.uv.V) / sum}
-}
-
-// textureLOD is the mip level for texture coordinates that move to dx and
-// dy a pixel right and down: log2 of the larger step, in texels, as the GPU
-// chooses.
-func textureLOD(t *Texture, uv, dx, dy UV) float32 {
-	w, h := float64(t.width), float64(t.height)
-	sx := math.Hypot(float64(dx.U-uv.U)*w, float64(dx.V-uv.V)*h)
-	sy := math.Hypot(float64(dy.U-uv.U)*w, float64(dy.V-uv.V)*h)
-	rho := max(sx, sy)
-	if !(rho > 1) {
-		return 0
-	}
-	return float32(math.Log2(rho))
+	return img, depth, dst.acc
 }
 
 func abs(v float32) float32 {
@@ -1286,10 +710,4 @@ func abs(v float32) float32 {
 		return -v
 	}
 	return v
-}
-
-func normalUVAt(a, b, c *clipCorner, x0, y0, x1, y1, x2, y2, area, px, py float32) UV {
-	aa, bb, cc := *a, *b, *c
-	aa.uv, bb.uv, cc.uv = aa.normalUV, bb.normalUV, cc.normalUV
-	return uvAt(&aa, &bb, &cc, x0, y0, x1, y1, x2, y2, area, px, py)
 }

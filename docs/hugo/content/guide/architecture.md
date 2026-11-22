@@ -66,7 +66,7 @@ The root package is one flat package. Its files are named for what they hold:
 | **Camera** | `camera.go`, `clipping.go`, `near.go` |
 | **Picking** | `pick.go`, `bvh.go`, `render_pick.go` (GPU depth) |
 | **Renderers, shared** | `renderer.go` (the interface, `Snapshot`), `shading.go`, `shadow.go`, `indirect.go`, `blend.go`, `splat_budget.go`, `transmission.go`, `linear.go` |
-| **Software** | `render_software.go`, `software.go`, `post_software.go`, `supersample.go`, `stroke.go` |
+| **Software** | `render_software.go` (pass order and primitive dispatch), `software_triangle.go` (corner preparation, clipping, and the pixel loop), `software_coverage.go` (projection and shared-edge ownership), `software_surface.go` (sampling, normals, material hooks, and cutout), `software_lighting.go` (lighting and emission), `software_target.go` (color, depth, and blending), `software.go`, `post_software.go`, `supersample.go`, `stroke.go` |
 | **Wireframe** | `render_wireframe.go`, `wire_depth.go` |
 | **WebGPU** | `render_gpu.go` (setup, the frame, the scene pass), `gpu_session.go` (host-owned targets), `render_slots.go` (primitive slots and draw order), `render_geometry.go` (uploads and caches), and one file per feature: `render_texture.go`, `render_shadow_gpu.go`, `render_outline.go`, `render_oit.go`, `render_post.go`, `render_sort.go`, `render_skin.go`, `render_hooks.go`, `render_environment.go`, `render_probe.go`, `render_reflection.go`, `render_procedural.go`, `render_transmission.go` |
 | **Shaders** | `wgsl/scene_*.wgsl` (one module in ten files, joined in the order `sceneShaderParts` lists), `skin.wgsl`, `sort.wgsl` |
@@ -106,7 +106,7 @@ Wireframe is a structural fallback, not the same picture: edges, points, and lab
 | Add a per-instance value | `transformRecord` in `render_geometry.go`, `Instance` in `wgsl/scene_bindings.wgsl`, and `instanceRecordSize`. |
 | Add math | Package `math`, with a test there. No other package defines a vector, quaternion, matrix, or intersection test of its own; a float64 need uses `Vec3d`, `Quatd`, and `Mat4d`. |
 | Add a material rule | `checkMaterial` in `material.go`, the only place a material's own rules are written. |
-| Add shading | Both `render_software.go` (or `shading.go`) and the matching `wgsl/scene_*.wgsl`, with a `_gpu_test.go` that compares them. |
+| Add shading | The software surface or lighting stage and the matching `wgsl/scene_*.wgsl`, with a `_gpu_test.go` that compares them. |
 | Honor a glTF material extension | A read function and a row in `materialExtensions` (`mesh/gltf/material_extensions.go`); any other extension gets a row in `documentExtensions`. A test holds every extension name in the source to those tables. |
 | Add a mesh format | A package under `mesh/` that registers a decoder with `nt3dmesh`, and a fuzz target with seeds under 1 KB. |
 | Add a demo | `examples/demos/internal/demo`, plus its task in `Taskfile.yml` and its entry in the gallery. |
