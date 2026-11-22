@@ -3,13 +3,21 @@
 package nt3dcollide
 
 import (
-	"image/color"
 	"math"
 	"testing"
 
-	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
+
+// mustMove is MoveCapsule for input the test knows to be valid.
+func mustMove(t *testing.T, m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasGrounded bool, cfg MoveConfig) MoveResult {
+	t.Helper()
+	res, err := MoveCapsule(m, cap, pos, vel, dt, wasGrounded, cfg)
+	if err != nil {
+		t.Fatalf("MoveCapsule: %v", err)
+	}
+	return res
+}
 
 func quadTris(x0, y0, x1, y1, z float64) []Triangle {
 	a := nt3dmath.Vec3d{X: x0, Y: y0, Z: z}
@@ -30,7 +38,7 @@ func TestCapsuleLandsAndStaysAboveFloor(t *testing.T) {
 	const dt = 1.0 / 120.0
 	for range 240 {
 		vel.Z -= 9.81 * dt
-		res := MoveCapsule(m, cap, pos, vel, dt, grounded, cfg)
+		res := mustMove(t, m, cap, pos, vel, dt, grounded, cfg)
 		pos, vel, grounded = res.Position, res.Velocity, res.Grounded
 	}
 	if !grounded {
@@ -55,7 +63,7 @@ func TestCapsuleSlidesAlongWallWithoutTunneling(t *testing.T) {
 	cfg := MoveConfig{MaxSlopeDeg: 50, StepHeight: 0.35, GroundSnap: 0.15}
 
 	// Charge diagonally into the wall at 20 m/s over a coarse 0.1 s step.
-	res := MoveCapsule(m, cap, nt3dmath.Vec3d{X: 0.5, Y: 0, Z: 0.005}, nt3dmath.Vec3d{X: 20, Y: 10, Z: 0}, 0.1, true, cfg)
+	res := mustMove(t, m, cap, nt3dmath.Vec3d{X: 0.5, Y: 0, Z: 0.005}, nt3dmath.Vec3d{X: 20, Y: 10, Z: 0}, 0.1, true, cfg)
 	if !res.HitWall {
 		t.Fatalf("expected HitWall, got %+v", res)
 	}
@@ -95,7 +103,7 @@ func TestCapsuleStepsUpCurbAndSnapsDownSlope(t *testing.T) {
 	grounded := true
 	const dt = 1.0 / 60.0
 	for range 60 {
-		res := MoveCapsule(m, cap, pos, nt3dmath.Vec3d{X: 5, Y: 0, Z: 0}, dt, grounded, cfg)
+		res := mustMove(t, m, cap, pos, nt3dmath.Vec3d{X: 5, Y: 0, Z: 0}, dt, grounded, cfg)
 		pos, grounded = res.Position, res.Grounded
 		if !grounded {
 			t.Fatalf("lost ground contact on curb/ramp at pos=%v", pos)
@@ -103,21 +111,5 @@ func TestCapsuleStepsUpCurbAndSnapsDownSlope(t *testing.T) {
 	}
 	if pos.X < 3.5 {
 		t.Fatalf("blocked by 0.25 m curb: X=%.3f", pos.X)
-	}
-}
-
-func TestNewMeshFromGeometryAndRayCast(t *testing.T) {
-	box, err := nt3d.BuildCuboid(nt3d.Cuboid{Size: nt3dmath.Vec3{X: 4, Y: 4, Z: 2}, Color: color.RGBA{A: 255}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	world := nt3dmath.TRSd(nt3dmath.Vec3d{Z: 1}, nt3dmath.QuatdIdentity(), nt3dmath.Vec3d{X: 1, Y: 1, Z: 1})
-	m := NewMesh(box, world)
-	if m.TriangleCount() != 12 {
-		t.Fatalf("triangles=%d, want 12", m.TriangleCount())
-	}
-	hit, ok := m.RayCast(nt3dmath.Vec3d{Z: 5}, nt3dmath.Vec3d{Z: -1}, 10)
-	if !ok || math.Abs(hit.Position.Z-2.0) > 1e-5 || hit.Normal.Z < 0.99 {
-		t.Fatalf("RayCast got (%+v, %v), want Z=2 normal +Z", hit, ok)
 	}
 }

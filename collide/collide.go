@@ -1,30 +1,55 @@
 // Copyright (c) 2026 Neomantra Corp.
 
-// Package nt3dcollide resolves Z-up kinematic capsule movement and ray queries
-// against static triangle meshes.
+// Package nt3dcollide answers geometric questions about one shape against
+// static triangle geometry: ray casts, and kinematic capsule movement that
+// collides and slides.
 //
-// Coordinates are Z-up in float64 (nt3dmath.Vec3d), with products rounded
-// explicitly as float64(a*b)+c so simulation results agree across platforms.
+// It keeps no state between calls and advances no clock: a caller passes a
+// pose in and gets a pose and its contacts back. Nothing here has mass,
+// friction or restitution, and nothing moves but the one shape asked about;
+// bodies that push each other belong to a physics engine.
+//
+// The package depends only on nt3d/math, so a tool or a server can use it
+// without the renderer. nt3d/collide/scene builds a Mesh from an
+// nt3d.Geometry.
+//
+// Coordinates are Z-up in float64 (nt3dmath.Vec3d). A product that feeds a sum
+// is rounded first, as float64(a*b)+c, so that no platform fuses the two.
 package nt3dcollide
 
 import (
+	"fmt"
 	"math"
 	"slices"
 
-	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
 const (
 	leafTriangles = 6
 	eps           = 1e-9
+	// edgeSlack is how far outside a triangle, as a fraction of its edges, a
+	// ray may land and still hit it.
+	edgeSlack = 1e-9
 )
 
 // Capsule is a Z-aligned capsule whose base (lowest point) sits at a position.
-// Height is the full vertical span from base to crown (>= 2*Radius).
+// Radius is positive and Height, the full span from base to crown, is at
+// least 2*Radius.
 type Capsule struct {
 	Radius float64
 	Height float64
+}
+
+// Validate reports a capsule MoveCapsule would refuse.
+func (c Capsule) Validate() error {
+	if !nt3dmath.IsFinite(c.Radius) || !(c.Radius > 0) {
+		return fmt.Errorf("nt3dcollide: capsule radius %v must be positive", c.Radius)
+	}
+	if !nt3dmath.IsFinite(c.Height) || c.Height < 2*c.Radius {
+		return fmt.Errorf("nt3dcollide: capsule height %v must be at least twice its radius %v", c.Height, c.Radius)
+	}
+	return nil
 }
 
 // Segment returns the medial line segment [a, b] for a capsule with base pos.
@@ -69,39 +94,8 @@ type Mesh struct {
 	hi    nt3dmath.Vec3d
 }
 
-// NewMesh builds a collision mesh from g transformed by world (identity when
-// world is the zero matrix). Degenerate triangles are skipped.
-func NewMesh(g nt3d.Geometry, world nt3dmath.Mat4d) *Mesh {
-	return NewMeshFromGeometries([]nt3d.Geometry{g}, []nt3dmath.Mat4d{world})
-}
-
-// NewMeshFromGeometries combines one or more geometries (with optional per-mesh
-// world matrices; nil or zero entries mean identity) into a single BVH.
-func NewMeshFromGeometries(gs []nt3d.Geometry, worlds []nt3dmath.Mat4d) *Mesh {
-	var tris []Triangle
-	id := nt3dmath.IdentityD()
-	for gi, g := range gs {
-		m := id
-		if gi < len(worlds) && worlds[gi] != (nt3dmath.Mat4d{}) {
-			m = worlds[gi]
-		}
-		for i := 0; i+2 < len(g.Indices); i += 3 {
-			i0, i1, i2 := int(g.Indices[i]), int(g.Indices[i+1]), int(g.Indices[i+2])
-			if i0 >= len(g.Vertices) || i1 >= len(g.Vertices) || i2 >= len(g.Vertices) {
-				continue
-			}
-			a := transformPoint(m, g.Vertices[i0].Position.D())
-			b := transformPoint(m, g.Vertices[i1].Position.D())
-			c := transformPoint(m, g.Vertices[i2].Position.D())
-			if t, ok := makeTriangle(a, b, c); ok {
-				tris = append(tris, t)
-			}
-		}
-	}
-	return NewMeshFromTriangles(tris)
-}
-
-// NewMeshFromTriangles builds a BVH over world-space triangles.
+// NewMeshFromTriangles builds a mesh over world-space triangles. Only A, B and
+// C are read; triangles that are degenerate or not finite are left out.
 func NewMeshFromTriangles(in []Triangle) *Mesh {
 	tris := make([]Triangle, 0, len(in))
 	for _, t := range in {
@@ -328,13 +322,6 @@ func makeTriangle(a, b, c nt3dmath.Vec3d) (Triangle, bool) {
 	}, true
 }
 
-func transformPoint(m nt3dmath.Mat4d, p nt3dmath.Vec3d) nt3dmath.Vec3d {
-	x := float64(m[0]*p.X) + float64(m[4]*p.Y) + float64(m[8]*p.Z) + m[12]
-	y := float64(m[1]*p.X) + float64(m[5]*p.Y) + float64(m[9]*p.Z) + m[13]
-	z := float64(m[2]*p.X) + float64(m[6]*p.Y) + float64(m[10]*p.Z) + m[14]
-	return nt3dmath.Vec3d{X: x, Y: y, Z: z}
-}
-
 func finiteVec(v nt3dmath.Vec3d) bool {
 	return nt3dmath.IsFinite(v.X) && nt3dmath.IsFinite(v.Y) && nt3dmath.IsFinite(v.Z)
 }
@@ -380,6 +367,12 @@ func boxesOverlap(aLo, aHi, bLo, bHi nt3dmath.Vec3d) bool {
 		aLo.Z <= bHi.Z && aHi.Z >= bLo.Z
 }
 
+// rayEnterBox is where the ray enters the box, when it does within maxT.
+//
+// The box is widened a little on each axis. rayTriangleTwoSided accepts a hit
+// a hair outside a triangle's edge, so that a ray down the seam of two
+// triangles does not slip between them; an exact box test would turn such a
+// ray away before its triangles were tried.
 func rayEnterBox(origin, dir, lo, hi nt3dmath.Vec3d, maxT float64) (float64, bool) {
 	tMin, tMax := 0.0, maxT
 	o := [3]float64{origin.X, origin.Y, origin.Z}
@@ -387,15 +380,17 @@ func rayEnterBox(origin, dir, lo, hi nt3dmath.Vec3d, maxT float64) (float64, boo
 	bLo := [3]float64{lo.X, lo.Y, lo.Z}
 	bHi := [3]float64{hi.X, hi.Y, hi.Z}
 	for k := range 3 {
+		pad := float64(4*edgeSlack*(bHi[k]-bLo[k])) + 1e-12
+		kLo, kHi := bLo[k]-pad, bHi[k]+pad
 		if math.Abs(d[k]) <= 1e-15 {
-			if o[k] < bLo[k] || o[k] > bHi[k] {
+			if o[k] < kLo || o[k] > kHi {
 				return 0, false
 			}
 			continue
 		}
 		inv := 1 / d[k]
-		t0 := float64((bLo[k] - o[k]) * inv)
-		t1 := float64((bHi[k] - o[k]) * inv)
+		t0 := float64((kLo - o[k]) * inv)
+		t1 := float64((kHi - o[k]) * inv)
 		if t0 > t1 {
 			t0, t1 = t1, t0
 		}
@@ -419,12 +414,12 @@ func rayTriangleTwoSided(origin, dir nt3dmath.Vec3d, tri Triangle, maxT float64)
 	invDet := 1 / det
 	s := vecSub(origin, tri.A)
 	u := float64(dot(s, p) * invDet)
-	if u < -1e-9 || u > 1+1e-9 {
+	if u < -edgeSlack || u > 1+edgeSlack {
 		return 0, false
 	}
 	q := cross(s, e1)
 	v := float64(dot(dir, q) * invDet)
-	if v < -1e-9 || u+v > 1+1e-9 {
+	if v < -edgeSlack || u+v > 1+edgeSlack {
 		return 0, false
 	}
 	t := float64(dot(e2, q) * invDet)

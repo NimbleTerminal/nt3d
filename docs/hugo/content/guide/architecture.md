@@ -43,6 +43,8 @@ Dependencies point one way: everything builds on `math`, the engine builds on a 
 | `nt3dsh` | `nt3d/sh` | Spherical harmonics, in Go and WGSL | `math` |
 | `nt3dclod` | `nt3d/clod` | Clustering many items for budgeted drawing | `math` |
 | `nt3daabbtree` | `nt3d/aabbtree` | Dynamic bounding-volume tree | `math` |
+| `nt3dcollide` | `nt3d/collide` | Ray casts and kinematic capsule movement against a static triangle mesh; no state between calls | `math` |
+| `nt3dcollidescene` | `nt3d/collide/scene` | Joins collision to the engine: a collision mesh from a `Geometry` | the engine, `collide` |
 | `nt3dcam` | `nt3d/cam` and below | Declarative camera paths, in float64 | `math` |
 | **`nt3d`** | `nt3d` | Scene, frame, the three renderers, picking | `math`, `sh`, `clod` |
 | `nt3dcamscene` | `nt3d/cam/scene` | Joins camera paths to a scene: states to cameras, targets by node name, a path drawn into a frame | the engine, `cam` |

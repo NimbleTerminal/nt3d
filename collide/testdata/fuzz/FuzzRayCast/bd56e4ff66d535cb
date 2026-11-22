@@ -1,0 +1,9 @@
+go test fuzz v1
+[]byte("0\xaa\xaa 00000")
+float64(6.000000000000001)
+float64(5)
+float64(1.875)
+float64(0)
+float64(-63.25)
+float64(-11.4)
+float64(80)

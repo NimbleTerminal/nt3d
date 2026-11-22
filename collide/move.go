@@ -3,42 +3,68 @@
 package nt3dcollide
 
 import (
+	"fmt"
 	"math"
 
 	nt3dmath "nimbleterminal.dev/nt3d/math"
 )
 
-// MoveConfig tunes kinematic capsule movement against a Mesh.
+// MoveConfig tunes kinematic capsule movement against a Mesh. A zero field
+// means its default; a negative or non-finite one is an error.
 type MoveConfig struct {
-	// MaxSlopeDeg is the steepest walkable slope from horizontal, in degrees
-	// (0..89; zero defaults to 50).
+	// MaxSlopeDeg is the steepest walkable slope from horizontal, in degrees,
+	// at most 89. Zero means 50.
 	MaxSlopeDeg float64
 	// StepHeight is the tallest vertical ledge a grounded capsule steps onto,
-	// in meters (>= 0; zero disables stepping).
+	// in meters. Zero disables stepping.
 	StepHeight float64
 	// GroundSnap is how far downward a grounded capsule snaps to stay glued to
-	// ramps and crests when not jumping, in meters (>= 0).
+	// ramps and crests when not jumping, in meters. Zero disables snapping.
 	GroundSnap float64
-	// SkinWidth is the small separation margin maintained from surfaces, in
-	// meters (zero defaults to 0.005).
+	// SkinWidth is the small separation kept from surfaces, in meters. Zero
+	// means 0.005.
 	SkinWidth float64
 }
 
-func (c MoveConfig) normalized() (minWalkZ, stepH, snap, skin float64) {
+// Validate reports a configuration MoveCapsule would refuse.
+func (c MoveConfig) Validate() error {
+	for _, f := range []struct {
+		name string
+		v    float64
+	}{
+		{"MaxSlopeDeg", c.MaxSlopeDeg},
+		{"StepHeight", c.StepHeight},
+		{"GroundSnap", c.GroundSnap},
+		{"SkinWidth", c.SkinWidth},
+	} {
+		if !nt3dmath.IsFinite(f.v) || f.v < 0 {
+			return fmt.Errorf("nt3dcollide: MoveConfig.%s %v must not be negative", f.name, f.v)
+		}
+	}
+	if c.MaxSlopeDeg > 89 {
+		return fmt.Errorf("nt3dcollide: MoveConfig.MaxSlopeDeg %v must be at most 89", c.MaxSlopeDeg)
+	}
+	return nil
+}
+
+// resolved fills in the defaults of a valid configuration.
+func (c MoveConfig) resolved() (minWalkZ, stepH, snap, skin float64) {
 	slope := c.MaxSlopeDeg
-	if !(slope > 0) {
+	if slope == 0 {
 		slope = 50
 	}
-	slope = math.Min(89, slope)
 	minWalkZ = math.Cos(slope * math.Pi / 180)
-	stepH = math.Max(0, c.StepHeight)
-	snap = math.Max(0, c.GroundSnap)
 	skin = c.SkinWidth
-	if !(skin > 0) {
+	if skin == 0 {
 		skin = 0.005
 	}
-	return minWalkZ, stepH, snap, skin
+	return minWalkZ, c.StepHeight, c.GroundSnap, skin
 }
+
+// maxSubsteps bounds the work of one MoveCapsule call. Each substep moves the
+// capsule at most half its radius, which is what keeps it from passing
+// through a surface, so one call can move it at most maxSubsteps/2 radii.
+const maxSubsteps = 4096
 
 // MoveResult reports the capsule's resolved pose, velocity, and contacts after
 // MoveCapsule.
@@ -54,25 +80,47 @@ type MoveResult struct {
 
 // MoveCapsule advances a capsule with base at pos by vel*dt, resolving
 // penetrations, sliding along walls and slopes, stepping up low curbs when
-// grounded, and snapping onto walkable slopes.
-func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasGrounded bool, cfg MoveConfig) MoveResult {
-	if !finiteVec(pos) {
-		return MoveResult{}
-	}
-	if !finiteVec(vel) {
-		vel = nt3dmath.Vec3d{}
-	}
+// grounded, and snapping onto walkable slopes. A nil or empty mesh is empty
+// space: the capsule moves freely.
+//
+// It moves in substeps of at most half the capsule's radius, so the capsule
+// does not pass through a surface however fast it goes.
+//
+// Wrong input is an error and moves nothing: the result then holds pos and
+// vel as given. That covers a capsule or configuration that fails Validate, a
+// position, velocity or dt that is not finite, a negative dt, and a move
+// longer than 2048 radii in one call.
+func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasGrounded bool, cfg MoveConfig) (MoveResult, error) {
 	res := MoveResult{
 		Position:     pos,
 		Velocity:     vel,
 		GroundNormal: nt3dmath.Vec3d{Z: 1},
 	}
-	if m == nil || len(m.tris) == 0 || !(dt > 0) || !nt3dmath.IsFinite(dt) {
-		return res
+	if err := cap.Validate(); err != nil {
+		return res, err
 	}
-	cap.Radius = math.Max(1e-3, cap.Radius)
-	cap.Height = math.Max(float64(2*cap.Radius), cap.Height)
-	minWalkZ, stepH, snapDist, skin := cfg.normalized()
+	if err := cfg.Validate(); err != nil {
+		return res, err
+	}
+	if !finiteVec(pos) || !finiteVec(vel) {
+		return res, fmt.Errorf("nt3dcollide: capsule position %v and velocity %v must be finite", pos, vel)
+	}
+	if !nt3dmath.IsFinite(dt) || dt < 0 {
+		return res, fmt.Errorf("nt3dcollide: dt %v must be finite and not negative", dt)
+	}
+	if dt == 0 {
+		return res, nil
+	}
+	totalDisp := vecLen(vecScale(vel, dt))
+	maxStep := float64(cap.Radius * 0.5)
+	if !(totalDisp <= float64(maxStep*maxSubsteps)) {
+		return res, fmt.Errorf("nt3dcollide: a move of %.3g m in one call is more than %d radii; call with a smaller dt", totalDisp, maxSubsteps/2)
+	}
+	if m == nil || len(m.tris) == 0 {
+		res.Position = vecAdd(pos, vecScale(vel, dt))
+		return res, nil
+	}
+	minWalkZ, stepH, snapDist, skin := cfg.resolved()
 
 	initialVel := vel
 	curPos := pos
@@ -82,9 +130,7 @@ func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasG
 	// starts cleanly separated.
 	curPos, _ = depenetrate(m, cap, curPos, skin, minWalkZ, &res, initialVel, false)
 
-	totalDisp := vecLen(vecScale(curVel, dt))
-	maxStep := math.Max(0.05, float64(cap.Radius*0.5))
-	steps := max(1, min(32, int(math.Ceil(totalDisp/maxStep))))
+	steps := max(1, min(maxSubsteps, int(math.Ceil(totalDisp/maxStep))))
 	subDt := dt / float64(steps)
 
 	for range steps {
@@ -159,7 +205,7 @@ func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasG
 
 	res.Position = curPos
 	res.Velocity = curVel
-	return res
+	return res, nil
 }
 
 func hasWallContact(normals []nt3dmath.Vec3d, minWalkZ float64) bool {
