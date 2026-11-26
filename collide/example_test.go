@@ -34,7 +34,11 @@ func ExampleMoveCapsule() {
 	}
 	fmt.Printf("grounded %v at x=%.1f z=%.2f\n", grounded, pos.X, pos.Z)
 
-	hit, ok := floor.RayCast(v(3, 3, 5), v(0, 0, -1), 10)
+	hit, ok, err := floor.RayCast(v(3, 3, 5), v(0, 0, -1), 10)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	fmt.Printf("ray hit %v at distance %.0f\n", ok, hit.Distance)
 	// Output:
 	// grounded true at x=2.0 z=0.01

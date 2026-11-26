@@ -29,8 +29,8 @@ func TestNewMeshPlacesGeometryInTheWorld(t *testing.T) {
 	if m.TriangleCount() != 12 {
 		t.Fatalf("triangles = %d, want 12", m.TriangleCount())
 	}
-	hit, ok := m.RayCast(nt3dmath.Vec3d{Z: 5}, nt3dmath.Vec3d{Z: -1}, 10)
-	if !ok || math.Abs(hit.Position.Z-2.0) > 1e-5 || hit.Normal.Z < 0.99 {
+	hit, ok, err := m.RayCast(nt3dmath.Vec3d{Z: 5}, nt3dmath.Vec3d{Z: -1}, 10)
+	if err != nil || !ok || math.Abs(hit.Position.Z-2.0) > 1e-5 || hit.Normal.Z < 0.99 {
 		t.Fatalf("RayCast = (%+v, %v), want a hit at Z=2 facing +Z", hit, ok)
 	}
 }

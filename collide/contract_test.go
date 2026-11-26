@@ -163,6 +163,60 @@ func TestRestingCapsuleDoesNotSinkOrDrift(t *testing.T) {
 	}
 }
 
+// A ray that cannot be cast is an error, not a miss: a caller told "nothing
+// there" for a NaN origin would walk through the wall it asked about.
+func TestRayCastRejectsWrongInput(t *testing.T) {
+	m := NewMeshFromTriangles(quadTris(-5, -5, 5, 5, 0))
+	origin, down := nt3dmath.Vec3d{Z: 2}, nt3dmath.Vec3d{Z: -1}
+	nan, inf := math.NaN(), math.Inf(1)
+	for name, c := range map[string]struct {
+		origin, dir nt3dmath.Vec3d
+		maxDist     float64
+	}{
+		"origin not finite":    {nt3dmath.Vec3d{X: nan}, down, 10},
+		"direction not finite": {origin, nt3dmath.Vec3d{Z: -inf}, 10},
+		"direction zero":       {origin, nt3dmath.Vec3d{}, 10},
+		"direction overflows":  {origin, nt3dmath.Vec3d{X: 1e200, Y: 1e200, Z: -1e200}, 10},
+		"distance NaN":         {origin, down, nan},
+		"distance negative":    {origin, down, -1},
+	} {
+		if hit, ok, err := m.RayCast(c.origin, c.dir, c.maxDist); err == nil || ok || hit != (RayHit{}) {
+			t.Errorf("%s: RayCast = %+v, %v, %v; want an error and no hit", name, hit, ok, err)
+		}
+	}
+	// The same wrong ray is refused whatever the mesh holds.
+	if _, _, err := (*Mesh)(nil).RayCast(nt3dmath.Vec3d{X: nan}, down, 10); err == nil {
+		t.Error("a nil mesh accepted a ray that is not finite")
+	}
+}
+
+// Empty space and a ray too short to reach anything are misses, not errors,
+// and a ray may be as long as the caller likes.
+func TestRayCastMissesAreNotErrors(t *testing.T) {
+	m := NewMeshFromTriangles(quadTris(-5, -5, 5, 5, 0))
+	origin, down := nt3dmath.Vec3d{Z: 2}, nt3dmath.Vec3d{Z: -1}
+	for name, c := range map[string]struct {
+		m       *Mesh
+		maxDist float64
+		hit     bool
+	}{
+		"nil mesh":        {nil, 10, false},
+		"empty mesh":      {NewMeshFromTriangles(nil), 10, false},
+		"zero distance":   {m, 0, false},
+		"short":           {m, 1, false},
+		"reaches":         {m, 10, true},
+		"without a limit": {m, math.Inf(1), true},
+	} {
+		hit, ok, err := c.m.RayCast(origin, down, c.maxDist)
+		if err != nil || ok != c.hit {
+			t.Errorf("%s: RayCast = %+v, %v, %v; want hit %v and no error", name, hit, ok, err, c.hit)
+		}
+		if ok && math.Abs(hit.Distance-2) > 1e-9 {
+			t.Errorf("%s: hit at distance %v, want 2", name, hit.Distance)
+		}
+	}
+}
+
 // Segment and Bounds describe the capsule they are given. They used to widen
 // a radius under 0.1 mm, which Validate accepts, to 0.1 mm.
 func TestSegmentAndBoundsOfAValidCapsuleAreExact(t *testing.T) {

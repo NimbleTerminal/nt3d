@@ -26,7 +26,8 @@ func fuzzTriangles(data []byte) []Triangle {
 	return tris
 }
 
-// FuzzRayCast casts a ray into a triangle soup and checks the answer against
+// FuzzRayCast casts a ray into a triangle soup. A ray that cannot be cast is
+// refused with an error and no hit; otherwise the answer is checked against
 // every triangle tested one by one: a hit lies within range on the ray, its
 // normal is unit length and faces the ray's origin, and no triangle is nearer
 // than the one the tree found.
@@ -38,14 +39,17 @@ func FuzzRayCast(f *testing.F) {
 		m := NewMeshFromTriangles(fuzzTriangles(soup))
 		origin := nt3dmath.Vec3d{X: ox, Y: oy, Z: oz}
 		dir := nt3dmath.Vec3d{X: dx, Y: dy, Z: dz}
-		hit, ok := m.RayCast(origin, dir, maxDist)
+		hit, ok, err := m.RayCast(origin, dir, maxDist)
 
-		valid := origin.IsFinite() && dir.IsFinite() && maxDist > 0 && vecLen(dir) > 1e-12 && !math.IsInf(vecLen(dir), 0)
+		valid := origin.IsFinite() && dir.IsFinite() && maxDist >= 0 && vecLen(dir) > 1e-12 && !math.IsInf(vecLen(dir), 0)
 		if !valid {
-			if ok && (!hit.Position.IsFinite() || math.IsNaN(hit.Distance)) {
-				t.Fatalf("a ray that is not valid returned a hit that is not finite: %+v", hit)
+			if err == nil || ok || hit != (RayHit{}) {
+				t.Fatalf("a ray that cannot be cast returned %+v, %v, %v; want an error and no hit", hit, ok, err)
 			}
 			return
+		}
+		if err != nil {
+			t.Fatalf("a valid ray was refused: %v", err)
 		}
 		unit := vecScale(dir, 1/vecLen(dir))
 		nearest, any := math.Inf(1), false

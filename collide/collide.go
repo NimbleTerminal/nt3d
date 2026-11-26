@@ -238,15 +238,27 @@ type RayHit struct {
 	Distance float64
 }
 
-// RayCast finds the closest hit along origin + t*dir (both sides of triangles
-// are tested so thin walls and open floors never leak) within [0, maxDist].
-func (m *Mesh) RayCast(origin, dir nt3dmath.Vec3d, maxDist float64) (RayHit, bool) {
-	if m == nil || len(m.nodes) == 0 || !(maxDist > 0) || !origin.IsFinite() || !dir.IsFinite() {
-		return RayHit{}, false
+// RayCast finds the closest hit along origin + t*dir within [0, maxDist].
+// Both sides of a triangle are tested, so thin walls and open floors do not
+// leak. dir need not be unit length, and maxDist may be infinite. A nil or
+// empty mesh is empty space: the ray misses.
+//
+// A ray that cannot be cast is an error, not a miss: an origin or direction
+// that is not finite, a direction with no length or one too long to measure,
+// or a maxDist that is negative or not a number.
+func (m *Mesh) RayCast(origin, dir nt3dmath.Vec3d, maxDist float64) (RayHit, bool, error) {
+	if !origin.IsFinite() || !dir.IsFinite() {
+		return RayHit{}, false, fmt.Errorf("nt3dcollide: ray origin %v and direction %v must be finite", origin, dir)
 	}
 	lenDir := vecLen(dir)
-	if !(lenDir > 1e-12) {
-		return RayHit{}, false
+	if !(lenDir > 1e-12) || !nt3dmath.IsFinite(lenDir) {
+		return RayHit{}, false, fmt.Errorf("nt3dcollide: ray direction %v has no length that can be measured", dir)
+	}
+	if !(maxDist >= 0) {
+		return RayHit{}, false, fmt.Errorf("nt3dcollide: ray maxDist %v must not be negative", maxDist)
+	}
+	if m == nil || len(m.nodes) == 0 {
+		return RayHit{}, false, nil
 	}
 	d := vecScale(dir, 1/lenDir)
 	best := maxDist
@@ -295,7 +307,7 @@ func (m *Mesh) RayCast(origin, dir nt3dmath.Vec3d, maxDist float64) (RayHit, boo
 			stack = append(stack, right)
 		}
 	}
-	return hit, found
+	return hit, found, nil
 }
 
 func makeTriangle(a, b, c nt3dmath.Vec3d) (Triangle, bool) {
