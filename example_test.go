@@ -336,3 +336,22 @@ func ExampleGaussianCloud() {
 	// splats: 8 err: <nil>
 	// splats: 0 err: <nil>
 }
+
+// A holdout is an invisible surface that hides what is behind it and still
+// carries ink: a proxy for a building inside a splat capture. Its Holdout
+// group belongs to AlphaHoldout alone, as each group belongs to its mode.
+func ExampleHoldoutStyle() {
+	proxy := nt3d.Material{
+		Shading: nt3d.ShadeUnlit,
+		Alpha:   nt3d.AlphaHoldout,
+		Holdout: nt3d.HoldoutStyle{DepthOffset: .08},
+	}
+	fmt.Println("proxy:", proxy.Validate())
+
+	// A surface that draws its color has no use for a holdout's depth offset.
+	painted := nt3d.Material{Shading: nt3d.ShadeUnlit, Holdout: nt3d.HoldoutStyle{DepthOffset: .08}}
+	fmt.Println("painted:", painted.Validate())
+	// Output:
+	// proxy: <nil>
+	// painted: nt3d: Holdout requires AlphaHoldout
+}

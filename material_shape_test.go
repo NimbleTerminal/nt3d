@@ -24,15 +24,16 @@ func TestShadingModelIsExplicit(t *testing.T) {
 		m    Material
 		want string // What the error must mention.
 	}{
-		"PBR fields on Phong":   {Material{PBR: PBRStyle{Roughness: .4}}, "ShadePBR"},
-		"a coat on Phong":       {Material{PBR: PBRStyle{Clearcoat: ClearcoatStyle{Amount: 1}}}, "ShadePBR"},
-		"PBR fields on unlit":   {Material{Shading: ShadeUnlit, PBR: PBRStyle{Metallic: 1}}, "ShadePBR"},
-		"Phong fields on PBR":   {Material{Shading: ShadePBR, Phong: PhongStyle{Specular: .5}}, "ShadePhong"},
-		"Phong fields on unlit": {Material{Shading: ShadeUnlit, Phong: PhongStyle{Reflectivity: .5}}, "ShadePhong"},
-		"an unknown model":      {Material{Shading: ShadeUnlit + 1}, "Shading"},
-		"an unknown alpha mode": {Material{Alpha: AlphaHoldout + 1}, "Alpha"},
-		"lit holdout":           {Material{Alpha: AlphaHoldout}, "ShadeUnlit"},
-		"depth offset non-hold": {Material{Shading: ShadeUnlit, DepthOffset: .1}, "AlphaHoldout"},
+		"PBR fields on Phong":                          {Material{PBR: PBRStyle{Roughness: .4}}, "ShadePBR"},
+		"a coat on Phong":                              {Material{PBR: PBRStyle{Clearcoat: ClearcoatStyle{Amount: 1}}}, "ShadePBR"},
+		"PBR fields on unlit":                          {Material{Shading: ShadeUnlit, PBR: PBRStyle{Metallic: 1}}, "ShadePBR"},
+		"Phong fields on PBR":                          {Material{Shading: ShadePBR, Phong: PhongStyle{Specular: .5}}, "ShadePhong"},
+		"Phong fields on unlit":                        {Material{Shading: ShadeUnlit, Phong: PhongStyle{Reflectivity: .5}}, "ShadePhong"},
+		"an unknown model":                             {Material{Shading: ShadeUnlit + 1}, "Shading"},
+		"an unknown alpha mode":                        {Material{Alpha: AlphaHoldout + 1}, "Alpha"},
+		"lit holdout":                                  {Material{Alpha: AlphaHoldout}, "ShadeUnlit"},
+		"a holdout group on a surface that is not one": {Material{Shading: ShadeUnlit, Holdout: HoldoutStyle{DepthOffset: .1}}, "AlphaHoldout"},
+		"a negative holdout offset":                    {Material{Shading: ShadeUnlit, Alpha: AlphaHoldout, Holdout: HoldoutStyle{DepthOffset: -1}}, "depth offset"},
 	} {
 		err := c.m.Validate()
 		if err == nil {

@@ -19,7 +19,7 @@ Two fields say what kind of surface a material is, and nothing else does:
 | Field | Values | Meaning |
 | --- | --- | --- |
 | `Shading` | `ShadePhong` (the zero value), `ShadePBR`, `ShadeUnlit` | The lighting model |
-| `Alpha` | `AlphaOpaque` (the zero value), `AlphaCutout`, `AlphaEdgeOn`, `AlphaTransparent` | What the alpha of the texture and vertex colors does |
+| `Alpha` | `AlphaOpaque` (the zero value), `AlphaCutout`, `AlphaEdgeOn`, `AlphaTransparent`, `AlphaHoldout` | What the alpha of the texture and vertex colors does |
 
 Everything else is a group, one per feature, and a group left zero is off:
 
@@ -31,13 +31,14 @@ Everything else is a group, one per feature, and a group left zero is off:
 | `Emission` | `EmissionStyle` | Light of the surface's own |
 | `Transmission` | `TransmissionStyle` | Seeing the scene behind through the surface |
 | `Toon` | `ToonStyle` | Banded shading |
+| `Holdout` | `HoldoutStyle` | How an `AlphaHoldout` surface writes its depth |
 
 A group's type is always its field's name with `Style` after it. The texture, `Repeat`, `Tint`, `BaseColor`, `Threshold`, `LightMap`, and `Shader` are fields of the material itself.
 
 Three rules hold throughout:
 
 - **The model is what `Shading` says.** A `ShadePBR` material stays PBR when its roughness and metalness are zero, which is a mirror-smooth dielectric. Nothing switches the model by being set.
-- **A group that belongs to another model is an error.** Setting `PBR` on a material that is not `ShadePBR`, or `Phong` on one that is not `ShadePhong`, is refused when the geometry is given to a scene, where it used to be ignored without a word. `Material.Validate` reports it.
+- **A group that belongs to another model is an error.** Setting `PBR` on a material that is not `ShadePBR`, `Phong` on one that is not `ShadePhong`, or `Holdout` on one that is not `AlphaHoldout`, is refused when the geometry is given to a scene, where it used to be ignored without a word. `Material.Validate` reports it.
 - **A strength left zero means 1** wherever its group is in use (`Normal.Strength`, `Emission.Intensity`, `PBR.OcclusionStrength`, `PBR.Specular.Strength`). To have none, leave the group or its map out, or set the flag the group has for it: `PBR.NoOcclusion`, `PBR.Specular.Off`.
 
 ## Textures
@@ -72,6 +73,23 @@ The chain preserves how much shows, not exactly where: a thin strand far off bec
 `AlphaEdgeOn` shows a cutout only where the surface turns edge-on to the viewer, fading it out as the surface comes to face the camera. Fur uses it to fill in silhouettes. Wireframe and picking leave edge-on surfaces out.
 
 Other materials ignore alpha.
+
+### Holdouts
+
+`AlphaHoldout` draws no color at all and writes only depth, so the mesh is invisible and hides whatever is behind it. Its use is a proxy surface inside a [Gaussian splat](../rendering/#3d-gaussian-splatting) capture: splats have no surfaces to hide one another or to draw lines on, so a plain box or a simplified model of a building, placed where the building is, hides the splats behind it and carries the ink.
+
+```go
+proxy.Material = &nt3d.Material{
+    Shading: nt3d.ShadeUnlit,
+    Alpha:   nt3d.AlphaHoldout,
+    Holdout: nt3d.HoldoutStyle{DepthOffset: .08},
+}
+proxy.Outline = nt3d.OutlineStyle{Width: 2, Color: ink, Crease: 45}
+```
+
+A holdout's [outline](#outlines) and [crease lines](#crease-lines) still draw, opaque, over the splats and at the surface itself. `Holdout.DepthOffset` pushes the depth the surface writes away from the viewer, in world units. A capture scatters splats to both sides of the surface they came from; without an offset the proxy cuts away those just behind it and the surface looks moth-eaten, and with one about as large as that scatter they all draw while the lines stay put.
+
+A holdout must be `ShadeUnlit` with no texture, maps, emission, or shader, since it has no color for them to change. The GPU and software renderers draw it the same way.
 
 ## Normal maps
 

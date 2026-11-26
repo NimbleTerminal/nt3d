@@ -107,11 +107,6 @@ type Material struct {
 	// taps, which would average it thin again.
 	Alpha     AlphaMode
 	Threshold float32
-	// DepthOffset pushes an AlphaHoldout mesh's written depth away from the
-	// viewer along the view ray, in world units (>= 0), so noisy splats on the
-	// front of a proxy surface are not clipped while silhouettes and creases
-	// stay on the unshifted surface.
-	DepthOffset float32
 
 	// Phong is the highlight and reflection of a ShadePhong material.
 	Phong PhongStyle
@@ -125,6 +120,8 @@ type Material struct {
 	Transmission TransmissionStyle
 	// Toon shades in flat bands; see ToonStyle. The zero value is off.
 	Toon ToonStyle
+	// Holdout is how an AlphaHoldout surface writes its depth.
+	Holdout HoldoutStyle
 
 	// LightMap supplies baked linear irradiance using Geometry.LightMapUV.
 	// It replaces ambient/environment diffuse; direct and specular light remain.
@@ -292,6 +289,19 @@ func (m *Material) cutout() bool {
 }
 func (m *Material) edgeOn() bool  { return m != nil && m.Alpha == AlphaEdgeOn }
 func (m *Material) blended() bool { return m != nil && m.Alpha == AlphaTransparent }
+
+// HoldoutStyle is how an AlphaHoldout surface, which draws no color and
+// hides what is behind it, writes its depth. It is an error on a material
+// with another Alpha.
+type HoldoutStyle struct {
+	// DepthOffset pushes the written depth away from the viewer along the
+	// view ray, in world units, zero or more. Splats lying on the front of a
+	// proxy surface, which a capture scatters to both sides of it, are then
+	// not cut away, while the surface's silhouette and crease lines stay
+	// where the surface is.
+	DepthOffset float32
+}
+
 func (m *Material) holdout() bool { return m != nil && m.Alpha == AlphaHoldout }
 
 // normalStrength is how strongly the normal map applies: zero without a map,
@@ -376,11 +386,11 @@ func checkMaterial(m *Material, hasUV bool) error {
 	if m.Alpha > AlphaHoldout {
 		return fmt.Errorf("nt3d: unknown material Alpha %d", m.Alpha)
 	}
-	if !validFloat(m.DepthOffset) || m.DepthOffset < 0 {
-		return errors.New("nt3d: depth offset must be finite and nonnegative")
+	if !validFloat(m.Holdout.DepthOffset) || m.Holdout.DepthOffset < 0 {
+		return errors.New("nt3d: holdout depth offset must be finite and nonnegative")
 	}
-	if m.DepthOffset > 0 && m.Alpha != AlphaHoldout {
-		return errors.New("nt3d: DepthOffset requires AlphaHoldout")
+	if m.Holdout != (HoldoutStyle{}) && m.Alpha != AlphaHoldout {
+		return errors.New("nt3d: Holdout requires AlphaHoldout")
 	}
 	if m.Alpha == AlphaHoldout && (m.Shading != ShadeUnlit || m.Texture != nil || m.Shader != nil || m.Emission != (EmissionStyle{}) || m.Normal != (NormalStyle{}) || m.LightMap != nil) {
 		return errors.New("nt3d: AlphaHoldout requires an untextured ShadeUnlit material")

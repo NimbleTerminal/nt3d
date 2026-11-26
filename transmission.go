@@ -10,7 +10,7 @@ import (
 func opticalParams(m *Material, p PointStyle) (o [8]float32) {
 	if m != nil {
 		if m.holdout() {
-			o[0] = m.DepthOffset
+			o[0] = m.Holdout.DepthOffset
 		} else {
 			o[0], o[1], o[2], o[3], o[4] = m.Transmission.Absorption.X, m.Transmission.Absorption.Y, m.Transmission.Absorption.Z, m.Transmission.Amount, m.Transmission.Refraction
 			o[6], o[7] = m.Normal.Flow.Phase, m.Normal.Flow.Strength

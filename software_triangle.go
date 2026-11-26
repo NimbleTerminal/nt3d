@@ -55,14 +55,14 @@ func (pass *softwareMeshPass) drawTriangle(m, world, normals *nt3dmath.Mat4, ver
 	for k, i := range index {
 		if material != nil && material.holdout() && !hull {
 			wp := world.Point(vertices[i].Position)
-			if material.DepthOffset > 0 {
+			if material.Holdout.DepthOffset > 0 {
 				dir := pass.frame.Forward
 				if pass.frame.Perspective {
 					if v := wp.Sub(pass.frame.Eye); v.Dot(v) > 1e-10 {
 						dir = v.Normalize()
 					}
 				}
-				wp = wp.Add(dir.Scale(material.DepthOffset))
+				wp = wp.Add(dir.Scale(material.Holdout.DepthOffset))
 			}
 			corners[k].x, corners[k].y, corners[k].z, corners[k].w = pass.frame.Matrix.Transform(wp)
 			continue

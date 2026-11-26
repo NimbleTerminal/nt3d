@@ -19,9 +19,9 @@ func holdoutSplatScene(t *testing.T, bands int, offset float32) Frame {
 	proxy, err := BuildCuboid(Cuboid{
 		Size: nt3dmath.Vec3{X: 1.0, Y: 1.0, Z: 1.0},
 		Material: &Material{
-			Shading:     ShadeUnlit,
-			Alpha:       AlphaHoldout,
-			DepthOffset: offset,
+			Shading: ShadeUnlit,
+			Alpha:   AlphaHoldout,
+			Holdout: HoldoutStyle{DepthOffset: offset},
 		},
 	})
 	check(t, err)
