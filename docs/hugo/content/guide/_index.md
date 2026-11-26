@@ -17,6 +17,7 @@ How to build scenes with nt3d, render them, and show them in a terminal.
 - [Clustering and LOD](clustering/)
 - [Spatial index](spatial-index/)
 - [Picking](picking/)
+- [Collision](collision/)
 - [The widget](widget/)
 - [Demos](demos/)
 - [Architecture](architecture/)
