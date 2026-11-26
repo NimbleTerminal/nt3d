@@ -18,6 +18,63 @@ func opaqueImage(side int) image.Image {
 	return img
 }
 
+// A flat Gaussian patch is the same shape whatever the scene's unit: every
+// splat's axes and radius follow the patch's size, with no length built in.
+func TestFlatGaussiansScaleWithTheScene(t *testing.T) {
+	build := func(scale float32) []Point {
+		pts, err := BuildFlatGaussians(FlatGaussians{
+			Image:  opaqueImage(4),
+			Normal: nt3dmath.Vec3{Y: -1},
+			Up:     nt3dmath.Vec3{Z: 1},
+			Width:  2 * scale,
+			Height: 1 * scale,
+		})
+		check(t, err)
+		if len(pts) != 16 {
+			t.Fatalf("%d splats at scale %v, want 16", len(pts), scale)
+		}
+		return pts
+	}
+	unit := build(1)
+	for _, scale := range []float32{1e-3, 1e3} {
+		for i, p := range build(scale) {
+			for k, axis := range p.GaussianAxes {
+				want := unit[i].GaussianAxes[k].Scale(scale)
+				if d := axis.Sub(want); math.Sqrt(float64(d.Dot(d))) > 1e-5*float64(scale) {
+					t.Fatalf("at scale %v splat %d axis %d is %v, want %v", scale, i, k, axis, want)
+				}
+			}
+			if want := unit[i].Radius * scale; abs(p.Radius-want) > 1e-5*scale {
+				t.Fatalf("at scale %v splat %d radius is %v, want %v", scale, i, p.Radius, want)
+			}
+		}
+	}
+}
+
+// Thickness is the splats' sigma along the normal; zero means an eighth of
+// the smaller grid cell, and a value that cannot be a length is an error.
+func TestFlatGaussiansThickness(t *testing.T) {
+	f := FlatGaussians{Image: opaqueImage(4), Normal: nt3dmath.Vec3{Y: -1}, Up: nt3dmath.Vec3{Z: 1}, Width: 2, Height: 1}
+	along := func(p Point) float32 { return abs(p.GaussianAxes[2].Y) }
+	pts, err := BuildFlatGaussians(f)
+	check(t, err)
+	if got, want := along(pts[0]), float32(.25/8); abs(got-want) > 1e-6 {
+		t.Fatalf("default thickness %v, want an eighth of the 0.25 cell, %v", got, want)
+	}
+	f.Thickness = .5
+	pts, err = BuildFlatGaussians(f)
+	check(t, err)
+	if got := along(pts[0]); got != .5 {
+		t.Fatalf("thickness %v, want 0.5", got)
+	}
+	for _, bad := range []float32{-1, float32(math.NaN()), float32(math.Inf(1))} {
+		f.Thickness = bad
+		if _, err := BuildFlatGaussians(f); err == nil {
+			t.Fatalf("accepted thickness %v", bad)
+		}
+	}
+}
+
 // A mark that lands on nothing is an empty result, not an error, all the way
 // to the cloud: a decal that misses its target, an image with no opaque
 // texel, and a patch of no splats.

@@ -231,8 +231,14 @@ func (c *GaussianCloud) Geometry() Geometry {
 }
 
 // FlatGaussians describes a planar grid of thin, surface-aligned Gaussian
-// splats sampled from Image, suitable for inserting surface marks, graffiti,
-// or decals directly into a 3DGS scene.
+// splats sampled from Image, suitable for inserting surface marks or decals
+// directly into a 3DGS scene.
+//
+// It is placed as a Decal is: Normal points out of the surface, Up is the
+// image's upward direction before it is made perpendicular to Normal, and
+// neither need be unit length. Width and Height are the patch's size on the
+// surface, and NormalOffset lifts it off the surface along Normal. Every
+// length is in the scene's units; none is built in.
 type FlatGaussians struct {
 	Image        image.Image
 	Center       nt3dmath.Vec3
@@ -241,6 +247,9 @@ type FlatGaussians struct {
 	Width        float32
 	Height       float32
 	NormalOffset float32
+	// Thickness is each splat's sigma along Normal. Zero means an eighth of
+	// the smaller grid cell, which keeps the patch thin beside its texels.
+	Thickness float32
 	// Columns and Rows cap the sampling grid resolution; zero defaults to the
 	// image dimensions clamped to 64×64.
 	Columns, Rows int
@@ -268,6 +277,9 @@ func BuildFlatGaussians(f FlatGaussians) ([]Point, error) {
 	if !positive(f.Width, f.Height) {
 		return nil, fmt.Errorf("nt3d: FlatGaussians dimensions must be positive and finite")
 	}
+	if !validFloat(f.Thickness) || f.Thickness < 0 {
+		return nil, fmt.Errorf("nt3d: FlatGaussians thickness must be finite and nonnegative")
+	}
 	n, right, up := frame.normal, frame.right, frame.up
 
 	cols, rows := f.Columns, f.Rows
@@ -287,11 +299,14 @@ func BuildFlatGaussians(f FlatGaussians) ([]Point, error) {
 
 	cellW := f.Width / float32(cols)
 	cellH := f.Height / float32(rows)
-	// Overlap neighboring Gaussians slightly (~0.68 sigma per cell) for solid
-	// strokes without gaps, with a thin 2 mm normal sigma (>= half-float 6e-5).
-	sigmaX := max(cellW*0.68, 0.001)
-	sigmaY := max(cellH*0.68, 0.001)
-	sigmaZ := float32(0.002)
+	// Neighboring Gaussians overlap a little (0.68 sigma a cell), so strokes
+	// are solid, and the patch is thin beside its texels.
+	sigmaX := cellW * 0.68
+	sigmaY := cellH * 0.68
+	sigmaZ := f.Thickness
+	if sigmaZ == 0 {
+		sigmaZ = min(cellW, cellH) / 8
+	}
 	axes := [3]nt3dmath.Vec3{
 		right.Scale(sigmaX),
 		up.Scale(sigmaY),
