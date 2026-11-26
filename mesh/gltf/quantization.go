@@ -8,6 +8,8 @@ import (
 
 	"github.com/qmuntal/gltf"
 	"github.com/qmuntal/gltf/modeler"
+
+	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
 
 // readPositions reads a VEC3 POSITION accessor as float32 coordinates,
@@ -213,7 +215,7 @@ func (d *gltfDecoder) readMorphDeltas(a *gltf.Accessor, key string) ([][3]float3
 		return nil, err
 	}
 	for _, c := range out {
-		if !validCoordinate(c[0], c[1], c[2]) {
+		if !nt3dmesh.ValidCoordinate(c[0], c[1], c[2]) {
 			return nil, fmt.Errorf("nt3dmesh: non-finite morph %s delta", key)
 		}
 	}

@@ -9,6 +9,8 @@ import (
 	"github.com/qmuntal/gltf"
 	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+
+	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
 
 // gltfLook is a glTF material as read: what nt3d needs of it to make an
@@ -102,7 +104,7 @@ func (mb *materialBuild) base() {
 		l.factor = p.BaseColorFactorOrDefault()
 		if !l.unlit {
 			mf, rf := p.MetallicFactorOrDefault(), p.RoughnessFactorOrDefault()
-			if !validCoordinate(float32(mf), float32(rf)) {
+			if !nt3dmesh.ValidCoordinate(float32(mf), float32(rf)) {
 				mb.fail(errors.New("nt3dmesh: non-finite glTF PBR factor"))
 			}
 			l.metallic = float32(max(0, min(1, mf)))
@@ -124,7 +126,7 @@ func (mb *materialBuild) base() {
 	if !l.unlit {
 		if occ := m.OcclusionTexture; occ != nil && occ.Index != nil {
 			s := occ.StrengthOrDefault()
-			if !validCoordinate(float32(s)) {
+			if !nt3dmesh.ValidCoordinate(float32(s)) {
 				mb.fail(errors.New("nt3dmesh: non-finite glTF occlusion strength"))
 			} else if s > 0 {
 				occIdx = *occ.Index
@@ -152,7 +154,7 @@ func (mb *materialBuild) base() {
 		l.normalMapping = nMap
 	}
 
-	if !validCoordinate(float32(m.EmissiveFactor[0]), float32(m.EmissiveFactor[1]), float32(m.EmissiveFactor[2])) {
+	if !nt3dmesh.ValidCoordinate(float32(m.EmissiveFactor[0]), float32(m.EmissiveFactor[1]), float32(m.EmissiveFactor[2])) {
 		mb.fail(errors.New("nt3dmesh: non-finite glTF emissive factor"))
 	}
 }

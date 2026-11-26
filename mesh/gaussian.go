@@ -67,7 +67,7 @@ func GaussianPoint(position nt3dmath.Vec3, rotation [4]float64, logScales [3]flo
 		}
 	}
 	p := nt3d.Point{Position: position, Radius: 1}
-	if !validCoordinate(p.Position.X, p.Position.Y, p.Position.Z) {
+	if !ValidCoordinate(p.Position.X, p.Position.Y, p.Position.Z) {
 		return nt3d.Point{}, errors.New("nt3dmesh: invalid Gaussian position")
 	}
 	w, x, y, z := rotation[0], rotation[1], rotation[2], rotation[3]
@@ -99,8 +99,8 @@ func GaussianPoint(position nt3dmath.Vec3, rotation [4]float64, logScales [3]flo
 // quaternion. DC spherical harmonics become clamped sRGB8 point colors;
 // degrees 0 through 3 are retained for view-dependent color. DecodePLY detects this subset.
 func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
-	if int64(len(data)) > o.maxBytes() {
-		return nil, fmt.Errorf("nt3dmesh: Gaussian PLY exceeds byte limit")
+	if err := o.ByteBudget().Take(int64(len(data)), "Gaussian PLY"); err != nil {
+		return nil, err
 	}
 	elements, format, _, body, err := plyHeader(data)
 	if err != nil {

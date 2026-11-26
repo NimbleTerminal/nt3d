@@ -156,7 +156,7 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 		return nil, fmt.Errorf("nt3dmesh: PLY format %q is not ascii or binary", format)
 	}
 	m := &Model{Format: PLY}
-	budget := &triangleBudget{limit: o.limit()}
+	budget := o.TriangleBudget()
 	s := &faceObject{budget: budget, format: "PLY"}
 	// A texture the header names colors the faces that have UVs.
 	for _, c := range comments {
@@ -166,10 +166,9 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 				m.Warnings = append(m.Warnings, fmt.Sprintf("texture %q was not read: no side-file access", name))
 				break
 			}
-			left := o.maxBytes()
 			if data, err := o.Open(name); err != nil {
 				m.Warnings = append(m.Warnings, fmt.Sprintf("texture %q: %v", name, err))
-			} else if img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255}, &left); err != nil {
+			} else if img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255}, o.ByteBudget()); err != nil {
 				m.Warnings = append(m.Warnings, fmt.Sprintf("texture %q: %v", name, err))
 			} else if t, err := nt3d.NewTexture(img); err == nil {
 				s.Geometry.Material = &nt3d.Material{Texture: t, Repeat: true}
@@ -384,13 +383,13 @@ func plyVertices(r *plyReader, e plyElement) ([]plyVertex, error) {
 			return nil, err
 		}
 		x, y, z := float32(scalars["x"]), float32(scalars["y"]), float32(scalars["z"])
-		if !validCoordinate(x, y, z) {
+		if !ValidCoordinate(x, y, z) {
 			return nil, r.errorf("vertex %d is non-finite or exceeds coordinate limits", i)
 		}
 		out[i].position = nt3dmath.Vec3{X: x, Y: y, Z: z}
 		if has["nx"] && has["ny"] && has["nz"] {
 			n := nt3dmath.Vec3{X: float32(scalars["nx"]), Y: float32(scalars["ny"]), Z: float32(scalars["nz"])}.Normalize()
-			if validCoordinate(n.X, n.Y, n.Z) {
+			if ValidCoordinate(n.X, n.Y, n.Z) {
 				out[i].normal = &n
 			}
 		}

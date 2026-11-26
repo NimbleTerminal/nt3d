@@ -15,6 +15,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
+
+	"nimbleterminal.dev/nt3d"
 )
 
 var ktx2Magic = [12]byte{0xAB, 'K', 'T', 'X', ' ', '2', '0', 0xBB, '\r', '\n', 0x1A, '\n'}
@@ -71,7 +73,7 @@ func isKTX2(data []byte) bool {
 // straight-alpha 8-bit NRGBA pixels. When twoChannelXY is true, the source
 // stored two channels (such as UASTC RRRG, ETC1S RRR+GGG, or R8G8) so normal
 // maps can reconstruct tangent Z before normalization.
-func decodeKTX2(data []byte, left *int64) (*image.NRGBA, bool, error) {
+func decodeKTX2(data []byte, budget *nt3dmesh.ByteBudget) (*image.NRGBA, bool, error) {
 	if len(data) < 80+24 || !isKTX2(data) {
 		return nil, false, errors.New("invalid KTX2 header")
 	}
@@ -88,7 +90,7 @@ func decodeKTX2(data []byte, left *int64) (*image.NRGBA, bool, error) {
 	sgdOffset := binary.LittleEndian.Uint64(data[64:72])
 	sgdLength := binary.LittleEndian.Uint64(data[72:80])
 
-	if pixelWidth == 0 || pixelWidth > maxTextureSide || pixelHeight > maxTextureSide {
+	if pixelWidth == 0 || pixelWidth > nt3d.MaxTextureSide || pixelHeight > nt3d.MaxTextureSide {
 		return nil, false, fmt.Errorf("KTX2 dimensions %dx%d exceed limits", pixelWidth, pixelHeight)
 	}
 	if pixelDepth > 1 {
@@ -128,11 +130,8 @@ func decodeKTX2(data []byte, left *int64) (*image.NRGBA, bool, error) {
 	}
 
 	rgbaBytes := int64(width) * int64(height) * 4
-	if left != nil {
-		if rgbaBytes > *left {
-			return nil, false, nt3dmesh.ErrTooLarge
-		}
-		*left -= rgbaBytes
+	if err := budget.Take(rgbaBytes, "KTX2 image decodes to more than MaxBytes has left"); err != nil {
+		return nil, false, err
 	}
 
 	if supercomp == ktx2SupercompBasisLZ {
@@ -144,7 +143,7 @@ func decodeKTX2(data []byte, left *int64) (*image.NRGBA, bool, error) {
 		}
 		sgd := data[sgdOffset : sgdOffset+sgdLength]
 		imageCount := uint64(levels) * uint64(layers) * uint64(faceCount)
-		return decodeKTX2ETC1S(level0, sgd, imageCount, width, height, dfd, left)
+		return decodeKTX2ETC1S(level0, sgd, imageCount, width, height, dfd, budget)
 	}
 
 	var raw []byte
@@ -157,16 +156,13 @@ func decodeKTX2(data []byte, left *int64) (*image.NRGBA, bool, error) {
 	case ktx2SupercompZstd, ktx2SupercompZlib:
 		maxAllowed := uint64(max(rgbaBytes*int64(layers)*int64(faceCount)*2, 64*1024))
 		if lvl0Uncomp == 0 || lvl0Uncomp > maxAllowed {
-			if left != nil && lvl0Uncomp > uint64(max(int64(0), *left)) {
-				return nil, false, nt3dmesh.ErrTooLarge
+			if budget != nil && lvl0Uncomp > uint64(budget.Left()) {
+				return nil, false, fmt.Errorf("%w: KTX2 level", nt3dmesh.ErrTooLarge)
 			}
 			return nil, false, errors.New("invalid KTX2 uncompressedByteLength")
 		}
-		if left != nil {
-			if int64(lvl0Uncomp) > *left {
-				return nil, false, nt3dmesh.ErrTooLarge
-			}
-			*left -= int64(lvl0Uncomp)
+		if err := budget.Take(int64(lvl0Uncomp), "KTX2 level"); err != nil {
+			return nil, false, err
 		}
 		raw, err = decompressKTX2Level(level0, int(lvl0Uncomp), supercomp)
 		if err != nil {

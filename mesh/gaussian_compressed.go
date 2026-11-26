@@ -68,8 +68,8 @@ func compressedLerp(a, b, t float64) float64 { return a*(1-t) + b*t }
 // 8b/255 - 4. Without color bounds a color byte is the color itself. The
 // result matches DecodeGaussianPLY's. DecodePLY detects this layout.
 func DecodeCompressedPLY(data []byte, o *Options) (*Model, error) {
-	if int64(len(data)) > o.maxBytes() {
-		return nil, fmt.Errorf("nt3dmesh: compressed PLY exceeds byte limit")
+	if err := o.ByteBudget().Take(int64(len(data)), "compressed Gaussian PLY"); err != nil {
+		return nil, err
 	}
 	elements, format, _, body, err := plyHeader(data)
 	if err != nil {

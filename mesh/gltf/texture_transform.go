@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"github.com/qmuntal/gltf"
 	"math"
+
+	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
 
 type textureMapping struct {
@@ -47,19 +49,19 @@ func readMapping(coord int, extensions gltf.Extensions) (textureMapping, error) 
 			m.coord = *ext.TexCoord
 		}
 	}
-	if m.coord < 0 || !validCoordinate(float32(m.offset[0]), float32(m.offset[1]), float32(m.scale[0]), float32(m.scale[1]), float32(m.rotation)) {
+	if m.coord < 0 || !nt3dmesh.ValidCoordinate(float32(m.offset[0]), float32(m.offset[1]), float32(m.scale[0]), float32(m.scale[1]), float32(m.rotation)) {
 		return m, fmt.Errorf("nt3dmesh: invalid texture transform")
 	}
 	return m, nil
 }
 func (m textureMapping) apply(v [2]float32) ([2]float32, error) {
-	if !validCoordinate(v[0], v[1]) {
+	if !nt3dmesh.ValidCoordinate(v[0], v[1]) {
 		return v, fmt.Errorf("nt3dmesh: non-finite texture coordinate")
 	}
 	x, y := float64(v[0])*m.scale[0], float64(v[1])*m.scale[1]
 	c, s := math.Cos(m.rotation), math.Sin(m.rotation)
 	out := [2]float32{float32(m.offset[0] + c*x - s*y), float32(m.offset[1] + s*x + c*y)}
-	if !validCoordinate(out[0], out[1]) {
+	if !nt3dmesh.ValidCoordinate(out[0], out[1]) {
 		return out, fmt.Errorf("nt3dmesh: transformed UV exceeds coordinate limits")
 	}
 	return out, nil

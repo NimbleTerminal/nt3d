@@ -101,13 +101,10 @@ func (h header) sizes() [6]uint64 {
 	return [6]uint64{9 * n, n, 3 * n, 3 * n, uint64(h.rotation) * n, 3 * uint64(h.dimension) * n}
 }
 
-// Decode reads an SPZ file. Its byte budget is o.MaxBytes (the decompressed
-// size), nt3dmesh.DefaultMaxBytes when zero; o.Up is ignored.
+// Decode reads an SPZ file. Its byte budget is o.ByteLimit() (the decompressed
+// size); o.Up is ignored.
 func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
-	budget := int64(nt3dmesh.DefaultMaxBytes)
-	if o != nil && o.MaxBytes > 0 {
-		budget = o.MaxBytes
-	}
+	budget := o.ByteLimit()
 	var h header
 	var arrays [6][]byte
 	var err error

@@ -374,7 +374,7 @@ type etc1sSliceTables struct {
 	selectorHistSize int
 }
 
-func decodeKTX2ETC1S(level0, sgd []byte, imageCount uint64, width, height int, dfd ktx2DFD, left *int64) (*image.NRGBA, bool, error) {
+func decodeKTX2ETC1S(level0, sgd []byte, imageCount uint64, width, height int, dfd ktx2DFD, budget *nt3dmesh.ByteBudget) (*image.NRGBA, bool, error) {
 	if len(sgd) < 20 || imageCount == 0 || imageCount > 1<<20 {
 		return nil, false, errors.New("invalid KTX2 BasisLZ global header")
 	}
@@ -400,11 +400,8 @@ func decodeKTX2ETC1S(level0, sgd []byte, imageCount uint64, width, height int, d
 
 	bx := (width + 3) / 4
 	workCost := int64(endpointCount)*4 + int64(selectorCount)*4 + int64(bx)*16
-	if left != nil {
-		if workCost > *left {
-			return nil, false, nt3dmesh.ErrTooLarge
-		}
-		*left -= workCost
+	if err := budget.Take(workCost, "KTX2 ETC1S codebooks"); err != nil {
+		return nil, false, err
 	}
 
 	// Level 0, layer 0, face 0 is imageDescs[0].

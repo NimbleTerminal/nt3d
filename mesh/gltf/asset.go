@@ -30,14 +30,14 @@ func vec(v [3]float32) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v[0], Y: v[1], Z:
 // assetTake counts what one primitive's decoder read toward the asset's
 // totals, and refuses a model past its limits.
 func (d *gltfDecoder) assetTake(temp *gltfDecoder) error {
-	if err := d.assetBudget.take(temp.budget.used); err != nil {
+	if err := d.assetBudget.Take(temp.budget.Used()); err != nil {
 		return err
 	}
 	if d.assetPoints += temp.points; d.assetPoints > maxPoints() {
-		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooManyTriangles, maxPoints())
+		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooComplex, maxPoints())
 	}
 	if d.assetLines += temp.lines; d.assetLines > maxLineVertices {
-		return fmt.Errorf("%w: glTF has more than %d line ends", nt3dmesh.ErrTooManyTriangles, maxLineVertices)
+		return fmt.Errorf("%w: glTF has more than %d line ends", nt3dmesh.ErrTooComplex, maxLineVertices)
 	}
 	if len(temp.m.Objects) > 0 {
 		d.assetShows = true
@@ -46,8 +46,7 @@ func (d *gltfDecoder) assetTake(temp *gltfDecoder) error {
 }
 
 func (d *gltfDecoder) sceneAsset() error {
-	left := d.o.ByteLimit()
-	d.decodedLeft = &left
+	d.decoded = d.o.ByteBudget()
 	asset := &nt3d.SceneAsset{
 		Nodes:    []nt3d.AssetNode{{Name: "Y-up", Parent: -1, Local: yUp.Mat4()}},
 		Variants: slices.Clone(d.variantNames),
@@ -75,7 +74,7 @@ func (d *gltfDecoder) sceneAsset() error {
 		depth++
 		defer func() { depth-- }()
 		if depth > 1024 {
-			return fmt.Errorf("%w: scene hierarchy exceeds 1024 levels", nt3dmesh.ErrTooLarge)
+			return fmt.Errorf("%w: glTF hierarchy exceeds 1024 levels", nt3dmesh.ErrTooComplex)
 		}
 		if _, ok := ids[i]; ok {
 			return nil
@@ -98,7 +97,7 @@ func (d *gltfDecoder) sceneAsset() error {
 		return nil
 	}
 	if len(parents) > maxVisits {
-		return nt3dmesh.ErrTooLarge
+		return fmt.Errorf("%w: glTF has more than %d nodes", nt3dmesh.ErrTooComplex, maxVisits)
 	}
 	for i := range parents {
 		if err := add(i); err != nil {
@@ -201,7 +200,7 @@ func (d *gltfDecoder) sceneAsset() error {
 					temp.primVariants = nil
 					temp.points, temp.lines = 0, 0
 					temp.sources = nil
-					temp.budget = budget{limit: d.o.TriangleLimit()}
+					temp.budget = d.o.TriangleBudget()
 					primName := mesh.Name
 					if primName == "" {
 						primName = n.Name
@@ -216,11 +215,9 @@ func (d *gltfDecoder) sceneAsset() error {
 					pieces = make([]cachedMeshPiece, 0, len(temp.m.Objects))
 					for _, obj := range temp.m.Objects {
 						g := obj.Geometry
-						cost := int64(len(g.Vertices)+len(g.Points)+len(g.Lines)) * 64
-						if cost > *d.decodedLeft {
-							return nt3dmesh.ErrTooLarge
+						if err := d.decoded.Take(int64(len(g.Vertices)+len(g.Points)+len(g.Lines))*64, "glTF meshes decoded"); err != nil {
+							return err
 						}
-						*d.decodedLeft -= cost
 						if len(g.Vertices) > 0 && len(g.Indices) > 0 && len(g.Points)+len(g.Boxes)+len(g.Lines)+len(g.Arrows) == 0 {
 							sg, err := nt3d.NewSharedGeometry(g)
 							if err != nil {
@@ -237,16 +234,15 @@ func (d *gltfDecoder) sceneAsset() error {
 				for _, localMat := range instLocals {
 					for _, piece := range pieces {
 						if len(asset.Nodes) >= maxVisits {
-							return nt3dmesh.ErrTooLarge
+							return fmt.Errorf("%w: glTF asset has more than %d nodes", nt3dmesh.ErrTooComplex, maxVisits)
 						}
 						instCost := int64(128)
 						if piece.geometry != nil {
 							instCost += int64(len(piece.geometry.Vertices)+len(piece.geometry.Points)+len(piece.geometry.Lines)) * 64
 						}
-						if instCost > *d.decodedLeft {
-							return nt3dmesh.ErrTooLarge
+						if err := d.decoded.Take(instCost, "glTF instances decoded"); err != nil {
+							return err
 						}
-						*d.decodedLeft -= instCost
 						an := nt3d.AssetNode{
 							Name:             n.Name,
 							Parent:           ids[ni],
@@ -271,7 +267,7 @@ func (d *gltfDecoder) sceneAsset() error {
 			temp.primVariants = nil
 			temp.points, temp.lines = 0, 0
 			temp.sources = nil
-			temp.budget = budget{limit: d.o.TriangleLimit()}
+			temp.budget = d.o.TriangleBudget()
 			if err := temp.primitive(n.Name, p, mat4(gltf.DefaultMatrix)); err != nil {
 				return err
 			}
@@ -434,13 +430,11 @@ func (d *gltfDecoder) sceneAsset() error {
 				}
 				for _, localMat := range instLocals {
 					if len(asset.Nodes) >= maxVisits {
-						return nt3dmesh.ErrTooLarge
+						return fmt.Errorf("%w: glTF asset has more than %d nodes", nt3dmesh.ErrTooComplex, maxVisits)
 					}
-					cost := int64(len(g.Vertices)) * (64 + int64(len(morphs))*24)
-					if cost > *d.decodedLeft {
-						return nt3dmesh.ErrTooLarge
+					if err := d.decoded.Take(int64(len(g.Vertices))*(64+int64(len(morphs))*24), "glTF deformed meshes decoded"); err != nil {
+						return err
 					}
-					*d.decodedLeft -= cost
 					gCopy := g
 					var defCopy *nt3d.Deformation
 					if def != nil {

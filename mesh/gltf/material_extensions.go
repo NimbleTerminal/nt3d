@@ -45,7 +45,7 @@ func (mb *materialBuild) emissiveStrengthExtension() {
 		mb.fail(err)
 	} else if ok && emExt.EmissiveStrength != nil {
 		s := *emExt.EmissiveStrength
-		if !validCoordinate(float32(s)) || s < 0 {
+		if !nt3dmesh.ValidCoordinate(float32(s)) || s < 0 {
 			mb.fail(errors.New("nt3dmesh: invalid KHR_materials_emissive_strength"))
 		} else {
 			mb.emissiveStrength = s
@@ -63,7 +63,7 @@ func (mb *materialBuild) iorExtension() {
 		mb.fail(err)
 	} else if ok && iorExt.IOR != nil {
 		v := *iorExt.IOR
-		if !validCoordinate(float32(v)) || v < 0 {
+		if !nt3dmesh.ValidCoordinate(float32(v)) || v < 0 {
 			mb.fail(errors.New("nt3dmesh: invalid KHR_materials_ior"))
 		} else if !l.unlit {
 			if v == 0 {
@@ -86,7 +86,7 @@ func (mb *materialBuild) transmissionExtension() {
 		mb.fail(err)
 	} else if ok && transExt.TransmissionFactor != nil {
 		tf := *transExt.TransmissionFactor
-		if !validCoordinate(float32(tf)) || tf < 0 || tf > 1 {
+		if !nt3dmesh.ValidCoordinate(float32(tf)) || tf < 0 || tf > 1 {
 			mb.fail(errors.New("nt3dmesh: invalid KHR_materials_transmission"))
 		} else if !l.unlit && l.alpha == gltf.AlphaOpaque && tf > 0 {
 			l.transmission = float32(tf)
@@ -109,7 +109,7 @@ func (mb *materialBuild) volumeExtension() {
 		thick := 0.0
 		if volExt.ThicknessFactor != nil {
 			thick = *volExt.ThicknessFactor
-			if !validCoordinate(float32(thick)) || thick < 0 {
+			if !nt3dmesh.ValidCoordinate(float32(thick)) || thick < 0 {
 				mb.fail(errors.New("nt3dmesh: invalid KHR_materials_volume thickness"))
 			}
 		} else if volExt.AttenuationDistance != nil || volExt.AttenuationColor != nil {
@@ -120,7 +120,7 @@ func (mb *materialBuild) volumeExtension() {
 		}
 		if volExt.AttenuationDistance != nil {
 			ad := *volExt.AttenuationDistance
-			if !validCoordinate(float32(ad)) || ad <= 0 {
+			if !nt3dmesh.ValidCoordinate(float32(ad)) || ad <= 0 {
 				mb.fail(errors.New("nt3dmesh: invalid KHR_materials_volume attenuationDistance"))
 			}
 		}
@@ -131,7 +131,7 @@ func (mb *materialBuild) volumeExtension() {
 				ac := [3]float64{1, 1, 1}
 				if len(volExt.AttenuationColor) == 3 {
 					for k := range 3 {
-						if !validCoordinate(float32(volExt.AttenuationColor[k])) || volExt.AttenuationColor[k] < 0 || volExt.AttenuationColor[k] > 1 {
+						if !nt3dmesh.ValidCoordinate(float32(volExt.AttenuationColor[k])) || volExt.AttenuationColor[k] < 0 || volExt.AttenuationColor[k] > 1 {
 							mb.fail(errors.New("nt3dmesh: invalid KHR_materials_volume attenuationColor"))
 						}
 						ac[k] = volExt.AttenuationColor[k]
@@ -167,13 +167,13 @@ func (mb *materialBuild) clearcoatExtension() {
 		cf, crf := 0.0, 0.0
 		if ccExt.ClearcoatFactor != nil {
 			cf = *ccExt.ClearcoatFactor
-			if !validCoordinate(float32(cf)) || cf < 0 || cf > 1 {
+			if !nt3dmesh.ValidCoordinate(float32(cf)) || cf < 0 || cf > 1 {
 				mb.fail(errors.New("nt3dmesh: invalid KHR_materials_clearcoat"))
 			}
 		}
 		if ccExt.ClearcoatRoughnessFactor != nil {
 			crf = *ccExt.ClearcoatRoughnessFactor
-			if !validCoordinate(float32(crf)) || crf < 0 || crf > 1 {
+			if !nt3dmesh.ValidCoordinate(float32(crf)) || crf < 0 || crf > 1 {
 				mb.fail(errors.New("nt3dmesh: invalid KHR_materials_clearcoat"))
 			}
 		}
@@ -201,7 +201,7 @@ func (mb *materialBuild) sheenExtension() {
 		if len(sheenExt.SheenColorFactor) == 3 {
 			for k := range 3 {
 				v := sheenExt.SheenColorFactor[k]
-				if !validCoordinate(float32(v)) || v < 0 || v > 1 {
+				if !nt3dmesh.ValidCoordinate(float32(v)) || v < 0 || v > 1 {
 					mb.fail(errors.New("nt3dmesh: invalid KHR_materials_sheen"))
 				}
 				sc[k] = v
@@ -210,7 +210,7 @@ func (mb *materialBuild) sheenExtension() {
 		srf := 0.0
 		if sheenExt.SheenRoughnessFactor != nil {
 			srf = *sheenExt.SheenRoughnessFactor
-			if !validCoordinate(float32(srf)) || srf < 0 || srf > 1 {
+			if !nt3dmesh.ValidCoordinate(float32(srf)) || srf < 0 || srf > 1 {
 				mb.fail(errors.New("nt3dmesh: invalid KHR_materials_sheen"))
 			}
 		}
@@ -244,7 +244,7 @@ func (mb *materialBuild) specularExtension() {
 		sf := 1.0
 		if specExt.SpecularFactor != nil {
 			sf = *specExt.SpecularFactor
-			if !validCoordinate(float32(sf)) || sf < 0 || sf > 1 {
+			if !nt3dmesh.ValidCoordinate(float32(sf)) || sf < 0 || sf > 1 {
 				mb.fail(errors.New("nt3dmesh: invalid KHR_materials_specular"))
 			}
 		}
@@ -255,7 +255,7 @@ func (mb *materialBuild) specularExtension() {
 		if len(specExt.SpecularColorFactor) == 3 {
 			for k := range 3 {
 				v := specExt.SpecularColorFactor[k]
-				if !validCoordinate(float32(v)) || v < 0 {
+				if !nt3dmesh.ValidCoordinate(float32(v)) || v < 0 {
 					mb.fail(errors.New("nt3dmesh: invalid KHR_materials_specular"))
 				}
 				scf[k] = v

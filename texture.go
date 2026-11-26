@@ -409,7 +409,7 @@ func straightAlpha(r, g, b, a uint32) color.NRGBA {
 }
 
 // NewTexture snapshots src, including images with nonzero bounds, of at most
-// 8192 pixels per side. Channels are sRGB-encoded, as images are; textures
+// MaxTextureSide pixels per side. Channels are sRGB-encoded, as images are; textures
 // are filtered in linear light, and mipmapped, so surfaces seen far off or
 // at a slant average their texels rather than shimmer. Alpha is kept for
 // Cutout and Transparent materials; others draw every texel opaque. Cutouts
@@ -420,8 +420,8 @@ func NewTexture(src image.Image) (*Texture, error) {
 	}
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
-	if w <= 0 || h <= 0 || w > 8192 || h > 8192 {
-		return nil, fmt.Errorf("nt3d: texture dimensions must be 1..8192")
+	if w <= 0 || h <= 0 || w > MaxTextureSide || h > MaxTextureSide {
+		return nil, fmt.Errorf("nt3d: texture dimensions must be 1..%d", MaxTextureSide)
 	}
 	t := &Texture{width: w, height: h, pixels: make([]byte, w*h*4)}
 	// NRGBA is already straight-alpha. Opaque RGBA has identical channel

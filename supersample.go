@@ -16,14 +16,15 @@ import (
 // MaxSupersample is the largest Frame.Supersample.
 const MaxSupersample = 4
 
-// maxTextureSide is the largest texture side every WebGPU device supports.
-const maxTextureSide = 8192
+// MaxTextureSide is the largest side, in pixels, of a texture and of a
+// rendered frame: what every WebGPU device supports.
+const MaxTextureSide = 8192
 
 // supersampleFactor is the factor a frame renders at: Supersample, lowered
 // until the enlarged frame fits the texture size every device supports.
 func supersampleFactor(f Frame) int {
 	s := max(1, f.Supersample)
-	for s > 1 && (f.Width*s > maxTextureSide || f.Height*s > maxTextureSide) {
+	for s > 1 && (f.Width*s > MaxTextureSide || f.Height*s > MaxTextureSide) {
 		s--
 	}
 	return s

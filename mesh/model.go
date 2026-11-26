@@ -58,14 +58,6 @@ var DefaultColor = color.RGBA{255, 255, 255, 255}
 // decoders refuse coordinates beyond it.
 const MaxCoordinate = 1e15
 
-const maxCoordinate = MaxCoordinate
-
-// ErrTooManyTriangles is wrapped by errors for models over Options.MaxTriangles.
-var ErrTooManyTriangles = errors.New("nt3dmesh: too many triangles")
-
-// ErrTooLarge is wrapped by errors for packages that unpack past Options.MaxBytes.
-var ErrTooLarge = errors.New("nt3dmesh: package unpacks to too many bytes")
-
 // DefaultMaxTriangles is the model's triangle limit when Options.MaxTriangles
 // is zero: about 600 MB of GPU buffers, and somewhat less of decoded memory.
 const DefaultMaxTriangles = 4 << 20
@@ -194,7 +186,7 @@ type Options struct {
 	// of every texture and image, at four bytes a pixel. Zero uses
 	// DefaultMaxBytes. A glTF or SOG image that does not fit fails the
 	// decode; an OBJ, PLY or 3MF texture that does not fit is left out with
-	// a warning.
+	// a warning. Errors for what does not fit wrap ErrTooLarge.
 	MaxBytes int64
 	// Up is the file's up axis. Most files do not say, so the caller must;
 	// SPZ states its axes, and ignores Up.
@@ -385,11 +377,13 @@ func (o *Options) color() color.RGBA {
 }
 
 // TriangleLimit is the model's triangle limit: MaxTriangles, or the default.
-// Registered decoders honor it.
+// Registered decoders honor it, most simply by counting faces against
+// TriangleBudget.
 func (o *Options) TriangleLimit() int { return o.limit() }
 
 // ByteLimit is how much a package and its side files may hold: MaxBytes,
-// or the default. Registered decoders honor it.
+// or the default. Registered decoders honor it, most simply by charging
+// what they read and decode to ByteBudget.
 func (o *Options) ByteLimit() int64 { return o.maxBytes() }
 
 // FaceColor paints faces the file leaves uncolored: Color, or DefaultColor.
@@ -607,24 +601,4 @@ func DirOpener(dir string) func(string) ([]byte, error) {
 		}
 		return fs.ReadFile(fsys, name)
 	}
-}
-
-func validCoordinate(v ...float32) bool {
-	for _, x := range v {
-		if !nt3dmath.IsFinite(float64(x)) || x > maxCoordinate || x < -maxCoordinate {
-			return false
-		}
-	}
-	return true
-}
-
-// triangleBudget counts faces against the model's limit.
-type triangleBudget struct{ used, limit int }
-
-func (b *triangleBudget) take(n int) error {
-	if b.used+n > b.limit {
-		return fmt.Errorf("%w: model exceeds %d", ErrTooManyTriangles, b.limit)
-	}
-	b.used += n
-	return nil
 }

@@ -71,7 +71,7 @@ func DecodeConf(data []byte, o *Options) (*Model, error) {
 		var v [7]float64
 		for i := range v {
 			x, err := strconv.ParseFloat(fields[2+i], 64)
-			if err != nil || math.IsNaN(x) || math.IsInf(x, 0) || math.Abs(x) > maxCoordinate {
+			if err != nil || math.IsNaN(x) || math.IsInf(x, 0) || math.Abs(x) > MaxCoordinate {
 				return nil, fmt.Errorf("nt3dmesh: .conf line %d: bad number %q", n, fields[2+i])
 			}
 			v[i] = x

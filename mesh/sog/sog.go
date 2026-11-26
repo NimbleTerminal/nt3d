@@ -52,7 +52,7 @@ func sniff(data []byte) bool {
 // an unbundled meta.json whose images it reads through o.Open. The files
 // and decoded images together may hold no more than o.ByteLimit() bytes.
 func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
-	b := &budget{left: o.ByteLimit()}
+	b := o.ByteBudget()
 	var open func(name string) ([]byte, error)
 	if bytes.HasPrefix(data, []byte(zipMagic)) {
 		z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
@@ -67,7 +67,7 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 		if o == nil || o.Open == nil {
 			return nil, errors.New("nt3dmesh: SOG images must be opened: use ReadFile or Options.Open")
 		}
-		if err := b.take(int64(len(data)), "meta.json"); err != nil {
+		if err := b.Take(int64(len(data)), "meta.json"); err != nil {
 			return nil, metaErr("%w", err)
 		}
 		open = func(name string) ([]byte, error) {
@@ -75,7 +75,7 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := b.take(int64(len(data)), "file"); err != nil {
+			if err := b.Take(int64(len(data)), "file"); err != nil {
 				return nil, err
 			}
 			return data, nil
@@ -112,40 +112,26 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	return model, nil
 }
 
-// budget is the bytes a decode may still take: its files and decoded images
-// share one allowance.
-type budget struct{ left int64 }
-
-// take charges n bytes for what, or fails with an error wrapping ErrTooLarge
-// when fewer remain.
-func (b *budget) take(n int64, what string) error {
-	if n > b.left {
-		return fmt.Errorf("%s: %w", what, nt3dmesh.ErrTooLarge)
-	}
-	b.left -= n
-	return nil
-}
-
 // entry reads the zip entry named exactly name and charges its length to b.
 // It refuses one that declares more than b has left.
-func entry(z *zip.Reader, name string, b *budget) ([]byte, error) {
+func entry(z *zip.Reader, name string, b *nt3dmesh.ByteBudget) ([]byte, error) {
 	for _, f := range z.File {
 		if f.Name != name {
 			continue
 		}
-		if f.UncompressedSize64 > uint64(b.left) {
-			return nil, fmt.Errorf("%s: %w", name, nt3dmesh.ErrTooLarge)
+		if f.UncompressedSize64 > uint64(b.Left()) {
+			return nil, fmt.Errorf("%w: %s", nt3dmesh.ErrTooLarge, name)
 		}
 		r, err := f.Open()
 		if err != nil {
 			return nil, err
 		}
 		defer r.Close()
-		data, err := io.ReadAll(io.LimitReader(r, b.left+1))
+		data, err := io.ReadAll(io.LimitReader(r, b.Left()+1))
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		if err := b.take(int64(len(data)), name); err != nil {
+		if err := b.Take(int64(len(data)), name); err != nil {
 			return nil, err
 		}
 		return data, nil

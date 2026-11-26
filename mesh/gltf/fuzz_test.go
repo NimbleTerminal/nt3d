@@ -14,6 +14,8 @@ import (
 	"github.com/qmuntal/gltf"
 
 	"nimbleterminal.dev/nt3d"
+
+	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
 
 // FuzzDecode feeds glTF JSON and GLB containers to the decoder. Buffers,
@@ -155,19 +157,19 @@ func FuzzDecodeKTX2(f *testing.F) {
 		}
 
 		const maxFuzzBytes = 1 << 20
-		left := int64(maxFuzzBytes)
-		img, twoCh, err := decodeKTX2(data, &left)
+		budget := (&nt3dmesh.Options{MaxBytes: maxFuzzBytes}).ByteBudget()
+		img, twoCh, err := decodeKTX2(data, budget)
 		if err != nil {
 			return
 		}
-		if left < 0 {
-			t.Fatalf("decodeKTX2 exceeded byte budget: left=%d", left)
+		if budget.Left() < 0 {
+			t.Fatalf("decodeKTX2 exceeded byte budget: left=%d", budget.Left())
 		}
 		if img == nil {
 			t.Fatal("decodeKTX2 returned nil image without error")
 		}
 		w, h := img.Bounds().Dx(), img.Bounds().Dy()
-		if w <= 0 || w > maxTextureSide || h <= 0 || h > maxTextureSide {
+		if w <= 0 || w > nt3d.MaxTextureSide || h <= 0 || h > nt3d.MaxTextureSide {
 			t.Fatalf("invalid decoded KTX2 dimensions %dx%d", w, h)
 		}
 		if len(img.Pix) != w*h*4 || img.Stride != w*4 {

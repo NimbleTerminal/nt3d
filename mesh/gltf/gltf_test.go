@@ -589,17 +589,19 @@ func TestGLTFRefusals(t *testing.T) {
 	fails(t, err, "non-finite texture coordinate")
 
 	// Points and lines count against caps of their own, across primitives.
+	// No option raises those caps, so the error is ErrTooComplex, and not
+	// ErrTooManyTriangles, which a larger MaxTriangles would cure.
 	defer func(n func() int) { maxPoints = n }(maxPoints)
 	maxPoints = func() int { return 10 }
 	cloud := make([][3]float32, maxPoints()/2+1)
 	_, err = Decode(glb(t, gltfDoc(prim{positions: cloud, mode: gltf.PrimitivePoints}, prim{positions: cloud, mode: gltf.PrimitivePoints})), nil)
-	if !errors.Is(err, nt3dmesh.ErrTooManyTriangles) {
-		t.Fatalf("over the point cap: %v", err)
+	if !errors.Is(err, nt3dmesh.ErrTooComplex) || errors.Is(err, nt3dmesh.ErrTooManyTriangles) {
+		t.Fatalf("over the point cap: error %v, want ErrTooComplex", err)
 	}
 	ends := make([][3]float32, maxLineVertices/2+2)
 	_, err = Decode(glb(t, gltfDoc(prim{positions: ends, mode: gltf.PrimitiveLines}, prim{positions: ends, mode: gltf.PrimitiveLines})), nil)
-	if !errors.Is(err, nt3dmesh.ErrTooManyTriangles) {
-		t.Fatalf("over the line cap: %v", err)
+	if !errors.Is(err, nt3dmesh.ErrTooComplex) || errors.Is(err, nt3dmesh.ErrTooManyTriangles) {
+		t.Fatalf("over the line cap: error %v, want ErrTooComplex", err)
 	}
 }
 
@@ -921,5 +923,23 @@ func TestNRGBAPixelMatchesTheStandardConversion(t *testing.T) {
 				t.Errorf("%s: %v allocations for one pixel", name, allocs)
 			}
 		}
+	}
+}
+
+// A hierarchy deeper than the decoder walks is refused with ErrTooComplex:
+// no option raises that limit, and ErrTooLarge would tell a caller to raise
+// MaxBytes, which cannot help.
+func TestGLTFHierarchyTooDeepIsTooComplex(t *testing.T) {
+	doc := gltfDoc(upTriangle)
+	mesh := doc.Nodes[0].Mesh
+	doc.Nodes[0].Mesh = nil
+	for i := 1; i <= 1100; i++ {
+		doc.Nodes[i-1].Children = []int{i}
+		doc.Nodes = append(doc.Nodes, &gltf.Node{})
+	}
+	doc.Nodes[len(doc.Nodes)-1].Mesh = mesh
+	_, err := Decode(glb(t, doc), nil)
+	if !errors.Is(err, nt3dmesh.ErrTooComplex) || errors.Is(err, nt3dmesh.ErrTooLarge) {
+		t.Fatalf("1100 levels: error %v, want ErrTooComplex and not ErrTooLarge", err)
 	}
 }

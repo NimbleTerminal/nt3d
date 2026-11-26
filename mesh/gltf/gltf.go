@@ -34,9 +34,6 @@ import (
 
 func init() { nt3dmesh.RegisterFormat(GLTF, []string{".gltf", ".glb"}, "glTF", Decode) }
 
-// maxTextureSide is the largest texture side nt3d draws.
-const maxTextureSide = 8192
-
 // pieceTriangles is the most triangles one object holds, as nt3dmesh splits
 // them. Tests lower it.
 var pieceTriangles = nt3d.MeshTriangleLimit
@@ -45,27 +42,7 @@ var pieceTriangles = nt3d.MeshTriangleLimit
 // geometry may.
 const maxLineVertices = 2 * 512 * 512
 
-// budget counts faces against the model's limit.
 var errNoMeshes = errors.New("nt3dmesh: glTF scene holds no meshes")
-
-type budget struct{ used, limit int }
-
-func (b *budget) take(n int) error {
-	if b.used+n > b.limit {
-		return fmt.Errorf("%w: model exceeds %d", nt3dmesh.ErrTooManyTriangles, b.limit)
-	}
-	b.used += n
-	return nil
-}
-
-func validCoordinate(v ...float32) bool {
-	for _, x := range v {
-		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) || x > nt3dmesh.MaxCoordinate || x < -nt3dmesh.MaxCoordinate {
-			return false
-		}
-	}
-	return true
-}
 
 // GLTF is glTF 2.0: a .gltf JSON file with its buffers and images, or a
 // binary .glb holding them.
@@ -116,11 +93,10 @@ const GLTF nt3dmesh.Format = "gltf"
 // KHR_texture_transform is baked into independent color and normal UVs.
 func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if int64(len(data)) > o.ByteLimit() {
-		return nil, nt3dmesh.ErrTooLarge
+		return nil, fmt.Errorf("%w: glTF file", nt3dmesh.ErrTooLarge)
 	}
-	d := &gltfDecoder{o: o, m: &nt3dmesh.Model{Format: GLTF}, budget: budget{limit: o.TriangleLimit()}, assetBudget: budget{limit: o.TriangleLimit()}, textures: map[int]*nt3d.Texture{}, warned: map[string]bool{}}
-	left := o.ByteLimit()
-	d.files = sideFiles{left: &left}
+	d := &gltfDecoder{o: o, m: &nt3dmesh.Model{Format: GLTF}, budget: o.TriangleBudget(), assetBudget: o.TriangleBudget(), textures: map[int]*nt3d.Texture{}, warned: map[string]bool{}}
+	d.files = sideFiles{bytes: o.ByteBudget()}
 	if o != nil {
 		d.files.open = o.Open
 	}
@@ -170,20 +146,22 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 }
 
 type gltfDecoder struct {
-	decodedLeft *int64
-	budgetErr   error
-	depth       int
-	capture     bool
-	assetMode   bool
-	sources     [][]vertexOrigin
-	doc         *gltf.Document
-	o           *nt3dmesh.Options
-	m           *nt3dmesh.Model
-	budget      budget
+	// decoded is what the asset pass may hold in decoded accessors and
+	// instances; nil, without a limit, in the flat pass.
+	decoded   *nt3dmesh.ByteBudget
+	budgetErr error
+	depth     int
+	capture   bool
+	assetMode bool
+	sources   [][]vertexOrigin
+	doc       *gltf.Document
+	o         *nt3dmesh.Options
+	m         *nt3dmesh.Model
+	budget    *nt3dmesh.TriangleBudget
 	// The asset pass reads each primitive with a decoder of its own, and
 	// totals what they held here, so that the model's limits hold when the
 	// flat pass that also enforces them is skipped (Options.AssetOnly).
-	assetBudget             budget
+	assetBudget             *nt3dmesh.TriangleBudget
 	assetPoints, assetLines int
 	assetShows              bool // The asset has a node that shows something.
 	files                   sideFiles
@@ -211,10 +189,11 @@ func (d *gltfDecoder) warn(format string, a ...any) {
 }
 
 // sideFiles is the file system the glTF decoder reads external buffers
-// from: Options.Open, within the byte budget.
+// from: Options.Open, within the byte budget, which decompressed buffers and
+// decoded images share.
 type sideFiles struct {
-	open func(string) ([]byte, error)
-	left *int64
+	open  func(string) ([]byte, error)
+	bytes *nt3dmesh.ByteBudget
 }
 
 // Open rejects streaming reads; qmuntal/gltf calls ReadFile for side buffers.
@@ -231,8 +210,8 @@ func (s sideFiles) ReadFile(name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if *s.left -= int64(len(data)); *s.left < 0 {
-		return nil, fmt.Errorf("%w: glTF side files", nt3dmesh.ErrTooLarge)
+	if err := s.bytes.Take(int64(len(data)), "glTF side files"); err != nil {
+		return nil, err
 	}
 	return data, nil
 }
@@ -330,7 +309,7 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 	d.depth++
 	defer func() { d.depth-- }()
 	if d.depth > 1024 {
-		return fmt.Errorf("%w: glTF hierarchy exceeds 1024 levels", nt3dmesh.ErrTooLarge)
+		return fmt.Errorf("%w: glTF hierarchy exceeds 1024 levels", nt3dmesh.ErrTooComplex)
 	}
 	if i < 0 || i >= len(d.doc.Nodes) || d.doc.Nodes[i] == nil {
 		return fmt.Errorf("nt3dmesh: glTF names node %d of %d", i, len(d.doc.Nodes))
@@ -339,7 +318,7 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 		return fmt.Errorf("nt3dmesh: glTF node %d is its own ancestor", i)
 	}
 	if d.visits++; d.visits > maxVisits {
-		return fmt.Errorf("nt3dmesh: glTF scene reaches more than %d nodes", maxVisits)
+		return fmt.Errorf("%w: glTF scene reaches more than %d nodes", nt3dmesh.ErrTooComplex, maxVisits)
 	}
 	n := d.doc.Nodes[i]
 	world := parent.Mul(local(n))
@@ -364,7 +343,7 @@ func (d *gltfDecoder) node(i int, parent mat4, onPath []bool) error {
 		}
 		if instanced {
 			if d.visits += len(insts); d.visits > maxVisits {
-				return fmt.Errorf("nt3dmesh: glTF scene reaches more than %d nodes", maxVisits)
+				return fmt.Errorf("%w: glTF scene reaches more than %d nodes", nt3dmesh.ErrTooComplex, maxVisits)
 			}
 			for _, inst := range insts {
 				instWorld := world.Mul(inst)
@@ -404,15 +383,11 @@ func (d *gltfDecoder) accessor(index int, what string) (*gltf.Accessor, error) {
 	if a == nil {
 		return nil, fmt.Errorf("nt3dmesh: nil glTF %s accessor %d", what, index)
 	}
-	if a.Count < 0 || a.Count > 3*d.budget.limit+3 {
+	if a.Count < 0 || a.Count > 3*d.budget.Limit()+3 {
 		return nil, fmt.Errorf("%w: glTF %s has %d elements", nt3dmesh.ErrTooManyTriangles, what, a.Count)
 	}
-	if d.decodedLeft != nil {
-		cost := int64(a.Count) * 64
-		if cost > *d.decodedLeft {
-			return nil, nt3dmesh.ErrTooLarge
-		}
-		*d.decodedLeft -= cost
+	if err := d.decoded.Take(int64(a.Count)*64, "glTF "+what+" decoded"); err != nil {
+		return nil, err
 	}
 	return a, nil
 }
@@ -708,21 +683,19 @@ func (d *gltfDecoder) decodeImageSource(src int) (image.Image, bool, error) {
 		return nil, false, err
 	}
 	if isKTX2(data) || im.MimeType == "image/ktx2" {
-		return decodeKTX2(data, d.files.left)
+		return decodeKTX2(data, d.files.bytes)
 	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, false, errors.New("not a PNG, JPEG, KTX2, or registered image format")
 	}
-	if config.Width > maxTextureSide || config.Height > maxTextureSide {
-		return nil, false, fmt.Errorf("larger than %d pixels a side", maxTextureSide)
+	if config.Width > nt3d.MaxTextureSide || config.Height > nt3d.MaxTextureSide {
+		return nil, false, fmt.Errorf("larger than %d pixels a side", nt3d.MaxTextureSide)
 	}
 	// Decoded pixels share the byte budget, as a KTX2 image's do.
-	pixels := int64(config.Width) * int64(config.Height) * 4
-	if pixels > *d.files.left {
-		return nil, false, fmt.Errorf("%w: glTF image decodes to more than MaxBytes has left", nt3dmesh.ErrTooLarge)
+	if err := d.files.bytes.Take(int64(config.Width)*int64(config.Height)*4, "glTF image decodes to more than MaxBytes has left"); err != nil {
+		return nil, false, err
 	}
-	*d.files.left -= pixels
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, false, err
@@ -848,7 +821,7 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 			b.normals = nil
 		}
 		for _, n := range b.normals {
-			if !validCoordinate(n[0], n[1], n[2]) {
+			if !nt3dmesh.ValidCoordinate(n[0], n[1], n[2]) {
 				return fmt.Errorf("nt3dmesh: glTF %s has a non-finite normal", name)
 			}
 		}
@@ -871,7 +844,7 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 			} else {
 				b.tangents = make([]nt3d.Tangent, len(tangents))
 				for i, t := range tangents {
-					if !validCoordinate(t[0], t[1], t[2]) || !validCoordinate(t[3], 0, 0) {
+					if !nt3dmesh.ValidCoordinate(t[0], t[1], t[2]) || !nt3dmesh.ValidCoordinate(t[3], 0, 0) {
 						return fmt.Errorf("nt3dmesh: glTF %s has a non-finite tangent", name)
 					}
 					b.tangents[i] = nt3d.Tangent{Direction: nt3dmath.Vec3{X: t[0], Y: t[1], Z: t[2]}, W: 1}
@@ -1253,7 +1226,7 @@ func (b *gltfBuilder) start() {
 
 func (b *gltfBuilder) place(i uint32) (nt3dmath.Vec3, error) {
 	p := point32(b.world, b.positions[i])
-	if !validCoordinate(p.X, p.Y, p.Z) {
+	if !nt3dmesh.ValidCoordinate(p.X, p.Y, p.Z) {
 		return p, fmt.Errorf("nt3dmesh: glTF %s vertex is non-finite or exceeds coordinate limits", b.name)
 	}
 	return p, nil
@@ -1288,7 +1261,7 @@ func (b *gltfBuilder) triangles(v []uint32) error {
 				}
 			}
 			// Faces count against the limit as they are kept.
-			if err := b.d.budget.take(1); err != nil {
+			if err := b.d.budget.Take(1); err != nil {
 				return err
 			}
 			at := [3]int{t, t + 1, t + 2}
@@ -1454,7 +1427,7 @@ var maxPoints = nt3d.PointLimit
 
 func (b *gltfBuilder) points(v []uint32) error {
 	if b.d.points += len(v); b.d.points > maxPoints() {
-		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooManyTriangles, maxPoints())
+		return fmt.Errorf("%w: glTF has more than %d points", nt3dmesh.ErrTooComplex, maxPoints())
 	}
 	b.start()
 	g := &b.piece.Geometry
@@ -1472,7 +1445,7 @@ func (b *gltfBuilder) points(v []uint32) error {
 
 func (b *gltfBuilder) lines(v []uint32) error {
 	if b.d.lines += len(v); b.d.lines > maxLineVertices {
-		return fmt.Errorf("%w: glTF has more than %d line ends", nt3dmesh.ErrTooManyTriangles, maxLineVertices)
+		return fmt.Errorf("%w: glTF has more than %d line ends", nt3dmesh.ErrTooComplex, maxLineVertices)
 	}
 	b.start()
 	g := &b.piece.Geometry

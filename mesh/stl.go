@@ -35,7 +35,7 @@ func binarySTL(data []byte) bool {
 type faceObject struct {
 	Object
 	pieces []Object
-	budget *triangleBudget
+	budget *TriangleBudget
 	format string // For errors; empty is STL.
 }
 
@@ -55,7 +55,7 @@ func (s *faceObject) add(v [3]nt3dmath.Vec3, shades [3]color.RGBA, plain bool, u
 
 // addNormals is add with the file's normal at each corner, when it has them.
 func (s *faceObject) addNormals(v [3]nt3dmath.Vec3, normals *[3]nt3dmath.Vec3, shades [3]color.RGBA, plain bool, uv *[3]nt3d.UV) error {
-	if err := s.budget.take(1); err != nil {
+	if err := s.budget.Take(1); err != nil {
 		return err
 	}
 	if len(s.Geometry.Indices) >= 3*pieceTriangles() {
@@ -63,7 +63,7 @@ func (s *faceObject) addNormals(v [3]nt3dmath.Vec3, normals *[3]nt3dmath.Vec3, s
 		s.Object = Object{Name: s.Name, Material: s.Material, Part: s.Part, Geometry: nt3d.Geometry{Material: s.Geometry.Material}}
 	}
 	for _, p := range v {
-		if !validCoordinate(p.X, p.Y, p.Z) {
+		if !ValidCoordinate(p.X, p.Y, p.Z) {
 			return fmt.Errorf("nt3dmesh: %s vertex is non-finite or exceeds coordinate limits", cmp.Or(s.format, "STL"))
 		}
 	}
@@ -89,7 +89,7 @@ func (s *faceObject) addNormals(v [3]nt3dmath.Vec3, normals *[3]nt3dmath.Vec3, s
 // each an object. Binary face colors follow the VisCAM/SolidView convention,
 // or Materialise Magics when the header names a COLOR=.
 func DecodeSTL(data []byte, o *Options) (*Model, error) {
-	budget := &triangleBudget{limit: o.limit()}
+	budget := o.TriangleBudget()
 	var m *Model
 	var err error
 	if binarySTL(data) {
@@ -114,10 +114,10 @@ func DecodeSTL(data []byte, o *Options) (*Model, error) {
 
 func expand5(v uint16) uint8 { v &= 31; return uint8(v<<3 | v>>2) }
 
-func decodeBinarySTL(data []byte, o *Options, budget *triangleBudget) (*Model, error) {
+func decodeBinarySTL(data []byte, o *Options, budget *TriangleBudget) (*Model, error) {
 	n := int(binary.LittleEndian.Uint32(data[80:84]))
-	if n > budget.limit {
-		return nil, fmt.Errorf("%w: STL has %d; the limit is %d", ErrTooManyTriangles, n, budget.limit)
+	if n > budget.Limit() {
+		return nil, fmt.Errorf("%w: STL has %d; the limit is %d", ErrTooManyTriangles, n, budget.Limit())
 	}
 	header := data[:80]
 	// Magics stores a default color after COLOR= and inverts the validity bit.
@@ -215,7 +215,7 @@ func (w *stlWords) vector() (v nt3dmath.Vec3, err error) {
 	return v, nil
 }
 
-func decodeASCIISTL(data []byte, o *Options, budget *triangleBudget) (*Model, error) {
+func decodeASCIISTL(data []byte, o *Options, budget *TriangleBudget) (*Model, error) {
 	w := &stlWords{data: data}
 	m := &Model{Format: STL}
 	for solids := 0; ; solids++ {

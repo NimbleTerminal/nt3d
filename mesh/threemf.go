@@ -71,7 +71,7 @@ func zipEntries(data []byte) (int, error) {
 // budget: an archive of a few kilobytes can unpack to gigabytes.
 type package3MF struct {
 	files  map[string]*zip.File
-	budget int64
+	budget *ByteBudget
 	limit  int64
 	parts  map[string]*part3MF
 }
@@ -92,7 +92,7 @@ func open3MF(data []byte, limit int64) (*package3MF, error) {
 	if len(archive.File) > max3MFEntries {
 		return nil, fmt.Errorf("nt3dmesh: 3MF has more than %d entries", max3MFEntries)
 	}
-	p := &package3MF{files: map[string]*zip.File{}, budget: limit, limit: limit, parts: map[string]*part3MF{}}
+	p := &package3MF{files: map[string]*zip.File{}, budget: (&Options{MaxBytes: limit}).ByteBudget(), limit: limit, parts: map[string]*part3MF{}}
 	for _, f := range archive.File {
 		p.files[strings.ToLower(f.Name)] = f
 	}
@@ -113,12 +113,12 @@ func (p *package3MF) read(name string) ([]byte, error) {
 		return nil, fmt.Errorf("nt3dmesh: 3MF %s: %w", name, err)
 	}
 	defer r.Close()
-	data, err := io.ReadAll(io.LimitReader(r, p.budget+1))
+	data, err := io.ReadAll(io.LimitReader(r, p.budget.Left()+1))
 	if err != nil {
 		return nil, fmt.Errorf("nt3dmesh: 3MF %s: %w", name, err)
 	}
-	if p.budget -= int64(len(data)); p.budget < 0 {
-		return nil, fmt.Errorf("%w: 3MF unpacks to more than %d MiB", ErrTooLarge, p.limit>>20)
+	if err := p.budget.Take(int64(len(data)), fmt.Sprintf("3MF unpacks to more than %d MiB", p.limit>>20)); err != nil {
+		return nil, err
 	}
 	return data, nil
 }
@@ -400,7 +400,7 @@ func (d *decoder3MF) texture(path string) *nt3d.Texture {
 		warn(err)
 		return nil
 	}
-	img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255}, &d.pkg.budget)
+	img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255}, d.pkg.budget)
 	if err != nil {
 		warn(err)
 		return nil
@@ -548,7 +548,7 @@ func Decode3MF(data []byte, o *Options) (*Model, error) {
 	if limit := o.limit(); chosen > limit {
 		return m, fmt.Errorf("%w: 3MF parts have %d; the limit is %d", ErrTooManyTriangles, chosen, limit)
 	}
-	budget := &triangleBudget{limit: o.limit()}
+	budget := o.TriangleBudget()
 	visits = 0
 	for i, item := range d.build {
 		if !o.chosen(i) || m.Parts[i].Triangles == 0 {
@@ -727,7 +727,7 @@ func parsePart3MF(data []byte) (*part3MF, error) {
 				// shift the rest.
 				u, err1 := strconv.ParseFloat(attribute(e, "u"), 32)
 				v, err2 := strconv.ParseFloat(attribute(e, "v"), 32)
-				if err1 != nil || err2 != nil || !validCoordinate(float32(u), float32(v)) {
+				if err1 != nil || err2 != nil || !ValidCoordinate(float32(u), float32(v)) {
 					return nil, fmt.Errorf("tex2coord u=%q v=%q is not a usable coordinate", attribute(e, "u"), attribute(e, "v"))
 				}
 				if coords := part.coords[group]; coords != nil {

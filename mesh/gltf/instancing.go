@@ -66,7 +66,7 @@ func (d *gltfDecoder) nodeInstances(nodeIndex int) ([]mat4, bool, error) {
 			return nil, fmt.Errorf("%w: EXT_mesh_gpu_instancing %s has %d elements", nt3dmesh.ErrTooManyTriangles, name, a.Count)
 		}
 		if int64(a.Count)*64 > d.o.ByteLimit() {
-			return nil, nt3dmesh.ErrTooLarge
+			return nil, fmt.Errorf("%w: EXT_mesh_gpu_instancing %s", nt3dmesh.ErrTooLarge, name)
 		}
 		if count < 0 {
 			count = a.Count
@@ -98,12 +98,8 @@ func (d *gltfDecoder) nodeInstances(nodeIndex int) ([]mat4, bool, error) {
 	if count <= 0 {
 		return cache(nil)
 	}
-	if d.decodedLeft != nil {
-		cost := int64(count) * 64
-		if cost > *d.decodedLeft {
-			return nil, false, nt3dmesh.ErrTooLarge
-		}
-		*d.decodedLeft -= cost
+	if err := d.decoded.Take(int64(count)*64, "EXT_mesh_gpu_instancing instances decoded"); err != nil {
+		return nil, false, err
 	}
 
 	var translations [][3]float32
@@ -133,7 +129,7 @@ func (d *gltfDecoder) nodeInstances(nodeIndex int) ([]mat4, bool, error) {
 		t := [3]float64{0, 0, 0}
 		if translations != nil {
 			v := translations[k]
-			if !validCoordinate(v[0], v[1], v[2]) {
+			if !nt3dmesh.ValidCoordinate(v[0], v[1], v[2]) {
 				return nil, false, errors.New("nt3dmesh: non-finite EXT_mesh_gpu_instancing translation")
 			}
 			t = [3]float64{float64(v[0]), float64(v[1]), float64(v[2])}
@@ -141,7 +137,7 @@ func (d *gltfDecoder) nodeInstances(nodeIndex int) ([]mat4, bool, error) {
 		q := [4]float64{0, 0, 0, 1}
 		if rotations != nil {
 			v := rotations[k]
-			if !validCoordinate(v[0], v[1], v[2], v[3]) {
+			if !nt3dmesh.ValidCoordinate(v[0], v[1], v[2], v[3]) {
 				return nil, false, errors.New("nt3dmesh: non-finite EXT_mesh_gpu_instancing rotation")
 			}
 			q = [4]float64{float64(v[0]), float64(v[1]), float64(v[2]), float64(v[3])}
@@ -152,7 +148,7 @@ func (d *gltfDecoder) nodeInstances(nodeIndex int) ([]mat4, bool, error) {
 		s := [3]float64{1, 1, 1}
 		if scales != nil {
 			v := scales[k]
-			if !validCoordinate(v[0], v[1], v[2]) || v[0] == 0 || v[1] == 0 || v[2] == 0 {
+			if !nt3dmesh.ValidCoordinate(v[0], v[1], v[2]) || v[0] == 0 || v[1] == 0 || v[2] == 0 {
 				return nil, false, errors.New("nt3dmesh: invalid EXT_mesh_gpu_instancing scale")
 			}
 			s = [3]float64{float64(v[0]), float64(v[1]), float64(v[2])}

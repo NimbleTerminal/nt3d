@@ -37,7 +37,7 @@ var v1Bands = map[int]int{64 * 3: 1, 64 * 8: 2, 64 * 15: 3}
 // Every size is checked before any pixels are decoded. For a v1 shN, it sets
 // m.shN.bands from the centroid image's width, and its count, when meta.json
 // gave none, to every slot the centroid image holds.
-func loadImages(m *meta, open func(name string) ([]byte, error), b *budget) (*images, error) {
+func loadImages(m *meta, open func(name string) ([]byte, error), b *nt3dmesh.ByteBudget) (*images, error) {
 	names := []string{m.means.low, m.means.high, m.scalesFile, m.quats, m.sh0File}
 	if m.shN != nil {
 		names = append(names, m.shN.centroids, m.shN.labels)
@@ -56,7 +56,7 @@ func loadImages(m *meta, open func(name string) ([]byte, error), b *budget) (*im
 		if c.Width < 1 || c.Height < 1 {
 			return nil, metaErr("%s is %d×%d", name, c.Width, c.Height)
 		}
-		if err := b.take(int64(c.Width)*int64(c.Height)*4, name+" decoded"); err != nil {
+		if err := b.Take(int64(c.Width)*int64(c.Height)*4, name+" decoded"); err != nil {
 			return nil, metaErr("%w", err)
 		}
 		files[i], configs[i] = data, c

@@ -326,8 +326,8 @@ func (d *gltfDecoder) decompressBuffers() error {
 		if bv.ByteStride != 0 && bv.ByteStride != stride {
 			return fmt.Errorf("nt3dmesh: EXT_meshopt_compression bufferView %d byteStride %d does not match %d", i, bv.ByteStride, stride)
 		}
-		if *d.files.left -= unpacked; *d.files.left < 0 {
-			return fmt.Errorf("%w: EXT_meshopt_compression bufferView", nt3dmesh.ErrTooLarge)
+		if err := d.files.bytes.Take(unpacked, "EXT_meshopt_compression bufferView"); err != nil {
+			return err
 		}
 		dst := make([]byte, int(unpacked))
 		src := srcBuf.Data[ext.ByteOffset : ext.ByteOffset+compLen]

@@ -35,7 +35,7 @@ func (d *gltfDecoder) decodeVariants() error {
 			return errors.New("nt3dmesh: KHR_materials_variants variants cannot be empty")
 		}
 		if len(rootExt.Variants) > maxVisits {
-			return nt3dmesh.ErrTooLarge
+			return fmt.Errorf("%w: glTF has more than %d variants", nt3dmesh.ErrTooComplex, maxVisits)
 		}
 		seen := make(map[string]bool, len(rootExt.Variants))
 		d.variantNames = make([]string, len(rootExt.Variants))

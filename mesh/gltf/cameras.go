@@ -7,6 +7,8 @@ import (
 	"math"
 	"nimbleterminal.dev/nt3d"
 	nt3dmath "nimbleterminal.dev/nt3d/math"
+
+	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
 
 func (d *gltfDecoder) camera(index int) (*nt3d.Camera, error) {
@@ -52,7 +54,7 @@ func (d *gltfDecoder) camera(index int) (*nt3d.Camera, error) {
 		return nil, fmt.Errorf("nt3dmesh: unknown camera type %q", source.Type)
 	}
 	for _, v := range c.Matrix(1) {
-		if !validCoordinate(v) {
+		if !nt3dmesh.ValidCoordinate(v) {
 			return nil, fmt.Errorf("nt3dmesh: camera projection exceeds coordinate limits")
 		}
 	}

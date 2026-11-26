@@ -10,6 +10,8 @@ import (
 
 	"github.com/qmuntal/gltf"
 	"nimbleterminal.dev/nt3d"
+
+	nt3dmesh "nimbleterminal.dev/nt3d/mesh"
 )
 
 type punctualLight struct {
@@ -58,7 +60,7 @@ func (d *gltfDecoder) decodeLights() error {
 				return errors.New("nt3dmesh: KHR_lights_punctual color needs 3 values")
 			}
 			for k, c := range src.Color {
-				if !validCoordinate(float32(c)) || c < 0 || c > 1 {
+				if !nt3dmesh.ValidCoordinate(float32(c)) || c < 0 || c > 1 {
 					return errors.New("nt3dmesh: invalid KHR_lights_punctual color")
 				}
 				rgb[k] = c
@@ -69,7 +71,7 @@ func (d *gltfDecoder) decodeLights() error {
 		intensity := 1.0
 		if src.Intensity != nil {
 			intensity = *src.Intensity
-			if !validCoordinate(float32(intensity)) || intensity < 0 {
+			if !nt3dmesh.ValidCoordinate(float32(intensity)) || intensity < 0 {
 				return errors.New("nt3dmesh: invalid KHR_lights_punctual intensity")
 			}
 		}
@@ -78,7 +80,7 @@ func (d *gltfDecoder) decodeLights() error {
 
 		if src.Range != nil {
 			r := *src.Range
-			if !validCoordinate(float32(r)) || r <= 0 {
+			if !nt3dmesh.ValidCoordinate(float32(r)) || r <= 0 {
 				return errors.New("nt3dmesh: invalid KHR_lights_punctual range")
 			}
 			if out.Kind != nt3d.DirectionalLight {
@@ -97,7 +99,7 @@ func (d *gltfDecoder) decodeLights() error {
 					outer = *src.Spot.OuterConeAngle
 				}
 			}
-			if !validCoordinate(float32(inner)) || !validCoordinate(float32(outer)) || inner < 0 || outer <= 0 || outer >= math.Pi/2 || inner >= outer {
+			if !nt3dmesh.ValidCoordinate(float32(inner)) || !nt3dmesh.ValidCoordinate(float32(outer)) || inner < 0 || outer <= 0 || outer >= math.Pi/2 || inner >= outer {
 				return errors.New("nt3dmesh: invalid KHR_lights_punctual spot cone")
 			}
 			// The file holds radians.
