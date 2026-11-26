@@ -107,11 +107,9 @@ func ensureZeroSHCentroid(p *SHPalette) (uint16, *SHPalette, bool) {
 	return uint16(count), &SHPalette{Degree: p.Degree, Coefficients: coeffs}, true
 }
 
-// Insert validates and adds points as a removable patch in the cloud.
+// Insert validates and adds points as a removable patch in the cloud. No
+// points is an empty patch, which adds nothing and is removed as any other.
 func (c *GaussianCloud) Insert(points []Point) (GaussianPatchID, error) {
-	if len(points) == 0 {
-		return 0, fmt.Errorf("nt3d: cannot insert empty Gaussian patch")
-	}
 	total := c.Count() + len(points)
 	limit := c.maxPoints()
 	if total > limit {
@@ -251,7 +249,10 @@ type FlatGaussians struct {
 }
 
 // BuildFlatGaussians converts non-transparent texels of f.Image into flat
-// anisotropic Gaussian Points aligned to the plane at f.Center + f.Normal*f.NormalOffset.
+// anisotropic Gaussian Points aligned to the plane at f.Center lifted by
+// f.NormalOffset along the normal. An image with no texel at or above the
+// alpha cutoff is not an error: it yields no points, and GaussianCloud.Insert
+// takes them as an empty patch.
 func BuildFlatGaussians(f FlatGaussians) ([]Point, error) {
 	if f.Image == nil {
 		return nil, fmt.Errorf("nt3d: FlatGaussians requires an image")
@@ -320,9 +321,6 @@ func BuildFlatGaussians(f FlatGaussians) ([]Point, error) {
 				GaussianAxes: axes,
 			})
 		}
-	}
-	if len(pts) == 0 {
-		return nil, fmt.Errorf("nt3d: FlatGaussians image has no texels at or above alpha cutoff %d", cutoff)
 	}
 	return pts, nil
 }

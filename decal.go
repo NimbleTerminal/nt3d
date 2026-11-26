@@ -41,8 +41,8 @@ type decalVert struct {
 // BuildDecal clips target's indexed triangles to d's oriented box and returns
 // a UV-mapped mesh ready to draw over target. Triangles facing away from
 // d.Normal (dot <= 0.1) are skipped so decals do not wrap onto back faces or
-// perpendicular floors. An empty Geometry (zero vertices) is returned without
-// error when no front-facing triangles intersect the box.
+// perpendicular floors. A decal that lands on nothing is not an error: the
+// Geometry returned is empty, and a scene draws nothing for it.
 func BuildDecal(target Geometry, d Decal) (Geometry, error) {
 	frame, err := newSurfaceFrame("decal", d.Center, d.Normal, d.Up, d.NormalOffset)
 	if err != nil {

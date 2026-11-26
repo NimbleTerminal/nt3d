@@ -18,6 +18,34 @@ func opaqueImage(side int) image.Image {
 	return img
 }
 
+// A mark that lands on nothing is an empty result, not an error, all the way
+// to the cloud: a decal that misses its target, an image with no opaque
+// texel, and a patch of no splats.
+func TestNothingToPlaceIsEmptyNotAnError(t *testing.T) {
+	wall, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 8, Y: 1, Z: 4}})
+	check(t, err)
+	decal, err := BuildDecal(wall, Decal{Center: nt3dmath.Vec3{X: 100, Y: -.5}, Normal: nt3dmath.Vec3{Y: -1}, Up: nt3dmath.Vec3{Z: 1}, Width: 1, Height: 1, Depth: 1})
+	if err != nil || len(decal.Vertices) != 0 {
+		t.Fatalf("a decal that misses: %d vertices, err %v", len(decal.Vertices), err)
+	}
+
+	clear := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	pts, err := BuildFlatGaussians(FlatGaussians{Image: clear, Normal: nt3dmath.Vec3{Y: -1}, Up: nt3dmath.Vec3{Z: 1}, Width: 1, Height: 1})
+	if err != nil || len(pts) != 0 {
+		t.Fatalf("a clear image: %d splats, err %v", len(pts), err)
+	}
+
+	cloud, err := NewGaussianCloud(Geometry{PointStyle: PointStyle{Shape: GaussianPoint, Units: WorldUnits, Blend: AlphaBlend}})
+	check(t, err)
+	id, err := cloud.Insert(pts)
+	if err != nil || id == 0 || cloud.Count() != 0 {
+		t.Fatalf("an empty patch: id %d, count %d, err %v", id, cloud.Count(), err)
+	}
+	if !cloud.Remove(id) {
+		t.Fatal("the empty patch could not be removed")
+	}
+}
+
 // Decal and FlatGaussians are placed by the same center, normal and up, and
 // refuse the same wrong ones.
 func TestDecalAndFlatGaussiansRefuseTheSameFrames(t *testing.T) {
