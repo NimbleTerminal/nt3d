@@ -18,6 +18,11 @@ func FuzzClipLine(f *testing.F) {
 	f.Add(float32(-5), float32(-5), float32(-5), float32(-4), float32(-4), float32(-4))
 	f.Add(float32(2), float32(2), float32(2), float32(2), float32(2), float32(2))
 	f.Add(float32(-1), float32(-1), float32(3), float32(1), float32(1), float32(3))
+	// An endpoint a hair outside the box is outside: the segment that leaves
+	// from it is dropped, and the one that enters from it is clipped.
+	f.Add(float32(1.0000001), float32(0), float32(0), float32(2.5), float32(40), float32(-93))
+	f.Add(float32(-5), float32(-15), float32(-5), float32(.5), float32(-1.0000029), float32(-.6666667))
+	f.Add(float32(1.0000001), float32(0), float32(0), float32(0), float32(0), float32(0))
 	f.Fuzz(func(t *testing.T, ax, ay, az, bx, by, bz float32) {
 		for _, v := range []float32{ax, ay, az, bx, by, bz} {
 			if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) || v > 1e3 || v < -1e3 {
@@ -30,12 +35,15 @@ func FuzzClipLine(f *testing.F) {
 		a := Vertex{Position: nt3dmath.Vec3{X: ax, Y: ay, Z: az}}
 		b := Vertex{Position: nt3dmath.Vec3{X: bx, Y: by, Z: bz}}
 		p, q, ok := clipLine(a, b, bounds)
-		inside := func(v nt3dmath.Vec3) bool {
-			const eps = 1e-3
+		within := func(v nt3dmath.Vec3, eps float32) bool {
 			return v.X >= -1-eps && v.X <= 1+eps && v.Y >= -1-eps && v.Y <= 1+eps && v.Z >= -1-eps && v.Z <= 1+eps
 		}
+		// The clipper compares exactly, so what it was given is inside or not
+		// exactly. Only what it computes is allowed a rounding error.
+		contains := func(v nt3dmath.Vec3) bool { return within(v, 0) }
+		inside := func(v nt3dmath.Vec3) bool { return within(v, 1e-3) }
 		if !ok {
-			if inside(a.Position) || inside(b.Position) {
+			if contains(a.Position) || contains(b.Position) {
 				t.Fatalf("dropped a segment with an endpoint inside: %v %v", a.Position, b.Position)
 			}
 			return
@@ -43,10 +51,10 @@ func FuzzClipLine(f *testing.F) {
 		if !inside(p.Position) || !inside(q.Position) {
 			t.Fatalf("kept %v %v outside the box", p.Position, q.Position)
 		}
-		if inside(a.Position) && p.Position != a.Position {
+		if contains(a.Position) && p.Position != a.Position {
 			t.Fatalf("moved inside endpoint %v to %v", a.Position, p.Position)
 		}
-		if inside(b.Position) && q.Position != b.Position {
+		if contains(b.Position) && q.Position != b.Position {
 			t.Fatalf("moved inside endpoint %v to %v", b.Position, q.Position)
 		}
 		// The clipped segment stays on the original line.
