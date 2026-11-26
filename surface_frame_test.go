@@ -7,6 +7,7 @@ import (
 	"math"
 	"testing"
 
+	"nimbleterminal.dev/nt3d/clod"
 	"nimbleterminal.dev/nt3d/math"
 )
 
@@ -156,5 +157,28 @@ func TestBuildDecalRefusesAWrongTarget(t *testing.T) {
 	badIndex.Indices[0] = uint32(len(badIndex.Vertices))
 	if _, err := BuildDecal(badIndex, d); err == nil {
 		t.Error("accepted a target with an index out of range")
+	}
+}
+
+// A cloud with no patch keeps its base's clusters, so budgeted level of
+// detail still applies; they are dropped only while a patch is held.
+func TestGaussianCloudKeepsClustersWithoutAPatch(t *testing.T) {
+	base, positions := clusteredGaussians(t, 100)
+	set, err := nt3dclod.Build(positions, nt3dclod.Options{ClusterSize: 16})
+	check(t, err)
+	base.Clusters = set
+	cloud, err := NewGaussianCloud(base)
+	check(t, err)
+	if got := cloud.Geometry().Clusters; got != set {
+		t.Fatalf("a cloud with no patch has clusters %p, want the base's %p", got, set)
+	}
+	id, err := cloud.Insert([]Point{base.Points[0]})
+	check(t, err)
+	if cloud.Geometry().Clusters != nil {
+		t.Fatal("a cloud holding a patch kept clusters that do not cover it")
+	}
+	cloud.Remove(id)
+	if got := cloud.Geometry().Clusters; got != set {
+		t.Fatalf("after the patch is removed the clusters are %p, want the base's %p", got, set)
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"image/color"
 	"slices"
 
-	"nimbleterminal.dev/nt3d/clod"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/sh"
 )
@@ -31,14 +30,13 @@ type gaussianPatch struct {
 // from Point.Color and bind to a zero higher-order band entry without mutating
 // the caller's palette.
 type GaussianCloud struct {
-	base         Geometry
-	baseClusters *nt3dclod.Set
-	shStride     int // RGB entries per point in GaussianSH (0 when color-only)
-	zeroLabel    uint16
-	nextID       GaussianPatchID
-	patches      []gaussianPatch
-	dirty        bool
-	built        Geometry
+	base      Geometry
+	shStride  int // RGB entries per point in GaussianSH (0 when color-only)
+	zeroLabel uint16
+	nextID    GaussianPatchID
+	patches   []gaussianPatch
+	dirty     bool
+	built     Geometry
 }
 
 const shY00 = 0.28209479177387814
@@ -60,9 +58,8 @@ func NewGaussianCloud(base Geometry) (*GaussianCloud, error) {
 	}
 	g := base.Clone()
 	c := &GaussianCloud{
-		baseClusters: g.Clusters,
-		nextID:       1,
-		dirty:        true,
+		nextID: 1,
+		dirty:  true,
 	}
 	if g.GaussianSHPalette != nil {
 		label, pal, ok := ensureZeroSHCentroid(g.GaussianSHPalette)
@@ -171,15 +168,19 @@ func (c *GaussianCloud) maxPoints() int {
 	return MaxGaussians(coeffs)
 }
 
-// Geometry returns a Geometry snapshot containing the base Gaussians and all
-// currently inserted patches.
+// Geometry returns the base Gaussians and every patch now held as one
+// Geometry. The cloud keeps it until its next change and returns the same one
+// meanwhile, so treat it as read-only; a scene copies what it is given.
+//
+// While any patch is held the geometry has no Clusters, because the base's
+// do not cover the patches: the whole cloud is then drawn without budgeted
+// level of detail.
 func (c *GaussianCloud) Geometry() Geometry {
 	if !c.dirty {
 		return c.built
 	}
 	if len(c.patches) == 0 {
 		g := c.base.Clone()
-		g.Clusters = c.baseClusters
 		g.Bounds = GeometryBounds(g)
 		c.built = g
 		c.dirty = false
@@ -187,7 +188,7 @@ func (c *GaussianCloud) Geometry() Geometry {
 	}
 	total := c.Count()
 	g := c.base.Clone()
-	g.Clusters = nil
+	g.Clusters = nil // The base's clusters do not cover the patches.
 	pts := make([]Point, 0, total)
 	pts = append(pts, c.base.Points...)
 	var shOut []nt3dsh.RGB
