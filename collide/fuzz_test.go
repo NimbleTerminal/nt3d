@@ -40,9 +40,9 @@ func FuzzRayCast(f *testing.F) {
 		dir := nt3dmath.Vec3d{X: dx, Y: dy, Z: dz}
 		hit, ok := m.RayCast(origin, dir, maxDist)
 
-		valid := finiteVec(origin) && finiteVec(dir) && maxDist > 0 && vecLen(dir) > 1e-12 && !math.IsInf(vecLen(dir), 0)
+		valid := origin.IsFinite() && dir.IsFinite() && maxDist > 0 && vecLen(dir) > 1e-12 && !math.IsInf(vecLen(dir), 0)
 		if !valid {
-			if ok && (!finiteVec(hit.Position) || math.IsNaN(hit.Distance)) {
+			if ok && (!hit.Position.IsFinite() || math.IsNaN(hit.Distance)) {
 				t.Fatalf("a ray that is not valid returned a hit that is not finite: %+v", hit)
 			}
 			return
@@ -60,7 +60,7 @@ func FuzzRayCast(f *testing.F) {
 		if !ok {
 			return
 		}
-		if !(hit.Distance >= 0 && hit.Distance <= maxDist) || !finiteVec(hit.Position) {
+		if !(hit.Distance >= 0 && hit.Distance <= maxDist) || !hit.Position.IsFinite() {
 			t.Fatalf("hit %+v is outside [0, %v] or not finite", hit, maxDist)
 		}
 		if math.Abs(hit.Distance-nearest) > 1e-9*math.Max(1, nearest) {
@@ -102,8 +102,8 @@ func FuzzMoveCapsule(f *testing.F) {
 			}
 			return
 		}
-		if !finiteVec(res.Position) || !finiteVec(res.Velocity) || !finiteVec(res.GroundNormal) ||
-			!finiteVec(res.WallNormal) || !nt3dmath.IsFinite(res.ImpactSpeed) {
+		if !res.Position.IsFinite() || !res.Velocity.IsFinite() || !res.GroundNormal.IsFinite() ||
+			!res.WallNormal.IsFinite() || !nt3dmath.IsFinite(res.ImpactSpeed) {
 			t.Fatalf("result is not finite: %+v", res)
 		}
 		if got, was := vecLen(res.Velocity), vecLen(vel); got > was+1e-9*math.Max(1, was) {

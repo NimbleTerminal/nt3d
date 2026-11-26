@@ -244,7 +244,7 @@ type RayHit struct {
 // RayCast finds the closest hit along origin + t*dir (both sides of triangles
 // are tested so thin walls and open floors never leak) within [0, maxDist].
 func (m *Mesh) RayCast(origin, dir nt3dmath.Vec3d, maxDist float64) (RayHit, bool) {
-	if m == nil || len(m.nodes) == 0 || !(maxDist > 0) || !finiteVec(origin) || !finiteVec(dir) {
+	if m == nil || len(m.nodes) == 0 || !(maxDist > 0) || !origin.IsFinite() || !dir.IsFinite() {
 		return RayHit{}, false
 	}
 	lenDir := vecLen(dir)
@@ -276,7 +276,7 @@ func (m *Mesh) RayCast(origin, dir nt3dmath.Vec3d, maxDist float64) (RayHit, boo
 					norm = vecScale(norm, -1)
 				}
 				hit = RayHit{
-					Position: vecAdd(origin, vecScale(d, t)),
+					Position: origin.Add(vecScale(d, t)),
 					Normal:   norm,
 					Distance: t,
 				}
@@ -302,11 +302,11 @@ func (m *Mesh) RayCast(origin, dir nt3dmath.Vec3d, maxDist float64) (RayHit, boo
 }
 
 func makeTriangle(a, b, c nt3dmath.Vec3d) (Triangle, bool) {
-	if !finiteVec(a) || !finiteVec(b) || !finiteVec(c) {
+	if !a.IsFinite() || !b.IsFinite() || !c.IsFinite() {
 		return Triangle{}, false
 	}
-	ab := vecSub(b, a)
-	ac := vecSub(c, a)
+	ab := b.Sub(a)
+	ac := c.Sub(a)
 	n := cross(ab, ac)
 	l := vecLen(n)
 	if !(l > 1e-12) {
@@ -322,17 +322,11 @@ func makeTriangle(a, b, c nt3dmath.Vec3d) (Triangle, bool) {
 	}, true
 }
 
-func finiteVec(v nt3dmath.Vec3d) bool {
-	return nt3dmath.IsFinite(v.X) && nt3dmath.IsFinite(v.Y) && nt3dmath.IsFinite(v.Z)
-}
-
-func vecAdd(a, b nt3dmath.Vec3d) nt3dmath.Vec3d {
-	return nt3dmath.Vec3d{X: a.X + b.X, Y: a.Y + b.Y, Z: a.Z + b.Z}
-}
-
-func vecSub(a, b nt3dmath.Vec3d) nt3dmath.Vec3d {
-	return nt3dmath.Vec3d{X: a.X - b.X, Y: a.Y - b.Y, Z: a.Z - b.Z}
-}
+// The vector operations below are nt3dmath.Vec3d's with each product rounded
+// before it is summed, which Vec3d's own do not promise: a compiler may fuse
+// a*b+c into one operation on one platform and not another, and the result
+// then differs in its last bit. Sums and differences have no product to fuse,
+// so those use Vec3d's Add and Sub.
 
 func vecScale(v nt3dmath.Vec3d, s float64) nt3dmath.Vec3d {
 	return nt3dmath.Vec3d{X: float64(v.X * s), Y: float64(v.Y * s), Z: float64(v.Z * s)}
@@ -404,15 +398,15 @@ func rayEnterBox(origin, dir, lo, hi nt3dmath.Vec3d, maxT float64) (float64, boo
 }
 
 func rayTriangleTwoSided(origin, dir nt3dmath.Vec3d, tri Triangle, maxT float64) (float64, bool) {
-	e1 := vecSub(tri.B, tri.A)
-	e2 := vecSub(tri.C, tri.A)
+	e1 := tri.B.Sub(tri.A)
+	e2 := tri.C.Sub(tri.A)
 	p := cross(dir, e2)
 	det := dot(e1, p)
 	if math.Abs(det) <= 1e-12 {
 		return 0, false
 	}
 	invDet := 1 / det
-	s := vecSub(origin, tri.A)
+	s := origin.Sub(tri.A)
 	u := float64(dot(s, p) * invDet)
 	if u < -edgeSlack || u > 1+edgeSlack {
 		return 0, false

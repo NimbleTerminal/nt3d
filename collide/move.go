@@ -102,7 +102,7 @@ func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasG
 	if err := cfg.Validate(); err != nil {
 		return res, err
 	}
-	if !finiteVec(pos) || !finiteVec(vel) {
+	if !pos.IsFinite() || !vel.IsFinite() {
 		return res, fmt.Errorf("nt3dcollide: capsule position %v and velocity %v must be finite", pos, vel)
 	}
 	if !nt3dmath.IsFinite(dt) || dt < 0 {
@@ -117,7 +117,7 @@ func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasG
 		return res, fmt.Errorf("nt3dcollide: a move of %.3g m in one call is more than %d radii; call with a smaller dt", totalDisp, maxSubsteps/2)
 	}
 	if m == nil || len(m.tris) == 0 {
-		res.Position = vecAdd(pos, vecScale(vel, dt))
+		res.Position = pos.Add(vecScale(vel, dt))
 		return res, nil
 	}
 	minWalkZ, stepH, snapDist, skin := cfg.resolved()
@@ -142,7 +142,7 @@ func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasG
 			if !(rem > 1e-9) || vecLenSq(curVel) <= 1e-14 {
 				break
 			}
-			want := vecAdd(curPos, vecScale(curVel, rem))
+			want := curPos.Add(vecScale(curVel, rem))
 			resolved, contacts := depenetrate(m, cap, want, skin, minWalkZ, &res, initialVel, true)
 			if len(contacts) == 0 {
 				curPos = resolved
@@ -198,7 +198,7 @@ func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasG
 			res.Grounded = true
 			res.GroundNormal = gNorm
 			if into := dot(curVel, gNorm); into < 0 {
-				curVel = vecSub(curVel, vecScale(gNorm, into))
+				curVel = curVel.Sub(vecScale(gNorm, into))
 			}
 		}
 	}
@@ -224,14 +224,14 @@ func clipVelocity(v nt3dmath.Vec3d, planes []nt3dmath.Vec3d) nt3dmath.Vec3d {
 	case 1:
 		d := dot(v, planes[0])
 		if d < 0 {
-			return vecSub(v, vecScale(planes[0], d))
+			return v.Sub(vecScale(planes[0], d))
 		}
 		return v
 	case 2:
 		out := v
 		for _, n := range planes {
 			if d := dot(out, n); d < 0 {
-				out = vecSub(out, vecScale(n, d))
+				out = out.Sub(vecScale(n, d))
 			}
 		}
 		if dot(out, planes[0]) < -1e-6 || dot(out, planes[1]) < -1e-6 {
@@ -277,7 +277,7 @@ func overlapsAny(m *Mesh, cap Capsule, pos nt3dmath.Vec3d) bool {
 			return
 		}
 		sp, tp := closestSegmentTriangle(segA, segB, t)
-		if vecLenSq(vecSub(sp, tp)) < float64((cap.Radius-1e-4)*(cap.Radius-1e-4)) {
+		if vecLenSq(sp.Sub(tp)) < float64((cap.Radius-1e-4)*(cap.Radius-1e-4)) {
 			hit = true
 		}
 	})
@@ -327,7 +327,7 @@ func depenetrate(m *Mesh, cap Capsule, pos nt3dmath.Vec3d, skin, minWalkZ float6
 		for _, t := range near {
 			segA, segB := cap.Segment(pos)
 			sp, tp := closestSegmentTriangle(segA, segB, t)
-			diff := vecSub(sp, tp)
+			diff := sp.Sub(tp)
 			d2 := vecLenSq(diff)
 			if d2 >= float64(targetR*targetR) {
 				continue
@@ -340,12 +340,12 @@ func depenetrate(m *Mesh, cap Capsule, pos nt3dmath.Vec3d, skin, minWalkZ float6
 				pen = targetR - d
 			} else {
 				n = t.Normal
-				if dot(vecSub(segA, t.A), n) < 0 {
+				if dot(segA.Sub(t.A), n) < 0 {
 					n = vecScale(n, -1)
 				}
 				pen = targetR
 			}
-			pos = vecAdd(pos, vecScale(n, pen))
+			pos = pos.Add(vecScale(n, pen))
 			moved = true
 			if record {
 				contacts = append(contacts, n)
@@ -377,7 +377,7 @@ func depenetrate(m *Mesh, cap Capsule, pos nt3dmath.Vec3d, skin, minWalkZ float6
 func closestSegmentTriangle(p, q nt3dmath.Vec3d, t Triangle) (segPt, triPt nt3dmath.Vec3d) {
 	bestD2 := math.Inf(1)
 	consider := func(sp, tp nt3dmath.Vec3d) {
-		d2 := vecLenSq(vecSub(sp, tp))
+		d2 := vecLenSq(sp.Sub(tp))
 		if d2 < bestD2 {
 			bestD2 = d2
 			segPt, triPt = sp, tp
@@ -396,12 +396,12 @@ func closestSegmentTriangle(p, q nt3dmath.Vec3d, t Triangle) (segPt, triPt nt3dm
 	}
 
 	// Segment crossing the triangle's plane in its interior.
-	pq := vecSub(q, p)
+	pq := q.Sub(p)
 	denom := dot(pq, t.Normal)
 	if math.Abs(denom) > 1e-12 {
-		s := dot(vecSub(t.A, p), t.Normal) / denom
+		s := dot(t.A.Sub(p), t.Normal) / denom
 		if s > 0 && s < 1 {
-			sp := vecAdd(p, vecScale(pq, s))
+			sp := p.Add(vecScale(pq, s))
 			consider(sp, closestPointTriangle(sp, t.A, t.B, t.C))
 		}
 	}
@@ -411,16 +411,16 @@ func closestSegmentTriangle(p, q nt3dmath.Vec3d, t Triangle) (segPt, triPt nt3dm
 // closestPointTriangle implements Ericson's Voronoi-region closest point on
 // triangle (a, b, c) to point p.
 func closestPointTriangle(p, a, b, c nt3dmath.Vec3d) nt3dmath.Vec3d {
-	ab := vecSub(b, a)
-	ac := vecSub(c, a)
-	ap := vecSub(p, a)
+	ab := b.Sub(a)
+	ac := c.Sub(a)
+	ap := p.Sub(a)
 	d1 := dot(ab, ap)
 	d2 := dot(ac, ap)
 	if d1 <= 0 && d2 <= 0 {
 		return a
 	}
 
-	bp := vecSub(p, b)
+	bp := p.Sub(b)
 	d3 := dot(ab, bp)
 	d4 := dot(ac, bp)
 	if d3 >= 0 && d4 <= d3 {
@@ -430,10 +430,10 @@ func closestPointTriangle(p, a, b, c nt3dmath.Vec3d) nt3dmath.Vec3d {
 	vc := float64(d1*d4) - float64(d3*d2)
 	if vc <= 0 && d1 >= 0 && d3 <= 0 {
 		v := d1 / (d1 - d3)
-		return vecAdd(a, vecScale(ab, v))
+		return a.Add(vecScale(ab, v))
 	}
 
-	cp := vecSub(p, c)
+	cp := p.Sub(c)
 	d5 := dot(ab, cp)
 	d6 := dot(ac, cp)
 	if d6 >= 0 && d5 <= d6 {
@@ -443,25 +443,25 @@ func closestPointTriangle(p, a, b, c nt3dmath.Vec3d) nt3dmath.Vec3d {
 	vb := float64(d5*d2) - float64(d1*d6)
 	if vb <= 0 && d2 >= 0 && d6 <= 0 {
 		w := d2 / (d2 - d6)
-		return vecAdd(a, vecScale(ac, w))
+		return a.Add(vecScale(ac, w))
 	}
 
 	va := float64(d3*d6) - float64(d5*d4)
 	if va <= 0 && (d4-d3) >= 0 && (d5-d6) >= 0 {
 		w := (d4 - d3) / ((d4 - d3) + (d5 - d6))
-		return vecAdd(b, vecScale(vecSub(c, b), w))
+		return b.Add(vecScale(c.Sub(b), w))
 	}
 
 	denom := 1 / (va + vb + vc)
 	v := float64(vb * denom)
 	w := float64(vc * denom)
-	return vecAdd(a, vecAdd(vecScale(ab, v), vecScale(ac, w)))
+	return a.Add(vecScale(ab, v).Add(vecScale(ac, w)))
 }
 
 func closestSegmentSegment(p1, q1, p2, q2 nt3dmath.Vec3d) (c1, c2 nt3dmath.Vec3d) {
-	d1 := vecSub(q1, p1)
-	d2 := vecSub(q2, p2)
-	r := vecSub(p1, p2)
+	d1 := q1.Sub(p1)
+	d2 := q2.Sub(p2)
+	r := p1.Sub(p2)
 	a := dot(d1, d1)
 	e := dot(d2, d2)
 	f := dot(d2, r)
@@ -492,7 +492,7 @@ func closestSegmentSegment(p1, q1, p2, q2 nt3dmath.Vec3d) (c1, c2 nt3dmath.Vec3d
 			}
 		}
 	}
-	return vecAdd(p1, vecScale(d1, s)), vecAdd(p2, vecScale(d2, t))
+	return p1.Add(vecScale(d1, s)), p2.Add(vecScale(d2, t))
 }
 
 func clamp01(v float64) float64 {
