@@ -24,6 +24,7 @@ type Texture struct {
 	hdr []hdrImage // Internal linear HDR lightmap mip chain.
 
 	data          bool // Linear vector data, not sRGB color.
+	orm           bool // Data that is occlusion, roughness and metalness, not a normal.
 	width, height int
 	pixels        []byte
 	shader        string

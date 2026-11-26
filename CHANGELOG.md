@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- **A normal map is refused as an ORM map, and the reverse**: `NewORMMap` and `NewNormalMap` produced the same kind of texture, so `Material.Validate`, `SetNodeORMMap` and `SetNodeNormalMap` accepted either in the other's place and drew it wrongly.
 - **Widget keys move a camera placed by a `Pose`**: the arrow, `h`/`j`/`k`/`l` and `+`/`-` keys changed the orbit fields directly, which a posed camera ignores; they now go through `Camera.Orbit` and `Camera.Zoom`, as the mouse does.
 
 ## v0.12.0 (2026-11-18)

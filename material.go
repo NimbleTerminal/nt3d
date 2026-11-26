@@ -420,7 +420,7 @@ func checkMaterial(m *Material, hasUV bool) error {
 	if !validFloat(m.Normal.Strength) {
 		return fmt.Errorf("nt3d: non-finite normal strength")
 	}
-	if m.Normal.Map != nil && (!m.Normal.Map.valid() || !m.Normal.Map.data || !hasUV) {
+	if m.Normal.Map != nil && (!m.Normal.Map.valid() || !m.Normal.Map.data || m.Normal.Map.orm || !hasUV) {
 		return fmt.Errorf("nt3d: normal map requires NewNormalMap and vertex UVs")
 	}
 	if !validFloat(m.PBR.Metallic, m.PBR.Roughness, m.PBR.IOR, m.PBR.Specular.Intensity, m.PBR.Clearcoat.Amount, m.PBR.Clearcoat.Roughness, m.PBR.Sheen.Roughness, m.PBR.OcclusionStrength, m.Emission.Intensity) {
@@ -441,7 +441,7 @@ func checkMaterial(m *Material, hasUV bool) error {
 	if m.PBR.OcclusionStrength < 0 || m.PBR.OcclusionStrength > 1 {
 		return fmt.Errorf("nt3d: occlusion strength must be 0..1")
 	}
-	if m.PBR.ORMMap != nil && (!m.PBR.ORMMap.valid() || !m.PBR.ORMMap.data || !hasUV) {
+	if m.PBR.ORMMap != nil && (!m.PBR.ORMMap.valid() || !m.PBR.ORMMap.data || !m.PBR.ORMMap.orm || !hasUV) {
 		return fmt.Errorf("nt3d: ORM map requires NewORMMap and vertex UVs")
 	}
 	if m.Emission.Intensity < 0 {

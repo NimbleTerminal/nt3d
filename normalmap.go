@@ -88,18 +88,28 @@ func emissiveMap(m *Material) *Texture {
 // sRGB conversion: red encodes ambient occlusion, green encodes perceptual
 // roughness, and blue encodes metalness in [0,1]. Alpha is ignored.
 func NewORMMap(src image.Image) (*Texture, error) {
-	return NewNormalMap(src)
+	return asORM(NewNormalMap(src))
+}
+
+// asORM marks a linear-data texture as an ORM map, which is stored and
+// filtered as a normal map is but stands only where an ORM map does.
+func asORM(t *Texture, err error) (*Texture, error) {
+	if err != nil {
+		return nil, err
+	}
+	t.orm = true
+	return t, nil
 }
 
 // NewShaderORMMap creates a linear-data procedural ORM map with zero parameters.
 func NewShaderORMMap(source string, fallback image.Image) (*Texture, error) {
-	return NewShaderNormalMapWithParameters(source, [4]float32{}, fallback)
+	return asORM(NewShaderNormalMapWithParameters(source, [4]float32{}, fallback))
 }
 
 // NewShaderORMMapWithParameters generates linear ORM data on the GPU and uses
 // fallback in software.
 func NewShaderORMMapWithParameters(source string, parameters [4]float32, fallback image.Image) (*Texture, error) {
-	return NewShaderNormalMapWithParameters(source, parameters, fallback)
+	return asORM(NewShaderNormalMapWithParameters(source, parameters, fallback))
 }
 
 // SetNodeORMMap replaces a node's existing ORM map without reuploading mesh buffers.
@@ -108,7 +118,7 @@ func (s *Scene) SetNodeORMMap(id NodeID, t *Texture) error {
 	if !ok {
 		return fmt.Errorf("nt3d: unknown node %d", id)
 	}
-	if !t.valid() || !t.data || n.geometry == nil {
+	if !t.valid() || !t.data || !t.orm || n.geometry == nil {
 		return fmt.Errorf("nt3d: ORM replacement requires NewORMMap and ORM-mapped geometry")
 	}
 	if len(n.lod) > 0 {
@@ -208,7 +218,7 @@ func (s *Scene) SetNodeNormalMap(id NodeID, t *Texture) error {
 	if !ok {
 		return fmt.Errorf("nt3d: unknown node %d", id)
 	}
-	if !t.valid() || !t.data || n.geometry == nil {
+	if !t.valid() || !t.data || t.orm || n.geometry == nil {
 		return fmt.Errorf("nt3d: normal replacement requires a normal map and normal-mapped geometry")
 	}
 	if len(n.lod) > 0 {
