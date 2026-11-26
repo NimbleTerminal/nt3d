@@ -39,8 +39,6 @@ type GaussianCloud struct {
 	built     Geometry
 }
 
-const shY00 = 0.28209479177387814
-
 // NewGaussianCloud wraps base for runtime Gaussian insertion and removal.
 // base may have zero points as long as its PointStyle is configured for
 // GaussianPoint (WorldUnits, AlphaBlend, no texture).
@@ -206,9 +204,9 @@ func (c *GaussianCloud) Geometry() Geometry {
 		if c.shStride > 0 {
 			for _, p := range patch.points {
 				dc := nt3dsh.RGB{
-					float32((float64(p.Color.R)/255.0 - 0.5) / shY00),
-					float32((float64(p.Color.G)/255.0 - 0.5) / shY00),
-					float32((float64(p.Color.B)/255.0 - 0.5) / shY00),
+					float32(SHDCFromColor(float64(p.Color.R) / 255)),
+					float32(SHDCFromColor(float64(p.Color.G) / 255)),
+					float32(SHDCFromColor(float64(p.Color.B) / 255)),
 				}
 				shOut = append(shOut, dc)
 				for k := 1; k < c.shStride; k++ {

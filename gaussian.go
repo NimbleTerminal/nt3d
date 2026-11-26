@@ -9,6 +9,16 @@ import (
 	"nimbleterminal.dev/nt3d/sh"
 )
 
+// SHDCFromColor returns the degree-0 spherical-harmonic coefficient that
+// draws as the color channel c, 0 to 1, by the 3D Gaussian splatting
+// convention color = 0.5 + Y00·dc. It is what a Geometry's GaussianSH holds
+// first for each point.
+func SHDCFromColor(c float64) float64 { return (c - .5) / nt3dsh.Y00 }
+
+// ColorFromSHDC returns the color channel a degree-0 coefficient draws as,
+// unclamped: the inverse of SHDCFromColor.
+func ColorFromSHDC(dc float64) float64 { return .5 + nt3dsh.Y00*dc }
+
 func validGaussian(style PointStyle, p Point) bool {
 	if style.Shape != GaussianPoint {
 		return true

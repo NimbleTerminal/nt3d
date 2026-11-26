@@ -138,7 +138,6 @@ func DecodeCompressedPLY(data []byte, o *Options) (*Model, error) {
 		}
 		chunks = append(chunks, c)
 	}
-	const c0 = 0.28209479177387814
 	g := nt3d.Geometry{PointStyle: nt3d.PointStyle{Shape: nt3d.GaussianPoint, Units: nt3d.WorldUnits, Blend: nt3d.AlphaBlend}}
 	var dcs [][3]float64
 	// Append only after reading: a dishonest header cannot trigger a huge allocation.
@@ -182,7 +181,7 @@ func DecodeCompressedPLY(data []byte, o *Options) (*Model, error) {
 			if c.color {
 				color = compressedLerp(c.minColor[k], c.maxColor[k], color)
 			}
-			dc[k] = (color - .5) / c0
+			dc[k] = nt3d.SHDCFromColor(color)
 		}
 		p, err := GaussianPoint(nt3dmath.Vec3{X: float32(position[0]), Y: float32(position[1]), Z: float32(position[2])},
 			rotation, logScale, dc, compressedUnorm(packed[3], 8))

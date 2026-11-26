@@ -80,7 +80,7 @@ func (r *lightRig) indirectToonDiffuse(visibility float32) indirectSample {
 	for k := range c {
 		c[k] = (r.ground[k] + r.sky[k]) * .5
 		if r.environmentActive {
-			c[k] += max(0, r.environment[0][k]*.2820948)
+			c[k] += max(0, r.environment[0][k]*nt3dsh.Y00)
 		}
 	}
 	return coveredIndirect(c, 1).occluded(visibility)

@@ -88,7 +88,7 @@ func GaussianPoint(position nt3dmath.Vec3, rotation [4]float64, logScales [3]flo
 		p.GaussianAxes[k] = nt3dmath.Vec3{X: float32(a[0] * s), Y: float32(a[1] * s), Z: float32(a[2] * s)}
 	}
 	channel := func(k int) uint8 {
-		return uint8(math.Round(255 * max(0, min(1, .5+.28209479177387814*dc[k]))))
+		return uint8(math.Round(255 * max(0, min(1, nt3d.ColorFromSHDC(dc[k])))))
 	}
 	p.Color = color.RGBA{R: channel(0), G: channel(1), B: channel(2), A: uint8(math.Round(255 * opacity))}
 	return p, nil

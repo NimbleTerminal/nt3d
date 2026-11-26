@@ -113,3 +113,13 @@ func TestInvalidInputs(t *testing.T) {
 		t.Fatal("accepted unsupported degree")
 	}
 }
+
+// Y00 is the constant basis function: what degree zero evaluates to in every
+// direction, and the first entry of the table the WGSL evaluator is made from.
+func TestY00IsTheDegreeZeroBasis(t *testing.T) {
+	for _, d := range []nt3dmath.Vec3{{X: 1}, {Y: -1}, {X: .6, Z: .8}} {
+		if got := Basis(0, d)[0]; got != float32(Y00) {
+			t.Fatalf("Basis(0, %v)[0] = %v, want Y00 %v", d, got, float32(Y00))
+		}
+	}
+}

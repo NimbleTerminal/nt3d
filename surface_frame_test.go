@@ -9,6 +9,7 @@ import (
 
 	"nimbleterminal.dev/nt3d/clod"
 	"nimbleterminal.dev/nt3d/math"
+	"nimbleterminal.dev/nt3d/sh"
 )
 
 func opaqueImage(side int) image.Image {
@@ -157,6 +158,23 @@ func TestBuildDecalRefusesAWrongTarget(t *testing.T) {
 	badIndex.Indices[0] = uint32(len(badIndex.Vertices))
 	if _, err := BuildDecal(badIndex, d); err == nil {
 		t.Error("accepted a target with an index out of range")
+	}
+}
+
+// A color channel and the degree-0 SH coefficient that draws as it convert
+// both ways by the 3DGS convention, color = 0.5 + Y00·dc.
+func TestSHDCAndColorConvertBothWays(t *testing.T) {
+	if got := SHDCFromColor(.5); got != 0 {
+		t.Fatalf("mid gray is DC %v, want 0", got)
+	}
+	// The constant sum is exact; the function's is rounded to float64.
+	if got, want := ColorFromSHDC(1), .5+nt3dsh.Y00; math.Abs(got-want) > 1e-15 {
+		t.Fatalf("DC 1 is color %v, want %v", got, want)
+	}
+	for _, c := range []float64{0, .25, .5, 1} {
+		if got := ColorFromSHDC(SHDCFromColor(c)); math.Abs(got-c) > 1e-15 {
+			t.Fatalf("color %v came back as %v", c, got)
+		}
 	}
 }
 

@@ -214,7 +214,7 @@ func Encode(w io.Writer, objects []nt3dmesh.Object) error {
 				dc = append(dc, float64(c[0]), float64(c[1]), float64(c[2]))
 			} else {
 				for _, c := range [3]uint8{p.Color.R, p.Color.G, p.Color.B} {
-					dc = append(dc, (float64(c)/255-0.5)/0.28209479177387814)
+					dc = append(dc, nt3d.SHDCFromColor(float64(c)/255))
 				}
 			}
 			alpha = append(alpha, p.Color.A)
