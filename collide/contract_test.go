@@ -162,3 +162,27 @@ func TestRestingCapsuleDoesNotSinkOrDrift(t *testing.T) {
 		t.Fatalf("after 10 s the capsule drifted to (%v, %v)", pos.X, pos.Y)
 	}
 }
+
+// Segment and Bounds describe the capsule they are given. They used to widen
+// a radius under 0.1 mm, which Validate accepts, to 0.1 mm.
+func TestSegmentAndBoundsOfAValidCapsuleAreExact(t *testing.T) {
+	c := Capsule{Radius: 1e-5, Height: 1e-4}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	pos := nt3dmath.Vec3d{X: 1, Y: 2, Z: 3}
+	a, b := c.Segment(pos)
+	if want := (nt3dmath.Vec3d{X: 1, Y: 2, Z: 3 + 1e-5}); a != want {
+		t.Errorf("segment starts at %v, want %v", a, want)
+	}
+	if want := (nt3dmath.Vec3d{X: 1, Y: 2, Z: 3 + 1e-4 - 1e-5}); b != want {
+		t.Errorf("segment ends at %v, want %v", b, want)
+	}
+	lo, hi := c.Bounds(pos, 0)
+	if want := (nt3dmath.Vec3d{X: 1 - 1e-5, Y: 2 - 1e-5, Z: 3}); lo != want {
+		t.Errorf("bounds start at %v, want %v", lo, want)
+	}
+	if want := (nt3dmath.Vec3d{X: 1 + 1e-5, Y: 2 + 1e-5, Z: 3 + 1e-4}); hi != want {
+		t.Errorf("bounds end at %v, want %v", hi, want)
+	}
+}

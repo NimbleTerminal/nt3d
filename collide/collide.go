@@ -41,7 +41,8 @@ type Capsule struct {
 	Height float64
 }
 
-// Validate reports a capsule MoveCapsule would refuse.
+// Validate reports a capsule that cannot be used: MoveCapsule refuses it, and
+// Segment and Bounds are only meaningful for one that passes.
 func (c Capsule) Validate() error {
 	if !nt3dmath.IsFinite(c.Radius) || !(c.Radius > 0) {
 		return fmt.Errorf("nt3dcollide: capsule radius %v must be positive", c.Radius)
@@ -52,24 +53,20 @@ func (c Capsule) Validate() error {
 	return nil
 }
 
-// Segment returns the medial line segment [a, b] for a capsule with base pos.
+// Segment returns the medial line segment [a, b] of a valid capsule with its
+// base at pos: the centers of its two end spheres.
 func (c Capsule) Segment(pos nt3dmath.Vec3d) (a, b nt3dmath.Vec3d) {
-	r := math.Max(1e-4, c.Radius)
-	h := math.Max(float64(2*r), c.Height)
-	a = nt3dmath.Vec3d{X: pos.X, Y: pos.Y, Z: pos.Z + r}
-	b = nt3dmath.Vec3d{X: pos.X, Y: pos.Y, Z: pos.Z + h - r}
+	a = nt3dmath.Vec3d{X: pos.X, Y: pos.Y, Z: pos.Z + c.Radius}
+	b = nt3dmath.Vec3d{X: pos.X, Y: pos.Y, Z: pos.Z + c.Height - c.Radius}
 	return a, b
 }
 
-// Bounds returns the world-space AABB enclosing the capsule at base pos,
-// expanded by pad (>= 0) on each axis.
+// Bounds returns the world-space box around a valid capsule with its base at
+// pos, grown by pad on every side.
 func (c Capsule) Bounds(pos nt3dmath.Vec3d, pad float64) (lo, hi nt3dmath.Vec3d) {
-	r := math.Max(1e-4, c.Radius)
-	h := math.Max(float64(2*r), c.Height)
-	p := math.Max(0, pad)
-	rp := r + p
-	lo = nt3dmath.Vec3d{X: pos.X - rp, Y: pos.Y - rp, Z: pos.Z - p}
-	hi = nt3dmath.Vec3d{X: pos.X + rp, Y: pos.Y + rp, Z: pos.Z + h + p}
+	rp := c.Radius + pad
+	lo = nt3dmath.Vec3d{X: pos.X - rp, Y: pos.Y - rp, Z: pos.Z - pad}
+	hi = nt3dmath.Vec3d{X: pos.X + rp, Y: pos.Y + rp, Z: pos.Z + c.Height + pad}
 	return lo, hi
 }
 
