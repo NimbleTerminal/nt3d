@@ -10,8 +10,19 @@
 - **Kinematic capsule collision (`nt3d/collide`)**: Z-up `float64` ray casts and `MoveCapsule` collide-and-slide against a static triangle mesh, with slope limits, curb step-up, and downward ground snapping. The package depends only on `nt3d/math`; `nt3d/collide/scene` builds a mesh from an `nt3d.Geometry`. `MoveCapsule` moves in substeps of at most half the capsule's radius, so speed and step length cannot carry it through a surface, and it returns an error for wrong input (a capsule or `MoveConfig` that fails `Validate`, a position, velocity or `dt` that is not finite) with the pose unchanged. `Mesh.RayCast` returns an error, not a miss, for a ray that cannot be cast.
 - **The 3DGS color convention in one place**: `nt3dsh.Y00` is the constant spherical-harmonic basis function, and `SHDCFromColor` and `ColorFromSHDC` convert a color channel to and from the degree-0 coefficient that draws as it, so a tool that writes splats need not copy the constant.
 
+- **The pieces of a mesh decoder, for decoders of your own**: `Options.ByteBudget()` and `Options.TriangleBudget()` count what a decode reads against `MaxBytes` and `MaxTriangles` and refuse the rest with `ErrTooLarge` and `ErrTooManyTriangles`; `ValidCoordinate` and `nt3d.MaxTextureSide` are the coordinate and texture-side checks; and `GaussianModel` finishes a decoded splat cloud (SH palette mode, pieces, clusters, validation). Every built-in decoder now uses these, where the four splat decoders each repeated the finish and the byte budget was written five ways.
+
 ### Changed
 
+- **A decode that stops at a limit names the right one.** `ErrTooComplex` is new, for limits no option raises. Errors that told a caller to raise the wrong option, or wrapped nothing, changed:
+
+  | Stopped by | Before | Now |
+  | --- | --- | --- |
+  | Gaussian PLY or compressed PLY over `MaxBytes` | an unwrapped error | wraps `ErrTooLarge` |
+  | glTF with more points or line ends than nt3d draws | `ErrTooManyTriangles` | `ErrTooComplex` |
+  | glTF hierarchy over 1024 levels, or more nodes or variants than the decoder walks | `ErrTooLarge`, or an unwrapped error | `ErrTooComplex` |
+
+  `ErrTooLarge` now always carries what did not fit, where glTF returned it bare, and its text is "model takes more bytes than MaxBytes allows".
 - **Decoded texture pixels count against `Options.MaxBytes`**: glTF PNG, JPEG and WebP images, and OBJ, PLY and 3MF textures, are charged four bytes a pixel before they are decoded, as KTX2 and SOG images already were. Before, only the 8192-pixel side limit applied, so a small file of highly compressible images could allocate far past the budget. A glTF image that does not fit fails the decode with `ErrTooLarge`; an OBJ, PLY or 3MF texture that does not fit is left out with a warning. A model with more than 256 MiB of decoded textures (four 4096² images) now needs a larger `MaxBytes`.
 - **A glTF image, or an OBJ texture file, is decoded once** however many textures or materials name it, and they share its pixels.
 
