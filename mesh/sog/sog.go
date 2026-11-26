@@ -97,14 +97,9 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	model := &nt3dmesh.Model{Format: SOG, Objects: nt3dmesh.PointPieces(nt3dmesh.Object{Geometry: g})}
-	if err := nt3dmesh.ClusterPieces(model.Objects, o); err != nil {
+	model, err := nt3dmesh.GaussianModel(SOG, g, o)
+	if err != nil {
 		return nil, err
-	}
-	for _, piece := range model.Objects {
-		if err := piece.Geometry.Validate(); err != nil {
-			return nil, err
-		}
 	}
 	if o != nil && o.Up == nt3dmesh.YUp {
 		model.OrientYUp()

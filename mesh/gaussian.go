@@ -117,7 +117,6 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 		return nil, fmt.Errorf("nt3dmesh: unsupported PLY format %q", format)
 	}
 	g := nt3d.Geometry{PointStyle: nt3d.PointStyle{Shape: nt3d.GaussianPoint, Units: nt3d.WorldUnits, Blend: nt3d.AlphaBlend}}
-	m := &Model{Format: PLY}
 	seen := false
 	for _, e := range elements {
 		if e.count > len(data)-r.at {
@@ -199,10 +198,26 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 		return nil, fmt.Errorf("nt3dmesh: Gaussian PLY lacks vertices")
 	}
 	g.Bounds = nt3d.GeometryBounds(g)
+	m, err := GaussianModel(PLY, g, o)
+	if err != nil {
+		return nil, err
+	}
+	o.orient(m)
+	return m, nil
+}
+
+// GaussianModel finishes a decoded Gaussian cloud as a model of format f, the
+// way every Gaussian decoder does: o's SHPalette mode is applied to the whole
+// cloud (ApplySHPalette), the cloud is split into pieces that each fit one
+// geometry (PointPieces), each piece is clustered for level of detail unless
+// o.NoClusters (ClusterPieces), and each must be a valid geometry. The model
+// is left in the file's axes; a decoder turns it afterward, with
+// Model.OrientYUp, when the file is Y-up.
+func GaussianModel(f Format, g nt3d.Geometry, o *Options) (*Model, error) {
 	if err := paletteCloud(&g, o); err != nil {
 		return nil, err
 	}
-	m.Objects = PointPieces(Object{Geometry: g})
+	m := &Model{Format: f, Objects: PointPieces(Object{Geometry: g})}
 	if err := ClusterPieces(m.Objects, o); err != nil {
 		return nil, err
 	}
@@ -211,6 +226,5 @@ func DecodeGaussianPLY(data []byte, o *Options) (*Model, error) {
 			return nil, err
 		}
 	}
-	o.orient(m)
 	return m, nil
 }

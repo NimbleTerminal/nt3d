@@ -6,6 +6,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"nimbleterminal.dev/nt3d"
+	"nimbleterminal.dev/nt3d/math"
 )
 
 // A byte budget starts at Options.MaxBytes (the default when zero), gives out
@@ -65,5 +68,55 @@ func TestGaussianPLYOverMaxBytesIsTooLarge(t *testing.T) {
 	packed := encodeCompressedPLY(t, []csplat{{}}, false)
 	if _, err := DecodeCompressedPLY(packed, &Options{MaxBytes: int64(len(packed)) - 1}); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("compressed PLY one byte over MaxBytes: error %v, want ErrTooLarge", err)
+	}
+}
+
+// GaussianModel finishes a decoded cloud the way every Gaussian decoder
+// does: the SH palette mode is applied, the cloud is split into pieces that
+// fit one geometry, each piece is clustered unless NoClusters is set, and a
+// cloud that is not a valid geometry is an error.
+func TestGaussianModelFinishesACloud(t *testing.T) {
+	cloud := func(n int) nt3d.Geometry {
+		g := nt3d.Geometry{PointStyle: nt3d.PointStyle{Shape: nt3d.GaussianPoint, Units: nt3d.WorldUnits, Blend: nt3d.AlphaBlend}}
+		for i := range n {
+			p, err := GaussianPoint(nt3dmath.Vec3{X: float32(i)}, [4]float64{1, 0, 0, 0}, [3]float64{}, [3]float64{}, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			g.Points = append(g.Points, p)
+		}
+		g.Bounds = nt3d.GeometryBounds(g)
+		return g
+	}
+	m, err := GaussianModel(PLY, cloud(4), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Format != PLY || len(m.Objects) != 1 || m.Objects[0].Geometry.Clusters == nil {
+		t.Fatalf("format %q, %d objects, clusters %v: want one clustered PLY object", m.Format, len(m.Objects), m.Objects[0].Geometry.Clusters)
+	}
+	m, err = GaussianModel(PLY, cloud(4), &Options{NoClusters: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Objects[0].Geometry.Clusters != nil {
+		t.Fatal("NoClusters left clusters on the cloud")
+	}
+
+	defer func(f func(int) int) { maxGaussians = f }(maxGaussians)
+	maxGaussians = func(int) int { return 3 }
+	m, err = GaussianModel(PLY, cloud(7), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Objects) != 3 {
+		t.Fatalf("7 splats at 3 a piece: %d pieces, want 3", len(m.Objects))
+	}
+
+	bad := cloud(2)
+	bad.GaussianSH = bad.GaussianSH[:0]
+	bad.Points[0].Radius = -1
+	if _, err := GaussianModel(PLY, bad, nil); err == nil {
+		t.Fatal("a cloud that is not a valid geometry was accepted")
 	}
 }
