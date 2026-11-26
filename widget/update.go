@@ -137,17 +137,17 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		switch v.String() {
 		case "left", "h":
-			m.camera.Azimuth -= 5
+			m.camera = m.camera.Orbit(-5, 0)
 		case "right", "l":
-			m.camera.Azimuth += 5
+			m.camera = m.camera.Orbit(5, 0)
 		case "up", "k":
-			m.camera.Elevation += 5
+			m.camera = m.camera.Orbit(0, 5)
 		case "down", "j":
-			m.camera.Elevation -= 5
+			m.camera = m.camera.Orbit(0, -5)
 		case "+", "=":
-			m.camera.Distance *= .9
+			m.camera = m.camera.Zoom(.9)
 		case "-", "_":
-			m.camera.Distance /= .9
+			m.camera = m.camera.Zoom(1 / .9)
 		case "c":
 			return m, m.Fit()
 		case "r":

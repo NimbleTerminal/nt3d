@@ -9,6 +9,10 @@
 - **Projected mesh decals and runtime Gaussian patches**: `BuildDecal` clips target triangles to an oriented box with planar `[0, 1]²` UVs and normal lift, while `GaussianCloud` and `BuildFlatGaussians` insert and remove surface-aligned 3DGS patches inside a single depth-sorted cloud (preserving SH palettes).
 - **Kinematic capsule collision (`nt3d/collide`)**: Z-up `float64` ray casts and `MoveCapsule` collide-and-slide against a static triangle mesh, with slope limits, curb step-up, and downward ground snapping. The package depends only on `nt3d/math`; `nt3d/collide/scene` builds a mesh from an `nt3d.Geometry`. `MoveCapsule` moves in substeps of at most half the capsule's radius, so speed and step length cannot carry it through a surface, and it returns an error for wrong input (a capsule or `MoveConfig` that fails `Validate`, a position, velocity or `dt` that is not finite) with the pose unchanged.
 
+### Fixed
+
+- **Widget keys move a camera placed by a `Pose`**: the arrow, `h`/`j`/`k`/`l` and `+`/`-` keys changed the orbit fields directly, which a posed camera ignores; they now go through `Camera.Orbit` and `Camera.Zoom`, as the mouse does.
+
 ## v0.12.0 (2026-11-18)
 
 This release reshapes the API so that it is hard to misuse, and it breaks
