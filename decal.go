@@ -17,8 +17,8 @@ import (
 // Normal points out of the surface toward the viewer. Up defines the decal's
 // +V-upward axis before projection onto the plane perpendicular to Normal; UV
 // (0, 0) is top-left and (1, 1) is bottom-right when viewed along -Normal.
-// NormalOffset lifts clipped vertices along each triangle's outward normal (or
-// Normal when >= 0) to prevent depth fighting against the target mesh.
+// Neither need be unit length. NormalOffset lifts the clipped vertices along
+// Normal, to prevent depth fighting against the target mesh.
 type Decal struct {
 	Center       nt3dmath.Vec3
 	Normal       nt3dmath.Vec3
@@ -44,32 +44,19 @@ type decalVert struct {
 // perpendicular floors. An empty Geometry (zero vertices) is returned without
 // error when no front-facing triangles intersect the box.
 func BuildDecal(target Geometry, d Decal) (Geometry, error) {
-	if !finiteVec(d.Center) || !finiteVec(d.Normal) || !finiteVec(d.Up) {
-		return Geometry{}, fmt.Errorf("nt3d: decal vectors must be finite")
+	frame, err := newSurfaceFrame("decal", d.Center, d.Normal, d.Up, d.NormalOffset)
+	if err != nil {
+		return Geometry{}, err
 	}
 	if !positive(d.Width, d.Height, d.Depth) {
 		return Geometry{}, fmt.Errorf("nt3d: decal dimensions must be positive and finite")
-	}
-	if !validFloat(d.NormalOffset) || d.NormalOffset < 0 || d.NormalOffset > 1e6 {
-		return Geometry{}, fmt.Errorf("nt3d: decal normal offset must be finite and nonnegative")
 	}
 	if d.Material != nil {
 		if err := d.Material.Validate(); err != nil {
 			return Geometry{}, err
 		}
 	}
-	nLen := math.Sqrt(float64(d.Normal.Dot(d.Normal)))
-	if nLen < 1e-6 {
-		return Geometry{}, fmt.Errorf("nt3d: decal normal must be nonzero")
-	}
-	n := d.Normal.Scale(float32(1 / nLen))
-	rightRaw := d.Up.Cross(n)
-	rLen := math.Sqrt(float64(rightRaw.Dot(rightRaw)))
-	if rLen < 1e-6 {
-		return Geometry{}, fmt.Errorf("nt3d: decal up vector must not be parallel to normal")
-	}
-	right := rightRaw.Scale(float32(1 / rLen))
-	up := n.Cross(right).Normalize()
+	n, right, up := frame.normal, frame.right, frame.up
 
 	if len(target.Indices)%3 != 0 {
 		return Geometry{}, fmt.Errorf("nt3d: decal target indices must be a multiple of 3")

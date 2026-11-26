@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"math"
 	"slices"
 
 	"nimbleterminal.dev/nt3d/clod"
@@ -261,27 +260,14 @@ func BuildFlatGaussians(f FlatGaussians) ([]Point, error) {
 	if b.Dx() <= 0 || b.Dy() <= 0 {
 		return nil, fmt.Errorf("nt3d: FlatGaussians image must be non-empty")
 	}
-	if !finiteVec(f.Center) || !finiteVec(f.Normal) || !finiteVec(f.Up) {
-		return nil, fmt.Errorf("nt3d: FlatGaussians vectors must be finite")
+	frame, err := newSurfaceFrame("FlatGaussians", f.Center, f.Normal, f.Up, f.NormalOffset)
+	if err != nil {
+		return nil, err
 	}
 	if !positive(f.Width, f.Height) {
 		return nil, fmt.Errorf("nt3d: FlatGaussians dimensions must be positive and finite")
 	}
-	if !validFloat(f.NormalOffset) || f.NormalOffset < 0 || f.NormalOffset > 1e6 {
-		return nil, fmt.Errorf("nt3d: FlatGaussians normal offset must be finite and nonnegative")
-	}
-	nLen := math.Sqrt(float64(f.Normal.Dot(f.Normal)))
-	if nLen < 1e-6 {
-		return nil, fmt.Errorf("nt3d: FlatGaussians normal must be nonzero")
-	}
-	n := f.Normal.Scale(float32(1 / nLen))
-	rightRaw := f.Up.Cross(n)
-	rLen := math.Sqrt(float64(rightRaw.Dot(rightRaw)))
-	if rLen < 1e-6 {
-		return nil, fmt.Errorf("nt3d: FlatGaussians up vector must not be parallel to normal")
-	}
-	right := rightRaw.Scale(float32(1 / rLen))
-	up := n.Cross(right).Normalize()
+	n, right, up := frame.normal, frame.right, frame.up
 
 	cols, rows := f.Columns, f.Rows
 	if cols == 0 {
