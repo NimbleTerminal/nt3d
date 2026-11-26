@@ -137,3 +137,24 @@ func TestDecalAndFlatGaussiansRefuseTheSameFrames(t *testing.T) {
 		t.Fatalf("a longer normal and up changed the decal: %d and %d vertices", len(a.Vertices), len(b.Vertices))
 	}
 }
+
+// A decal's target is checked as any geometry is: a vertex that is not
+// finite, or an index out of range, is an error and not a decal of NaNs.
+func TestBuildDecalRefusesAWrongTarget(t *testing.T) {
+	wall, err := BuildCuboid(Cuboid{Size: nt3dmath.Vec3{X: 8, Y: 1, Z: 4}})
+	check(t, err)
+	d := Decal{Center: nt3dmath.Vec3{Y: -.5}, Normal: nt3dmath.Vec3{Y: -1}, Up: nt3dmath.Vec3{Z: 1}, Width: 1, Height: 1, Depth: 1}
+	if _, err := BuildDecal(wall, d); err != nil {
+		t.Fatal(err)
+	}
+	notFinite := wall.Clone()
+	notFinite.Vertices[0].Position.X = float32(math.NaN())
+	if _, err := BuildDecal(notFinite, d); err == nil {
+		t.Error("accepted a target with a vertex that is not finite")
+	}
+	badIndex := wall.Clone()
+	badIndex.Indices[0] = uint32(len(badIndex.Vertices))
+	if _, err := BuildDecal(badIndex, d); err == nil {
+		t.Error("accepted a target with an index out of range")
+	}
+}

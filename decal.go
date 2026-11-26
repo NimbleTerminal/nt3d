@@ -39,7 +39,8 @@ type decalVert struct {
 }
 
 // BuildDecal clips target's indexed triangles to d's oriented box and returns
-// a UV-mapped mesh ready to draw over target. Triangles facing away from
+// a UV-mapped mesh ready to draw over target. target must be valid, as a
+// geometry given to a scene must. Triangles facing away from
 // d.Normal (dot <= 0.1) are skipped so decals do not wrap onto back faces or
 // perpendicular floors. A decal that lands on nothing is not an error: the
 // Geometry returned is empty, and a scene draws nothing for it.
@@ -58,14 +59,8 @@ func BuildDecal(target Geometry, d Decal) (Geometry, error) {
 	}
 	n, right, up := frame.normal, frame.right, frame.up
 
-	if len(target.Indices)%3 != 0 {
-		return Geometry{}, fmt.Errorf("nt3d: decal target indices must be a multiple of 3")
-	}
-	vCount := uint32(len(target.Vertices))
-	for _, idx := range target.Indices {
-		if idx >= vCount {
-			return Geometry{}, fmt.Errorf("nt3d: decal target index %d out of bounds (%d)", idx, vCount)
-		}
+	if err := target.Validate(); err != nil {
+		return Geometry{}, fmt.Errorf("nt3d: decal target: %w", err)
 	}
 
 	hx := 0.5 * float64(d.Width)
