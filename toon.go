@@ -25,7 +25,9 @@ import (
 // a lit surface turns away from the viewer.
 //
 // Unlit materials ignore it. It applies to indexed triangles, as Material
-// does; Scene.ApplyToon changes it on geometry already in a scene.
+// does. Points and Gaussian splats carry no material and are not lit this
+// way; PointStyle.ToonBands posterizes their colors into the same number of
+// bands. Scene.ApplyToon changes both on geometry already in a scene.
 type ToonStyle struct {
 	Bands          int
 	Softness       float32
@@ -91,12 +93,14 @@ const (
 	toonSpot = .5
 )
 
-// ApplyToon changes the toon style of the indexed meshes now in root's subtree,
-// giving a material to those without one. The zero style turns it off. It
-// preserves animation, deformation, shared mesh buffers, and old frames, and
-// each node's other material settings; a material several nodes hold is
-// copied, never altered. Use Root to change the whole scene. Newly added
-// nodes keep their own style.
+// ApplyToon changes the toon style of what is now in root's subtree. Indexed
+// meshes take the whole style, and those without a material are given one.
+// Points and Gaussian splats, which have no light to band, take its Bands as
+// PointStyle.ToonBands, and their colors are posterized. The zero style
+// turns both off. It preserves animation, deformation, shared mesh buffers,
+// level-of-detail clusters, and old frames, and each node's other material
+// settings; a material several nodes hold is copied, never altered. Use Root
+// to change the whole scene. Newly added nodes keep their own style.
 func (s *Scene) ApplyToon(root NodeID, style ToonStyle) error {
 	if err := style.validate(); err != nil {
 		return err
@@ -104,82 +108,42 @@ func (s *Scene) ApplyToon(root NodeID, style ToonStyle) error {
 	if s.nodes[root] == nil {
 		return fmt.Errorf("nt3d: unknown toon root %d", root)
 	}
-	changed := false
-	pending := []NodeID{root}
-	for len(pending) > 0 {
-		id := pending[len(pending)-1]
-		pending = pending[:len(pending)-1]
-		n := s.nodes[id]
-		pending = append(pending, n.Children...)
-		if len(n.lod) > 0 {
-			for i := range n.lod {
-				lg := n.lod[i].geometry
-				if len(lg.Indices) == 0 {
-					continue
-				}
-				if m := lg.Material; m != nil && m.Toon == style || m == nil && style == (ToonStyle{}) {
-					continue
-				}
-				g := *lg
-				if g.Material = cloneMaterial(g.Material); g.Material == nil {
-					g.Material = &Material{}
-				}
-				g.Material.Toon = style
-				n.lod[i].geometry = &g
-				changed = true
-			}
-			n.geometry = n.lod[0].geometry
-			continue
-		}
-		if n.geometry == nil || len(n.geometry.Indices) == 0 {
-			continue
-		}
-		if m := n.geometry.Material; m != nil && m.Toon == style || m == nil && style == (ToonStyle{}) {
-			continue
-		}
-		g := *n.geometry
-		if g.Material = cloneMaterial(g.Material); g.Material == nil {
-			g.Material = &Material{}
-		}
-		g.Material.Toon = style
-		n.geometry = &g
-		changed = true
-	}
-	if changed {
-		s.changed(false, false)
-	}
-	return nil
-}
-
-// ApplyPointToon changes PointStyle.ToonBands on point and Gaussian geometries
-// now in root's subtree (0 disables it, or 2..8 cel bands). It preserves old
-// frames and level-of-detail clusters.
-func (s *Scene) ApplyPointToon(root NodeID, bands int) error {
-	if bands != 0 && (bands < 2 || bands > 8) {
-		return fmt.Errorf("nt3d: point toon bands must be 0 or 2..8")
-	}
-	if s.nodes[root] == nil {
-		return fmt.Errorf("nt3d: unknown point toon root %d", root)
-	}
-	changed := false
+	// restyle is old with the style, or nil when it has it already.
 	restyle := func(old *sceneGeometry) *sceneGeometry {
-		if old == nil || len(old.Points) == 0 || old.PointStyle.ToonBands == bands {
+		if old == nil {
+			return nil
+		}
+		mesh := len(old.Indices) > 0
+		if m := old.Material; m != nil && m.Toon == style || m == nil && style == (ToonStyle{}) {
+			mesh = false
+		}
+		points := len(old.Points) > 0 && old.PointStyle.ToonBands != style.Bands
+		if !mesh && !points {
 			return nil
 		}
 		g := *old
-		g.PointStyle.ToonBands = bands
-		if g.stored != nil {
-			st := *g.stored
-			st.style = g.PointStyle
-			g.stored = &st
+		if mesh {
+			if g.Material = cloneMaterial(g.Material); g.Material == nil {
+				g.Material = &Material{}
+			}
+			g.Material.Toon = style
 		}
-		if g.pointUpdate != nil {
-			pu := *g.pointUpdate
-			pu.style = g.PointStyle
-			g.pointUpdate = &pu
+		if points {
+			g.PointStyle.ToonBands = style.Bands
+			if g.stored != nil {
+				st := *g.stored
+				st.style = g.PointStyle
+				g.stored = &st
+			}
+			if g.pointUpdate != nil {
+				pu := *g.pointUpdate
+				pu.style = g.PointStyle
+				g.pointUpdate = &pu
+			}
 		}
 		return &g
 	}
+	changed := false
 	pending := []NodeID{root}
 	for len(pending) > 0 {
 		id := pending[len(pending)-1]

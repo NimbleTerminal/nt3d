@@ -42,7 +42,7 @@ Nodes are addressed by `NodeID`. Every method that reads or changes one node tak
 | Name | Reaches | Examples |
 | --- | --- | --- |
 | `SetX`, `SetNodeX`, `NodeX` | The one node `id` names. (Transform and visibility are the node's own, though everything under it moves and hides with it.) | `SetTransform`, `SetNodeGeometry`, `SetNodeTexture`, `SetNodeData`, `NodeLight` |
-| `ApplyX` | Every mesh under `root` when it is called, `root` included. Nothing is remembered: a node added afterwards is not changed. Pass `Root` for the whole scene. | `ApplyMaterial`, `ApplyToon`, `ApplyOutline`, `ApplyDisplacement`, `ApplyMaterialShader` |
+| `ApplyX` | Every mesh under `root` when it is called, `root` included (`ApplyToon` reaches points and splats too). Nothing is remembered: a node added afterwards is not changed. Pass `Root` for the whole scene. | `ApplyMaterial`, `ApplyToon`, `ApplyOutline`, `ApplyDisplacement`, `ApplyMaterialShader` |
 | plural or scene-wide | What is under `root`, or the scene | `Lights(root)`, `Cameras(root)`, `SetLook`, `Bounds` |
 
 Names are for finding, not for addressing. `Find(name)` turns a name into an ID. Three shortcuts take a name because they create the node when it is missing, under `Root`, and replace its contents when it is there: `SetGeometry`, `SetShared`, and `SetLabel`. Each returns the ID, and each has a `SetNode…` form for a node you already hold.

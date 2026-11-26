@@ -337,6 +337,29 @@ func ExampleGaussianCloud() {
 	// splats: 0 err: <nil>
 }
 
+// One ApplyToon toons a subtree of both kinds: meshes take the whole style,
+// and points and Gaussian splats, which have no light to band, take its
+// Bands for their colors.
+func ExampleScene_ApplyToon() {
+	scene := nt3d.NewScene()
+	_, _ = scene.SetGeometry("statue", ball(color.RGBA{R: 200, G: 200, B: 200, A: 255}))
+	_, _ = scene.SetGeometry("dust", nt3d.Geometry{Points: []nt3d.Point{{Radius: 2, Color: color.RGBA{R: 255, G: 180, B: 90, A: 255}}}})
+
+	_ = scene.ApplyToon(nt3d.Root, nt3d.ToonStyle{Bands: 3, Rim: .3})
+
+	frame, _ := scene.StillFrame(nt3d.DefaultCamera(), 32, 32)
+	for _, draw := range frame.Draws {
+		if g := draw.Geometry; len(g.Points) > 0 {
+			fmt.Println(draw.Name, "color bands:", g.PointStyle.ToonBands)
+		} else {
+			fmt.Println(draw.Name, "light bands:", g.Material.Toon.Bands, "rim:", g.Material.Toon.Rim)
+		}
+	}
+	// Output:
+	// statue light bands: 3 rim: 0.3
+	// dust color bands: 3
+}
+
 // A holdout is an invisible surface that hides what is behind it and still
 // carries ink: a proxy for a building inside a splat capture. Its Holdout
 // group belongs to AlphaHoldout alone, as each group belongs to its mode.

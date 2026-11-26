@@ -349,13 +349,23 @@ models; on a large flat floor it draws an arc where the view grazes it.
 
 Textures, tint, normal maps, cutouts, transparency, reflections,
 transmission, and fog work as before around the banded light. `ShadeUnlit`
-materials ignore `Toon`; points, boxes, lines, and splats are not
-affected. [Fur](#toon-fur) is meshes, and takes it. The GPU and software renderer agree away from band edges.
+materials ignore `Toon`; boxes and lines are not affected.
+[Fur](#toon-fur) is meshes, and takes it. The GPU and software renderer agree away from band edges.
+
+Points and Gaussian splats carry no material and are not lit this way, so
+there is no light of theirs to band. `PointStyle.ToonBands`, 2 to 8, bands
+their colors instead: each color's brightness snaps to the nearest of that
+many levels and keeps its hue and chroma, which turns a photographic splat
+capture into flat cel tones to match toon meshes beside it. A splat's
+view-dependent color is evaluated first and banded after.
 
 For geometry already in a scene, such as a loaded or animated model,
 `scene.ApplyToon(root, style)` sets the style on every indexed mesh under
 `root`, giving a material to those without one and keeping their other
-settings, poses, and buffers; the zero style turns it off.
+settings, poses, and buffers, and sets `style.Bands` as `ToonBands` on the
+points and splats there; the zero style turns both off. To toon meshes and
+leave the splats among them photographic, or the reverse, keep them under
+different nodes and apply to one.
 
 The [toon demo](https://nimbleterminal.github.io/nt3d/toon/) puts it together
 with outlines and crease lines: `t` flips the look, `n` changes the bands, and

@@ -30,6 +30,7 @@ type PointStyle struct {
 	SHDCOnly bool
 	// ToonBands quantizes each point or Gaussian's color brightness into flat
 	// cel bands, 2 to 8, preserving hue and chroma; zero disables it.
+	// Scene.ApplyToon sets it, with a mesh's ToonStyle, on a subtree.
 	ToonBands int
 	// Precise keeps a Gaussian geometry's float GPU records: 48-byte axes and
 	// float spherical harmonics, as the software renderer draws them. Without
