@@ -73,7 +73,7 @@ func normalize(v, lo, hi float64) float64 {
 // encodeCompressedPLY writes splat-transform's layout: 256-splat chunks with
 // 18 (or, with colorBounds false, 12) float32 bounds, 4 uint32 per splat,
 // and an sh element of uchar f_rest when rest is present.
-func encodeCompressedPLY(t *testing.T, splats []csplat, colorBounds bool) []byte {
+func encodeCompressedPLY(t testing.TB, splats []csplat, colorBounds bool) []byte {
 	t.Helper()
 	const c0 = 0.28209479177387814
 	chunks := (len(splats) + 255) / 256

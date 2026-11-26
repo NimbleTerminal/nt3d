@@ -6,8 +6,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"math"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -157,7 +155,7 @@ func FuzzDecodePLY(f *testing.F) {
 	f.Add(gridPLY(0, true))
 	f.Add([]byte("ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n0 0 0 255 0 0\n1 0 0 0 255 0\n0 1 0 0 0 255\n"))
 	f.Add(gaussianPLYSeed())
-	f.Add(compressedPLYFixture(f))
+	f.Add(compressedPLYSeed(f))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		o := fuzzOptions(nil)
 		o.NoClusters = true
@@ -194,10 +192,21 @@ func gaussianPLYSeed() []byte {
 		"0 0 0 0.5 0.2 -0.1 1 -1 -1 -1 1 0 0 0\n1 0 0 0.1 0.2 0.3 0 -2 -1 -0.5 0.7 0.7 0 0\n")
 }
 
-func compressedPLYFixture(f *testing.F) []byte {
-	data, err := os.ReadFile(filepath.Join("testdata", "gaussian-ring.compressed.ply"))
-	if err != nil {
-		f.Fatal(err)
+// compressedPLYSeed is the smallest compressed cloud that takes every path:
+// one chunk of two splats with color bounds and degree-1 SH. It is built
+// here and not read from testdata because the fleet minimizes every seed
+// each round, and a fixture of several kilobytes takes the whole round.
+func compressedPLYSeed(f *testing.F) []byte {
+	data := encodeCompressedPLY(f, []csplat{
+		{[3]float64{1, 2, 3}, [3]float64{-2, -1, 0}, [4]float64{.5, .5, .5, .5}, [3]float64{.2, -.1, .4}, .8, []float64{.1, .2, .3, -.1, -.2, -.3, .5, 0, -.5}},
+		{[3]float64{-1, 0, 4}, [3]float64{-3, -3, -3}, [4]float64{0, 1, 0, 0}, [3]float64{0, 0, 0}, .1, make([]float64, 9)},
+	}, true)
+	if len(data) > 1024 {
+		f.Fatalf("the compressed PLY seed is %d bytes; keep seeds under 1 KB", len(data))
+	}
+	m, err := DecodePLY(data, nil)
+	if err != nil || len(m.Objects) != 1 || len(m.Objects[0].Geometry.Points) != 2 || len(m.Objects[0].Geometry.GaussianSH) == 0 {
+		f.Fatalf("the compressed PLY seed does not decode as a two-splat cloud with SH: %v", err)
 	}
 	return data
 }
