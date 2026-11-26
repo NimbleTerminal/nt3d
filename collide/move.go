@@ -354,10 +354,11 @@ func depenetrate(m *Mesh, cap Capsule, pos nt3dmath.Vec3d, skin, minWalkZ float6
 					res.ImpactSpeed = into
 				}
 				if n.Z >= minWalkZ {
-					res.Grounded = true
-					if n.Z > res.GroundNormal.Z || !res.Grounded {
+					// The most upright walkable contact is the ground.
+					if !res.Grounded || n.Z > res.GroundNormal.Z {
 						res.GroundNormal = n
 					}
+					res.Grounded = true
 				} else if n.Z > -0.7 {
 					res.HitWall = true
 					res.WallNormal = n

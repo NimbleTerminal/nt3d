@@ -113,3 +113,26 @@ func TestCapsuleStepsUpCurbAndSnapsDownSlope(t *testing.T) {
 		t.Fatalf("blocked by 0.25 m curb: X=%.3f", pos.X)
 	}
 }
+
+// A capsule running up a ramp reports the ramp's normal as its ground normal,
+// although it is rising and the downward ground probe does not run.
+func TestGroundNormalIsTheRampWhenRunningUpIt(t *testing.T) {
+	// A ramp rising 1 in 2 along X, wide in Y.
+	a := nt3dmath.Vec3d{X: -10, Y: -10, Z: -5}
+	b := nt3dmath.Vec3d{X: 10, Y: -10, Z: 5}
+	c := nt3dmath.Vec3d{X: 10, Y: 10, Z: 5}
+	d := nt3dmath.Vec3d{X: -10, Y: 10, Z: -5}
+	m := NewMeshFromTriangles([]Triangle{{A: a, B: b, C: c}, {A: a, B: c, C: d}})
+	l := math.Sqrt(5)
+	want := nt3dmath.Vec3d{X: -1 / l, Z: 2 / l}
+
+	cap := Capsule{Radius: 0.35, Height: 1.8}
+	// Running horizontally into the slope: the ramp turns that into a climb.
+	res := mustMove(t, m, cap, nt3dmath.Vec3d{Z: 0.05}, nt3dmath.Vec3d{X: 4, Z: 0.5}, 1.0/60, true, MoveConfig{})
+	if !res.Grounded {
+		t.Fatalf("capsule on the ramp is not grounded: %+v", res)
+	}
+	if got := res.GroundNormal; math.Abs(got.X-want.X) > 1e-6 || math.Abs(got.Y) > 1e-6 || math.Abs(got.Z-want.Z) > 1e-6 {
+		t.Fatalf("GroundNormal = %v, want the ramp's %v", got, want)
+	}
+}
