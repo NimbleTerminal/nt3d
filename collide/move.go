@@ -12,9 +12,9 @@ import (
 // MoveConfig tunes kinematic capsule movement against a Mesh. A zero field
 // means its default; a negative or non-finite one is an error.
 type MoveConfig struct {
-	// MaxSlopeDeg is the steepest walkable slope from horizontal, in degrees,
-	// at most 89. Zero means 50.
-	MaxSlopeDeg float64
+	// MaxSlope is the steepest walkable slope from horizontal, in degrees, at
+	// most 89. Zero means 50.
+	MaxSlope float64
 	// StepHeight is the tallest vertical ledge a grounded capsule steps onto,
 	// in meters. Zero disables stepping.
 	StepHeight float64
@@ -32,7 +32,7 @@ func (c MoveConfig) Validate() error {
 		name string
 		v    float64
 	}{
-		{"MaxSlopeDeg", c.MaxSlopeDeg},
+		{"MaxSlope", c.MaxSlope},
 		{"StepHeight", c.StepHeight},
 		{"GroundSnap", c.GroundSnap},
 		{"SkinWidth", c.SkinWidth},
@@ -41,15 +41,15 @@ func (c MoveConfig) Validate() error {
 			return fmt.Errorf("nt3dcollide: MoveConfig.%s %v must not be negative", f.name, f.v)
 		}
 	}
-	if c.MaxSlopeDeg > 89 {
-		return fmt.Errorf("nt3dcollide: MoveConfig.MaxSlopeDeg %v must be at most 89", c.MaxSlopeDeg)
+	if c.MaxSlope > 89 {
+		return fmt.Errorf("nt3dcollide: MoveConfig.MaxSlope %v must be at most 89", c.MaxSlope)
 	}
 	return nil
 }
 
 // resolved fills in the defaults of a valid configuration.
 func (c MoveConfig) resolved() (minWalkZ, stepH, snap, skin float64) {
-	slope := c.MaxSlopeDeg
+	slope := c.MaxSlope
 	if slope == 0 {
 		slope = 50
 	}

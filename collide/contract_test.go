@@ -52,7 +52,7 @@ func TestMoveCapsuleRejectsWrongInput(t *testing.T) {
 		"negative dt":         {good, pos, vel, -0.01, MoveConfig{}},
 		"NaN dt":              {good, pos, vel, nan, MoveConfig{}},
 		"infinite dt":         {good, pos, vel, inf, MoveConfig{}},
-		"slope over 89":       {good, pos, vel, 0.01, MoveConfig{MaxSlopeDeg: 90}},
+		"slope over 89":       {good, pos, vel, 0.01, MoveConfig{MaxSlope: 90}},
 		"negative step":       {good, pos, vel, 0.01, MoveConfig{StepHeight: -0.1}},
 		"NaN ground snap":     {good, pos, vel, 0.01, MoveConfig{GroundSnap: nan}},
 		"negative skin":       {good, pos, vel, 0.01, MoveConfig{SkinWidth: -1}},
@@ -109,7 +109,7 @@ func TestCapsuleNeverLeavesAClosedRoom(t *testing.T) {
 	lo, hi := nt3dmath.Vec3d{X: -6, Y: -5, Z: 0}, nt3dmath.Vec3d{X: 6, Y: 5, Z: 4}
 	m := NewMeshFromTriangles(roomTris(lo, hi))
 	cap := Capsule{Radius: 0.38, Height: 1.75}
-	cfg := MoveConfig{MaxSlopeDeg: 48, StepHeight: 0.32, GroundSnap: 0.22}
+	cfg := MoveConfig{MaxSlope: 48, StepHeight: 0.32, GroundSnap: 0.22}
 	rng := rand.New(rand.NewPCG(1, 2))
 	pos := nt3dmath.Vec3d{Z: 1}
 	grounded := false
@@ -142,7 +142,7 @@ func TestCapsuleNeverLeavesAClosedRoom(t *testing.T) {
 func TestRestingCapsuleDoesNotSinkOrDrift(t *testing.T) {
 	m := NewMeshFromTriangles(quadTris(-20, -20, 20, 20, 0))
 	cap := Capsule{Radius: 0.38, Height: 1.75}
-	cfg := MoveConfig{MaxSlopeDeg: 48, StepHeight: 0.32, GroundSnap: 0.22}
+	cfg := MoveConfig{MaxSlope: 48, StepHeight: 0.32, GroundSnap: 0.22}
 	pos := nt3dmath.Vec3d{X: 1.25, Y: -3.5, Z: 0.5}
 	var vel nt3dmath.Vec3d
 	grounded := false

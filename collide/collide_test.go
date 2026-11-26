@@ -30,7 +30,7 @@ func quadTris(x0, y0, x1, y1, z float64) []Triangle {
 func TestCapsuleLandsAndStaysAboveFloor(t *testing.T) {
 	m := NewMeshFromTriangles(quadTris(-20, -20, 20, 20, 0))
 	cap := Capsule{Radius: 0.35, Height: 1.8}
-	cfg := MoveConfig{MaxSlopeDeg: 50, StepHeight: 0.35, GroundSnap: 0.15}
+	cfg := MoveConfig{MaxSlope: 50, StepHeight: 0.35, GroundSnap: 0.15}
 
 	pos := nt3dmath.Vec3d{Z: 3.0}
 	vel := nt3dmath.Vec3d{}
@@ -60,7 +60,7 @@ func TestCapsuleSlidesAlongWallWithoutTunneling(t *testing.T) {
 	m := NewMeshFromTriangles(tris)
 
 	cap := Capsule{Radius: 0.4, Height: 1.8}
-	cfg := MoveConfig{MaxSlopeDeg: 50, StepHeight: 0.35, GroundSnap: 0.15}
+	cfg := MoveConfig{MaxSlope: 50, StepHeight: 0.35, GroundSnap: 0.15}
 
 	// Charge diagonally into the wall at 20 m/s over a coarse 0.1 s step.
 	res := mustMove(t, m, cap, nt3dmath.Vec3d{X: 0.5, Y: 0, Z: 0.005}, nt3dmath.Vec3d{X: 20, Y: 10, Z: 0}, 0.1, true, cfg)
@@ -98,7 +98,7 @@ func TestCapsuleStepsUpCurbAndSnapsDownSlope(t *testing.T) {
 	m := NewMeshFromTriangles(tris)
 
 	cap := Capsule{Radius: 0.35, Height: 1.8}
-	cfg := MoveConfig{MaxSlopeDeg: 50, StepHeight: 0.35, GroundSnap: 0.2}
+	cfg := MoveConfig{MaxSlope: 50, StepHeight: 0.35, GroundSnap: 0.2}
 	pos := nt3dmath.Vec3d{X: 0, Y: 0, Z: 0.005}
 	grounded := true
 	const dt = 1.0 / 60.0
