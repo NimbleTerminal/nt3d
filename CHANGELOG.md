@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.13.0 (2026-11-26)
+
 ### Added
 
 - **Toon posterization for points and Gaussian splats**: `PointStyle.ToonBands` (`2..8`) quantizes point and 3DGS brightness into cel bands while preserving hue and chroma across WebGPU and software renderers. `Scene.ApplyToon` sets it, from the style's `Bands`, on the points and splats of a subtree along with the toon style of its meshes, so one call toons a scene of both.
@@ -9,7 +11,6 @@
 - **Projected mesh decals and runtime Gaussian patches**: `BuildDecal` clips target triangles to an oriented box with planar `[0, 1]²` UVs and normal lift, while `GaussianCloud` and `BuildFlatGaussians` insert and remove surface-aligned 3DGS patches inside a single depth-sorted cloud (preserving SH palettes). Every length is in the scene's units: a patch's splats are sized from its grid, and `FlatGaussians.Thickness` sets their sigma along the normal. A mark that lands on nothing (a decal that misses, an image with no opaque texel, a patch of no splats) is an empty result, not an error.
 - **Kinematic capsule collision (`nt3d/collide`)**: Z-up `float64` ray casts and `MoveCapsule` collide-and-slide against a static triangle mesh, with slope limits, curb step-up, and downward ground snapping. The package depends only on `nt3d/math`; `nt3d/collide/scene` builds a mesh from an `nt3d.Geometry`. `MoveCapsule` moves in substeps of at most half the capsule's radius, so speed and step length cannot carry it through a surface, and it returns an error for wrong input (a capsule or `MoveConfig` that fails `Validate`, a position, velocity or `dt` that is not finite) with the pose unchanged. `Mesh.RayCast` returns an error, not a miss, for a ray that cannot be cast.
 - **The 3DGS color convention in one place**: `nt3dsh.Y00` is the constant spherical-harmonic basis function, and `SHDCFromColor` and `ColorFromSHDC` convert a color channel to and from the degree-0 coefficient that draws as it, so a tool that writes splats need not copy the constant.
-
 - **The pieces of a mesh decoder, for decoders of your own**: `Options.ByteBudget()` and `Options.TriangleBudget()` count what a decode reads against `MaxBytes` and `MaxTriangles` and refuse the rest with `ErrTooLarge` and `ErrTooManyTriangles`; `ValidCoordinate` and `nt3d.MaxTextureSide` are the coordinate and texture-side checks; and `GaussianModel` finishes a decoded splat cloud (SH palette mode, pieces, clusters, validation). Every built-in decoder now uses these, where the four splat decoders each repeated the finish and the byte budget was written five ways.
 
 ### Changed
