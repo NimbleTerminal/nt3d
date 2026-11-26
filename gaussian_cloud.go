@@ -29,6 +29,9 @@ type gaussianPatch struct {
 // inserted points automatically synthesize view-independent DC coefficients
 // from Point.Color and bind to a zero higher-order band entry without mutating
 // the caller's palette.
+//
+// A cloud is not part of a scene. After a change, give its Geometry to the
+// scene with SetGeometry or SetNodeGeometry.
 type GaussianCloud struct {
 	base      Geometry
 	shStride  int // RGB entries per point in GaussianSH (0 when color-only)

@@ -288,3 +288,51 @@ func ExampleBuildDecal() {
 	// Output:
 	// err: <nil> has triangles: true
 }
+
+// A GaussianCloud holds a splat cloud and the patches added to it, so a mark
+// sorts splat by splat with the cloud it sits in. BuildFlatGaussians makes a
+// patch from an image; the scene takes the cloud's geometry after each change.
+func ExampleGaussianCloud() {
+	style := nt3d.PointStyle{Shape: nt3d.GaussianPoint, Units: nt3d.WorldUnits, Blend: nt3d.AlphaBlend}
+	cloud, err := nt3d.NewGaussianCloud(nt3d.Geometry{PointStyle: style})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// A 4×4 image whose left half is opaque.
+	mark := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	for y := range 4 {
+		for x := range 2 {
+			mark.SetNRGBA(x, y, color.NRGBA{R: 250, G: 40, B: 160, A: 255})
+		}
+	}
+	splats, err := nt3d.BuildFlatGaussians(nt3d.FlatGaussians{
+		Image:  mark,
+		Center: nt3dmath.Vec3{Y: -0.5},
+		Normal: nt3dmath.Vec3{Y: -1},
+		Up:     nt3dmath.Vec3{Z: 1},
+		Width:  2,
+		Height: 2,
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	patch, err := cloud.Insert(splats)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	scene := nt3d.NewScene()
+	node, err := scene.SetGeometry("cloud", cloud.Geometry())
+	fmt.Println("splats:", cloud.Count(), "err:", err)
+
+	cloud.Remove(patch)
+	err = scene.SetNodeGeometry(node, cloud.Geometry())
+	fmt.Println("splats:", cloud.Count(), "err:", err)
+	// Output:
+	// splats: 8 err: <nil>
+	// splats: 0 err: <nil>
+}

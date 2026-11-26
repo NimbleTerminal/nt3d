@@ -350,6 +350,33 @@ The budgeted frame costs more than the 1M one for two reasons. Scaling the thinn
 
 Try it in `task gaussians` or `task meshes -- scene.spz`: `u` halves the budget, `y` doubles it, `z` restores the default, and the status shows the splats drawn of those loaded.
 
+### Patching a cloud
+
+A mesh drawn over a splat cloud sorts against it as one object, which is wrong wherever splats lie both in front of and behind it. `GaussianCloud` puts a mark into the cloud itself, as splats, so it sorts splat by splat with its surroundings, and can be taken out again.
+
+```go
+cloud, err := nt3d.NewGaussianCloud(model.Objects[0].Geometry)
+splats, err := nt3d.BuildFlatGaussians(nt3d.FlatGaussians{
+	Image:  mark,                    // texels under the alpha cutoff are left out
+	Center: nt3dmath.Vec3{Y: -0.5},  // on the surface
+	Normal: nt3dmath.Vec3{Y: -1},    // out of the surface
+	Up:     nt3dmath.Vec3{Z: 1},
+	Width:  2, Height: 2,
+})
+patch, err := cloud.Insert(splats)
+err = scene.SetNodeGeometry(node, cloud.Geometry())
+
+cloud.Remove(patch)
+err = scene.SetNodeGeometry(node, cloud.Geometry())
+```
+
+- `BuildFlatGaussians` makes one thin splat for each cell of a grid over the image (`Columns` by `Rows`, by default the image's size up to 64 a side). It is placed as a [decal](../shapes/#decals) is, by `Center`, `Normal`, and `Up`.
+- Every length is in the scene's units. The splats are sized from the grid, so the same patch is the same shape in a scene measured in millimeters or in kilometers. `Thickness` is their sigma along the normal; zero means an eighth of the smaller grid cell.
+- A cloud is not part of the scene: after each `Insert`, `Remove`, or `ClearPatches`, give `cloud.Geometry()` to the scene again.
+- `Insert` takes any Gaussian points, not only those `BuildFlatGaussians` makes. No points is an empty patch, so an image with nothing opaque needs no special case.
+- A cloud with SH gives each inserted splat a view-independent color from its `Point.Color` (`SHDCFromColor`). A cloud with an SH palette keeps it, and the palette you passed is not changed.
+- **Limit:** while a cloud holds any patch its geometry has no `Clusters`, so the whole cloud is drawn without [budgeted level of detail](#budgeting-splats), and each change copies every point. That suits small clouds; it is costly for a capture of millions of splats.
+
 ### Rendering and limits
 
 Gaussians extend `Point` with three local one-sigma `GaussianAxes`, using

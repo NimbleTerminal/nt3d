@@ -63,7 +63,7 @@ The root package is one flat package. Its files are named for what they hold:
 | --- | --- |
 | **Scene** | `scene.go` (nodes, transforms, geometry setters), `draw_order.go`, `look.go`, `scene_light.go`, `scene_camera.go`, `scene_lod.go` (distance tiers), `scene_asset.go` and `scene_asset_lod.go` (reusable models), `animation.go`, `deformation.go` (skins and morphs), `mesh_update.go`, `point_update.go` (partial updates) |
 | **Frame** | `frame.go` (`Frame`, `Draw`, `Scene.Frame`, `StillFrame`, validation), `stats.go`, `cull.go`, `overlay.go` |
-| **Geometry** | `geometry.go` (the type and its checks), `primitives.go`, `shapes.go`, `heightfield.go`, `geometry_ops.go`, `tangents.go`, `crease.go` and `outline.go` (outline edges), `points.go`, `gaussian.go`, `gaussian_pack.go`, `sh_palette.go` (Gaussian splats), `labels.go`, `limits.go` (size limits) |
+| **Geometry** | `geometry.go` (the type and its checks), `primitives.go`, `shapes.go`, `heightfield.go`, `decal.go` and `surface_frame.go` (marks placed on a surface), `geometry_ops.go`, `tangents.go`, `crease.go` and `outline.go` (outline edges), `points.go`, `gaussian.go`, `gaussian_pack.go`, `gaussian_cloud.go`, `sh_palette.go` (Gaussian splats), `labels.go`, `limits.go` (size limits) |
 | **Appearance** | `material.go` (the type and its one set of rules), `texture.go`, `texture_encode.go`, `hdr.go`, `normalmap.go`, `lightmap.go`, `flowmap.go`, `pbr.go`, `toon.go`, `lighting.go`, `environment.go`, `reflection_probe.go`, `reflection.go`, `post.go`, `shader_hooks.go`, `shader_names.go` (names hooks may not take) |
 | **Camera** | `camera.go`, `clipping.go`, `near.go` |
 | **Picking** | `pick.go`, `bvh.go`, `render_pick.go` (GPU depth) |

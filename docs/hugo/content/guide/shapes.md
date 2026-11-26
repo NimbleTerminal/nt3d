@@ -37,6 +37,30 @@ smooth, err := nt3d.SmoothNormals(stlGeometry, 40)
 - `FlatNormals` gives each face its own normal, for a faceted look.
 - `SmoothNormals` averages the normals of faces meeting at a point, if they meet at less than the crease angle you give, weighting each by its corner's angle. It matches corners by position, so it smooths STL files, whose triangles share no vertices, too.
 
+## Decals
+
+`BuildDecal` projects a box onto a mesh and returns the part of the mesh inside it as a new, UV-mapped mesh to draw over the original: a sign on a wall, a mark on a floor.
+
+```go
+decal, err := nt3d.BuildDecal(wall, nt3d.Decal{
+	Center:       nt3dmath.Vec3{Y: -0.5},  // on the surface
+	Normal:       nt3dmath.Vec3{Y: -1},    // out of the surface
+	Up:           nt3dmath.Vec3{Z: 1},     // the image's upward direction
+	Width:        2, Height: 1.5, Depth: 0.4,
+	NormalOffset: 0.01,
+	Material:     &nt3d.Material{Texture: tex, Shading: nt3d.ShadeUnlit, Alpha: nt3d.AlphaTransparent},
+})
+```
+
+- `Normal` and `Up` need not be unit length, and `Up` need not be perpendicular to `Normal`: it is made so. UV (0, 0) is the top left of the image seen from outside the surface.
+- `Depth` is how far the box reaches through the surface. Keep it small, so the decal does not also land on what is behind.
+- Only triangles that face along `Normal` are kept, so a decal does not wrap onto back faces or onto a floor perpendicular to a wall.
+- `NormalOffset` lifts the decal off the surface along `Normal`, so the two do not fight for depth.
+- A decal that lands on nothing is not an error. The geometry returned is empty, and a scene draws nothing for it.
+- The target is in its own local coordinates, as `Center`, `Normal`, and `Up` are. For a node that has been moved, bake its transform in first with `TransformGeometry`, or place the decal's node with the same transform.
+
+To mark a Gaussian splat cloud instead of a mesh, see [Patching a cloud](../rendering/#patching-a-cloud).
+
 ## Updating fixed-topology meshes
 
 When an indexed triangle mesh animates on the CPU without changing its triangle indices, UVs, or material—such as [water tiles](../water/#larger-water-meshes), cloth, or terrain patches—update its vertices in place instead of calling `SetNodeGeometry`:
