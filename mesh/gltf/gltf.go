@@ -188,6 +188,7 @@ type gltfDecoder struct {
 	assetShows              bool // The asset has a node that shows something.
 	files                   sideFiles
 	images                  map[int]image.Image
+	imageSources            map[int]decodedSource // By image index: textures share it.
 	twoChannelTex           map[int]bool
 	normalTextures          map[int]*nt3d.Texture
 	ormTextures             map[[2]int]*nt3d.Texture
@@ -659,7 +660,29 @@ func (d *gltfDecoder) loadImage(index int) (image.Image, error) {
 	return img, nil
 }
 
+// decodedSource is an image of the document once decoded, or why it could
+// not be.
+type decodedSource struct {
+	img        image.Image
+	twoChannel bool
+	err        error
+}
+
+// loadImageSource decodes an image of the document once, however many
+// textures name it, and charges its decoded pixels to the byte budget.
 func (d *gltfDecoder) loadImageSource(src int) (image.Image, bool, error) {
+	if s, ok := d.imageSources[src]; ok {
+		return s.img, s.twoChannel, s.err
+	}
+	img, twoChannel, err := d.decodeImageSource(src)
+	if d.imageSources == nil {
+		d.imageSources = map[int]decodedSource{}
+	}
+	d.imageSources[src] = decodedSource{img, twoChannel, err}
+	return img, twoChannel, err
+}
+
+func (d *gltfDecoder) decodeImageSource(src int) (image.Image, bool, error) {
 	if src < 0 || src >= len(d.doc.Images) || d.doc.Images[src] == nil {
 		return nil, false, errors.New("has no image nt3d can read")
 	}
@@ -694,6 +717,12 @@ func (d *gltfDecoder) loadImageSource(src int) (image.Image, bool, error) {
 	if config.Width > maxTextureSide || config.Height > maxTextureSide {
 		return nil, false, fmt.Errorf("larger than %d pixels a side", maxTextureSide)
 	}
+	// Decoded pixels share the byte budget, as a KTX2 image's do.
+	pixels := int64(config.Width) * int64(config.Height) * 4
+	if pixels > *d.files.left {
+		return nil, false, fmt.Errorf("%w: glTF image decodes to more than MaxBytes has left", nt3dmesh.ErrTooLarge)
+	}
+	*d.files.left -= pixels
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, false, err

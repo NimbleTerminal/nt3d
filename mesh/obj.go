@@ -51,6 +51,16 @@ type objDecoder struct {
 	parts     map[[2]string]*objPart
 	order     []*objPart
 	warned    map[string]bool
+	// textures holds each texture file once per background it is flattened
+	// over, nil when it could not be used; bytesLeft is what their decoded
+	// pixels may still take of Options.MaxBytes.
+	textures  map[objTextureKey]*nt3d.Texture
+	bytesLeft int64
+}
+
+type objTextureKey struct {
+	path       string
+	background color.RGBA
 }
 
 func (d *objDecoder) errorf(format string, a ...any) error {
@@ -72,7 +82,7 @@ func (d *objDecoder) warn(format string, a ...any) {
 // JPEG) through Options.Open; transparent texels are flattened over Kd.
 // Problems with side files are warnings, not errors. Free-form geometry is ignored.
 func DecodeOBJ(data []byte, o *Options) (*Model, error) {
-	d := &objDecoder{o: o, m: &Model{Format: OBJ}, budget: triangleBudget{limit: o.limit()}, materials: map[string]*objMaterial{}, parts: map[[2]string]*objPart{}, warned: map[string]bool{}}
+	d := &objDecoder{o: o, m: &Model{Format: OBJ}, budget: triangleBudget{limit: o.limit()}, materials: map[string]*objMaterial{}, parts: map[[2]string]*objPart{}, warned: map[string]bool{}, textures: map[objTextureKey]*nt3d.Texture{}, bytesLeft: o.maxBytes()}
 	err := eachLine(data, func(n int, fields []string) error {
 		d.line = n
 		return d.statement(fields)
@@ -409,28 +419,42 @@ func (d *objDecoder) texture(m *objMaterial) *nt3d.Material {
 		return m.loaded
 	}
 	m.tried = true
-	data, err := d.o.Open(m.texture)
-	if err != nil {
-		d.warn("texture %q: %v", m.texture, err)
-		return nil
-	}
 	background := color.RGBA{255, 255, 255, 255}
 	if m.color != nil {
 		background = *m.color
 	}
-	opaque, err := decodeTexture(data, background)
-	if err != nil {
-		d.warn("texture %q: %v", m.texture, err)
-		return nil
+	key := objTextureKey{m.texture, background}
+	texture, loaded := d.textures[key]
+	if !loaded {
+		texture = d.loadTexture(key)
+		d.textures[key] = texture
 	}
-	texture, err := nt3d.NewTexture(opaque)
-	if err != nil {
-		d.warn("texture %q: %v", m.texture, err)
+	if texture == nil {
 		return nil
 	}
 	// OBJ textures tile by default, and many models' UVs rely on it.
 	m.loaded = &nt3d.Material{Texture: texture, Repeat: true}
 	return m.loaded
+}
+
+// loadTexture reads and decodes a texture file, or warns and returns nil.
+func (d *objDecoder) loadTexture(key objTextureKey) *nt3d.Texture {
+	data, err := d.o.Open(key.path)
+	if err != nil {
+		d.warn("texture %q: %v", key.path, err)
+		return nil
+	}
+	opaque, err := decodeTexture(data, key.background, &d.bytesLeft)
+	if err != nil {
+		d.warn("texture %q: %v", key.path, err)
+		return nil
+	}
+	texture, err := nt3d.NewTexture(opaque)
+	if err != nil {
+		d.warn("texture %q: %v", key.path, err)
+		return nil
+	}
+	return texture
 }
 
 // EncodeOBJ writes the triangles and lines of g as OBJ in local coordinates.
@@ -479,9 +503,11 @@ func EncodeOBJ(w io.Writer, g nt3d.Geometry) error {
 }
 
 // decodeTexture decodes a PNG or JPEG texture of at most maxTextureSide
-// pixels a side, checked before decoding, with transparency flattened over
-// background.
-func decodeTexture(data []byte, background color.RGBA) (*image.RGBA, error) {
+// pixels a side, with transparency flattened over background. Its decoded
+// pixels are charged to left, the bytes the decode may still take; both the
+// side and the charge are checked before decoding, and a texture that does
+// not fit is an error wrapping ErrTooLarge.
+func decodeTexture(data []byte, background color.RGBA, left *int64) (*image.RGBA, error) {
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, errors.New("not a PNG, JPEG, or registered image format")
@@ -489,6 +515,11 @@ func decodeTexture(data []byte, background color.RGBA) (*image.RGBA, error) {
 	if config.Width > maxTextureSide || config.Height > maxTextureSide {
 		return nil, fmt.Errorf("larger than %d pixels a side", maxTextureSide)
 	}
+	pixels := int64(config.Width) * int64(config.Height) * 4
+	if pixels > *left {
+		return nil, fmt.Errorf("%w: it decodes to %d MiB, more than MaxBytes has left", ErrTooLarge, (pixels+1<<20-1)>>20)
+	}
+	*left -= pixels
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, err

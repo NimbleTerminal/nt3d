@@ -166,9 +166,10 @@ func DecodePLY(data []byte, o *Options) (*Model, error) {
 				m.Warnings = append(m.Warnings, fmt.Sprintf("texture %q was not read: no side-file access", name))
 				break
 			}
+			left := o.maxBytes()
 			if data, err := o.Open(name); err != nil {
 				m.Warnings = append(m.Warnings, fmt.Sprintf("texture %q: %v", name, err))
-			} else if img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255}); err != nil {
+			} else if img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255}, &left); err != nil {
 				m.Warnings = append(m.Warnings, fmt.Sprintf("texture %q: %v", name, err))
 			} else if t, err := nt3d.NewTexture(img); err == nil {
 				s.Geometry.Material = &nt3d.Material{Texture: t, Repeat: true}

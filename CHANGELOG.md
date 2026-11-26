@@ -9,6 +9,11 @@
 - **Projected mesh decals and runtime Gaussian patches**: `BuildDecal` clips target triangles to an oriented box with planar `[0, 1]²` UVs and normal lift, while `GaussianCloud` and `BuildFlatGaussians` insert and remove surface-aligned 3DGS patches inside a single depth-sorted cloud (preserving SH palettes).
 - **Kinematic capsule collision (`nt3d/collide`)**: Z-up `float64` ray casts and `MoveCapsule` collide-and-slide against a static triangle mesh, with slope limits, curb step-up, and downward ground snapping. The package depends only on `nt3d/math`; `nt3d/collide/scene` builds a mesh from an `nt3d.Geometry`. `MoveCapsule` moves in substeps of at most half the capsule's radius, so speed and step length cannot carry it through a surface, and it returns an error for wrong input (a capsule or `MoveConfig` that fails `Validate`, a position, velocity or `dt` that is not finite) with the pose unchanged.
 
+### Changed
+
+- **Decoded texture pixels count against `Options.MaxBytes`**: glTF PNG, JPEG and WebP images, and OBJ, PLY and 3MF textures, are charged four bytes a pixel before they are decoded, as KTX2 and SOG images already were. Before, only the 8192-pixel side limit applied, so a small file of highly compressible images could allocate far past the budget. A glTF image that does not fit fails the decode with `ErrTooLarge`; an OBJ, PLY or 3MF texture that does not fit is left out with a warning. A model with more than 256 MiB of decoded textures (four 4096² images) now needs a larger `MaxBytes`.
+- **A glTF image, or an OBJ texture file, is decoded once** however many textures or materials name it, and they share its pixels.
+
 ### Fixed
 
 - **A normal map is refused as an ORM map, and the reverse**: `NewORMMap` and `NewNormalMap` produced the same kind of texture, so `Material.Validate`, `SetNodeORMMap` and `SetNodeNormalMap` accepted either in the other's place and drew it wrongly.

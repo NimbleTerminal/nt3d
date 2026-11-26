@@ -158,7 +158,7 @@ func PointPieces(o Object) []Object {
 	return pieces
 }
 
-// DefaultMaxBytes is how much a 3MF package may unpack to when Options.MaxBytes is zero.
+// DefaultMaxBytes is the byte budget of a decode when Options.MaxBytes is zero.
 const DefaultMaxBytes = 256 << 20
 
 // Up names the axis a file treats as up.
@@ -190,7 +190,11 @@ type Options struct {
 	// Model.Parts; nil assembles all. The triangle limit applies to those chosen.
 	Parts []bool
 	// MaxBytes limits unpacked 3MF data, Gaussian PLY input bytes,
-	// decompressed SPZ, and SOG files and images. Zero uses DefaultMaxBytes.
+	// decompressed SPZ, SOG files, glTF side files, and the decoded pixels
+	// of every texture and image, at four bytes a pixel. Zero uses
+	// DefaultMaxBytes. A glTF or SOG image that does not fit fails the
+	// decode; an OBJ, PLY or 3MF texture that does not fit is left out with
+	// a warning.
 	MaxBytes int64
 	// Up is the file's up axis. Most files do not say, so the caller must;
 	// SPZ states its axes, and ignores Up.

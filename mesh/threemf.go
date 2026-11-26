@@ -400,7 +400,7 @@ func (d *decoder3MF) texture(path string) *nt3d.Texture {
 		warn(err)
 		return nil
 	}
-	img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255})
+	img, err := decodeTexture(data, color.RGBA{255, 255, 255, 255}, &d.pkg.budget)
 	if err != nil {
 		warn(err)
 		return nil
