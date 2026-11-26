@@ -134,57 +134,54 @@ func MoveCapsule(m *Mesh, cap Capsule, pos, vel nt3dmath.Vec3d, dt float64, wasG
 	subDt := dt / float64(steps)
 
 	for range steps {
-		rem := subDt
-		var planes [4]nt3dmath.Vec3d
-		nPlanes := 0
-		for iter := range 4 {
-			_ = iter
-			if !(rem > 1e-9) || vecLenSq(curVel) <= 1e-14 {
-				break
-			}
-			want := curPos.Add(vecScale(curVel, rem))
-			resolved, contacts := depenetrate(m, cap, want, skin, minWalkZ, &res, initialVel, true)
-			if len(contacts) == 0 {
-				curPos = resolved
-				break
-			}
-
-			// Try stepping over a low curb when grounded or moving mostly horizontally.
-			if stepH > 0 && (wasGrounded || res.Grounded) && hasWallContact(contacts, minWalkZ) {
-				if stepped, ok := tryStepUp(m, cap, curPos, vecScale(curVel, rem), stepH, skin, minWalkZ); ok {
-					horizGain := math.Hypot(stepped.X-curPos.X, stepped.Y-curPos.Y)
-					slideGain := math.Hypot(resolved.X-curPos.X, resolved.Y-curPos.Y)
-					if horizGain > slideGain+1e-3 {
-						curPos = stepped
-						res.Grounded = true
-						if curVel.Z < 0 {
-							curVel.Z = 0
-						}
-						break
-					}
-				}
-			}
-
+		if !(subDt > 1e-9) || vecLenSq(curVel) <= 1e-14 {
+			continue
+		}
+		want := curPos.Add(vecScale(curVel, subDt))
+		resolved, contacts := depenetrate(m, cap, want, skin, minWalkZ, &res, initialVel, true)
+		if len(contacts) == 0 {
 			curPos = resolved
-			for _, n := range contacts {
-				if dot(curVel, n) >= 0 {
+			continue
+		}
+
+		// Try stepping over a low curb when grounded or moving mostly horizontally.
+		if stepH > 0 && (wasGrounded || res.Grounded) && hasWallContact(contacts, minWalkZ) {
+			if stepped, ok := tryStepUp(m, cap, curPos, vecScale(curVel, subDt), stepH, skin, minWalkZ); ok {
+				horizGain := math.Hypot(stepped.X-curPos.X, stepped.Y-curPos.Y)
+				slideGain := math.Hypot(resolved.X-curPos.X, resolved.Y-curPos.Y)
+				if horizGain > slideGain+1e-3 {
+					curPos = stepped
+					res.Grounded = true
+					if curVel.Z < 0 {
+						curVel.Z = 0
+					}
 					continue
 				}
-				duplicate := false
-				for k := range nPlanes {
-					if dot(planes[k], n) > 0.995 {
-						duplicate = true
-						break
-					}
-				}
-				if !duplicate && nPlanes < len(planes) {
-					planes[nPlanes] = n
-					nPlanes++
+			}
+		}
+
+		// Slide: take out of the velocity what points into each distinct
+		// surface this substep touched.
+		curPos = resolved
+		var planes [4]nt3dmath.Vec3d
+		nPlanes := 0
+		for _, n := range contacts {
+			if dot(curVel, n) >= 0 {
+				continue
+			}
+			duplicate := false
+			for k := range nPlanes {
+				if dot(planes[k], n) > 0.995 {
+					duplicate = true
+					break
 				}
 			}
-			curVel = clipVelocity(curVel, planes[:nPlanes])
-			break
+			if !duplicate && nPlanes < len(planes) {
+				planes[nPlanes] = n
+				nPlanes++
+			}
 		}
+		curVel = clipVelocity(curVel, planes[:nPlanes])
 	}
 
 	// Ground probe and downward snap when grounded (or landing with vel.Z <= 0).
@@ -318,8 +315,7 @@ func probeGround(m *Mesh, cap Capsule, pos nt3dmath.Vec3d, maxDrop, skin, minWal
 func depenetrate(m *Mesh, cap Capsule, pos nt3dmath.Vec3d, skin, minWalkZ float64, res *MoveResult, impactRef nt3dmath.Vec3d, record bool) (nt3dmath.Vec3d, []nt3dmath.Vec3d) {
 	var contacts []nt3dmath.Vec3d
 	targetR := cap.Radius + skin
-	for pass := range 4 {
-		_ = pass
+	for range 4 {
 		lo, hi := cap.Bounds(pos, skin+1e-3)
 		var near []Triangle
 		m.queryBox(lo, hi, func(t Triangle) { near = append(near, t) })
