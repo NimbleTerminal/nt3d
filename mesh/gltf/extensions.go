@@ -28,6 +28,7 @@ var documentExtensions = []string{
 	"EXT_meshopt_compression", // meshopt.go: compressed buffer views.
 	"EXT_texture_webp",        // gltf.go, loadImage: WebP textures, when a WebP decoder is registered.
 	"EXT_mesh_gpu_instancing", // instancing.go: many placements of one mesh.
+	"KHR_gaussian_splatting",  // gaussian.go: a POINTS primitive as a Gaussian splat cloud.
 }
 
 // supportedExtensions are those whose meaning Decode honors.

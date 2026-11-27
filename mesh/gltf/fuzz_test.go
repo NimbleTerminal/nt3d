@@ -42,6 +42,15 @@ func FuzzDecode(f *testing.F) {
 	f.Add([]byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"side.bin","byteLength":36}],"bufferViews":[{"buffer":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"nodes":[{"mesh":0}],"scenes":[{"nodes":[0]}],"scene":0}`), bytes.Repeat([]byte{0, 0, 128, 63}, 9))
 	f.Add([]byte(`{"asset":{"version":"2.0"},"extensionsUsed":["EXT_mesh_gpu_instancing"],"buffers":[{"uri":"side.bin","byteLength":60}],"bufferViews":[{"buffer":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":24}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},{"bufferView":1,"componentType":5126,"count":2,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"nodes":[{"mesh":0,"extensions":{"EXT_mesh_gpu_instancing":{"attributes":{"TRANSLATION":1}}}}],"scenes":[{"nodes":[0]}],"scene":0}`), bytes.Repeat([]byte{0, 0, 128, 63}, 15))
 	f.Add([]byte(`{"asset":{"version":"2.0"},"extensionsUsed":["EXT_texture_webp"],"buffers":[{"uri":"side.bin","byteLength":36}],"bufferViews":[{"buffer":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],"images":[{"uri":"tex.webp","mimeType":"image/webp"}],"textures":[{"extensions":{"EXT_texture_webp":{"source":0}}}],"materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0}}}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0}]}],"nodes":[{"mesh":0}],"scenes":[{"nodes":[0]}],"scene":0}`), bytes.Repeat([]byte{0, 0, 128, 63}, 9))
+	// A KHR_gaussian_splatting primitive: one splat, harmonics of degree 0.
+	splatDocument, splatFiles := splatDoc(f, []splatAttr{
+		floats("POSITION", "VEC3", []float64{1, 2, 3}),
+		floats("KHR_gaussian_splatting:ROTATION", "VEC4", []float64{0, 0, 0, 1}),
+		floats("KHR_gaussian_splatting:SCALE", "VEC3", []float64{2, 1, .5}),
+		floats("KHR_gaussian_splatting:OPACITY", "SCALAR", []float64{.75}),
+		floats("KHR_gaussian_splatting:SH_DEGREE_0_COEF_0", "VEC3", []float64{1, 0, -1}),
+	}, ellipse, "")
+	f.Add(splatDocument, splatFiles["side.bin"])
 	// A null where an object belongs: each array of objects decodes to pointers.
 	f.Add([]byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"side.bin","byteLength":36}],"bufferViews":[{"buffer":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[null],"cameras":[null],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0},null]}],"nodes":[{"mesh":0,"camera":0}],"scenes":[{"nodes":[0]},null],"scene":0}`), bytes.Repeat([]byte{0, 0, 128, 63}, 9))
 	// KHR_texture_basisu + KHR_materials_specular seeds (both UASTC and BasisLZ/ETC1S side KTX2 payloads).

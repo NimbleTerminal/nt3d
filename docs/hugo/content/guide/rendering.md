@@ -266,6 +266,38 @@ block (a named coordinate system, quantization notes) and the antialiased
 flag are ignored. `Options.MaxBytes` bounds the decompressed size. Niantic's
 samples, at 786k and 933k splats, open as one slab each.
 
+### Gaussian splats in glTF
+
+`nt3d/mesh/gltf` reads [`KHR_gaussian_splatting`](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_gaussian_splatting), the ratified glTF extension that makes a `POINTS` primitive a splat cloud. It is how a tile of a [3D Tiles](../tiles3d/) tileset carries splats, and a `.glb` of splats loads like any other model:
+
+```go
+model, err := nt3dgltf.Decode(data, nil)
+root, err := model.AddTo(scene, nt3d.Root, "capture")
+```
+
+The extension stores what a 3DGS PLY does, in plainer units, and the decoder reads it as written:
+
+| Attribute | Stored as | Component types |
+| --- | --- | --- |
+| `POSITION` | glTF's own, Y-up | as any primitive, quantized included |
+| `KHR_gaussian_splatting:ROTATION` | a unit quaternion, x, y, z, w | float, or normalized signed bytes or shorts |
+| `KHR_gaussian_splatting:SCALE` | linear, zero or more (a PLY stores logarithms) | float, or unsigned bytes or shorts, normalized or not |
+| `KHR_gaussian_splatting:OPACITY` | linear, 0 to 1 (a PLY stores a logit) | float, or normalized unsigned bytes or shorts |
+| `KHR_gaussian_splatting:SH_DEGREE_l_COEF_m` | RGB coefficients, `2l+1` for degree `l`, in order of `m` | float |
+
+The color at rest is `0.5 + 0.2820948 ×` the degree-0 coefficient, as everywhere else in nt3d (`ColorFromSHDC`). Degrees must be whole and without gaps: degree 0 alone, or 0 and 1, and so on to 3.
+
+The cloud is finished as the other Gaussian decoders finish theirs: `Options.SHPalette` is applied, a cloud too large for one geometry is split into pieces, and each piece is clustered for [budgeted level of detail](../clustering/#gaussian-clouds) unless `Options.NoClusters`. So a splat tile behaves under `Frame.SplatBudget` as a `.spz` file does.
+
+glTF is Y-up and nt3d is Z-up. The cloud turns with the scene, once: positions, the splats' axes, and the frame the harmonics are evaluated in, so a view-dependent color seen from the north is the one the file gives toward its own -Z. A node's rotation turns all three the same way. A test holds that the same cloud written as a Y-up PLY and as a glTF primitive decodes to the same geometry.
+
+What is refused, and what is passed over:
+
+- A splat primitive that is not `POINTS`, lacks an attribute, has attributes of different counts, a negative scale, an opacity outside 0 to 1, or a degree with coefficients missing is an error that names the fault.
+- A `kernel` other than `ellipse` is not drawn as splats. The primitive is shown as plain points, which the extension allows a renderer that does not know it, and `Model.Warnings` says so.
+- `colorSpace` `lin_rec709_display` is drawn as display sRGB, with a warning: harmonics are a sum and cannot be converted exactly.
+- Compressed splats are not read yet. The SPZ compression extension is still a draft at Khronos; a primitive whose attributes are left to a compression extension is an error that names it.
+
 ### SOG and compressed PLY
 
 SuperSplat writes PlayCanvas's compressed formats: SOG version 2 as a `.sog`

@@ -82,4 +82,4 @@ far := box.Distance(eyeECEF)                // 0 inside the box
 
 ## Reference values
 
-The conversions are tested against values computed by PROJ 9.9.0, in `geo/testdata/geo-vectors.json`: geodetic to ECEF at the equator, the poles, the antimeridian and Stamford; ENU at 1 m, 1 km and 10 km; and points on the surfaces of four regions. Another implementation of these frames can read the same file.
+The conversions are tested against values computed by PROJ 9.9.0, in `geo/testdata/geo-vectors.json`: geodetic to ECEF at the equator, the poles, the antimeridian and Stamford; ENU at 1 m, 1 km and 10 km; and points on the surfaces of four regions. The same file holds one Gaussian splat as `KHR_gaussian_splatting` stores it, with its axes and color worked by hand, which the glTF decoder is tested against and a writer of splat tiles can be too. Another implementation of these frames can read the same file.

@@ -690,5 +690,153 @@
     }
    ]
   }
- ]
+ ],
+ "gaussian": {
+  "description": "One Gaussian as glTF KHR_gaussian_splatting stores it (ratified): POSITION in glTF's Y-up frame, ROTATION a unit quaternion x,y,z,w (here a quarter turn about +Z), SCALE linear, OPACITY linear, and sh as 16 RGB coefficients in attribute order: SH_DEGREE_0_COEF_0, then SH_DEGREE_1_COEF_0..2, SH_DEGREE_2_COEF_0..4, SH_DEGREE_3_COEF_0..6. The rest is worked by hand from those: axes are the rotated unit axes times the scales, diffuse is 0.5 + 0.2820947917738781 * SH_DEGREE_0_COEF_0, and zUp turns (x,y,z) to (x,-z,y), as 3D Tiles turns glTF content.",
+  "position": [
+   1.0,
+   2.0,
+   3.0
+  ],
+  "rotation": [
+   0.0,
+   0.0,
+   0.7071067811865476,
+   0.7071067811865476
+  ],
+  "scale": [
+   2.0,
+   1.0,
+   0.5
+  ],
+  "opacity": 0.75,
+  "sh": [
+   [
+    1.0,
+    0.0,
+    -1.0
+   ],
+   [
+    -0.01,
+    -0.02,
+    -0.03
+   ],
+   [
+    0.02,
+    0.04,
+    0.06
+   ],
+   [
+    -0.03,
+    -0.06,
+    -0.09
+   ],
+   [
+    0.04,
+    0.08,
+    0.12
+   ],
+   [
+    -0.05,
+    -0.1,
+    -0.15
+   ],
+   [
+    0.06,
+    0.12,
+    0.18
+   ],
+   [
+    -0.07,
+    -0.14,
+    -0.21
+   ],
+   [
+    0.08,
+    0.16,
+    0.24
+   ],
+   [
+    -0.09,
+    -0.18,
+    -0.27
+   ],
+   [
+    0.1,
+    0.2,
+    0.3
+   ],
+   [
+    -0.11,
+    -0.22,
+    -0.33
+   ],
+   [
+    0.12,
+    0.24,
+    0.36
+   ],
+   [
+    -0.13,
+    -0.26,
+    -0.39
+   ],
+   [
+    0.14,
+    0.28,
+    0.42
+   ],
+   [
+    -0.15,
+    -0.3,
+    -0.45
+   ]
+  ],
+  "diffuse": [
+   0.7820947917738781,
+   0.5,
+   0.2179052082261219
+  ],
+  "axes": [
+   [
+    0.0,
+    2.0,
+    0.0
+   ],
+   [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    0.5
+   ]
+  ],
+  "zUp": {
+   "position": [
+    1.0,
+    -3.0,
+    2.0
+   ],
+   "axes": [
+    [
+     0.0,
+     0.0,
+     2.0
+    ],
+    [
+     -1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     -0.5,
+     0.0
+    ]
+   ]
+  }
+ }
 }

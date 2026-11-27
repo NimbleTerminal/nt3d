@@ -45,11 +45,10 @@ move to Done with their commit; git history has the details.
 
 - [ ] **Stream 3D Tiles into a scene.** `nt3d/geo` and `nt3d/tiles3d` read
   and place a tileset; drawing one is open, in this order:
-  1. Gaussian splat tile content: `KHR_gaussian_splatting` primitives in
-     `nt3d/mesh/gltf` (ratified: xyzw rotation, linear scale and opacity, SH
-     as float coefficients), then its SPZ compression extension, which is
-     still a draft (KhronosGroup/glTF pull 2531) whose coordinate frame and
-     color attributes are disputed. SPZ payloads must be unpacked without
+  1. Compressed splat tile content. `nt3d/mesh/gltf` reads the ratified
+     `KHR_gaussian_splatting`; its SPZ compression extension is still a
+     draft (KhronosGroup/glTF pull 2531) whose coordinate frame and color
+     attributes are disputed. SPZ payloads must be unpacked without
      `Model.OrientYUp`, so the glTF root turns Y-up to Z-up once.
   2. `nt3d/tiles3d/scene`: selection by screen-space error against the
      nearest point of a tile's bounds, `REPLACE` that keeps a loaded ancestor
