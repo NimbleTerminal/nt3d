@@ -54,6 +54,12 @@ func FuzzDecode(f *testing.F) {
 	// The same kind of primitive with its data in an SPZ payload.
 	spzPayload := twoSplatSPZ(f)
 	f.Add(spzSplatDoc(spzPayload, 2, spzNested, spzUsed, ""), spzPayload)
+	// Content placed on the Earth: a root node millions of meters out, and a
+	// CESIUM_RTC center, both taken out of the geometry into Model.Origin.
+	farNode, farFiles := farTriangle(`,"translation":[1364789.133,4166319.166,4619824.799]`, "")
+	f.Add(farNode, farFiles["side.bin"])
+	rtc, rtcFiles := farTriangle("", `"extensionsUsed":["CESIUM_RTC"],"extensions":{"CESIUM_RTC":{"center":[1364789.133,-4619824.799,4166319.166]}},`)
+	f.Add(rtc, rtcFiles["side.bin"])
 	// A null where an object belongs: each array of objects decodes to pointers.
 	f.Add([]byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"side.bin","byteLength":36}],"bufferViews":[{"buffer":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[null],"cameras":[null],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0},null]}],"nodes":[{"mesh":0,"camera":0}],"scenes":[{"nodes":[0]},null],"scene":0}`), bytes.Repeat([]byte{0, 0, 128, 63}, 9))
 	// KHR_texture_basisu + KHR_materials_specular seeds (both UASTC and BasisLZ/ETC1S side KTX2 payloads).

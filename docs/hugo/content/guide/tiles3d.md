@@ -144,6 +144,6 @@ Each tileset adds its tiles under one node, named `Options.Name` (`"tileset"` by
 
 ## Limits and untrusted files
 
-Every document is untrusted. `Options` limits what a parse accepts (`MaxBytes`, `MaxTiles`, `MaxDepth`; zero means the default), and a document over a limit returns an error that wraps `ErrTooLarge`. No input panics: the tileset, subtree, and b3dm readers each have a fuzz target.
+Every document is untrusted. `Options` limits what a parse accepts (`MaxBytes`, `MaxTiles`, `MaxDepth`; zero means the default), and a document over a limit returns an error that wraps `ErrTooLarge`. No input panics: the tileset, subtree, and b3dm readers and `Resolve` each have a fuzz target, and another streams arbitrary tilesets and content through `nt3d/tiles3d/scene`, holding that it settles, that its numbers add up, and that closing it leaves the scene empty.
 
 Credits are text from a file, shown on screen. `Asset.Credits()` returns the tileset's `copyright` and its `extras.attribution` (a string or a list of them), each cut to one line of printable characters.

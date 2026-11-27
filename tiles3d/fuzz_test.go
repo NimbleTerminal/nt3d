@@ -3,7 +3,10 @@
 package nt3dtiles3d
 
 import (
+	"context"
+	"strings"
 	"testing"
+	"testing/fstest"
 
 	"nimbleterminal.dev/nt3d/math"
 )
@@ -20,6 +23,9 @@ func FuzzParseTileset(f *testing.F) {
 			return
 		}
 		_ = ts.Asset.Credits()
+		if center, err := ts.Center(); err == nil && center.Validate() != nil {
+			t.Fatalf("the tileset's center is off the Earth: %+v", center)
+		}
 		var walk func(tile *Tile, toECEF nt3dmath.Mat4d)
 		walk = func(tile *Tile, toECEF nt3dmath.Mat4d) {
 			toECEF = toECEF.Mul(tile.Transform)
@@ -80,5 +86,33 @@ func FuzzUnwrapB3DM(f *testing.F) {
 			t.Fatalf("glb of %d bytes from %d, center %+v", len(glb), len(data), center)
 		}
 		_ = SniffContent(data)
+	})
+}
+
+// FuzzResolve holds that no base and reference make Resolve panic, that a
+// reference resolved beside a plain path never climbs above the path's
+// root, and that the file-system fetcher reads nothing outside its own.
+func FuzzResolve(f *testing.F) {
+	f.Add("city/tileset.json", "tiles/0.glb")
+	f.Add("https://tiles.example/city/tileset.json?v=3", "../shared/a.glb")
+	f.Add("tileset.json", "../../etc/passwd")
+	f.Add("a/b/c.json", "/%2e%2e/%2e%2e/secret")
+	f.Add("tileset.json", "data:model/gltf-binary;base64,AAAA")
+	inside := fstest.MapFS{"city/tiles/0.glb": {Data: []byte("in")}}
+	fetch := FS(inside)
+	f.Fuzz(func(t *testing.T, base, ref string) {
+		got, err := Resolve(base, ref)
+		if err == nil && !strings.Contains(base, ":") && !strings.Contains(ref, ":") && !strings.HasPrefix(base, "//") && !strings.HasPrefix(ref, "//") {
+			if got == ".." || strings.HasPrefix(got, "../") {
+				t.Fatalf("Resolve(%q, %q) = %q climbs above the root", base, ref, got)
+			}
+		}
+		// Whatever the reference, the fetcher answers only from its files.
+		if data, err := fetch.Fetch(context.Background(), ref); err == nil && string(data) != "in" {
+			t.Fatalf("the fetcher read %q for %q", data, ref)
+		}
+		if err == nil {
+			_, _ = fetch.Fetch(context.Background(), got)
+		}
 	})
 }
