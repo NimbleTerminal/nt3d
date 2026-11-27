@@ -114,3 +114,28 @@ f 1 2 3
 		t.Fatalf("got tris=%d points=%d, want tris=4 points=1 (stats=%+v)", st.Triangles, st.Points, st)
 	}
 }
+
+// Tiers placed far from zero keep their placement through AddLODModels, as
+// through AddTo: the node takes their shared Origin. Tiers of one thing
+// placed at different points are refused.
+func TestAddLODModelsKeepsTheModelsOrigin(t *testing.T) {
+	tier := func(origin nt3dmath.Vec3d) *Model {
+		g := nt3d.Geometry{Vertices: []nt3d.Vertex{{Position: nt3dmath.Vec3{}}, {Position: nt3dmath.Vec3{X: 1}}, {Position: nt3dmath.Vec3{Y: 1}}}, Indices: []uint32{0, 1, 2}}
+		return &Model{Objects: []Object{{Name: "part", Geometry: g}}, Origin: origin}
+	}
+	place := nt3dmath.Vec3d{X: 1364789.133, Y: -4619824.799, Z: 4166319.166}
+	s := nt3d.NewScene()
+	root, err := AddLODModels(s, nt3d.Root, "far", []ModelLOD{{MaxDistance: 20, Model: tier(place)}, {MaxDistance: 0, Model: tier(place)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.NodeOrigin(root); got != [3]float64{place.X, place.Y, place.Z} {
+		t.Fatalf("the node's origin is %v, want the tiers' Origin", got)
+	}
+	if _, err := AddLODModels(s, nt3d.Root, "apart", []ModelLOD{{MaxDistance: 20, Model: tier(place)}, {MaxDistance: 0, Model: tier(nt3dmath.Vec3d{})}}); err == nil {
+		t.Fatal("tiers placed at different origins were combined")
+	}
+	if _, found := s.Find("apart"); found {
+		t.Fatal("a refused LOD left a node behind")
+	}
+}

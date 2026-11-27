@@ -101,13 +101,26 @@ func CombineLOD(tiers []ModelLOD) (*nt3d.SceneAsset, error) {
 // AddLODModels combines separate per-tier Models with CombineLOD and
 // instantiates the resulting LOD asset under parent as name. On failure nothing
 // is added.
+//
+// Tiers placed far from zero (Model.Origin) must all be placed at the same
+// point, which becomes the node's origin, as AddTo makes it; tiers of one
+// thing placed at different points are an error.
 func AddLODModels(s *nt3d.Scene, parent nt3d.NodeID, name string, tiers []ModelLOD) (nt3d.NodeID, error) {
 	asset, err := CombineLOD(tiers)
 	if err != nil {
 		return 0, err
 	}
+	for _, t := range tiers[1:] {
+		if t.Model.Origin != tiers[0].Model.Origin {
+			return 0, errors.New("nt3dmesh: LOD tiers are placed at different origins")
+		}
+	}
 	inst, err := asset.Instantiate(s, parent, name)
 	if err != nil {
+		return 0, err
+	}
+	if err := tiers[0].Model.placeOrigin(s, inst.Root); err != nil {
+		_ = s.Remove(inst.Root)
 		return 0, err
 	}
 	return inst.Root, nil
