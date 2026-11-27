@@ -445,3 +445,59 @@ func TestGaussianSplattingReadsZeroInitializedAttributes(t *testing.T) {
 		t.Fatalf("a zero degree-0 coefficient gives the color %v, want mid gray", c)
 	}
 }
+
+// A splat primitive with indices draws the splats its indices name, in
+// their order, as any indexed POINTS primitive draws the vertices named:
+// records no index selects are not splats. An index past the records is an
+// error.
+func TestGaussianSplattingFollowsThePrimitivesIndices(t *testing.T) {
+	v := readGaussianVector(t)
+	attrs := vectorAttrs(v, 1)
+	// Two records, the second three units along x, and one index naming it.
+	for i := range attrs {
+		second := append([]float64(nil), attrs[i].rows[0]...)
+		if attrs[i].name == "POSITION" {
+			second[0] += 3
+		}
+		attrs[i].rows = append(attrs[i].rows, second)
+	}
+	indexed := func(index float64) ([]byte, map[string][]byte) {
+		with := append(append([]splatAttr(nil), attrs...), splatAttr{name: "INDEX", kind: "SCALAR", component: 5123, rows: [][]float64{{index}}})
+		doc, files := splatDoc(t, with, ellipse, "")
+		at := len(with) - 1
+		text := strings.Replace(string(doc), fmt.Sprintf(`,"INDEX":%d`, at), ``, 1)
+		text = strings.Replace(text, `"mode":0`, fmt.Sprintf(`"indices":%d,"mode":0`, at), 1)
+		if strings.Contains(text, "INDEX") || !strings.Contains(text, `"indices"`) {
+			t.Fatal("the document was not given indices")
+		}
+		return []byte(text), files
+	}
+	for _, assetOnly := range []bool{false, true} {
+		doc, files := indexed(1)
+		m := decodeSplats(t, doc, files, &nt3dmesh.Options{AssetOnly: assetOnly})
+		var clouds []nt3d.Geometry
+		for _, o := range m.Objects {
+			clouds = append(clouds, o.Geometry)
+		}
+		for _, n := range m.Asset.Nodes {
+			if assetOnly && n.Geometry != nil {
+				clouds = append(clouds, *n.Geometry)
+			}
+		}
+		if len(clouds) != 1 || len(clouds[0].Points) != 1 {
+			t.Fatalf("asset only %v: one index of two records decoded to %d clouds, want one splat", assetOnly, len(clouds))
+		}
+		g := clouds[0]
+		if len(g.GaussianSH) != 4 {
+			t.Fatalf("asset only %v: the splat has %d SH coefficients, want 4", assetOnly, len(g.GaussianSH))
+		}
+		// The second record, three along x, which neither turn moves.
+		if got, want := g.Points[0].Position.X, float32(v.Position[0]+3); math.Abs(float64(got-want)) > 1e-5 {
+			t.Fatalf("asset only %v: the splat is at x %g, want the second record's %g", assetOnly, got, want)
+		}
+	}
+	doc, files := indexed(2)
+	if _, err := Decode(doc, &nt3dmesh.Options{Open: opener(files)}); err == nil || !strings.Contains(err.Error(), "index") {
+		t.Fatalf("an index past the records: %v, want an error naming the index", err)
+	}
+}

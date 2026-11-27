@@ -233,8 +233,51 @@ func (d *gltfDecoder) gaussians(name string, p *gltf.Primitive, world mat4) (boo
 			g.GaussianSH = append(g.GaussianSH, c)
 		}
 	}
+	if err := d.indexSplats(name, p, &g); err != nil {
+		return false, err
+	}
 	g.Bounds = nt3d.GeometryBounds(g)
 	return d.finishSplats(name, g, world)
+}
+
+// indexSplats applies a splat primitive's indices to the cloud its
+// attributes gave: the splats are the records the indices name, in their
+// order, as an indexed POINTS primitive draws the vertices named. A
+// primitive without indices is left as it is.
+func (d *gltfDecoder) indexSplats(name string, p *gltf.Primitive, g *nt3d.Geometry) error {
+	if p.Indices == nil {
+		return nil
+	}
+	a, err := d.accessor(*p.Indices, "indices")
+	if err != nil {
+		return err
+	}
+	indices, err := modeler.ReadIndices(d.doc, a, nil)
+	if err != nil {
+		return fmt.Errorf("nt3dmesh: glTF %s splats: indices: %w", name, err)
+	}
+	n := len(g.Points)
+	per := 0
+	if n > 0 {
+		per = len(g.GaussianSH) / n
+	}
+	// Indices may name a record many times: what they select is counted as
+	// what the records were.
+	if err := d.decoded.Take(int64(len(indices))*int64(64+12*per), "glTF splats decoded"); err != nil {
+		return err
+	}
+	points := make([]nt3d.Point, 0, len(indices))
+	harmonics := make([]nt3dsh.RGB, 0, len(indices)*per)
+	for _, i := range indices {
+		if int(i) >= n {
+			return fmt.Errorf("nt3dmesh: glTF %s splats: index %d is past its %d records", name, i, n)
+		}
+		points = append(points, g.Points[i])
+		harmonics = append(harmonics, g.GaussianSH[int(i)*per:int(i)*per+per]...)
+	}
+	g.Points, g.GaussianSH = points, harmonics
+	g.Bounds = nt3d.GeometryBounds(*g)
+	return nil
 }
 
 // spzCompressionNames are the names the SPZ compression of a splat primitive
@@ -286,6 +329,9 @@ func (d *gltfDecoder) spzSplats(name string, p *gltf.Primitive, world mat4, spz 
 		}
 	}
 	if err := d.decoded.Take(int64(len(g.Points))*64+int64(len(g.GaussianSH))*12, "glTF splats decoded"); err != nil {
+		return false, err
+	}
+	if err := d.indexSplats(name, p, &g); err != nil {
 		return false, err
 	}
 	return d.finishSplats(name, g, world)
