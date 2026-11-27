@@ -108,7 +108,10 @@ func (ts *Tileset) loadContents(ctx context.Context, uris []string) (models []mo
 			bytes += int64(len(data))
 			var m *model
 			var n *nested
-			if m, n, err = ts.decode(ctx, uri, data); m != nil {
+			var beside int64
+			m, n, beside, err = ts.decode(ctx, uri, data)
+			bytes += beside
+			if m != nil {
 				models = append(models, *m)
 			} else if n != nil {
 				tilesets = append(tilesets, *n)
@@ -121,23 +124,24 @@ func (ts *Tileset) loadContents(ctx context.Context, uris []string) (models []mo
 	return models, tilesets, bytes, first
 }
 
-func (ts *Tileset) decode(ctx context.Context, uri string, data []byte) (*model, *nested, error) {
+// decode reads one content. beside is the bytes of the files a glTF names
+// beside it, its buffers and images, which are part of what the tile holds.
+func (ts *Tileset) decode(ctx context.Context, uri string, data []byte) (m *model, n *nested, beside int64, err error) {
 	var center nt3dmath.Vec3d
 	switch nt3dtiles3d.SniffContent(data) {
 	case nt3dtiles3d.ContentTileset:
 		parsed, err := nt3dtiles3d.ParseTileset(data, ts.o.Tiles)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
-		return nil, &nested{tileset: parsed, uri: uri}, nil
+		return nil, &nested{tileset: parsed, uri: uri}, 0, nil
 	case nt3dtiles3d.ContentB3DM:
-		var err error
 		if data, center, err = nt3dtiles3d.UnwrapB3DM(data); err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 	case nt3dtiles3d.ContentGLB, nt3dtiles3d.ContentGLTF:
 	default:
-		return nil, nil, errors.New("content is not glTF, b3dm, or a tileset")
+		return nil, nil, 0, errors.New("content is not glTF, b3dm, or a tileset")
 	}
 	var o nt3dmesh.Options
 	if ts.o.Mesh != nil {
@@ -150,18 +154,20 @@ func (ts *Tileset) decode(ctx context.Context, uri string, data []byte) (*model,
 		if err != nil {
 			return nil, err
 		}
-		return ts.fetch.Fetch(ctx, side)
+		file, err := ts.fetch.Fetch(ctx, side)
+		beside += int64(len(file))
+		return file, err
 	}
 	decoded, err := nt3dgltf.Decode(data, &o)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, beside, err
 	}
 	if decoded.Asset == nil {
-		return nil, nil, errors.New("content has nothing to show")
+		return nil, nil, beside, errors.New("content has nothing to show")
 	}
 	// The glb's positions are relative to the b3dm's center and to the
 	// model's own origin, both in the tile's Z-up space.
-	return &model{asset: decoded.Asset, center: center.Add(decoded.Origin)}, nil, nil
+	return &model{asset: decoded.Asset, center: center.Add(decoded.Origin)}, nil, beside, nil
 }
 
 // apply brings a finished load into the scene. It runs on the scene's

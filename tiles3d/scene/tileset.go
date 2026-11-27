@@ -181,6 +181,8 @@ type Tileset struct {
 	inflight map[*tile]struct{}
 	serial   int
 	tiles    int // tiles met so far
+	deepest  int // the deepest level of any tile met
+	levelCap int // with a splat budget, the level past which nothing refines; -1 for none
 	closed   bool
 
 	frame    uint64
@@ -286,7 +288,7 @@ func Open(ctx context.Context, scene *nt3d.Scene, fetch nt3dtiles3d.Fetcher, uri
 	if err != nil {
 		return nil, err
 	}
-	ts := &Tileset{scene: scene, fetch: fetch, o: o, fromECEF: o.Frame.FromECEF(), group: group, loaded: map[*tile]struct{}{}, coarsen: 1}
+	ts := &Tileset{scene: scene, fetch: fetch, o: o, fromECEF: o.Frame.FromECEF(), group: group, loaded: map[*tile]struct{}{}, coarsen: 1, levelCap: -1}
 	ts.ctx, ts.cancel = context.WithCancel(context.Background())
 	ts.results = make(chan result, o.workers())
 	doc := &document{uri: uri, credits: parsed.Asset.Credits(), metadata: parsed.Metadata, groups: parsed.Groups}
@@ -298,8 +300,12 @@ func Open(ctx context.Context, scene *nt3d.Scene, fetch nt3dtiles3d.Fetcher, uri
 // explicit builds the runtime tile for a tile written in a tileset.
 func (ts *Tileset) explicit(src *nt3dtiles3d.Tile, parent *tile, doc *document, parentToECEF nt3dmath.Mat4d, inherited nt3dtiles3d.Refine, level int) *tile {
 	ts.tiles++
-	t := &tile{id: ts.tiles, parent: parent, doc: doc, src: src, level: level, geometricError: src.GeometricError, refine: src.Refine}
+	ts.deepest = max(ts.deepest, level)
+	t := &tile{id: ts.tiles, parent: parent, doc: doc, src: src, level: level, refine: src.Refine}
 	t.toECEF = parentToECEF.Mul(src.Transform)
+	// A tile's error is written in the tile's own units: a transform that
+	// scales the tile scales its error.
+	t.geometricError = src.GeometricError * largestScale(t.toECEF)
 	if t.refine == nt3dtiles3d.RefineInherit {
 		t.refine = inherited
 	}
@@ -319,6 +325,15 @@ func (ts *Tileset) explicit(src *nt3dtiles3d.Tile, parent *tile, doc *document, 
 		t.content = append(t.content, c)
 	}
 	return t
+}
+
+// largestScale is the most a transform stretches a length: the longest of
+// its three axes.
+func largestScale(m nt3dmath.Mat4d) float64 {
+	x := m.Direction(nt3dmath.Vec3d{X: 1}).Len()
+	y := m.Direction(nt3dmath.Vec3d{Y: 1}).Len()
+	z := m.Direction(nt3dmath.Vec3d{Z: 1}).Len()
+	return math.Max(x, math.Max(y, z))
 }
 
 // bound places a tile's bounding volume in the scene's frame.
@@ -349,8 +364,9 @@ func (ts *Tileset) expand(t *tile) {
 			continue
 		}
 		ts.tiles++
+		ts.deepest = max(ts.deepest, t.level+1)
 		child := &tile{id: ts.tiles, parent: t, doc: t.doc, level: t.level + 1, refine: t.refine, toECEF: t.implicitRoot,
-			implicit: t.implicit, implicitRoot: t.implicitRoot, coord: c, geometricError: t.implicit.GeometricError(c)}
+			implicit: t.implicit, implicitRoot: t.implicitRoot, coord: c, geometricError: t.implicit.GeometricError(c) * largestScale(t.implicitRoot)}
 		if c.Level%t.implicit.SubtreeLevels == 0 {
 			// The child starts a subtree of its own, which must be fetched
 			// before anything is known of it but that it exists.
@@ -520,28 +536,58 @@ func (ts *Tileset) Settle(ctx context.Context, camera nt3d.Camera, width, height
 func (ts *Tileset) selectTiles(camera nt3d.Camera, width, height int) {
 	view := newView(camera, width, height)
 	limit := ts.o.maxSSE()
-	// Past the splat budget the whole selection is made coarser, a step at
-	// a time, and eased back when there is room again.
+	// Past the splat budget the selection is made coarser a step at a time:
+	// first by raising the error a tile may show, which keeps what is near
+	// finer than what is far, and, where that cannot help, because the eye
+	// is inside a tile and its error has no bound, by refusing to refine
+	// past a level. When there is room again one step is given back, tried
+	// first so that the picture does not swing between two selections.
+	relaxed, denied := false, false
+	heldCoarsen, heldCap := ts.coarsen, ts.levelCap
 	for attempt := 0; ; attempt++ {
 		ts.frame++
 		ts.draw, ts.wanted = ts.draw[:0], ts.wanted[:0]
 		ts.stats.Visited = 0
 		ts.visit(ts.root, view, limit*ts.coarsen)
-		splats := 0
+		splats, drawnTo := 0, 0
 		for _, t := range ts.draw {
 			splats += t.record.Splats
+			drawnTo = max(drawnTo, t.level)
 		}
 		ts.stats.SplatsSelected = splats
 		if ts.o.SplatBudget <= 0 {
-			ts.coarsen = 1
+			ts.coarsen, ts.levelCap = 1, -1
 			break
 		}
-		if splats > ts.o.SplatBudget && attempt < 16 && ts.coarsen < 1024 {
-			ts.coarsen *= 1.25
+		if attempt >= 64 {
+			break
+		}
+		if splats > ts.o.SplatBudget {
+			if relaxed && !denied {
+				// The step given back does not fit: take it again.
+				ts.coarsen, ts.levelCap, denied = heldCoarsen, heldCap, true
+				continue
+			}
+			if ts.coarsen < 8 {
+				ts.coarsen *= 1.25
+				continue
+			}
+			if drawnTo == 0 {
+				break // Nothing coarser than the root exists.
+			}
+			ts.levelCap = drawnTo - 1
 			continue
 		}
-		if attempt == 0 && ts.coarsen > 1 && float64(splats) < .6*float64(ts.o.SplatBudget) {
-			ts.coarsen = math.Max(1, ts.coarsen/1.1)
+		if !relaxed && !denied && float64(splats) < .6*float64(ts.o.SplatBudget) && (ts.levelCap >= 0 || ts.coarsen > 1) {
+			heldCoarsen, heldCap, relaxed = ts.coarsen, ts.levelCap, true
+			if ts.levelCap >= 0 {
+				if ts.levelCap++; ts.levelCap > ts.deepest {
+					ts.levelCap = -1
+				}
+			} else {
+				ts.coarsen = math.Max(1, ts.coarsen/1.1)
+			}
+			continue
 		}
 		break
 	}
@@ -591,18 +637,19 @@ func contains(list []string, s string) bool {
 // reports whether that covers t: whether nothing more needs to arrive for
 // t's part of the view to be whole.
 func (ts *Tileset) visit(t *tile, view view, limit float64) bool {
-	t.used = ts.frame
 	ts.stats.Visited++
 	if !t.boxless && view.outside(t.box) {
+		// Out of view: nothing to cover, and not in use, so it may be
+		// evicted and a load of it stopped.
 		return true
 	}
+	t.used = ts.frame
 	t.sse = view.screenSpaceError(t)
 	if t.implicit != nil && t.subtree == nil {
-		// Nothing is known of the tile until its subtree says.
-		switch t.subtreeState {
-		case failedNow:
-			return true
-		case idle:
+		// Nothing is known of the tile until its subtree says. A subtree
+		// that could not be read is a branch that cannot be drawn: it is
+		// not asked for again, and is not covered either.
+		if t.subtreeState == idle {
 			ts.wanted = append(ts.wanted, t)
 		}
 		return false
@@ -620,7 +667,11 @@ func (ts *Tileset) visit(t *tile, view view, limit float64) bool {
 	}
 	ts.expand(t)
 	renderable := t.state == loadedNow && t.node != 0
-	refine := len(t.children) > 0 && (t.external || t.sse > limit)
+	// A tile with nothing of its own to draw is only a way to its children,
+	// and is walked through whatever its error. One that can be drawn
+	// refines while its error shows, and not past the level a splat budget
+	// has cut the selection off at.
+	refine := len(t.children) > 0 && (!renderable || (t.sse > limit && (ts.levelCap < 0 || t.level < ts.levelCap)))
 	if !refine {
 		if renderable {
 			ts.draw = append(ts.draw, t)
