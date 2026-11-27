@@ -53,7 +53,12 @@ move to Done with their commit; git history has the details.
   2. Blended splats from several tiles: `blendPlan` orders slot by slot
      within a depth slice and spreads 64 slices from the nearest to the
      farthest blended draw, so overlapping tiles seam and one distant tile
-     coarsens the slices near the camera. Measure, then interleave.
+     coarsens the slices near the camera. Measured by
+     `TestBlendOrderAcrossOverlappingSplatTiles`: two overlapping tiles 20
+     to 50 m off are blended up to 0.9 depth units out of order, and up to
+     12 with one blended draw 10 km behind. The fix is to gather the
+     selected splats of every slot into one buffer a frame, so the sort
+     key is depth alone.
   3. A streaming demo with a reference picture, and tile metadata inside
      glTF (`EXT_structural_metadata`, `EXT_mesh_features`).
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
