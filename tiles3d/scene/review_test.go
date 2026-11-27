@@ -4,6 +4,7 @@ package nt3dtiles3dscene
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -232,5 +233,43 @@ func TestReloadingATileDoesNotRepeatItsNestedTileset(t *testing.T) {
 	settle(t, ts, nearBy)
 	if s := ts.Stats(); s.Selected != 2 || s.Resident != 2 {
 		t.Fatalf("after loading again: %+v, want the ground and one house, not a second nested tileset", s)
+	}
+}
+
+// A tileset is drawn where its parent node puts it, and chosen for the same
+// place: moving or turning Options.Parent carries the tiles' bounds with
+// their geometry, so a camera that follows sees what it saw.
+func TestSelectionFollowsTheParentNode(t *testing.T) {
+	// Close to the east half and looking east: only the east half is in view.
+	eye, target := nt3dmath.Vec3{X: 20, Y: 0, Z: 6}, nt3dmath.Vec3{X: 60, Y: 0, Z: 5}
+	for _, c := range []struct {
+		name   string
+		place  func(*nt3d.Scene, nt3d.NodeID) error
+		camera nt3d.Camera
+	}{
+		{"an origin 5 km east", func(s *nt3d.Scene, n nt3d.NodeID) error {
+			return s.SetNodeOrigin(n, [3]float64{5000, 0, 0})
+		}, func() nt3d.Camera { c := lookAt(eye, target); c.Origin = [3]float64{5000, 0, 0}; return c }()},
+		{"a translation 5 km north", func(s *nt3d.Scene, n nt3d.NodeID) error {
+			return s.SetTransform(n, nt3dmath.Translation(nt3dmath.Vec3{Y: 5000}))
+		}, func() nt3d.Camera { c := lookAt(eye, target); c.Origin = [3]float64{0, 5000, 0}; return c }()},
+		{"a half turn", func(s *nt3d.Scene, n nt3d.NodeID) error {
+			return s.SetTransform(n, nt3dmath.RotationZ(math.Pi))
+		}, lookAt(nt3dmath.Vec3{X: -20, Y: 0, Z: 6}, nt3dmath.Vec3{X: -60, Y: 0, Z: 5})},
+	} {
+		scene := nt3d.NewScene()
+		parent, err := scene.Add(nt3d.Root, "district")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts := open(t, scene, newFiles(block("REPLACE")), "city/tileset.json", Options{Parent: parent})
+		// The parent is placed after the tileset is open, as a moving one is.
+		if err := c.place(scene, parent); err != nil {
+			t.Fatal(err)
+		}
+		settle(t, ts, c.camera)
+		if got := shown(t, scene, c.camera); !same(got, []string{"city/tiles/east.glb"}) {
+			t.Errorf("under a parent with %s the scene shows %v, want the east half", c.name, got)
+		}
 	}
 }

@@ -36,8 +36,9 @@ import (
 
 // Options configures a Tileset. A zero field means its default.
 type Options struct {
-	// Frame is the east-north-up frame the scene is drawn in. Tiles are
-	// placed in it, and the camera's position is taken to be in it.
+	// Frame is the east-north-up frame the tileset is drawn in. Tiles are
+	// placed in it under Parent; with Parent left at the scene's root, which
+	// is the usual case, it is the scene's own frame and the camera's.
 	Frame nt3dgeo.ENU
 	// AtCenter draws the scene around the tileset itself instead: Frame is
 	// ignored, and the frame's origin is the middle of the root tile's
@@ -45,7 +46,8 @@ type Options struct {
 	// Tileset.Frame says which frame was used.
 	AtCenter bool
 	// Parent is the node the tileset's nodes are added under: nt3d.Root
-	// when zero.
+	// when zero. The tileset is drawn, and its tiles chosen, where Parent
+	// puts it, and follows when Parent is moved.
 	Parent nt3d.NodeID
 	// Name names the node every tile is added under: "tileset" when empty.
 	// A scene's node names are unique, so a second tileset in one scene
@@ -454,9 +456,10 @@ func (ts *Tileset) Stats() Stats { return ts.stats }
 // repeats, as text safe to show.
 func (ts *Tileset) Credits() []string { return append([]string(nil), ts.credits...) }
 
-// Bounds returns the root tile's bounds in the scene's frame, as an oriented
-// box, and false when they could not be placed. It is where to point a
-// camera at first.
+// Bounds returns the root tile's bounds in the tileset's frame (Frame), as an
+// oriented box, and false when they could not be placed. It is where to
+// point a camera at first; under an Options.Parent that is moved, it is
+// relative to that node.
 func (ts *Tileset) Bounds() (nt3dmath.OBBd, bool) { return ts.root.box, !ts.root.boxless }
 
 // Update makes the scene show what camera needs, for a viewport of width by
@@ -544,7 +547,7 @@ func (ts *Tileset) Settle(ctx context.Context, camera nt3d.Camera, width, height
 
 // selectTiles chooses the tiles to draw and makes the scene match.
 func (ts *Tileset) selectTiles(camera nt3d.Camera, width, height int) {
-	view := newView(camera, width, height)
+	view := newView(camera, width, height, placement(ts.scene, ts.group))
 	limit := ts.o.maxSSE()
 	// Past the splat budget the selection is made coarser a step at a time:
 	// first by raising the error a tile may show, which keeps what is near
