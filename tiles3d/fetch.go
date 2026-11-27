@@ -90,7 +90,10 @@ type HTTP struct {
 	// Client makes the requests; http.DefaultClient when nil.
 	Client *http.Client
 	// Prepare, when set, sees each request before it is sent, to add
-	// headers. Bearer returns one that adds a token.
+	// headers, and sees it again for each redirect followed, after the
+	// Authorization and Cookie headers of the request before have been
+	// taken off: credentials go only where Prepare puts them. Bearer
+	// returns one that adds a token.
 	Prepare func(*http.Request)
 	// MaxBytes is the most bytes one response may have: 256 MiB when zero.
 	// A longer one is an error that wraps ErrTooLarge.
@@ -112,6 +115,28 @@ func (h *HTTP) Fetch(ctx context.Context, uri string) ([]byte, error) {
 	client := http.DefaultClient
 	if h != nil && h.Client != nil {
 		client = h.Client
+	}
+	if h != nil && h.Prepare != nil {
+		// A redirect is a new request to somewhere the server chose. The
+		// standard client copies the first request's headers onto it, its
+		// Authorization included when the host is the same or a subdomain,
+		// even from https down to http. Prepare decides again for each
+		// place a request is sent, starting without credentials.
+		follow := *client
+		check := client.CheckRedirect
+		follow.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			next.Header.Del("Authorization")
+			next.Header.Del("Cookie")
+			h.Prepare(next)
+			if check != nil {
+				return check(next, via)
+			}
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			return nil
+		}
+		client = &follow
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -138,7 +163,7 @@ func (h *HTTP) Fetch(ctx context.Context, uri string) ([]byte, error) {
 // Bearer returns a Prepare for HTTP that sends token as a bearer token, and
 // only where it is safe to: to an https URL on the same host as origin, the
 // tileset's own URL. A tile that links to another server, or to plain http,
-// is fetched without it.
+// is fetched without it, and so is a redirect to either.
 func Bearer(token, origin string) func(*http.Request) {
 	home, err := url.Parse(origin)
 	return func(req *http.Request) {

@@ -93,7 +93,7 @@ Tile content is glTF, as a `.glb` or as JSON, which [`nt3d/mesh/gltf`](../meshes
 A `Fetcher` returns the bytes a URI names. Everything outside the program is reached through one, so a cache, an archive, or a test is a `Fetcher` too.
 
 - `FS(fsys)` reads paths from an `fs.FS`: a directory, or files embedded in the program.
-- `HTTP` asks a web server, natively and in a browser build. `Prepare` sees each request before it is sent; `Bearer(token, origin)` is a `Prepare` that sends a token only to `https` URLs on the tileset's own host, so a tile that links to another server is fetched without it. `MaxBytes` limits a response.
+- `HTTP` asks a web server, natively and in a browser build. `Prepare` sees each request before it is sent; `Bearer(token, origin)` is a `Prepare` that sends a token only to `https` URLs on the tileset's own host, so a tile that links to another server is fetched without it. A redirect is treated as a new request: the `Authorization` and `Cookie` headers of the request before are taken off and `Prepare` decides again, so a token never follows a redirect to plain `http` or to another host. `MaxBytes` limits a response.
 - `FetcherFunc` makes a function a `Fetcher`.
 
 ## Limits and untrusted files

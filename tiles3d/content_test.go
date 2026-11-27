@@ -167,3 +167,61 @@ func TestHTTPFetcher(t *testing.T) {
 		}
 	}
 }
+
+// A redirect is sent the token only where Bearer would send a first request
+// it: not to plain http on the same host, which the standard client would
+// forward an Authorization header to, and not to another host.
+func TestBearerIsNotForwardedAcrossARedirect(t *testing.T) {
+	var plain, other string
+	insecure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plain = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("plain"))
+	}))
+	defer insecure.Close()
+	elsewhere := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		other = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("other"))
+	}))
+	defer elsewhere.Close()
+	var first, again string
+	secure := httptest.NewTLSServer(nil)
+	defer secure.Close()
+	secure.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/down":
+			first = r.Header.Get("Authorization")
+			http.Redirect(w, r, insecure.URL+"/tile.glb", http.StatusFound)
+		case "/away":
+			http.Redirect(w, r, elsewhere.URL+"/tile.glb", http.StatusFound)
+		case "/moved":
+			http.Redirect(w, r, secure.URL+"/tile.glb", http.StatusFound)
+		default:
+			again = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte("same"))
+		}
+	})
+	// Both servers answer on 127.0.0.1, so the downgrade is to the same host
+	// name, which is the case the standard client forwards credentials in.
+	h := &HTTP{Client: secure.Client(), Prepare: Bearer("secret", secure.URL+"/tileset.json")}
+	if got, err := h.Fetch(context.Background(), secure.URL+"/down"); err != nil || string(got) != "plain" {
+		t.Fatalf("%q, %v", got, err)
+	}
+	if first != "Bearer secret" || plain != "" {
+		t.Fatalf("the first request carried %q and the redirect to http %q, want the token and nothing", first, plain)
+	}
+	// The other server has its own certificate; trust is not what is tested.
+	h.Client = elsewhere.Client()
+	h.Client.Transport.(*http.Transport).TLSClientConfig.InsecureSkipVerify = true
+	if _, err := h.Fetch(context.Background(), secure.URL+"/away"); err != nil {
+		t.Fatal(err)
+	}
+	if other != "" {
+		t.Fatalf("a redirect to another server carried %q", other)
+	}
+	if _, err := h.Fetch(context.Background(), secure.URL+"/moved"); err != nil {
+		t.Fatal(err)
+	}
+	if again != "Bearer secret" {
+		t.Fatalf("a redirect within the tileset's own https host carried %q, want the token", again)
+	}
+}
