@@ -170,3 +170,67 @@ func TestATilesBytesIncludeItsSideFiles(t *testing.T) {
 		t.Fatalf("stats %+v (%v), want one tile of %d bytes: its glTF and the buffer beside it", s, s.LastError, want)
 	}
 }
+
+// A selection the splat budget has made coarser stays as it is while the
+// view stays as it is. Easing it back on every update would ask again for
+// the tiles the budget had refused, load them, refuse them and evict them,
+// for as long as the camera sat still.
+func TestACoarsenedSelectionIsStableWhileTheViewIs(t *testing.T) {
+	data := block("REPLACE")
+	data["city/root.glb"] = splats(10)
+	data["city/tiles/west.glb"] = splats(400)
+	data["city/tiles/east.glb"] = splats(400)
+	f := newFiles(data)
+	scene := nt3d.NewScene()
+	// So little may stay loaded that the refused children are evicted.
+	ts := open(t, scene, f, "city/tileset.json", Options{SplatBudget: 500, MaxBytes: 1})
+	settle(t, ts, nearBy)
+	if got := shown(t, scene, nearBy); !same(got, []string{"city/root.glb"}) {
+		t.Fatalf("over budget the scene shows %v, want the root", got)
+	}
+	threshold, fetched := ts.Stats().ScreenSpaceError, f.count("city/tiles/west.glb")
+	for range 60 {
+		settle(t, ts, nearBy)
+	}
+	if got := f.count("city/tiles/west.glb"); got != fetched {
+		t.Fatalf("with the camera still, the refused child was fetched %d more times", got-fetched)
+	}
+	if got := ts.Stats().ScreenSpaceError; got != threshold {
+		t.Fatalf("with the camera still, the threshold drifted from %g to %g", threshold, got)
+	}
+	// A view with room for everything gets everything back.
+	settle(t, ts, farAway)
+	settle(t, ts, farAway)
+	if s := ts.Stats(); s.SplatsSelected != 10 || s.ScreenSpaceError != 16 {
+		t.Fatalf("from far off: %+v, want the root at the plain threshold", s)
+	}
+}
+
+// A tile that carries both a model and a nested tileset can be evicted and
+// loaded again without growing a second copy of the nested tileset under it.
+func TestReloadingATileDoesNotRepeatItsNestedTileset(t *testing.T) {
+	f := newFiles(map[string][]byte{
+		"world/tileset.json": []byte(`{"asset":{"version":"1.1"},"geometricError":500,"root":{
+			"transform":` + matrix(stamford.ToECEF()) + `,"boundingVolume":{"sphere":[0,0,0,60]},"geometricError":200,"refine":"ADD",
+			"contents":[{"uri":"ground.glb"},{"uri":"district.json"}]}}`),
+		"world/district.json": []byte(`{"asset":{"version":"1.1"},"geometricError":200,"root":{"boundingVolume":{"sphere":[0,0,0,60]},"geometricError":0,"content":{"uri":"house.glb"}}}`),
+		"world/ground.glb":    triangle(0, 0, 0, "", ""),
+		"world/house.glb":     triangle(3, 4, 5, "", ""),
+	})
+	scene := nt3d.NewScene()
+	ts := open(t, scene, f, "world/tileset.json", Options{MaxBytes: 1})
+	settle(t, ts, nearBy)
+	if s := ts.Stats(); s.Selected != 2 || s.Failed != 0 {
+		t.Fatalf("stats %+v (%v), want the ground and the nested house", s, s.LastError)
+	}
+	// Looking away from everything: both are out of view, and evicted.
+	away := lookAt(nt3dmath.Vec3{X: 0, Y: -200, Z: 30}, nt3dmath.Vec3{X: 0, Y: -400, Z: 30})
+	settle(t, ts, away)
+	if s := ts.Stats(); s.Resident != 0 {
+		t.Fatalf("stats %+v, want everything evicted", s)
+	}
+	settle(t, ts, nearBy)
+	if s := ts.Stats(); s.Selected != 2 || s.Resident != 2 {
+		t.Fatalf("after loading again: %+v, want the ground and one house, not a second nested tileset", s)
+	}
+}

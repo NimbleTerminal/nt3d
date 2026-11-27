@@ -214,7 +214,13 @@ func (ts *Tileset) apply(r result) {
 	if r.err != nil {
 		fail(r.err)
 	}
+	// A tile evicted and loaded again already has its nested tilesets'
+	// roots among its children.
+	had := t.external
 	for _, n := range r.nested {
+		if had {
+			break
+		}
 		if t.doc.depth+1 > ts.o.maxExternalDepth() {
 			fail(fmt.Errorf("nt3dtiles3dscene: %s: tilesets nest deeper than %d", n.uri, ts.o.maxExternalDepth()))
 			continue

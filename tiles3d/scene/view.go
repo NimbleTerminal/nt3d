@@ -13,8 +13,8 @@ import (
 // sight, and how large a meter of error looks.
 type view struct {
 	eye    nt3dmath.Vec3d // in the scene's frame
-	origin nt3dmath.Vec3d // the camera's Origin, which its matrix is relative to
-	clip   nt3dmath.Mat4  // world, relative to origin, to clip space
+	origin nt3dmath.Vec3d // the camera's Origin, which clip is relative to
+	clip   nt3dmath.Mat4  // the scene's frame, less origin, to clip space
 	ortho  bool
 	// perPixel turns meters of error into pixels: divided by the distance
 	// for a perspective camera, as it is for an orthographic one.
@@ -23,10 +23,16 @@ type view struct {
 
 func newView(c nt3d.Camera, width, height int) view {
 	eye := c.WorldEye()
+	// The matrix is taken of the camera without its Origin, as a frame's
+	// is: Camera.Matrix places the eye at Origin itself, in float32, and
+	// outside takes Origin off each corner in float64 before using it.
+	// With Origin left in, it would be taken off twice.
+	relative := c
+	relative.Origin = [3]float64{}
 	v := view{
 		eye:    nt3dmath.Vec3d{X: eye[0], Y: eye[1], Z: eye[2]},
 		origin: nt3dmath.Vec3d{X: c.Origin[0], Y: c.Origin[1], Z: c.Origin[2]},
-		clip:   c.Matrix(float32(width) / float32(height)),
+		clip:   relative.Matrix(float32(width) / float32(height)),
 		ortho:  c.Projection == nt3d.Orthographic,
 	}
 	if v.ortho {

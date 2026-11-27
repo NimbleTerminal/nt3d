@@ -183,7 +183,11 @@ type Tileset struct {
 	tiles    int // tiles met so far
 	deepest  int // the deepest level of any tile met
 	levelCap int // with a splat budget, the level past which nothing refines; -1 for none
-	closed   bool
+	// refused is the view the splat budget last made the selection coarser
+	// for, or refused to ease it for. While the view is the same, the
+	// selection is not eased again.
+	refused viewKey
+	closed  bool
 
 	frame    uint64
 	draw     []*tile
@@ -193,6 +197,12 @@ type Tileset struct {
 	stats    Stats
 	resident int64
 	credits  []string
+}
+
+// viewKey is a camera and a picture size: what a selection is made for.
+type viewKey struct {
+	camera        nt3d.Camera
+	width, height int
 }
 
 // document is one tileset file: the root's, or one nested as content.
@@ -541,7 +551,11 @@ func (ts *Tileset) selectTiles(camera nt3d.Camera, width, height int) {
 	// finer than what is far, and, where that cannot help, because the eye
 	// is inside a tile and its error has no bound, by refusing to refine
 	// past a level. When there is room again one step is given back, tried
-	// first so that the picture does not swing between two selections.
+	// first so that the picture does not swing between two selections, and
+	// only for a view the budget has not already refused: easing a still
+	// view would ask again for the tiles it was just denied, load them,
+	// refuse them, and evict them, over and over.
+	key := viewKey{camera, width, height}
 	relaxed, denied := false, false
 	heldCoarsen, heldCap := ts.coarsen, ts.levelCap
 	for attempt := 0; ; attempt++ {
@@ -565,9 +579,10 @@ func (ts *Tileset) selectTiles(camera nt3d.Camera, width, height int) {
 		if splats > ts.o.SplatBudget {
 			if relaxed && !denied {
 				// The step given back does not fit: take it again.
-				ts.coarsen, ts.levelCap, denied = heldCoarsen, heldCap, true
+				ts.coarsen, ts.levelCap, denied, ts.refused = heldCoarsen, heldCap, true, key
 				continue
 			}
+			ts.refused = key
 			if ts.coarsen < 8 {
 				ts.coarsen *= 1.25
 				continue
@@ -578,7 +593,9 @@ func (ts *Tileset) selectTiles(camera nt3d.Camera, width, height int) {
 			ts.levelCap = drawnTo - 1
 			continue
 		}
-		if !relaxed && !denied && float64(splats) < .6*float64(ts.o.SplatBudget) && (ts.levelCap >= 0 || ts.coarsen > 1) {
+		// A step that fit may be followed by another, so a view with room
+		// for everything gets back to the plain threshold in one update.
+		if !denied && key != ts.refused && float64(splats) < .6*float64(ts.o.SplatBudget) && (ts.levelCap >= 0 || ts.coarsen > 1) {
 			heldCoarsen, heldCap, relaxed = ts.coarsen, ts.levelCap, true
 			if ts.levelCap >= 0 {
 				if ts.levelCap++; ts.levelCap > ts.deepest {

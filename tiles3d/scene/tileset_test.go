@@ -259,22 +259,26 @@ func TestTilesArePlacedToTheMillimeter(t *testing.T) {
 	// A glTF node holds the center in glTF's Y-up: (x, z, -y) of the Z-up point.
 	node := fmt.Sprintf(`,"translation":[%.17g,%.17g,%.17g]`, local.X, local.Z, -local.Y)
 	rtc := fmt.Sprintf(`"extensionsUsed":["CESIUM_RTC"],"extensionsRequired":["CESIUM_RTC"],"extensions":{"CESIUM_RTC":{"center":[%.17g,%.17g,%.17g]}},`, local.X, local.Y, local.Z)
-	tileset := func(transform nt3dmath.Mat4d, uri string) []byte {
+	// Each tile is bounded by a 50 m sphere around its content, as a real
+	// tile is: bounds that small are in view only if the camera's own far
+	// place is taken off once, and not twice.
+	tileset := func(transform nt3dmath.Mat4d, sphere nt3dmath.Vec3d, uri string) []byte {
 		return []byte(`{"asset":{"version":"1.1"},"geometricError":100,"root":{"transform":` + matrix(transform) + `,
-			"boundingVolume":{"sphere":[` + fmt.Sprintf("%.17g,%.17g,%.17g", 0.0, 0.0, 0.0) + `,1e7]},"geometricError":0,"content":{"uri":"` + uri + `"}}}`)
+			"boundingVolume":{"sphere":[` + fmt.Sprintf("%.17g,%.17g,%.17g", sphere.X, sphere.Y, sphere.Z) + `,50]},"geometricError":0,"content":{"uri":"` + uri + `"}}}`)
 	}
 	for name, c := range map[string]struct {
 		transform nt3dmath.Mat4d
+		sphere    nt3dmath.Vec3d // the bounds' center, in the tile's space
 		content   []byte
 	}{
-		"tile transform": {place, triangle(.001, .002, .003, "", "")},
-		"b3dm RTC":       {turn, b3dm(local, triangle(.001, .002, .003, "", ""))},
-		"CESIUM_RTC":     {turn, triangle(.001, .002, .003, "", rtc)},
-		"far glTF node":  {turn, triangle(.001, .002, .003, node, "")},
+		"tile transform": {place, nt3dmath.Vec3d{}, triangle(.001, .002, .003, "", "")},
+		"b3dm RTC":       {turn, local, b3dm(local, triangle(.001, .002, .003, "", ""))},
+		"CESIUM_RTC":     {turn, local, triangle(.001, .002, .003, "", rtc)},
+		"far glTF node":  {turn, local, triangle(.001, .002, .003, node, "")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			scene := nt3d.NewScene()
-			f := newFiles(map[string][]byte{"tileset.json": tileset(c.transform, "tile.bin"), "tile.bin": c.content})
+			f := newFiles(map[string][]byte{"tileset.json": tileset(c.transform, c.sphere, "tile.bin"), "tile.bin": c.content})
 			ts := open(t, scene, f, "tileset.json", Options{})
 			// The first vertex, where float64 puts it in the scene's frame.
 			want := stamford.FromECEF().Point(place.Point(nt3dmath.Vec3d{X: .001, Y: .002, Z: .003}))
