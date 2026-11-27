@@ -130,7 +130,9 @@ type Tile struct {
 	// TilesetMetadata is the metadata of the tileset the tile is in;
 	// Metadata the tile's own; Contents each content's, and Groups each
 	// content's group's, index for index with URIs; Subtree the metadata of
-	// the implicit subtree the tile is in. Each is nil where the file has none.
+	// the implicit subtree the tile is in. Each is nil where the file has
+	// none; Contents and Groups always hold one entry a URI, nil for every
+	// content of an implicit tile.
 	TilesetMetadata *nt3dtiles3d.Entity
 	Metadata        *nt3dtiles3d.Entity
 	Contents        []*nt3dtiles3d.Entity
@@ -214,6 +216,19 @@ type document struct {
 	metadata *nt3dtiles3d.Entity
 	groups   []nt3dtiles3d.Entity
 	depth    int
+	// scalesError says a tile's transform scales its geometric error, as
+	// 3D Tiles 1.1 has it. Version 1.0 writes the error in meters whatever
+	// the transform.
+	scalesError bool
+}
+
+// errorScale is what a tile of doc placed by toECEF multiplies its written
+// geometric error by.
+func (doc *document) errorScale(toECEF nt3dmath.Mat4d) float64 {
+	if !doc.scalesError {
+		return 1
+	}
+	return largestScale(toECEF)
 }
 
 type loadState uint8
@@ -240,6 +255,11 @@ type tile struct {
 
 	uris    []string
 	content []nt3dtiles3d.Content // index for index with uris, for explicit tiles
+	// broken is the first of the tile's content URIs that could not be read
+	// as one, and told whether it has been reported. Such a content is a
+	// failed one: with no other content, the tile is a failed tile.
+	broken error
+	told   bool
 
 	// Implicit tiles: the tree, the transform of its root, this tile's
 	// coordinate, and the subtree that speaks for it once fetched.
@@ -303,7 +323,7 @@ func Open(ctx context.Context, scene *nt3d.Scene, fetch nt3dtiles3d.Fetcher, uri
 	ts := &Tileset{scene: scene, fetch: fetch, o: o, fromECEF: o.Frame.FromECEF(), group: group, loaded: map[*tile]struct{}{}, coarsen: 1, levelCap: -1}
 	ts.ctx, ts.cancel = context.WithCancel(context.Background())
 	ts.results = make(chan result, o.workers())
-	doc := &document{uri: uri, credits: parsed.Asset.Credits(), metadata: parsed.Metadata, groups: parsed.Groups}
+	doc := &document{uri: uri, credits: parsed.Asset.Credits(), metadata: parsed.Metadata, groups: parsed.Groups, scalesError: parsed.Asset.Version != "1.0"}
 	ts.root = ts.explicit(parsed.Root, nil, doc, nt3dmath.IdentityD(), nt3dtiles3d.RefineReplace, 0)
 	ts.credits = doc.credits
 	return ts, nil
@@ -315,9 +335,9 @@ func (ts *Tileset) explicit(src *nt3dtiles3d.Tile, parent *tile, doc *document, 
 	ts.deepest = max(ts.deepest, level)
 	t := &tile{id: ts.tiles, parent: parent, doc: doc, src: src, level: level, refine: src.Refine}
 	t.toECEF = parentToECEF.Mul(src.Transform)
-	// A tile's error is written in the tile's own units: a transform that
-	// scales the tile scales its error.
-	t.geometricError = src.GeometricError * largestScale(t.toECEF)
+	// From 3D Tiles 1.1 a tile's error is written in the tile's own units:
+	// a transform that scales the tile scales its error.
+	t.geometricError = src.GeometricError * doc.errorScale(t.toECEF)
 	if t.refine == nt3dtiles3d.RefineInherit {
 		t.refine = inherited
 	}
@@ -331,6 +351,7 @@ func (ts *Tileset) explicit(src *nt3dtiles3d.Tile, parent *tile, doc *document, 
 	for _, c := range src.Contents {
 		uri, err := nt3dtiles3d.Resolve(doc.uri, c.URI)
 		if err != nil {
+			t.breakContent(err)
 			continue
 		}
 		t.uris = append(t.uris, uri)
@@ -378,7 +399,7 @@ func (ts *Tileset) expand(t *tile) {
 		ts.tiles++
 		ts.deepest = max(ts.deepest, t.level+1)
 		child := &tile{id: ts.tiles, parent: t, doc: t.doc, level: t.level + 1, refine: t.refine, toECEF: t.implicitRoot,
-			implicit: t.implicit, implicitRoot: t.implicitRoot, coord: c, geometricError: t.implicit.GeometricError(c) * largestScale(t.implicitRoot)}
+			implicit: t.implicit, implicitRoot: t.implicitRoot, coord: c, geometricError: t.implicit.GeometricError(c) * t.doc.errorScale(t.implicitRoot)}
 		if c.Level%t.implicit.SubtreeLevels == 0 {
 			// The child starts a subtree of its own, which must be fetched
 			// before anything is known of it but that it exists.
@@ -405,10 +426,26 @@ func (ts *Tileset) adopt(t *tile, s *nt3dtiles3d.Subtree) {
 		if !s.ContentAvailable(t.coord, k) {
 			continue
 		}
-		if uri, err := nt3dtiles3d.Resolve(t.doc.uri, ref); err == nil {
-			t.uris = append(t.uris, uri)
+		uri, err := nt3dtiles3d.Resolve(t.doc.uri, ref)
+		if err != nil {
+			t.breakContent(err)
+			continue
 		}
+		t.uris = append(t.uris, uri)
 	}
+}
+
+// breakContent notes that one of t's content URIs could not be read as one.
+func (t *tile) breakContent(err error) {
+	if t.broken == nil {
+		t.broken = fmt.Errorf("nt3dtiles3dscene: tile content: %w", err)
+	}
+}
+
+// fail counts a tile, a content or a subtree that could not be loaded.
+func (ts *Tileset) fail(err error) {
+	ts.stats.Failed++
+	ts.stats.LastError = err
 }
 
 // Close stops loading and removes everything the tileset added to the scene.
@@ -673,6 +710,17 @@ func (ts *Tileset) visit(t *tile, view view, limit float64) bool {
 			ts.wanted = append(ts.wanted, t)
 		}
 		return false
+	}
+	// A content whose URI could not be read is a failed content, reported
+	// once; a tile left with no content by it is a failed tile.
+	if t.broken != nil {
+		if !t.told {
+			t.told = true
+			ts.fail(t.broken)
+		}
+		if len(t.uris) == 0 {
+			return false
+		}
 	}
 	// A tile's own content comes first: it is what holds the view while
 	// finer tiles arrive, and for a nested tileset it is where the

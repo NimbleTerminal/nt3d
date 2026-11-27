@@ -273,3 +273,69 @@ func TestSelectionFollowsTheParentNode(t *testing.T) {
 		}
 	}
 }
+
+// A child whose content URI cannot be read as one is a failed tile, not an
+// absent one: it is counted, and the tile it would have replaced stays on
+// screen rather than leaving a hole beside its sibling.
+func TestAMalformedContentURILeavesItsParentShowing(t *testing.T) {
+	data := block("REPLACE")
+	data["city/tileset.json"] = []byte(strings.Replace(string(data["city/tileset.json"]), `tiles/west.glb`, `tiles/%zz.glb`, 1))
+	scene := nt3d.NewScene()
+	ts := open(t, scene, newFiles(data), "city/tileset.json", Options{})
+	settle(t, ts, nearBy)
+	settle(t, ts, nearBy)
+	if got := shown(t, scene, nearBy); !same(got, []string{"city/root.glb"}) {
+		t.Fatalf("with a child's URI malformed the scene shows %v, want the root", got)
+	}
+	if s := ts.Stats(); s.Failed != 1 || s.LastError == nil {
+		t.Fatalf("stats %+v, want the malformed URI counted once, with its error", s)
+	}
+}
+
+// A tile's record lists a content's metadata and its group index for index
+// with its URIs, nil where there is none: an implicit tile's too, so that
+// code which reads Contents[i] for URIs[i] holds for every tile.
+func TestAnImplicitTilesRecordIndexesWithItsURIs(t *testing.T) {
+	scene := nt3d.NewScene()
+	f := newFiles(map[string][]byte{
+		"grid/tileset.json": []byte(`{"asset":{"version":"1.1"},"geometricError":80,"root":{
+			"transform":` + matrix(stamford.ToECEF()) + `,
+			"boundingVolume":{"box":[0,0,5, 50,0,0, 0,50,0, 0,0,5]},"geometricError":10,"refine":"REPLACE",
+			"content":{"uri":"content/{level}_{x}_{y}.glb"},
+			"implicitTiling":{"subdivisionScheme":"QUADTREE","subtreeLevels":1,"availableLevels":1,"subtrees":{"uri":"subtrees/{level}_{x}_{y}.subtree"}}}}`),
+		"grid/subtrees/0_0_0.subtree": []byte(`{"tileAvailability":{"constant":1},"contentAvailability":[{"constant":1}],"childSubtreeAvailability":{"constant":0}}`),
+		"grid/content/0_0_0.glb":      triangle(0, 0, 0, "", ""),
+	})
+	var records []*Tile
+	ts := open(t, scene, f, "grid/tileset.json", Options{OnTileLoaded: func(tile *Tile) { records = append(records, tile) }})
+	settle(t, ts, farAway)
+	if len(records) != 1 {
+		t.Fatalf("%d tiles loaded, want the implicit root", len(records))
+	}
+	if r := records[0]; len(r.URIs) != 1 || len(r.Contents) != len(r.URIs) || len(r.Groups) != len(r.URIs) {
+		t.Fatalf("the record has %d URIs, %d contents and %d groups, want one of each", len(r.URIs), len(r.Contents), len(r.Groups))
+	}
+}
+
+// 3D Tiles 1.0 writes a tile's geometric error in meters whatever the
+// tile's transform; only from 1.1 does a transform that scales the tile
+// scale its error. Each tileset is read by the rule of its own version.
+func TestGeometricErrorIsMetersInVersionOne(t *testing.T) {
+	transform := stamford.ToECEF().Mul(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.Quatd{W: 1}, nt3dmath.Vec3d{X: 4, Y: 4, Z: 4}))
+	data := block("REPLACE")
+	// Written a quarter size and scaled four times, with an error of 10.
+	data["city/tileset.json"] = []byte(`{"asset":{"version":"1.0"},"geometricError":100,"root":{
+		"transform":` + matrix(transform) + `,"boundingVolume":{"box":[0,0,1.25, 12.5,0,0, 0,12.5,0, 0,0,1.25]},"geometricError":10,"refine":"REPLACE","content":{"uri":"root.glb"},
+		"children":[
+			{"boundingVolume":{"box":[-6.25,0,1.25, 6.25,0,0, 0,12.5,0, 0,0,1.25]},"geometricError":0,"content":{"uri":"tiles/west.glb"}},
+			{"boundingVolume":{"box":[6.25,0,1.25, 6.25,0,0, 0,12.5,0, 0,0,1.25]},"geometricError":0,"content":{"uri":"tiles/east.glb"}}]}}`)
+	// 150 m off: 10 m of error is 8 pixels there, under the threshold; the
+	// 40 m a 1.1 tileset would mean is 32, over it.
+	view := lookAt(nt3dmath.Vec3{X: 0, Y: -190, Z: 40}, nt3dmath.Vec3{Z: 5})
+	scene := nt3d.NewScene()
+	ts := open(t, scene, newFiles(data), "city/tileset.json", Options{})
+	settle(t, ts, view)
+	if got := shown(t, scene, view); !same(got, []string{"city/root.glb"}) {
+		t.Fatalf("a 1.0 tileset scaled four times shows %v, want its root", got)
+	}
+}

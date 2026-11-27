@@ -183,10 +183,7 @@ func (ts *Tileset) apply(r result) {
 	if ts.closed {
 		return
 	}
-	fail := func(err error) {
-		ts.stats.Failed++
-		ts.stats.LastError = err
-	}
+	fail := ts.fail
 	if r.forTree {
 		switch {
 		case r.stopped:
@@ -228,7 +225,7 @@ func (ts *Tileset) apply(r result) {
 		// The nested tileset's root continues this tile: in its space, and
 		// refining as it does unless it says otherwise.
 		ts.expand(t)
-		doc := &document{uri: n.uri, credits: n.tileset.Asset.Credits(), metadata: n.tileset.Metadata, groups: n.tileset.Groups, depth: t.doc.depth + 1}
+		doc := &document{uri: n.uri, credits: n.tileset.Asset.Credits(), metadata: n.tileset.Metadata, groups: n.tileset.Groups, depth: t.doc.depth + 1, scalesError: n.tileset.Asset.Version != "1.0"}
 		t.children = append(t.children, ts.explicit(n.tileset.Root, t, doc, t.toECEF, t.refine, t.level+1))
 		t.external = true
 	}
@@ -330,13 +327,15 @@ func (ts *Tileset) describe(t *tile, bytes int64, splats int) *Tile {
 	if t.src != nil {
 		record.Metadata = t.src.Metadata
 	}
-	for _, c := range t.content {
-		record.Contents = append(record.Contents, c.Metadata)
-		var group *nt3dtiles3d.Entity
+	// One entry a URI, nil where there is nothing to say: an implicit
+	// tile's contents carry no metadata or group of their own here.
+	record.Contents = make([]*nt3dtiles3d.Entity, len(t.uris))
+	record.Groups = make([]*nt3dtiles3d.Entity, len(t.uris))
+	for i, c := range t.content {
+		record.Contents[i] = c.Metadata
 		if c.Group >= 0 && c.Group < len(t.doc.groups) {
-			group = &t.doc.groups[c.Group]
+			record.Groups[i] = &t.doc.groups[c.Group]
 		}
-		record.Groups = append(record.Groups, group)
 	}
 	if t.subtree != nil {
 		record.Subtree = t.subtree.Metadata
