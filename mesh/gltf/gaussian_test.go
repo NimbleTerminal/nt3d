@@ -423,3 +423,25 @@ func TestGaussianSplattingInTheSceneAsset(t *testing.T) {
 		t.Fatalf("the asset draws %d splats, want 1", splats)
 	}
 }
+
+// An accessor with no buffer view is all zeros, as glTF defines it, and a
+// splat attribute may be written so: a degree-0 coefficient of zero is the
+// color at rest, mid gray. Only when an extension inside the splat extension
+// says it holds the data is a missing buffer view data that cannot be read.
+func TestGaussianSplattingReadsZeroInitializedAttributes(t *testing.T) {
+	v := readGaussianVector(t)
+	doc, files := splatDoc(t, vectorAttrs(v, 0), ellipse, "")
+	// Accessor 4 is SH_DEGREE_0_COEF_0.
+	edited := strings.Replace(string(doc), `{"bufferView":4,`, `{`, 1)
+	if edited == string(doc) {
+		t.Fatal("the document has no accessor 4 to edit")
+	}
+	m := decodeSplats(t, []byte(edited), files, nil)
+	if len(m.Objects) != 1 || len(m.Objects[0].Geometry.Points) != 1 {
+		t.Fatalf("decoded %d objects, want one splat", len(m.Objects))
+	}
+	c := m.Objects[0].Geometry.Points[0].Color
+	if c.R < 127 || c.R > 128 || c.R != c.G || c.G != c.B {
+		t.Fatalf("a zero degree-0 coefficient gives the color %v, want mid gray", c)
+	}
+}

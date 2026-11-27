@@ -110,17 +110,16 @@ func (d *gltfDecoder) gaussians(name string, p *gltf.Primitive, world mat4) (boo
 		if a.Type != kind || a.Count != n {
 			return nil, fmt.Errorf("nt3dmesh: glTF %s splats: %s must be %s with one value a splat, %d", name, key, kind, n)
 		}
-		if a.BufferView == nil {
+		if a.BufferView == nil && a.Sparse == nil && len(ext.Extensions) > 0 {
 			// The data is somewhere an extension of the extension knows.
+			// With none, an accessor with no buffer view is all zeros, as
+			// glTF defines it, and is read as that.
 			var names []string
 			for compression := range ext.Extensions {
 				names = append(names, compression)
 			}
 			sort.Strings(names)
-			if len(names) > 0 {
-				return nil, fmt.Errorf("nt3dmesh: glTF %s splats: %s is stored by %s, which is not read", name, key, names[0])
-			}
-			return nil, fmt.Errorf("nt3dmesh: glTF %s splats: %s has no data", name, key)
+			return nil, fmt.Errorf("nt3dmesh: glTF %s splats: %s is stored by %s, which is not read", name, key, names[0])
 		}
 		return a, nil
 	}
