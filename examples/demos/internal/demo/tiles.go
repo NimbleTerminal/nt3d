@@ -73,6 +73,7 @@ func (d *demo) stepTiles() (bool, error) {
 	if width < 1 || height < 1 {
 		width, height = snapshotSize[0], snapshotSize[1]
 	}
+	ts.tileset.SetMaxScreenSpaceError(tilesError(height))
 	if err := ts.tileset.Update(d.view.Camera(), width, height); err != nil {
 		return false, err
 	}
@@ -83,9 +84,17 @@ func (d *demo) stepTiles() (bool, error) {
 	return changed, nil
 }
 
+// tilesError is the error a tile may show in a picture height pixels tall:
+// a fortieth of the height, which is 16 pixels at 640. A terminal's picture
+// may be a hundred pixels tall or a thousand, and an error threshold fixed
+// in pixels would show a different town in each; one that grows with the
+// picture shows the same tiles at any size.
+func tilesError(height int) float64 { return float64(height) / 40 }
+
 // settleTiles waits until the scene shows everything the camera needs at a
 // picture of width by height: what a still picture is taken of.
 func (d *demo) settleTiles(width, height int) error {
+	d.tiles.tileset.SetMaxScreenSpaceError(tilesError(height))
 	if err := d.tiles.tileset.Settle(context.Background(), d.view.Camera(), width, height); err != nil {
 		return err
 	}
