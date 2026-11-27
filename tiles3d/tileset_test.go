@@ -149,3 +149,26 @@ func TestVolumeWorld(t *testing.T) {
 		t.Fatalf("a region moved with its tile's transform: %+v, %v", got, err)
 	}
 }
+
+// A tileset's center is the middle of its root's bounds, as a position on
+// the Earth, whatever kind of volume bounds it.
+func TestTilesetCenter(t *testing.T) {
+	ts, err := ParseTileset([]byte(explicitTileset), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The root's box is centered 10 m along Z of a transform that only moves.
+	want := nt3dmath.Vec3d{X: 1364789.25, Y: -4619824.5, Z: 4166319.125 + 10}
+	center, err := ts.Center()
+	if err != nil || center.ECEF().Dist(want) > 1e-6 {
+		t.Fatalf("center %+v (%v), %g m from the box's middle", center, err, center.ECEF().Dist(want))
+	}
+	region, err := ParseTileset([]byte(`{"asset":{"version":"1.1"},"geometricError":1,"root":{"boundingVolume":{"region":[-1.2836,0.7163,-1.2834,0.7165,0,100]},"geometricError":0}}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	center, err = region.Center()
+	if err != nil || math.Abs(center.Lat-0.7164*180/math.Pi) > 1e-6 || math.Abs(center.Lon+1.2835*180/math.Pi) > 1e-6 {
+		t.Fatalf("a region's center is %+v (%v), want its middle latitude and longitude", center, err)
+	}
+}

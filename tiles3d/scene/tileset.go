@@ -39,6 +39,11 @@ type Options struct {
 	// Frame is the east-north-up frame the scene is drawn in. Tiles are
 	// placed in it, and the camera's position is taken to be in it.
 	Frame nt3dgeo.ENU
+	// AtCenter draws the scene around the tileset itself instead: Frame is
+	// ignored, and the frame's origin is the middle of the root tile's
+	// bounds. It is for showing a tileset whose place is not known ahead.
+	// Tileset.Frame says which frame was used.
+	AtCenter bool
 	// Parent is the node the tileset's nodes are added under: nt3d.Root
 	// when zero.
 	Parent nt3d.NodeID
@@ -175,6 +180,7 @@ type Tileset struct {
 	loading  int
 	inflight map[*tile]struct{}
 	serial   int
+	tiles    int // tiles met so far
 	closed   bool
 
 	frame    uint64
@@ -241,6 +247,7 @@ type tile struct {
 
 	used, drawn uint64 // the frames it was last visited and last chosen
 	sse         float64
+	id          int // the order tiles were first met in, which is the order they are added in
 }
 
 // Open fetches and reads the tileset at uri and binds it to scene. Nothing
@@ -249,7 +256,7 @@ func Open(ctx context.Context, scene *nt3d.Scene, fetch nt3dtiles3d.Fetcher, uri
 	if scene == nil || fetch == nil {
 		return nil, errors.New("nt3dtiles3dscene: a tileset needs a scene and a fetcher")
 	}
-	if err := o.Frame.Origin.Validate(); err != nil {
+	if err := o.Frame.Origin.Validate(); err != nil && !o.AtCenter {
 		return nil, fmt.Errorf("nt3dtiles3dscene: frame origin: %w", err)
 	}
 	data, err := fetch.Fetch(ctx, uri)
@@ -259,6 +266,13 @@ func Open(ctx context.Context, scene *nt3d.Scene, fetch nt3dtiles3d.Fetcher, uri
 	parsed, err := nt3dtiles3d.ParseTileset(data, o.Tiles)
 	if err != nil {
 		return nil, err
+	}
+	if o.AtCenter {
+		center, err := parsed.Center()
+		if err != nil {
+			return nil, err
+		}
+		o.Frame = nt3dgeo.ENU{Origin: center}
 	}
 	parent := o.Parent
 	if parent == 0 {
@@ -283,7 +297,8 @@ func Open(ctx context.Context, scene *nt3d.Scene, fetch nt3dtiles3d.Fetcher, uri
 
 // explicit builds the runtime tile for a tile written in a tileset.
 func (ts *Tileset) explicit(src *nt3dtiles3d.Tile, parent *tile, doc *document, parentToECEF nt3dmath.Mat4d, inherited nt3dtiles3d.Refine, level int) *tile {
-	t := &tile{parent: parent, doc: doc, src: src, level: level, geometricError: src.GeometricError, refine: src.Refine}
+	ts.tiles++
+	t := &tile{id: ts.tiles, parent: parent, doc: doc, src: src, level: level, geometricError: src.GeometricError, refine: src.Refine}
 	t.toECEF = parentToECEF.Mul(src.Transform)
 	if t.refine == nt3dtiles3d.RefineInherit {
 		t.refine = inherited
@@ -333,7 +348,8 @@ func (ts *Tileset) expand(t *tile) {
 		if !t.implicit.Valid(c) {
 			continue
 		}
-		child := &tile{parent: t, doc: t.doc, level: t.level + 1, refine: t.refine, toECEF: t.implicitRoot,
+		ts.tiles++
+		child := &tile{id: ts.tiles, parent: t, doc: t.doc, level: t.level + 1, refine: t.refine, toECEF: t.implicitRoot,
 			implicit: t.implicit, implicitRoot: t.implicitRoot, coord: c, geometricError: t.implicit.GeometricError(c)}
 		if c.Level%t.implicit.SubtreeLevels == 0 {
 			// The child starts a subtree of its own, which must be fetched
@@ -384,6 +400,23 @@ func (ts *Tileset) Close() {
 	_ = ts.scene.Remove(ts.group)
 }
 
+// Frame returns the east-north-up frame the scene is drawn in: the one
+// given to Open, or with Options.AtCenter the one at the tileset's middle.
+func (ts *Tileset) Frame() nt3dgeo.ENU { return ts.o.Frame }
+
+// MaxScreenSpaceError returns the error, in pixels, past which a tile's
+// children are wanted.
+func (ts *Tileset) MaxScreenSpaceError() float64 { return ts.o.maxSSE() }
+
+// SetMaxScreenSpaceError changes it, from the next Update on: smaller is
+// finer. Zero or less returns to the default of 16.
+func (ts *Tileset) SetMaxScreenSpaceError(pixels float64) {
+	if !(pixels > 0) {
+		pixels = 0
+	}
+	ts.o.MaxScreenSpaceError = pixels
+}
+
 // Node returns the scene node every tile is added under.
 func (ts *Tileset) Node() nt3d.NodeID { return ts.group }
 
@@ -414,40 +447,72 @@ func (ts *Tileset) Update(camera nt3d.Camera, width, height int) error {
 	if err := camera.Validate(); err != nil {
 		return err
 	}
+	var arrived []result
 	for {
 		select {
 		case r := <-ts.results:
-			ts.apply(r)
+			arrived = append(arrived, r)
 			continue
 		default:
 		}
 		break
 	}
+	ts.applyAll(arrived)
 	ts.selectTiles(camera.Valid(), width, height)
 	return nil
+}
+
+// applyAll brings finished loads into the scene in the order their tiles
+// were first met, not the order they happened to finish in: nodes are drawn
+// in the order they are added, and where two tiles meet at the same depth
+// the later one wins.
+func (ts *Tileset) applyAll(arrived []result) {
+	sort.SliceStable(arrived, func(i, j int) bool { return arrived[i].t.id < arrived[j].t.id })
+	for _, r := range arrived {
+		ts.apply(r)
+	}
 }
 
 // Settle calls Update until nothing more is loading or wanted, waiting for
 // loads in between: after it the scene shows everything camera needs. It is
 // for a still picture, a test, or a first frame. It returns ctx's error if
 // ctx ends first.
+//
+// Settle is repeatable: each round it waits for every load in flight before
+// adding any of them, in the order their tiles were first met, so the same
+// tileset and camera leave the same scene, node for node, however the loads
+// raced.
 func (ts *Tileset) Settle(ctx context.Context, camera nt3d.Camera, width, height int) error {
+	if ts.closed {
+		return errors.New("nt3dtiles3dscene: the tileset is closed")
+	}
+	if width < 1 || height < 1 {
+		return errors.New("nt3dtiles3dscene: the viewport must be at least one pixel each way")
+	}
+	if err := camera.Validate(); err != nil {
+		return err
+	}
 	for {
-		if err := ts.Update(camera, width, height); err != nil {
-			return err
-		}
+		// Choose first: that stops loads the view no longer wants, which
+		// would otherwise be waited for.
+		ts.selectTiles(camera.Valid(), width, height)
 		if ts.loading == 0 {
 			if len(ts.wanted) == 0 {
 				return nil
 			}
 			continue
 		}
-		select {
-		case r := <-ts.results:
-			ts.apply(r)
-		case <-ctx.Done():
-			return ctx.Err()
+		arrived := make([]result, 0, ts.loading)
+		for len(arrived) < cap(arrived) {
+			select {
+			case r := <-ts.results:
+				arrived = append(arrived, r)
+			case <-ctx.Done():
+				ts.applyAll(arrived)
+				return ctx.Err()
+			}
 		}
+		ts.applyAll(arrived)
 	}
 }
 

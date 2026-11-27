@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"strings"
 
+	"nimbleterminal.dev/nt3d/geo"
 	"nimbleterminal.dev/nt3d/math"
 )
 
@@ -122,6 +123,20 @@ type Asset struct {
 	Attribution []string
 	// Extras is the asset's extras object as written, or nil.
 	Extras json.RawMessage
+}
+
+// Center returns where the middle of the tileset's root bounds is on the
+// Earth: the place to draw the tileset around when nothing else says.
+func (t *Tileset) Center() (nt3dgeo.Geodetic, error) {
+	box, err := t.Root.Bounds.World(t.Root.Transform)
+	if err != nil {
+		return nt3dgeo.Geodetic{}, err
+	}
+	center, err := nt3dgeo.FromECEF(box.Center)
+	if err != nil {
+		return nt3dgeo.Geodetic{}, fmt.Errorf("nt3dtiles3d: tileset center: %w", err)
+	}
+	return center, nil
 }
 
 // Credits returns the lines to show for a tileset on screen: its copyright

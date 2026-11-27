@@ -499,3 +499,87 @@ func TestOpenRefusals(t *testing.T) {
 		t.Error("opened a tileset of an unknown version")
 	}
 }
+
+// Settle leaves the same scene however the loads race: tiles are added in
+// the order they were first met, so nodes, and with them what wins where two
+// tiles meet at one depth, do not depend on which fetch finished first.
+func TestSettleIsRepeatableHoweverLoadsRace(t *testing.T) {
+	order := func(seed int64) []string {
+		scene := nt3d.NewScene()
+		inner := newFiles(block("ADD"))
+		// Each fetch takes its own time, different every run.
+		delay := map[string]time.Duration{"city/root.glb": time.Duration(seed%3) * time.Millisecond, "city/tiles/west.glb": time.Duration((seed+1)%3) * 2 * time.Millisecond, "city/tiles/east.glb": time.Duration((seed+2)%3) * 2 * time.Millisecond}
+		slow := nt3dtiles3d.FetcherFunc(func(ctx context.Context, uri string) ([]byte, error) {
+			time.Sleep(delay[uri])
+			return inner.Fetch(ctx, uri)
+		})
+		ts, err := Open(context.Background(), scene, slow, "city/tileset.json", Options{Frame: stamford})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ts.Close()
+		settle(t, ts, nearBy)
+		frame, err := scene.StillFrame(nearBy, 100, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var drawn []string
+		for _, d := range frame.Draws {
+			if tile, ok := d.Data.(*Tile); ok && len(d.Geometry.Vertices) > 0 {
+				drawn = append(drawn, tile.URIs[0])
+			}
+		}
+		return drawn
+	}
+	want := order(0)
+	if len(want) != 3 {
+		t.Fatalf("drew %v, want three tiles", want)
+	}
+	for seed := int64(1); seed < 6; seed++ {
+		if got := order(seed); !same(got, want) {
+			t.Fatalf("with other timings the scene draws %v, and before %v", got, want)
+		}
+	}
+}
+
+// The error threshold can be changed while the tileset runs: raised, the
+// same view keeps the coarse tile; lowered again, it refines.
+func TestTheErrorThresholdCanBeChanged(t *testing.T) {
+	scene := nt3d.NewScene()
+	ts := open(t, scene, newFiles(block("REPLACE")), "city/tileset.json", Options{})
+	if ts.MaxScreenSpaceError() != 16 {
+		t.Fatalf("the default threshold is %g, want 16", ts.MaxScreenSpaceError())
+	}
+	ts.SetMaxScreenSpaceError(500)
+	settle(t, ts, nearBy)
+	if got := shown(t, scene, nearBy); !same(got, []string{"city/root.glb"}) {
+		t.Fatalf("at a threshold of 500 pixels the scene shows %v, want the root", got)
+	}
+	ts.SetMaxScreenSpaceError(0)
+	settle(t, ts, nearBy)
+	if got := shown(t, scene, nearBy); len(got) != 2 || ts.MaxScreenSpaceError() != 16 {
+		t.Fatalf("back at the default the scene shows %v at %g pixels", got, ts.MaxScreenSpaceError())
+	}
+}
+
+// With AtCenter the scene is drawn around the tileset's own middle, whatever
+// frame is given: the root's bounds are centered on the scene's origin, and
+// Frame says where that is on the Earth.
+func TestAtCenterDrawsAroundTheTileset(t *testing.T) {
+	scene := nt3d.NewScene()
+	ts, err := Open(context.Background(), scene, newFiles(block("REPLACE")), "city/tileset.json", Options{AtCenter: true, Frame: nt3dgeo.ENU{Origin: nt3dgeo.Geodetic{Lat: -33, Lon: 151}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+	box, ok := ts.Bounds()
+	if !ok || box.Center.Len() > 1e-6 {
+		t.Fatalf("the root's bounds are centered at %+v, want the scene's origin", box.Center)
+	}
+	// The block's bounds are centered 5 m above the Stamford frame's origin.
+	want := stamford.Origin
+	want.Height = 5
+	if got := ts.Frame().Origin; got.ECEF().Dist(want.ECEF()) > 1e-6 {
+		t.Fatalf("the frame is at %+v, want %+v", got, want)
+	}
+}

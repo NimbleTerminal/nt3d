@@ -111,9 +111,9 @@ err = tileset.Update(camera, width, height)
 frame, err := scene.Frame(camera, width, height)
 ```
 
-`Options.Frame` is the [east-north-up frame](../geo/#drawing-in-a-local-frame) the scene is drawn in, and the camera is taken to be in it. Each tile is placed exactly: its transform into Earth-centered meters, its b3dm `RTC_CENTER`, and its glTF's own origin are composed in `float64` and split into a node origin and a `float32` matrix, so a tile 14 km away lands within a millimeter. Keep the camera's own position in `Camera.Origin` when it is far from the frame's origin.
+`Options.Frame` is the [east-north-up frame](../geo/#drawing-in-a-local-frame) the scene is drawn in, and the camera is taken to be in it. Each tile is placed exactly: its transform into Earth-centered meters, its b3dm `RTC_CENTER`, and its glTF's own origin are composed in `float64` and split into a node origin and a `float32` matrix, so a tile 14 km away lands within a millimeter. Keep the camera's own position in `Camera.Origin` when it is far from the frame's origin. To show a tileset whose place you do not know ahead, set `Options.AtCenter`: the scene is drawn around the middle of the root tile's bounds (`nt3dtiles3d.Tileset.Center`), and `Tileset.Frame()` says where that is.
 
-**Threads.** `Update`, `Settle`, and `Close` touch the scene and belong on the goroutine that owns it. Fetching and decoding run on `Options.Workers` background goroutines (4 by default) and never touch the scene. `Update` never waits. `Settle(ctx, camera, width, height)` calls `Update` until nothing is loading or wanted, which is what a still picture, a test, or a first frame needs.
+**Threads.** `Update`, `Settle`, and `Close` touch the scene and belong on the goroutine that owns it. Fetching and decoding run on `Options.Workers` background goroutines (4 by default) and never touch the scene. `Update` never waits. `Settle(ctx, camera, width, height)` chooses and waits until nothing is loading or wanted, which is what a still picture, a test, or a first frame needs. It is repeatable: finished tiles are added in the order they were first met, not the order their loads finished, so the same tileset and camera leave the same scene, and the same picture where two tiles meet at one depth.
 
 **What is drawn.** A tile's error on screen is its geometric error seen at the nearest point of its bounds:
 
@@ -121,7 +121,7 @@ frame, err := scene.Frame(camera, width, height)
 error in pixels = geometricError × height / (2 × distance × tan(FOV / 2))
 ```
 
-A tile is refined while that is over `Options.MaxScreenSpaceError` (16 by default). The distance is to the nearest point of the bounds, never to their middle, so a large tile the eye stands inside is as near as can be and always refines. An orthographic camera uses its visible height in place of the distance. Tiles wholly outside the view are neither loaded nor drawn.
+A tile is refined while that is over `Options.MaxScreenSpaceError` (16 by default), which `SetMaxScreenSpaceError` changes while the tileset runs. The distance is to the nearest point of the bounds, never to their middle, so a large tile the eye stands inside is as near as can be and always refines. An orthographic camera uses its visible height in place of the distance. Tiles wholly outside the view are neither loaded nor drawn.
 
 - A tile that **replaces** stays on screen until every one of its children that is in view has arrived; then they take its place together. There is never a hole and never half the children. A child whose content fails leaves its parent showing.
 - A tile that **adds** is drawn together with its children.
