@@ -43,24 +43,18 @@ move to Done with their commit; git history has the details.
 
 ## Formats
 
-- [ ] **Stream 3D Tiles into a scene.** `nt3d/geo` and `nt3d/tiles3d` read
-  and place a tileset; drawing one is open, in this order:
+- [ ] **Stream 3D Tiles into a scene.** `nt3d/geo`, `nt3d/tiles3d` and
+  `nt3d/tiles3d/scene` read, place and stream a tileset. What remains:
   1. Follow the SPZ compression draft (KhronosGroup/glTF pull 2531) to
      ratification. `nt3d/mesh/gltf` reads it under its three names and
      takes the payload's values as glTF's coordinates, unflipped, as
      CesiumJS does; the draft's text says left-up-front, which negates X
      and Z. `spzSplats` is the one place to change.
-  2. `nt3d/tiles3d/scene`: selection by screen-space error against the
-     nearest point of a tile's bounds, `REPLACE` that keeps a loaded ancestor
-     until its children are in, background fetch and decode with scene
-     changes on one goroutine, a byte budget with eviction, a splat budget
-     across tiles, and placing each tile by its transform, its b3dm
-     `RTC_CENTER`, and its `Model.Origin` together.
-  3. Blended splats from several tiles: `blendPlan` orders slot by slot
+  2. Blended splats from several tiles: `blendPlan` orders slot by slot
      within a depth slice and spreads 64 slices from the nearest to the
      farthest blended draw, so overlapping tiles seam and one distant tile
      coarsens the slices near the camera. Measure, then interleave.
-  4. A streaming demo with a reference picture, and tile metadata inside
+  3. A streaming demo with a reference picture, and tile metadata inside
      glTF (`EXT_structural_metadata`, `EXT_mesh_features`).
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
   exact rendering means subdividing them.

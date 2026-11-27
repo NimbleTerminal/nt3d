@@ -46,6 +46,7 @@ Dependencies point one way: everything builds on `math`, the engine builds on a 
 | `nt3dcollide` | `nt3d/collide` | Ray casts and kinematic capsule movement against a static triangle mesh; no state between calls | `math` |
 | `nt3dgeo` | `nt3d/geo` | Positions on the Earth: WGS84 latitude, longitude and height, Earth-centered meters, local east-north-up frames, and 3D Tiles bounding regions, in float64 | `math` |
 | `nt3dtiles3d` | `nt3d/tiles3d` | Reading OGC 3D Tiles 1.1: tilesets, implicit tiling and subtrees, metadata, b3dm, and fetching by URI | `math`, `geo` |
+| `nt3dtiles3dscene` | `nt3d/tiles3d/scene` | Joins 3D Tiles to the engine: streams a tileset into a scene, choosing, loading, placing and evicting tiles | the engine, `tiles3d`, `geo`, `mesh/gltf` |
 | `nt3dcollidescene` | `nt3d/collide/scene` | Joins collision to the engine: a collision mesh from a `Geometry` | the engine, `collide` |
 | `nt3dcam` | `nt3d/cam` and below | Declarative camera paths, in float64 | `math` |
 | **`nt3d`** | `nt3d` | Scene, frame, the three renderers, picking | `math`, `sh`, `clod` |

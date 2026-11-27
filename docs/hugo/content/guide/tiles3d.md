@@ -7,7 +7,7 @@ weight: 84
 
 `nt3d/tiles3d` (package `nt3dtiles3d`) reads [OGC 3D Tiles 1.1](https://docs.ogc.org/cs/22-025r4/22-025r4.html): a tree of tiles, coarse at the root and finer toward the leaves, that lets a city too large for one file be loaded a piece at a time. Each tile has bounds, a geometric error that says how wrong it is to stop there, and content, which is glTF.
 
-The package reads and describes. It draws nothing, and fetches only through a `Fetcher` you give it. It imports `nt3d/math`, `nt3d/geo`, and the standard library, so a tool that checks tilesets, or a server that writes them, can use it without a renderer.
+The package reads and describes. It draws nothing, and fetches only through a `Fetcher` you give it; [`nt3d/tiles3d/scene`](#streaming-into-a-scene) is what streams a tileset into a scene. It imports `nt3d/math`, `nt3d/geo`, and the standard library, so a tool that checks tilesets, or a server that writes them, can use it without a renderer.
 
 Positions are Earth-centered meters in `float64`; [Geographic scenes](../geo/) covers that frame and how to draw in a local one.
 
@@ -95,6 +95,52 @@ A `Fetcher` returns the bytes a URI names. Everything outside the program is rea
 - `FS(fsys)` reads paths from an `fs.FS`: a directory, or files embedded in the program.
 - `HTTP` asks a web server, natively and in a browser build. `Prepare` sees each request before it is sent; `Bearer(token, origin)` is a `Prepare` that sends a token only to `https` URLs on the tileset's own host, so a tile that links to another server is fetched without it. A redirect is treated as a new request: the `Authorization` and `Cookie` headers of the request before are taken off and `Prepare` decides again, so a token never follows a redirect to plain `http` or to another host. `MaxBytes` limits a response.
 - `FetcherFunc` makes a function a `Fetcher`.
+
+## Streaming into a scene
+
+`nt3d/tiles3d/scene` (package `nt3dtiles3dscene`) joins the reader to the engine. It keeps a scene showing what the camera needs of a tileset: coarse tiles far off, fine ones near, fetched as they are wanted and removed when they are not.
+
+```go
+tileset, err := nt3dtiles3dscene.Open(ctx, scene, fetch, "https://tiles.example/city/tileset.json", nt3dtiles3dscene.Options{
+    Frame: nt3dgeo.ENU{Origin: nt3dgeo.Geodetic{Lat: 41.0465, Lon: -73.5418}},
+})
+defer tileset.Close()
+
+// Each frame, before Scene.Frame:
+err = tileset.Update(camera, width, height)
+frame, err := scene.Frame(camera, width, height)
+```
+
+`Options.Frame` is the [east-north-up frame](../geo/#drawing-in-a-local-frame) the scene is drawn in, and the camera is taken to be in it. Each tile is placed exactly: its transform into Earth-centered meters, its b3dm `RTC_CENTER`, and its glTF's own origin are composed in `float64` and split into a node origin and a `float32` matrix, so a tile 14 km away lands within a millimeter. Keep the camera's own position in `Camera.Origin` when it is far from the frame's origin.
+
+**Threads.** `Update`, `Settle`, and `Close` touch the scene and belong on the goroutine that owns it. Fetching and decoding run on `Options.Workers` background goroutines (4 by default) and never touch the scene. `Update` never waits. `Settle(ctx, camera, width, height)` calls `Update` until nothing is loading or wanted, which is what a still picture, a test, or a first frame needs.
+
+**What is drawn.** A tile's error on screen is its geometric error seen at the nearest point of its bounds:
+
+```
+error in pixels = geometricError × height / (2 × distance × tan(FOV / 2))
+```
+
+A tile is refined while that is over `Options.MaxScreenSpaceError` (16 by default). The distance is to the nearest point of the bounds, never to their middle, so a large tile the eye stands inside is as near as can be and always refines. An orthographic camera uses its visible height in place of the distance. Tiles wholly outside the view are neither loaded nor drawn.
+
+- A tile that **replaces** stays on screen until every one of its children that is in view has arrived; then they take its place together. There is never a hole and never half the children. A child whose content fails leaves its parent showing.
+- A tile that **adds** is drawn together with its children.
+- A tile's own content is loaded before its children are asked for, so refinement arrives a level at a time and there is always something to hold the view.
+- Tiles with nothing of their own to draw, tilesets nested as a tile's content (to `Options.MaxExternalDepth`, 8 by default), and [implicit trees](#implicit-tiling), whose subtree files are fetched as the view reaches them, are all walked through.
+
+**Budgets.** Loaded tiles the view has left stay loaded, so turning back is instant, until their bytes as fetched exceed `Options.MaxBytes` (512 MiB by default); then the longest unused are removed. A tile in use, or on the way to one in use, is never removed. `Options.SplatBudget` caps the Gaussian splats in the drawn tiles together: past it the whole selection is made coarser, so whole tiles stay at a lower level rather than every tile being thinned. Set the scene's own budget (`Scene.SetSplatBudget`) to the same number.
+
+**What a tile carries.** Every node of a loaded tile has a `*nt3dtiles3dscene.Tile` as its data, so a draw's `Data` and a pick's `Hit.Data` say which tile they belong to: its URIs, level, implicit coordinate, geometric error, credits, and the metadata of its tileset, tile, contents, groups, and subtree. `Options.OnTileLoaded` is called with it after the tile's nodes are in the scene and before they are first shown, which is the place to restyle a tile or take its triangles for collision; `OnTileUnloaded` is called before they are removed.
+
+```go
+OnTileLoaded: func(tile *nt3dtiles3dscene.Tile) {
+    _ = scene.ApplyToon(tile.Node, nt3d.ToonStyle{Bands: 3})
+},
+```
+
+`Stats()` reports the tiles shown, visited, loading and loaded, bytes, evictions, failures with the last error, splats loaded and shown, and the error threshold in use. `Credits()` returns who to credit for what is on screen: the tileset's own credits and those of each nested tileset with a tile shown. `Bounds()` is the root's box in the scene's frame, for a first camera.
+
+Each tileset adds its tiles under one node, named `Options.Name` (`"tileset"` by default); node names are unique in a scene, so a second tileset needs its own.
 
 ## Limits and untrusted files
 
