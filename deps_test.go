@@ -10,7 +10,7 @@ import (
 // program. Whoever imports it, or water, fur, mesh, and the rest that build on
 // it, must not inherit the terminal UI stack: only package widget may.
 func TestEngineLinksNoTerminalUI(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", ".", "./water", "./fur", "./mesh/...", "./clod", "./cam/...", "./sh", "./aabbtree", "./collide/...", "./math").Output()
+	out, err := exec.Command("go", "list", "-deps", ".", "./water", "./fur", "./mesh/...", "./clod", "./cam/...", "./sh", "./aabbtree", "./collide/...", "./geo", "./math").Output()
 	if err != nil {
 		t.Skipf("go list is unavailable: %v", err)
 	}
@@ -51,4 +51,27 @@ func TestCollideDoesNotImportTheEngine(t *testing.T) {
 			t.Errorf("package nt3d/collide imports %s", dep)
 		}
 	}
+}
+
+// Geodesy is arithmetic on float64, shared by renderers, servers that write
+// tiles, and tools. It depends only on nt3d/math and the standard library, so
+// none of them links what it does not use.
+func TestGeoImportsOnlyMath(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", "./geo").Output()
+	if err != nil {
+		t.Skipf("go list is unavailable: %v", err)
+	}
+	for _, dep := range strings.Fields(string(out)) {
+		if outsideStandardLibrary(dep) && dep != "nimbleterminal.dev/nt3d/geo" && dep != "nimbleterminal.dev/nt3d/math" {
+			t.Errorf("package nt3d/geo imports %s", dep)
+		}
+	}
+}
+
+// outsideStandardLibrary reports whether an import path belongs to a module:
+// those start with a host name, which has a dot, and the standard library's
+// do not.
+func outsideStandardLibrary(dep string) bool {
+	first, _, _ := strings.Cut(dep, "/")
+	return strings.Contains(first, ".")
 }

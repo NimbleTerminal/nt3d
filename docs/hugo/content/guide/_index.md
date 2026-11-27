@@ -18,6 +18,7 @@ How to build scenes with nt3d, render them, and show them in a terminal.
 - [Spatial index](spatial-index/)
 - [Picking](picking/)
 - [Collision](collision/)
+- [Geographic scenes](geo/)
 - [The widget](widget/)
 - [Demos](demos/)
 - [Architecture](architecture/)

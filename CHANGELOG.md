@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Positions on the Earth (`nt3d/geo`)**: package `nt3dgeo` converts between WGS84 latitude, longitude and ellipsoidal height (`Geodetic`), Earth-centered meters (`Geodetic.ECEF`, `FromECEF`), and a local east-north-up frame (`ENU`), which is nt3d's Z-up world. `ENU.Place` splits a transform into Earth-centered meters, such as a 3D Tiles tile's, into a `float64` origin for `Scene.SetNodeOrigin` and a `float32` matrix with no translation, so a model 14 km from the scene's origin lands within a tenth of a millimeter. `Region` is a 3D Tiles bounding region, and `Region.Box` an oriented box that holds its curved surface and not only its corners. The package depends only on `nt3d/math`, and is tested against PROJ 9.9.0 reference values in `geo/testdata/geo-vectors.json`.
 - **A float64 oriented box and affine inverse in `nt3d/math`**: `OBBd` (`Distance`, `Nearest`, `Transformed`, `Corners`, `Radius`) bounds things placed where `float32` does not reach, and `Mat4d.InverseAffine` is `Mat4.InverseAffine` in `float64`.
 
 ## v0.13.0 (2026-11-26)
