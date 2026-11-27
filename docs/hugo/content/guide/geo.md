@@ -78,7 +78,7 @@ far := box.Distance(eyeECEF)                // 0 inside the box
 
 `Box` returns an oriented box, with its axes east, north and up at the region's middle, that holds the whole curved block. The eight corners are not enough: the surface between them bulges outward, by about 2 m across a 10 km region and by hundreds of kilometers across a continent. The box is found by sampling both height surfaces and adding the most the surface can rise between samples, so it is never too small. It is loose by centimeters for a city tile.
 
-`nt3dmath.OBBd` is the oriented box: `Distance` and `Nearest` measure to it, `Transformed` carries it through a `Mat4d`, and `Corners` and `Radius` describe it.
+`nt3dmath.OBBd` is the oriented box: `Distance` and `Nearest` measure to it, exactly even when a transform has left its axes askew, `Transformed` carries it through a `Mat4d`, and `Corners` and `Radius` describe it.
 
 ## Reference values
 
