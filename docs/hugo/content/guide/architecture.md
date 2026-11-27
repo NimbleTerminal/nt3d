@@ -39,7 +39,7 @@ Dependencies point one way: everything builds on `math`, the engine builds on a 
 
 | Package | Import | Role | Depends on |
 | --- | --- | --- | --- |
-| `nt3dmath` | `nt3d/math` | All the math: vectors, quaternions, matrices, bounds, and ray and view-volume tests, in float32 and in float64 | nothing |
+| `nt3dmath` | `nt3d/math` | All the math: vectors, quaternions, matrices, bounds, and ray and view-volume tests, in float32 and in float64, with an oriented box for bounds too far out for float32 | nothing |
 | `nt3dsh` | `nt3d/sh` | Spherical harmonics, in Go and WGSL | `math` |
 | `nt3dclod` | `nt3d/clod` | Clustering many items for budgeted drawing | `math` |
 | `nt3daabbtree` | `nt3d/aabbtree` | Dynamic bounding-volume tree | `math` |

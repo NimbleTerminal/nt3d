@@ -92,3 +92,27 @@ func TRSd(t Vec3d, q Quatd, s Vec3d) Mat4d {
 	r[12], r[13], r[14] = t.X, t.Y, t.Z
 	return r
 }
+
+// InverseAffine returns the inverse of the affine transform a, and false with
+// the zero matrix for one that is not finite, not affine, or singular. It is
+// Mat4.InverseAffine in float64, for transforms whose translation float32
+// cannot hold, such as a tile's placement on the Earth.
+func (a Mat4d) InverseAffine() (Mat4d, bool) {
+	if !a.IsFinite() || a[3] != 0 || a[7] != 0 || a[11] != 0 || a[15] != 1 {
+		return Mat4d{}, false
+	}
+	det := a.Determinant3()
+	if det == 0 || !IsFinite(det) {
+		return Mat4d{}, false
+	}
+	out := IdentityD()
+	out[0], out[4], out[8] = (a[5]*a[10]-a[9]*a[6])/det, (a[8]*a[6]-a[4]*a[10])/det, (a[4]*a[9]-a[8]*a[5])/det
+	out[1], out[5], out[9] = (a[9]*a[2]-a[1]*a[10])/det, (a[0]*a[10]-a[8]*a[2])/det, (a[8]*a[1]-a[0]*a[9])/det
+	out[2], out[6], out[10] = (a[1]*a[6]-a[5]*a[2])/det, (a[4]*a[2]-a[0]*a[6])/det, (a[0]*a[5]-a[4]*a[1])/det
+	t := out.Direction(Vec3d{a[12], a[13], a[14]})
+	out[12], out[13], out[14] = -t.X, -t.Y, -t.Z
+	if !out.IsFinite() {
+		return Mat4d{}, false
+	}
+	return out, true
+}

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **A float64 oriented box and affine inverse in `nt3d/math`**: `OBBd` (`Distance`, `Nearest`, `Transformed`, `Corners`, `Radius`) bounds things placed where `float32` does not reach, and `Mat4d.InverseAffine` is `Mat4.InverseAffine` in `float64`.
+
 ## v0.13.0 (2026-11-26)
 
 ### Added

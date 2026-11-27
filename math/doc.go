@@ -10,9 +10,10 @@
 //   - float32, matching WebGPU's f32 and buffer layouts: [Vec3], [Quat],
 //     [Mat4], [AABB], and [Ray]. Geometry, transforms sent to a renderer, and
 //     picking use these.
-//   - float64, for where float32 does not reach: [Vec3d], [Quatd], and
-//     [Mat4d]. Node transforms carrying geographic origins, matrices read
-//     from model files, and camera paths compose in these and round once.
+//   - float64, for where float32 does not reach: [Vec3d], [Quatd], [Mat4d],
+//     and the oriented box [OBBd]. Node transforms carrying geographic
+//     origins, matrices read from model files, and camera paths compose in
+//     these and round once.
 //
 // Convert between them with D on the float32 types and Vec3, Quat, and Mat4
 // on the float64 ones.
@@ -20,8 +21,8 @@
 // Matrices are column-major and multiply as a.Mul(b), applying b first.
 // Transforms: [Translation], [Scaling], [RotationX] and its siblings, [TRS]
 // and [TRSd] from a translation, rotation, and scale, [Mat4.InverseAffine]
-// for affine transforms and [Mat4.Inverse] for any, and [Mat4.Rotation] to
-// take the rotation back out.
+// for affine transforms (and [Mat4d.InverseAffine]) and [Mat4.Inverse] for
+// any, and [Mat4.Rotation] to take the rotation back out.
 //
 // Tests against space: [RayProbe.Enter] and [AABB.Hits] for a ray and a box,
 // as a spatial index asks while it walks, and [Mat4.Outside] for a box and a
