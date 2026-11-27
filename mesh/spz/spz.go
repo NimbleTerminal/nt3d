@@ -104,6 +104,26 @@ func (h header) sizes() [6]uint64 {
 // Decode reads an SPZ file. Its byte budget is o.ByteLimit() (the decompressed
 // size); o.Up is ignored.
 func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
+	g, err := Unpack(data, o)
+	if err != nil {
+		return nil, err
+	}
+	m, err := nt3dmesh.GaussianModel(SPZ, g, o)
+	if err != nil {
+		return nil, err
+	}
+	m.OrientYUp()
+	return m, nil
+}
+
+// Unpack reads an SPZ file, or an SPZ payload carried inside another file,
+// as one Gaussian cloud in the axes the bytes are stored in, which are
+// right-up-back and so Y-up. The cloud is not turned, split, or clustered:
+// Decode does that for a file, and a container that holds SPZ, such as a
+// glTF splat primitive, places the cloud by its own rules and then finishes
+// it with nt3dmesh.GaussianModel. The byte budget is o.ByteLimit(), of the
+// decompressed size.
+func Unpack(data []byte, o *nt3dmesh.Options) (nt3d.Geometry, error) {
 	budget := o.ByteLimit()
 	var h header
 	var arrays [6][]byte
@@ -117,18 +137,9 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 		err = errors.New("nt3dmesh: not an SPZ file")
 	}
 	if err != nil {
-		return nil, err
+		return nt3d.Geometry{}, err
 	}
-	g, err := unpack(h, arrays)
-	if err != nil {
-		return nil, err
-	}
-	m, err := nt3dmesh.GaussianModel(SPZ, g, o)
-	if err != nil {
-		return nil, err
-	}
-	m.OrientYUp()
-	return m, nil
+	return unpack(h, arrays)
 }
 
 // readGzip reads a version 2 or 3 file: the header and arrays in one gzip

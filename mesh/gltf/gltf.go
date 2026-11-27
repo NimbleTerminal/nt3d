@@ -70,7 +70,9 @@ const GLTF nt3dmesh.Format = "gltf"
 // the Clearcoat, Sheen, and Specular groups of Material.PBR.
 // Normals the file omits are computed flat; triangle strips and fans become
 // triangles, points points, and lines lines. A POINTS primitive carrying
-// KHR_gaussian_splatting becomes a Gaussian splat cloud (gaussian.go).
+// KHR_gaussian_splatting becomes a Gaussian splat cloud, from accessors or
+// from an SPZ payload (gaussian.go); the package imports nt3d/mesh/spz for
+// that, which registers the .spz format as well.
 //
 // Buffers and images outside a .glb are read through Options.Open, within
 // Options.MaxBytes. Files that require an extension nt3d cannot honor, such
@@ -739,6 +741,9 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 		a, err := d.accessor(i, key)
 		return a, err == nil, err
 	}
+	if splats, err := d.gaussians(name, p, world); splats || err != nil {
+		return err
+	}
 	position, ok, err := attr(gltf.POSITION)
 	if err != nil {
 		return err
@@ -750,9 +755,6 @@ func (d *gltfDecoder) primitive(name string, p *gltf.Primitive, world mat4) erro
 	positions, err := d.readPositions(position)
 	if err != nil {
 		return fmt.Errorf("nt3dmesh: glTF %s positions: %w", name, err)
-	}
-	if splats, err := d.gaussians(name, p, world, positions); splats || err != nil {
-		return err
 	}
 	var indices []uint32
 	if p.Indices != nil {

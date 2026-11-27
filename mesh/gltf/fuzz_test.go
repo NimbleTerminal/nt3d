@@ -51,6 +51,9 @@ func FuzzDecode(f *testing.F) {
 		floats("KHR_gaussian_splatting:SH_DEGREE_0_COEF_0", "VEC3", []float64{1, 0, -1}),
 	}, ellipse, "")
 	f.Add(splatDocument, splatFiles["side.bin"])
+	// The same kind of primitive with its data in an SPZ payload.
+	spzPayload := twoSplatSPZ(f)
+	f.Add(spzSplatDoc(spzPayload, 2, spzNested, spzUsed, ""), spzPayload)
 	// A null where an object belongs: each array of objects decodes to pointers.
 	f.Add([]byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"side.bin","byteLength":36}],"bufferViews":[{"buffer":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],"materials":[null],"cameras":[null],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0},null]}],"nodes":[{"mesh":0,"camera":0}],"scenes":[{"nodes":[0]},null],"scene":0}`), bytes.Repeat([]byte{0, 0, 128, 63}, 9))
 	// KHR_texture_basisu + KHR_materials_specular seeds (both UASTC and BasisLZ/ETC1S side KTX2 payloads).

@@ -51,7 +51,7 @@ Dependencies point one way: everything builds on `math`, the engine builds on a 
 | **`nt3d`** | `nt3d` | Scene, frame, the three renderers, picking | `math`, `sh`, `clod` |
 | `nt3dcamscene` | `nt3d/cam/scene` | Joins camera paths to a scene: states to cameras, targets by node name, a path drawn into a frame | the engine, `cam` |
 | `nt3dmesh` | `nt3d/mesh` | Reading and writing mesh files | the engine |
-| `nt3dgltf`, `nt3dspz`, `nt3dsog` | `nt3d/mesh/…` | Formats that register themselves with `nt3dmesh` | `mesh` |
+| `nt3dgltf`, `nt3dspz`, `nt3dsog` | `nt3d/mesh/…` | Formats that register themselves with `nt3dmesh`. `gltf` builds on `spz`, for splat primitives compressed with it, so importing `gltf` registers `.spz` too | `mesh` |
 | `nt3dwater`, `nt3dfur` | `nt3d/water`, `nt3d/fur` | Geometry builders for particular effects | the engine |
 | `nt3dwidget` | `nt3d/widget` | Bubble Tea widget, Kitty graphics | the engine, Bubble Tea |
 

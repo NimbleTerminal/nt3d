@@ -296,7 +296,19 @@ What is refused, and what is passed over:
 - A splat primitive that is not `POINTS`, lacks an attribute, has attributes of different counts, a negative scale, an opacity outside 0 to 1, or a degree with coefficients missing is an error that names the fault.
 - A `kernel` other than `ellipse` is not drawn as splats. The primitive is shown as plain points, which the extension allows a renderer that does not know it, and `Model.Warnings` says so.
 - `colorSpace` `lin_rec709_display` is drawn as display sRGB, with a warning: harmonics are a sum and cannot be converted exactly.
-- Compressed splats are not read yet. The SPZ compression extension is still a draft at Khronos; a primitive whose attributes are left to a compression extension is an error that names it.
+- A primitive whose attributes are left to a compression other than SPZ is an error that names it.
+
+**Compressed with SPZ.** A splat primitive may keep all its data in one [SPZ](#spz) payload in a buffer view, about a tenth the size, with accessors that describe the result and hold nothing. The decoder reads the payload with the SPZ decoder's own `nt3dspz.Unpack` and places and finishes the cloud as above, so a compressed tile and an `.spz` file of the same bytes give the same cloud. All of SPZ versions 2 through 4 are read.
+
+The compression extension is still a draft at Khronos, so its name has moved. These are read, and accepted in `extensionsRequired`:
+
+| Name | Where |
+| --- | --- |
+| `KHR_gaussian_splatting_compression_spz_2` | inside `KHR_gaussian_splatting`'s own `extensions`: the current draft |
+| `KHR_gaussian_splatting_compression_spz` | the same place: the name the draft's examples use |
+| `KHR_spz_gaussian_splats_compression` | on the primitive: the draft before the ratified extension |
+
+One thing in the draft is disputed, and nt3d takes a side: **the payload's stored values are read as they are, as coordinates in glTF's frame, and nothing is flipped.** SPZ stores right-up-back, which is glTF's right-handed Y-up, and CesiumJS reads tiles this way (it unpacks with the coordinate system unspecified). The draft's text asks instead for SPZ's left-up-front conversion, which negates X and Z. A writer of tiles for nt3d packs without a coordinate conversion; one that packs "from left-up-front" stores X and Z negated, and nt3d shows such a tile turned half way round. If the ratified text settles on the conversion, the reading changes in one function.
 
 ### SOG and compressed PLY
 

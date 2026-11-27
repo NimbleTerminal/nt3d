@@ -29,6 +29,11 @@ var documentExtensions = []string{
 	"EXT_texture_webp",        // gltf.go, loadImage: WebP textures, when a WebP decoder is registered.
 	"EXT_mesh_gpu_instancing", // instancing.go: many placements of one mesh.
 	"KHR_gaussian_splatting",  // gaussian.go: a POINTS primitive as a Gaussian splat cloud.
+	// gaussian.go: a splat primitive's data as one SPZ payload, under the
+	// draft's names and the one before it.
+	"KHR_gaussian_splatting_compression_spz_2",
+	"KHR_gaussian_splatting_compression_spz",
+	"KHR_spz_gaussian_splats_compression",
 }
 
 // supportedExtensions are those whose meaning Decode honors.

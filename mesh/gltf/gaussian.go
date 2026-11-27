@@ -15,6 +15,7 @@ import (
 	"nimbleterminal.dev/nt3d"
 	"nimbleterminal.dev/nt3d/math"
 	"nimbleterminal.dev/nt3d/mesh"
+	"nimbleterminal.dev/nt3d/mesh/spz"
 	"nimbleterminal.dev/nt3d/sh"
 )
 
@@ -36,7 +37,18 @@ const gaussianSplatting = "KHR_gaussian_splatting"
 // A kernel other than "ellipse" is not drawn as splats: the primitive falls
 // back to plain points, as the extension allows a renderer that does not
 // know it, and false is returned with a warning.
-func (d *gltfDecoder) gaussians(name string, p *gltf.Primitive, world mat4, positions [][3]float32) (bool, error) {
+func (d *gltfDecoder) gaussians(name string, p *gltf.Primitive, world mat4) (bool, error) {
+	fail := func(format string, a ...any) (bool, error) {
+		return false, fmt.Errorf("nt3dmesh: glTF %s splats: %s", name, fmt.Sprintf(format, a...))
+	}
+	// The draft that came before the ratified extension put the SPZ payload
+	// on the primitive itself.
+	var legacy spzCompression
+	if ok, err := decodeExtension(p.Extensions, "KHR_spz_gaussian_splats_compression", &legacy); err != nil {
+		return false, err
+	} else if ok {
+		return d.spzSplats(name, p, world, legacy)
+	}
 	var ext struct {
 		Kernel     *string                    `json:"kernel"`
 		ColorSpace *string                    `json:"colorSpace"`
@@ -45,9 +57,6 @@ func (d *gltfDecoder) gaussians(name string, p *gltf.Primitive, world mat4, posi
 	ok, err := decodeExtension(p.Extensions, gaussianSplatting, &ext)
 	if err != nil || !ok {
 		return false, err
-	}
-	fail := func(format string, a ...any) (bool, error) {
-		return false, fmt.Errorf("nt3dmesh: glTF %s splats: %s", name, fmt.Sprintf(format, a...))
 	}
 	if p.Mode != gltf.PrimitivePoints {
 		return fail("a %s primitive must be POINTS", gaussianSplatting)
@@ -64,6 +73,29 @@ func (d *gltfDecoder) gaussians(name string, p *gltf.Primitive, world mat4, posi
 	// being a sum, so they are shown as they are, and said to be.
 	if *ext.ColorSpace != "srgb_rec709_display" {
 		d.warn("%s: splat color space %q is drawn as srgb_rec709_display", name, *ext.ColorSpace)
+	}
+	for _, compression := range spzCompressionNames {
+		raw, ok := ext.Extensions[compression]
+		if !ok {
+			continue
+		}
+		var spz spzCompression
+		if err := json.Unmarshal(raw, &spz); err != nil {
+			return fail("%s: %v", compression, err)
+		}
+		return d.spzSplats(name, p, world, spz)
+	}
+	position, ok := p.Attributes[gltf.POSITION]
+	if !ok {
+		return fail("no POSITION attribute")
+	}
+	positionAccessor, err := d.accessor(position, gltf.POSITION)
+	if err != nil {
+		return false, err
+	}
+	positions, err := d.readPositions(positionAccessor)
+	if err != nil {
+		return fail("POSITION: %v", err)
 	}
 	n := len(positions)
 	attr := func(key string, kind gltf.AccessorType) (*gltf.Accessor, error) {
@@ -203,6 +235,71 @@ func (d *gltfDecoder) gaussians(name string, p *gltf.Primitive, world mat4, posi
 		}
 	}
 	g.Bounds = nt3d.GeometryBounds(g)
+	return d.finishSplats(name, g, world)
+}
+
+// spzCompressionNames are the names the SPZ compression of a splat primitive
+// has gone by inside KHR_gaussian_splatting: the draft's, and the one its own
+// examples use.
+var spzCompressionNames = []string{"KHR_gaussian_splatting_compression_spz_2", "KHR_gaussian_splatting_compression_spz"}
+
+// spzCompression is what each of those extensions holds: the buffer view of
+// an SPZ payload.
+type spzCompression struct {
+	BufferView *int `json:"bufferView"`
+}
+
+// spzSplats reads a splat primitive whose data is one SPZ payload in a buffer
+// view. The primitive's accessors then describe the result and hold nothing;
+// only the count of POSITION is checked against the payload.
+//
+// The payload's stored values are taken as they are, as coordinates in
+// glTF's frame: nothing is flipped. SPZ stores right-up-back, which is
+// glTF's own right-handed Y-up, and it is what CesiumJS does (it unpacks with
+// the coordinate system unspecified). The draft's text asks for a
+// left-up-front conversion, which negates X and Z; that reading is disputed
+// in the draft's own review, and this is the one place to change if it wins.
+func (d *gltfDecoder) spzSplats(name string, p *gltf.Primitive, world mat4, spz spzCompression) (bool, error) {
+	fail := func(format string, a ...any) (bool, error) {
+		return false, fmt.Errorf("nt3dmesh: glTF %s splats: %s", name, fmt.Sprintf(format, a...))
+	}
+	if p.Mode != gltf.PrimitivePoints {
+		return fail("an SPZ splat primitive must be POINTS")
+	}
+	if spz.BufferView == nil || *spz.BufferView < 0 || *spz.BufferView >= len(d.doc.BufferViews) || d.doc.BufferViews[*spz.BufferView] == nil {
+		return fail("the SPZ payload names no buffer view of the %d there are", len(d.doc.BufferViews))
+	}
+	payload, err := modeler.ReadBufferView(d.doc, d.doc.BufferViews[*spz.BufferView])
+	if err != nil {
+		return fail("SPZ payload: %v", err)
+	}
+	g, err := nt3dspz.Unpack(payload, d.o)
+	if err != nil {
+		return false, fmt.Errorf("nt3dmesh: glTF %s splats: %w", name, err)
+	}
+	if index, ok := p.Attributes[gltf.POSITION]; ok {
+		a, err := d.accessor(index, gltf.POSITION)
+		if err != nil {
+			return false, err
+		}
+		if a.Count != len(g.Points) {
+			return fail("POSITION counts %d splats and the SPZ payload holds %d", a.Count, len(g.Points))
+		}
+	}
+	if err := d.decoded.Take(int64(len(g.Points))*64+int64(len(g.GaussianSH))*12, "glTF splats decoded"); err != nil {
+		return false, err
+	}
+	return d.finishSplats(name, g, world)
+}
+
+// finishSplats carries a cloud built in the primitive's space through world
+// and finishes it as every Gaussian decoder finishes a cloud: palette mode,
+// pieces that each fit a geometry, and clusters for level of detail.
+func (d *gltfDecoder) finishSplats(name string, g nt3d.Geometry, world mat4) (bool, error) {
+	fail := func(format string, a ...any) (bool, error) {
+		return false, fmt.Errorf("nt3dmesh: glTF %s splats: %s", name, fmt.Sprintf(format, a...))
+	}
+	var err error
 	if world != mat4(gltf.DefaultMatrix) {
 		if g, err = nt3d.TransformGeometry(g, world.Mat4()); err != nil {
 			return fail("%v", err)
@@ -213,8 +310,6 @@ func (d *gltfDecoder) gaussians(name string, p *gltf.Primitive, world mat4, posi
 			return fail("a position is not finite or exceeds coordinate limits")
 		}
 	}
-	// Finished as every Gaussian decoder finishes a cloud: palette mode,
-	// pieces that each fit a geometry, and clusters for level of detail.
 	model, err := nt3dmesh.GaussianModel(GLTF, g, d.o)
 	if err != nil {
 		return false, err

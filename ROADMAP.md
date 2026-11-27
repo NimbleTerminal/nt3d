@@ -45,11 +45,11 @@ move to Done with their commit; git history has the details.
 
 - [ ] **Stream 3D Tiles into a scene.** `nt3d/geo` and `nt3d/tiles3d` read
   and place a tileset; drawing one is open, in this order:
-  1. Compressed splat tile content. `nt3d/mesh/gltf` reads the ratified
-     `KHR_gaussian_splatting`; its SPZ compression extension is still a
-     draft (KhronosGroup/glTF pull 2531) whose coordinate frame and color
-     attributes are disputed. SPZ payloads must be unpacked without
-     `Model.OrientYUp`, so the glTF root turns Y-up to Z-up once.
+  1. Follow the SPZ compression draft (KhronosGroup/glTF pull 2531) to
+     ratification. `nt3d/mesh/gltf` reads it under its three names and
+     takes the payload's values as glTF's coordinates, unflipped, as
+     CesiumJS does; the draft's text says left-up-front, which negates X
+     and Z. `spzSplats` is the one place to change.
   2. `nt3d/tiles3d/scene`: selection by screen-space error against the
      nearest point of a tile's bounds, `REPLACE` that keeps a loaded ancestor
      until its children are in, background fetch and decode with scene
