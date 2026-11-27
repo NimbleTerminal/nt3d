@@ -203,10 +203,13 @@ type Tileset struct {
 	credits  []string
 }
 
-// viewKey is a camera and a picture size: what a selection is made for.
+// viewKey is a camera, a picture size, where the tileset stood, and the
+// error threshold asked for: what a selection is made for.
 type viewKey struct {
 	camera        nt3d.Camera
 	width, height int
+	place         nt3dmath.Mat4d
+	limit         float64
 }
 
 // document is one tileset file: the root's, or one nested as content.
@@ -251,7 +254,9 @@ type tile struct {
 	box            nt3dmath.OBBd // in the scene's frame
 	boxless        bool          // the bounds could not be placed: never culled, always near
 	geometricError float64
-	refine         nt3dtiles3d.Refine
+	// written is the error as the file has it, before any scale.
+	written float64
+	refine  nt3dtiles3d.Refine
 
 	uris    []string
 	content []nt3dtiles3d.Content // index for index with uris, for explicit tiles
@@ -340,7 +345,8 @@ func (ts *Tileset) explicit(src *nt3dtiles3d.Tile, parent *tile, doc *document, 
 	t.toECEF = parentToECEF.Mul(src.Transform)
 	// From 3D Tiles 1.1 a tile's error is written in the tile's own units:
 	// a transform that scales the tile scales its error.
-	t.geometricError = src.GeometricError * doc.errorScale(t.toECEF)
+	t.written = src.GeometricError
+	t.geometricError = t.written * doc.errorScale(t.toECEF)
 	if t.refine == nt3dtiles3d.RefineInherit {
 		t.refine = inherited
 	}
@@ -363,13 +369,32 @@ func (ts *Tileset) explicit(src *nt3dtiles3d.Tile, parent *tile, doc *document, 
 	return t
 }
 
-// largestScale is the most a transform stretches a length: the longest of
-// its three axes.
+// largestScale is the most a transform stretches a length, in whatever
+// direction that is: the largest singular value of its linear part, which is
+// the root of the largest eigenvalue of that part's transpose times itself.
+// The longest of its three axes is less when the stretch lies between them.
 func largestScale(m nt3dmath.Mat4d) float64 {
-	x := m.Direction(nt3dmath.Vec3d{X: 1}).Len()
-	y := m.Direction(nt3dmath.Vec3d{Y: 1}).Len()
-	z := m.Direction(nt3dmath.Vec3d{Z: 1}).Len()
-	return math.Max(x, math.Max(y, z))
+	x := m.Direction(nt3dmath.Vec3d{X: 1})
+	y := m.Direction(nt3dmath.Vec3d{Y: 1})
+	z := m.Direction(nt3dmath.Vec3d{Z: 1})
+	// The symmetric matrix of the axes' dot products.
+	xx, yy, zz := x.LenSq(), y.LenSq(), z.LenSq()
+	xy, xz, yz := x.Dot(y), x.Dot(z), y.Dot(z)
+	longest := math.Max(xx, math.Max(yy, zz))
+	off := xy*xy + xz*xz + yz*yz
+	if !(off > 1e-30*longest*longest) {
+		// Perpendicular axes: the stretch is along one of them.
+		return math.Sqrt(longest)
+	}
+	// Its largest eigenvalue, in closed form.
+	q := (xx + yy + zz) / 3
+	p := math.Sqrt(((xx-q)*(xx-q) + (yy-q)*(yy-q) + (zz-q)*(zz-q) + 2*off) / 6)
+	a, b, c := (xx-q)/p, (yy-q)/p, (zz-q)/p
+	d, e, f := xy/p, xz/p, yz/p
+	half := (a*(b*c-f*f) - d*(d*c-f*e) + e*(d*f-b*e)) / 2
+	phi := math.Acos(math.Max(-1, math.Min(1, half))) / 3
+	// Never less than the longest axis, which rounding could make it.
+	return math.Sqrt(math.Max(longest, q+2*p*math.Cos(phi)))
 }
 
 // bound places a tile's bounding volume in the scene's frame.
@@ -402,7 +427,8 @@ func (ts *Tileset) expand(t *tile) {
 		ts.tiles++
 		ts.deepest = max(ts.deepest, t.level+1)
 		child := &tile{id: ts.tiles, parent: t, doc: t.doc, level: t.level + 1, refine: t.refine, toECEF: t.implicitRoot,
-			implicit: t.implicit, implicitRoot: t.implicitRoot, coord: c, geometricError: t.implicit.GeometricError(c) * t.doc.errorScale(t.implicitRoot)}
+			implicit: t.implicit, implicitRoot: t.implicitRoot, coord: c, written: t.implicit.GeometricError(c)}
+		child.geometricError = child.written * t.doc.errorScale(t.implicitRoot)
 		if c.Level%t.implicit.SubtreeLevels == 0 {
 			// The child starts a subtree of its own, which must be fetched
 			// before anything is known of it but that it exists.
@@ -587,7 +613,8 @@ func (ts *Tileset) Settle(ctx context.Context, camera nt3d.Camera, width, height
 
 // selectTiles chooses the tiles to draw and makes the scene match.
 func (ts *Tileset) selectTiles(camera nt3d.Camera, width, height int) {
-	view := newView(camera, width, height, placement(ts.scene, ts.group))
+	place := placement(ts.scene, ts.group)
+	view := newView(camera, width, height, place, ts.fromECEF)
 	limit := ts.o.maxSSE()
 	// Past the splat budget the selection is made coarser a step at a time:
 	// first by raising the error a tile may show, which keeps what is near
@@ -598,7 +625,7 @@ func (ts *Tileset) selectTiles(camera nt3d.Camera, width, height int) {
 	// only for a view the budget has not already refused: easing a still
 	// view would ask again for the tiles it was just denied, load them,
 	// refuse them, and evict them, over and over.
-	key := viewKey{camera, width, height}
+	key := viewKey{camera, width, height, place, limit}
 	relaxed, denied := false, false
 	heldCoarsen, heldCap := ts.coarsen, ts.levelCap
 	for attempt := 0; ; attempt++ {
@@ -698,13 +725,14 @@ func contains(list []string, s string) bool {
 // t's part of the view to be whole.
 func (ts *Tileset) visit(t *tile, view view, limit float64) bool {
 	ts.stats.Visited++
-	if !t.boxless && view.outside(t.box) {
+	box, boxless := view.world(t)
+	if !boxless && view.outside(box) {
 		// Out of view: nothing to cover, and not in use, so it may be
 		// evicted and a load of it stopped.
 		return true
 	}
 	t.used = ts.frame
-	t.sse = view.screenSpaceError(t)
+	t.sse = view.screenSpaceError(t, box, boxless)
 	if t.implicit != nil && t.subtree == nil {
 		// Nothing is known of the tile until its subtree says. A subtree
 		// that could not be read is a branch that cannot be drawn: it is

@@ -12,7 +12,7 @@ import (
 // view is a camera as the selection asks of it: where the eye is, what is in
 // sight, and how large a meter of error looks.
 type view struct {
-	eye    nt3dmath.Vec3d // in the tileset's frame
+	eye    nt3dmath.Vec3d // in the scene's world
 	origin nt3dmath.Vec3d // the camera's Origin, which clip is relative to
 	clip   nt3dmath.Mat4  // the scene's world, less origin, to clip space
 	// place carries the tileset's frame, which tiles' bounds are kept in,
@@ -21,13 +21,16 @@ type view struct {
 	place  nt3dmath.Mat4d
 	placed bool
 	scale  float64 // how much place stretches a length
-	ortho  bool
+	// fromECEF carries Earth-centered meters into the world as drawn: into
+	// the tileset's frame, then through place.
+	fromECEF nt3dmath.Mat4d
+	ortho    bool
 	// perPixel turns meters of error into pixels: divided by the distance
 	// for a perspective camera, as it is for an orthographic one.
 	perPixel float64
 }
 
-func newView(c nt3d.Camera, width, height int, place nt3dmath.Mat4d) view {
+func newView(c nt3d.Camera, width, height int, place, fromECEF nt3dmath.Mat4d) view {
 	eye := c.WorldEye()
 	// The matrix is taken of the camera without its Origin, as a frame's
 	// is: Camera.Matrix places the eye at Origin itself, in float32, and
@@ -43,13 +46,12 @@ func newView(c nt3d.Camera, width, height int, place nt3dmath.Mat4d) view {
 		scale:  1,
 	}
 	// A parent that is moved, turned or scaled carries the tiles with it.
-	// Their bounds stay in the tileset's frame: the eye is brought into that
-	// frame to measure distance, and corners are carried out of it to be
-	// tested against the view. A placement that cannot be undone, a scale of
-	// zero, draws nothing whatever is chosen, and is left out.
-	if inverse, ok := place.InverseAffine(); ok && place != nt3dmath.IdentityD() {
+	// Their bounds are kept in the tileset's frame and carried into the
+	// world, as drawn, to be measured against the eye and the view, and a
+	// tile's error is stretched by its whole way into the world (view.error).
+	if place != nt3dmath.IdentityD() {
 		v.place, v.placed, v.scale = place, true, largestScale(place)
-		v.eye = inverse.Point(v.eye)
+		v.fromECEF = place.Mul(fromECEF)
 	}
 	if v.ortho {
 		half := c.Ymag
@@ -70,36 +72,64 @@ func newView(c nt3d.Camera, width, height int, place nt3dmath.Mat4d) view {
 // screenSpaceError is how many pixels t's geometric error covers: the error
 // seen at the nearest point of the tile's bounds, never at their middle, so
 // a large tile the eye stands inside counts as near as it is. Inside the
-// bounds a perspective camera sees the error as boundless. Error and
-// distance are both measured in the tileset's frame, so a parent that scales
-// the tileset evenly changes neither's share of the other.
-func (v view) screenSpaceError(t *tile) float64 {
-	if t.geometricError == 0 {
+// bounds a perspective camera sees the error as boundless. box is the
+// tile's bounds in the world (view.world), and boxless says there are none.
+func (v view) screenSpaceError(t *tile, box nt3dmath.OBBd, boxless bool) float64 {
+	meters := v.error(t)
+	if meters == 0 {
 		return 0
 	}
 	if v.ortho {
-		return t.geometricError * v.scale * v.perPixel
+		return meters * v.perPixel
 	}
 	distance := 0.0
-	if !t.boxless {
-		distance = t.box.Distance(v.eye)
+	if !boxless {
+		distance = box.Distance(v.eye)
 	}
-	if distance <= 0 {
+	if !(distance > 0) {
 		return math.Inf(1)
 	}
-	return t.geometricError * v.perPixel / distance
+	return meters * v.perPixel / distance
 }
 
-// outside reports whether box is wholly out of view: every corner beyond the
+// error is t's geometric error in meters of the world as drawn. Under a
+// parent that places the tileset, the error is stretched by the tile's whole
+// way into the world, its own transform and the parent's composed, so that
+// stretches which undo each other leave it as written. A 1.0 tileset, whose
+// tiles' own transforms leave their error alone, is stretched by the parent
+// only.
+func (v view) error(t *tile) float64 {
+	if !v.placed {
+		return t.geometricError
+	}
+	if !t.doc.scalesError {
+		return t.written * v.scale
+	}
+	toWorld := t.toECEF
+	if t.implicit != nil {
+		toWorld = t.implicitRoot
+	}
+	return t.written * largestScale(v.fromECEF.Mul(toWorld))
+}
+
+// world is t's bounds as drawn, in the scene's world, and whether there are
+// none to go by: the tile's own could not be placed, or the parent's
+// placement leaves them not finite.
+func (v view) world(t *tile) (box nt3dmath.OBBd, boxless bool) {
+	if t.boxless || !v.placed {
+		return t.box, t.boxless
+	}
+	box = t.box.Transformed(v.place)
+	return box, !box.IsFinite()
+}
+
+// outside reports whether box, in the world, is wholly out of view: every corner beyond the
 // same side of the view, or all of it behind a perspective camera. Near and
 // far are not tested: a camera's clipping planes follow what it is shown.
 func (v view) outside(box nt3dmath.OBBd) bool {
 	m := v.clip
 	var beyond [5]int
 	for _, corner := range box.Corners() {
-		if v.placed {
-			corner = v.place.Point(corner)
-		}
 		p := corner.Sub(v.origin)
 		x := float64(m[0])*p.X + float64(m[4])*p.Y + float64(m[8])*p.Z + float64(m[12])
 		y := float64(m[1])*p.X + float64(m[5])*p.Y + float64(m[9])*p.Z + float64(m[13])

@@ -368,3 +368,207 @@ func TestAPartlyLoadedTileDoesNotReplaceItsParent(t *testing.T) {
 		t.Fatalf("under an empty root the scene shows %v, want both children, the partial one included", got)
 	}
 }
+
+// What the splat budget refused, it refused for a view of the tileset where
+// it stood. A parent that moves changes what is in view as a camera does,
+// so the selection is eased again as it would be for a camera that moved.
+func TestTheSplatBudgetEasesWhenTheParentMoves(t *testing.T) {
+	data := block("REPLACE")
+	data["city/root.glb"] = splats(10)
+	data["city/tiles/west.glb"] = splats(400)
+	data["city/tiles/east.glb"] = splats(400)
+	// Close to the east half and looking east: only the east half is in
+	// view. With the tileset 25 m further east the eye is inside the west
+	// half too, and both are.
+	view := lookAt(nt3dmath.Vec3{X: 20, Y: 0, Z: 6}, nt3dmath.Vec3{X: 60, Y: 0, Z: 5})
+	run := func(move bool) int {
+		scene := nt3d.NewScene()
+		parent, err := scene.Add(nt3d.Root, "district")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts := open(t, scene, newFiles(data), "city/tileset.json", Options{Parent: parent, SplatBudget: 500})
+		if move {
+			// Start where both halves are in view and over the budget.
+			check(t, scene.SetTransform(parent, nt3dmath.Translation(nt3dmath.Vec3{X: 25})))
+			settle(t, ts, view)
+			settle(t, ts, view)
+			if got := ts.Stats().SplatsSelected; got != 10 {
+				t.Fatalf("with both halves in view the selection holds %d splats, want the root's 10", got)
+			}
+			check(t, scene.SetTransform(parent, nt3dmath.Identity()))
+		}
+		settle(t, ts, view)
+		settle(t, ts, view)
+		return ts.Stats().SplatsSelected
+	}
+	opened, moved := run(false), run(true)
+	if opened != 400 {
+		t.Fatalf("opened in place the selection holds %d splats, want the east half's 400", opened)
+	}
+	if moved != opened {
+		t.Fatalf("after the parent moved the selection holds %d splats, want the %d of a tileset opened there", moved, opened)
+	}
+}
+
+// A parent that stretches the tileset unevenly chooses tiles as the same
+// stretch written in the tileset's own transform does: distance is measured
+// to the bounds as drawn, and the error is scaled as the tile is.
+func TestAnUnevenParentScaleChoosesAsTheSameTransformInTheTileset(t *testing.T) {
+	stretch := nt3dmath.Vec3d{X: 16, Y: 1, Z: 1}
+	view := lookAt(nt3dmath.Vec3{X: 0, Y: -400, Z: 100}, nt3dmath.Vec3{Z: 5})
+	var got [2][]string
+	for i, onParent := range []bool{false, true} {
+		data := block("REPLACE")
+		scene := nt3d.NewScene()
+		parent, err := scene.Add(nt3d.Root, "district")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if onParent {
+			check(t, scene.SetTransform(parent, nt3dmath.Scaling(nt3dmath.Vec3{X: 16, Y: 1, Z: 1})))
+		} else {
+			transform := stamford.ToECEF().Mul(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.Quatd{W: 1}, stretch))
+			data["city/tileset.json"] = []byte(strings.Replace(string(data["city/tileset.json"]), matrix(stamford.ToECEF()), matrix(transform), 1))
+		}
+		ts := open(t, scene, newFiles(data), "city/tileset.json", Options{Parent: parent})
+		settle(t, ts, view)
+		got[i] = shown(t, scene, view)
+	}
+	if len(got[0]) != 2 {
+		t.Fatalf("stretched in the tileset the scene shows %v, want both children", got[0])
+	}
+	if !same(got[0], got[1]) {
+		t.Fatalf("stretched by the parent the scene shows %v, and in the tileset %v", got[1], got[0])
+	}
+}
+
+func check(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// tiered is the block with a third level: each half has an error of 1 and
+// one child of its own, and every tile is splats, 10 in the root, 40 in
+// each half, 400 in each of the finest.
+func tiered() map[string][]byte {
+	data := block("REPLACE")
+	text := string(data["city/tileset.json"])
+	for _, side := range []string{"west", "east"} {
+		old := `"geometricError":0,"content":{"uri":"tiles/` + side + `.glb"}}`
+		box := `[-25,0,5, 25,0,0, 0,50,0, 0,0,5]`
+		if side == "east" {
+			box = `[25,0,5, 25,0,0, 0,50,0, 0,0,5]`
+		}
+		text = strings.Replace(text, old, `"geometricError":1,"content":{"uri":"tiles/`+side+`.glb"},"children":[{"boundingVolume":{"box":`+box+`},"geometricError":0,"content":{"uri":"tiles/`+side+`-fine.glb"}}]}`, 1)
+		data["city/tiles/"+side+".glb"] = splats(40)
+		data["city/tiles/"+side+"-fine.glb"] = splats(400)
+	}
+	data["city/tileset.json"] = []byte(text)
+	data["city/root.glb"] = splats(10)
+	return data
+}
+
+// What the splat budget refused, it refused at the threshold then in force.
+// Changing the threshold asks a new question of the same view, and gets the
+// answer a tileset opened at that threshold gets.
+func TestTheSplatBudgetLooksAgainWhenTheThresholdChanges(t *testing.T) {
+	run := func(first float64) int {
+		scene := nt3d.NewScene()
+		ts := open(t, scene, newFiles(tiered()), "city/tileset.json", Options{SplatBudget: 100, MaxScreenSpaceError: first})
+		settle(t, ts, nearBy)
+		settle(t, ts, nearBy)
+		ts.SetMaxScreenSpaceError(16)
+		for range 3 {
+			settle(t, ts, nearBy)
+		}
+		return ts.Stats().SplatsSelected
+	}
+	opened, changed := run(16), run(.25)
+	if opened != 80 {
+		t.Fatalf("opened at 16 pixels the selection holds %d splats, want the two halves' 80", opened)
+	}
+	if changed != opened {
+		t.Fatalf("changed from a quarter pixel to 16 the selection holds %d splats, want the %d of a tileset opened at 16", changed, opened)
+	}
+}
+
+// An eye inside a tile sees its error without bound, and the tile refines,
+// when the tile is turned and its parent stretches it, which leaves its
+// bounds askew, as when they are square.
+func TestAnEyeInsideASkewedTileRefinesIt(t *testing.T) {
+	data := block("REPLACE")
+	turned := stamford.ToECEF().Mul(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.QuatdAxisAngle(nt3dmath.Vec3d{Z: 1}, math.Pi/4), nt3dmath.Vec3d{X: 1, Y: 1, Z: 1}))
+	text := strings.Replace(string(data["city/tileset.json"]), matrix(stamford.ToECEF()), matrix(turned), 1)
+	// A small error, so that only being inside refines the root.
+	data["city/tileset.json"] = []byte(strings.Replace(text, `"geometricError":10,"refine"`, `"geometricError":0.01,"refine"`, 1))
+	scene := nt3d.NewScene()
+	parent, err := scene.Add(nt3d.Root, "district")
+	check(t, err)
+	check(t, scene.SetTransform(parent, nt3dmath.Scaling(nt3dmath.Vec3{X: 4, Y: 1, Z: 1})))
+	ts := open(t, scene, newFiles(data), "city/tileset.json", Options{Parent: parent})
+	// The root as drawn is a long diamond, corners at (±283, 0) and (0, ±71).
+	inside := lookAt(nt3dmath.Vec3{X: 200, Y: 10, Z: 5}, nt3dmath.Vec3{X: 0, Y: 0, Z: 5})
+	settle(t, ts, inside)
+	if got := shown(t, scene, inside); len(got) == 0 || got[0] == "city/root.glb" {
+		t.Fatalf("from inside the skewed root the scene shows %v, want its children", got)
+	}
+}
+
+// A tile's error is stretched by what stretches the tile as drawn: its own
+// transform and its parent node's together. A stretch in one undone by the
+// other leaves the tile, and its error, as written.
+func TestScalesThatCancelLeaveTheErrorAsWritten(t *testing.T) {
+	// 150 m off: 10 m of error is 8 pixels, under the threshold.
+	view := lookAt(nt3dmath.Vec3{X: 0, Y: -190, Z: 40}, nt3dmath.Vec3{Z: 5})
+	data := block("REPLACE")
+	stretched := stamford.ToECEF().Mul(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.Quatd{W: 1}, nt3dmath.Vec3d{X: 16, Y: 1, Z: 1}))
+	data["city/tileset.json"] = []byte(strings.Replace(string(data["city/tileset.json"]), matrix(stamford.ToECEF()), matrix(stretched), 1))
+	scene := nt3d.NewScene()
+	parent, err := scene.Add(nt3d.Root, "district")
+	check(t, err)
+	check(t, scene.SetTransform(parent, nt3dmath.Scaling(nt3dmath.Vec3{X: 1. / 16, Y: 1, Z: 1})))
+	ts := open(t, scene, newFiles(data), "city/tileset.json", Options{Parent: parent})
+	settle(t, ts, view)
+	if got := shown(t, scene, view); !same(got, []string{"city/root.glb"}) {
+		t.Fatalf("with the tile's stretch undone by its parent the scene shows %v, want the root as for no stretch", got)
+	}
+}
+
+// A tile's error is stretched by the most its transform stretches any
+// length, in whatever direction that is: a tile turned and then stretched
+// along one axis is stretched that much, though none of its own three axes
+// is.
+func TestErrorScalesByTheGreatestStretch(t *testing.T) {
+	if got := largestScale(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.Quatd{W: 1}, nt3dmath.Vec3d{X: 2, Y: 1, Z: 1}).
+		Mul(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.QuatdAxisAngle(nt3dmath.Vec3d{Z: 1}, math.Pi/4), nt3dmath.Vec3d{X: 1, Y: 1, Z: 1}))); math.Abs(got-2) > 1e-12 {
+		t.Errorf("a turn then a stretch of 2 has a greatest stretch of %g, want 2", got)
+	}
+	for _, c := range []struct {
+		scale nt3dmath.Vec3d
+		want  float64
+	}{{nt3dmath.Vec3d{X: 1, Y: 1, Z: 1}, 1}, {nt3dmath.Vec3d{X: 3, Y: 3, Z: 3}, 3}, {nt3dmath.Vec3d{X: .5, Y: 7, Z: 2}, 7}, {nt3dmath.Vec3d{X: 1e-3, Y: 1e-3, Z: 1e-3}, 1e-3}} {
+		m := stamford.ToECEF().Mul(nt3dmath.TRSd(nt3dmath.Vec3d{X: 5}, nt3dmath.QuatdAxisAngle(nt3dmath.Vec3d{X: 1, Y: 2, Z: 3}, 1.1), c.scale))
+		if got := largestScale(m); math.Abs(got-c.want) > 1e-9*c.want {
+			t.Errorf("scale %v turned: greatest stretch %g, want %g", c.scale, got, c.want)
+		}
+	}
+
+	// On screen: an orthographic view 100 pixels and 100 m tall shows a
+	// meter as a pixel. An error of 10 stretched by 2 is 20 pixels, over the
+	// threshold of 16, where the 15.8 of the tile's longest axis is under.
+	data := block("REPLACE")
+	stretched := stamford.ToECEF().Mul(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.Quatd{W: 1}, nt3dmath.Vec3d{X: 2, Y: 1, Z: 1})).
+		Mul(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.QuatdAxisAngle(nt3dmath.Vec3d{Z: 1}, math.Pi/4), nt3dmath.Vec3d{X: 1, Y: 1, Z: 1}))
+	data["city/tileset.json"] = []byte(strings.Replace(string(data["city/tileset.json"]), matrix(stamford.ToECEF()), matrix(stretched), 1))
+	view := nt3d.DefaultCamera().LookAt(nt3dmath.Vec3{X: 0, Y: -400, Z: 400}, nt3dmath.Vec3{Z: 5})
+	view.Projection, view.Xmag, view.Ymag = nt3d.Orthographic, 50, 50
+	scene := nt3d.NewScene()
+	ts := open(t, scene, newFiles(data), "city/tileset.json", Options{})
+	settle(t, ts, view)
+	if got := shown(t, scene, view); len(got) != 2 {
+		t.Fatalf("a root whose error shows as 20 pixels is shown as %v, want its two children", got)
+	}
+}
