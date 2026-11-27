@@ -85,7 +85,8 @@ func (r *rawVolume) volume() (Volume, error) {
 //
 // A box is carried through the transform. A region is already on the Earth
 // and ignores it; its box holds its curved surface (nt3dgeo.Region.Box). A
-// sphere becomes the cube around it, so a distance to it is at most the
+// sphere becomes the box around it, or around the ellipsoid a transform that
+// stretches it unevenly makes of it, so a distance to it is at most the
 // sphere's, never more.
 func (v Volume) World(toECEF nt3dmath.Mat4d) (nt3dmath.OBBd, error) {
 	var box nt3dmath.OBBd
@@ -95,16 +96,13 @@ func (v Volume) World(toECEF nt3dmath.Mat4d) (nt3dmath.OBBd, error) {
 	case VolumeRegion:
 		return v.Region.Box()
 	case VolumeSphere:
-		// The greatest stretch of the transform is at most the root of the
-		// sum of its columns' squared lengths.
-		x := toECEF.Direction(nt3dmath.Vec3d{X: 1})
-		y := toECEF.Direction(nt3dmath.Vec3d{Y: 1})
-		z := toECEF.Direction(nt3dmath.Vec3d{Z: 1})
-		r := v.Radius * math.Max(x.Len(), math.Max(y.Len(), z.Len()))
-		if uniform := math.Abs(x.Len()-y.Len()) < 1e-9*x.Len() && math.Abs(x.Len()-z.Len()) < 1e-9*x.Len(); !uniform {
-			r = v.Radius * math.Sqrt(x.LenSq()+y.LenSq()+z.LenSq())
+		// A sphere through an affine transform is an ellipsoid, which
+		// reaches along each axis by the radius times the length of that
+		// axis's row of the transform.
+		reach := func(row int) float64 {
+			return v.Radius * math.Sqrt(toECEF[row]*toECEF[row]+toECEF[row+4]*toECEF[row+4]+toECEF[row+8]*toECEF[row+8])
 		}
-		box = nt3dmath.OBBd{Center: toECEF.Point(v.Center), Axes: [3]nt3dmath.Vec3d{{X: r}, {Y: r}, {Z: r}}}
+		box = nt3dmath.OBBd{Center: toECEF.Point(v.Center), Axes: [3]nt3dmath.Vec3d{{X: reach(0)}, {Y: reach(1)}, {Z: reach(2)}}}
 	}
 	if !box.IsFinite() {
 		return nt3dmath.OBBd{}, errors.New("nt3dtiles3d: bounding volume is too large to place")

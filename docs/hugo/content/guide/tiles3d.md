@@ -48,7 +48,7 @@ uri, err := nt3dtiles3d.Resolve("https://tiles.example/city/tileset.json", conte
 | --- | --- | --- |
 | `VolumeBox` | a center and three half axes, in the tile's space | carried through the transform |
 | `VolumeRegion` | west, south, east, north in radians, and two heights | already on the Earth: the transform is ignored, as the specification says, and the box holds the curved surface ([`Region.Box`](../geo/#bounding-regions)) |
-| `VolumeSphere` | a center and a radius, in the tile's space | the cube around the sphere, so a distance to it is never more than the sphere's |
+| `VolumeSphere` | a center and a radius, in the tile's space | the box around the sphere, or around the ellipsoid an uneven transform makes of it, so a distance to it is never more than the sphere's |
 
 ## Implicit tiling
 

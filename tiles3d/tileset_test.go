@@ -172,3 +172,33 @@ func TestTilesetCenter(t *testing.T) {
 		t.Fatalf("a region's center is %+v (%v), want its middle latitude and longitude", center, err)
 	}
 }
+
+// A sphere carried through a transform that stretches it askew is an
+// ellipsoid, and its box holds all of it and no more than it must: each
+// half side is how far the ellipsoid reaches along that axis. Columns of
+// equal length do not make a transform an even scale.
+func TestASkewedSpheresBoxHoldsItsSurface(t *testing.T) {
+	// A turn of an eighth, then a stretch of 2, 1 and 1.58 along x, y, z:
+	// all three columns come out 1.58 long, and the sphere reaches x = 2.
+	skew := nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.Quatd{W: 1}, nt3dmath.Vec3d{X: 2, Y: 1, Z: math.Sqrt(2.5)}).
+		Mul(nt3dmath.TRSd(nt3dmath.Vec3d{}, nt3dmath.QuatdAxisAngle(nt3dmath.Vec3d{Z: 1}, math.Pi/4), nt3dmath.Vec3d{X: 1, Y: 1, Z: 1}))
+	box, err := Volume{Kind: VolumeSphere, Radius: 1}.World(skew)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 64; i++ {
+		for j := 0; j <= 32; j++ {
+			a, b := float64(i)*math.Pi/32, float64(j)*math.Pi/32
+			p := skew.Point(nt3dmath.Vec3d{X: math.Sin(b) * math.Cos(a), Y: math.Sin(b) * math.Sin(a), Z: math.Cos(b)})
+			if d := box.Distance(p); d > 1e-9 {
+				t.Fatalf("the sphere's surface at %v is %g outside its box %+v", p, d, box)
+			}
+		}
+	}
+	for axis, want := range []float64{2, 1, math.Sqrt(2.5)} {
+		got := []float64{box.Axes[0].X, box.Axes[1].Y, box.Axes[2].Z}[axis]
+		if math.Abs(got-want) > 1e-9 {
+			t.Errorf("the box reaches %g along axis %d, and the sphere %g", got, axis, want)
+		}
+	}
+}
