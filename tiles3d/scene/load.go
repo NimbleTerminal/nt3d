@@ -211,6 +211,7 @@ func (ts *Tileset) apply(r result) {
 	if r.err != nil {
 		fail(r.err)
 	}
+	t.partial = r.err != nil
 	// A tile evicted and loaded again already has its nested tilesets'
 	// roots among its children.
 	had := t.external

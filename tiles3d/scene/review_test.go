@@ -339,3 +339,32 @@ func TestGeometricErrorIsMetersInVersionOne(t *testing.T) {
 		t.Fatalf("a 1.0 tileset scaled four times shows %v, want its root", got)
 	}
 }
+
+// A tile with several contents is whole only when every one of them loaded.
+// One that is missing a content is still worth showing where nothing else
+// can stand in, but it does not take the place of a tile that can: the
+// replaced tile stays on screen rather than giving way to part of a child.
+func TestAPartlyLoadedTileDoesNotReplaceItsParent(t *testing.T) {
+	data := block("REPLACE")
+	data["city/tileset.json"] = []byte(strings.Replace(string(data["city/tileset.json"]),
+		`"content":{"uri":"tiles/west.glb"}`, `"contents":[{"uri":"tiles/west.glb"},{"uri":"tiles/roof.glb"}]`, 1))
+	scene := nt3d.NewScene()
+	ts := open(t, scene, newFiles(data), "city/tileset.json", Options{})
+	settle(t, ts, nearBy)
+	settle(t, ts, nearBy)
+	if got := shown(t, scene, nearBy); !same(got, []string{"city/root.glb"}) {
+		t.Fatalf("with a child missing one of its two contents the scene shows %v, want the root", got)
+	}
+	if s := ts.Stats(); s.Failed != 1 {
+		t.Fatalf("stats %+v, want the missing content counted once", s)
+	}
+
+	// With nothing to stand in for it, what arrived is shown.
+	data["city/tileset.json"] = []byte(strings.Replace(string(data["city/tileset.json"]), `"content":{"uri":"root.glb"},`, ``, 1))
+	scene = nt3d.NewScene()
+	ts = open(t, scene, newFiles(data), "city/tileset.json", Options{})
+	settle(t, ts, nearBy)
+	if got := shown(t, scene, nearBy); !same(got, []string{"city/tiles/east.glb", "city/tiles/west.glb"}) {
+		t.Fatalf("under an empty root the scene shows %v, want both children, the partial one included", got)
+	}
+}

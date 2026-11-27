@@ -255,6 +255,9 @@ type tile struct {
 
 	uris    []string
 	content []nt3dtiles3d.Content // index for index with uris, for explicit tiles
+	// partial says the tile is loaded with one of its contents missing: it
+	// can be drawn, and does not count as whole.
+	partial bool
 	// broken is the first of the tile's content URIs that could not be read
 	// as one, and told whether it has been reported. Such a content is a
 	// failed one: with no other content, the tile is a failed tile.
@@ -740,17 +743,21 @@ func (ts *Tileset) visit(t *tile, view view, limit float64) bool {
 	// refines while its error shows, and not past the level a splat budget
 	// has cut the selection off at.
 	refine := len(t.children) > 0 && (!renderable || (t.sse > limit && (ts.levelCap < 0 || t.level < ts.levelCap)))
+	// A tile drawn with a content missing is not whole: a tile it would
+	// have replaced goes on standing in, and where there is none, what
+	// arrived is shown.
+	partial := t.partial || (t.broken != nil && renderable)
 	if !refine {
 		if renderable {
 			ts.draw = append(ts.draw, t)
 		}
-		return true
+		return !partial
 	}
 	if t.refine == nt3dtiles3d.RefineAdd {
 		if renderable {
 			ts.draw = append(ts.draw, t)
 		}
-		whole := true
+		whole := !partial
 		for _, child := range t.children {
 			whole = ts.visit(child, view, limit) && whole
 		}
@@ -769,7 +776,7 @@ func (ts *Tileset) visit(t *tile, view view, limit float64) bool {
 	}
 	if renderable {
 		ts.draw = append(ts.draw[:mark], t)
-		return true
+		return !partial
 	}
 	// A tile with nothing of its own to show cannot hold the view: an
 	// ancestor does, or, with none, what has arrived so far is shown.
@@ -832,5 +839,5 @@ func (ts *Tileset) unload(t *tile) {
 	_ = ts.scene.Remove(t.node)
 	ts.resident -= t.record.Bytes
 	delete(ts.loaded, t)
-	t.state, t.node, t.visible, t.record = idle, 0, false, nil
+	t.state, t.node, t.visible, t.record, t.partial = idle, 0, false, nil, false
 }
