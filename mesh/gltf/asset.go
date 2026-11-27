@@ -27,6 +27,25 @@ type cachedMeshPiece struct {
 
 func vec(v [3]float32) nt3dmath.Vec3 { return nt3dmath.Vec3{X: v[0], Y: v[1], Z: v[2]} }
 
+// unshiftKeys moves a root node's translation keys by what recenter took
+// off the node: three floats a key, or, for a cubic spline, the middle
+// three of each nine.
+func (d *gltfDecoder) unshiftKeys(values []float32, cubic bool) {
+	shift := [3]float64{d.unshift[12], d.unshift[13], d.unshift[14]}
+	if shift == ([3]float64{}) {
+		return
+	}
+	stride, at := 3, 0
+	if cubic {
+		stride, at = 9, 3
+	}
+	for i := at; i+3 <= len(values); i += stride {
+		for k := range 3 {
+			values[i+k] = float32(float64(values[i+k]) + shift[k])
+		}
+	}
+}
+
 // assetTake counts what one primitive's decoder read toward the asset's
 // totals, and refuses a model past its limits.
 func (d *gltfDecoder) assetTake(temp *gltfDecoder) error {
@@ -498,6 +517,13 @@ func (d *gltfDecoder) sceneAsset() error {
 			switch ch.Target.Path {
 			case gltf.TRSTranslation:
 				track.Channel = nt3d.Translation
+				if parents[ni] < 0 {
+					// A root node brought back toward zero: its keys say
+					// where it is, so they come back with it. A cubic
+					// spline's tangents, before and after each key, are
+					// rates and stay as they are.
+					d.unshiftKeys(values, sam.Interpolation == gltf.InterpolationCubicSpline)
+				}
 			case gltf.TRSRotation:
 				track.Channel = nt3d.Rotation
 				track.Width = 4

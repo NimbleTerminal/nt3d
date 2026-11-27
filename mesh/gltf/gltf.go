@@ -275,9 +275,10 @@ const farFromZero = 1e5
 // turn from Y-up, as the legacy b3dm RTC_CENTER is, and the vertices need
 // nothing done to them.
 //
-// Without it, a root node translated past farFromZero, as content placed
-// in Earth-centered meters by its own node is, has that translation taken
-// off every root node before any vertex is rounded to float32.
+// Without it, a root node of the scene translated past farFromZero, as
+// content placed in Earth-centered meters by its own node is, has that
+// translation taken off every root node before any vertex is rounded to
+// float32, and off the keys of a track that moves one (sceneAsset).
 func (d *gltfDecoder) recenter() error {
 	d.unshift = mat4(gltf.DefaultMatrix)
 	var rtc struct {
@@ -296,21 +297,13 @@ func (d *gltfDecoder) recenter() error {
 			return errors.New("nt3dmesh: glTF CESIUM_RTC center is not finite")
 		}
 	}
-	child := make([]bool, len(d.doc.Nodes))
-	for _, n := range d.doc.Nodes {
-		if n == nil {
+	// Only the scene being read decides: a node that belongs to no scene,
+	// however far out, is not part of the model.
+	for _, i := range d.sceneRoots() {
+		if i < 0 || i >= len(d.doc.Nodes) || d.doc.Nodes[i] == nil {
 			continue
 		}
-		for _, c := range n.Children {
-			if c >= 0 && c < len(child) {
-				child[c] = true
-			}
-		}
-	}
-	for i, n := range d.doc.Nodes {
-		if n == nil || child[i] {
-			continue
-		}
+		n := d.doc.Nodes[i]
 		m := local(n)
 		t := nt3dmath.Vec3d{X: m[12], Y: m[13], Z: m[14]}
 		if !t.IsFinite() || math.Max(math.Abs(t.X), math.Max(math.Abs(t.Y), math.Abs(t.Z))) <= farFromZero {
@@ -344,29 +337,42 @@ func trsMat4(t [3]float64, q [4]float64, s [3]float64) mat4 {
 const maxVisits = 1 << 20
 
 // scene walks the default scene's nodes, or, without scenes, every root node.
-func (d *gltfDecoder) scene() error {
-	var roots []int
+// sceneRoots are the nodes the model starts from: those of the document's
+// scene, or, in a document with no scene, every node that is no other's
+// child.
+func (d *gltfDecoder) sceneRoots() []int {
 	if len(d.doc.Scenes) > 0 {
 		s := 0
 		if d.doc.Scene != nil && *d.doc.Scene >= 0 && *d.doc.Scene < len(d.doc.Scenes) {
 			s = *d.doc.Scene
 		}
-		roots = d.doc.Scenes[s].Nodes
-	} else {
-		child := make([]bool, len(d.doc.Nodes))
-		for _, n := range d.doc.Nodes {
-			for _, c := range n.Children {
-				if c >= 0 && c < len(child) {
-					child[c] = true
-				}
-			}
+		if d.doc.Scenes[s] == nil {
+			return nil
 		}
-		for i, c := range child {
-			if !c {
-				roots = append(roots, i)
+		return d.doc.Scenes[s].Nodes
+	}
+	child := make([]bool, len(d.doc.Nodes))
+	for _, n := range d.doc.Nodes {
+		if n == nil {
+			continue
+		}
+		for _, c := range n.Children {
+			if c >= 0 && c < len(child) {
+				child[c] = true
 			}
 		}
 	}
+	var roots []int
+	for i, c := range child {
+		if !c {
+			roots = append(roots, i)
+		}
+	}
+	return roots
+}
+
+func (d *gltfDecoder) scene() error {
+	roots := d.sceneRoots()
 	onPath := make([]bool, len(d.doc.Nodes))
 	for _, r := range roots {
 		if err := d.node(r, yUp.Mul(d.unshift), onPath); err != nil {
