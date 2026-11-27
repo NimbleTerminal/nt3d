@@ -43,6 +43,26 @@ move to Done with their commit; git history has the details.
 
 ## Formats
 
+- [ ] **Stream 3D Tiles into a scene.** `nt3d/geo` and `nt3d/tiles3d` read
+  and place a tileset; drawing one is open, in this order:
+  1. Gaussian splat tile content: `KHR_gaussian_splatting` primitives in
+     `nt3d/mesh/gltf` (ratified: xyzw rotation, linear scale and opacity, SH
+     as float coefficients), then its SPZ compression extension, which is
+     still a draft (KhronosGroup/glTF pull 2531) whose coordinate frame and
+     color attributes are disputed. SPZ payloads must be unpacked without
+     `Model.OrientYUp`, so the glTF root turns Y-up to Z-up once.
+  2. `nt3d/tiles3d/scene`: selection by screen-space error against the
+     nearest point of a tile's bounds, `REPLACE` that keeps a loaded ancestor
+     until its children are in, background fetch and decode with scene
+     changes on one goroutine, a byte budget with eviction, a splat budget
+     across tiles, and recentering of vertices stored at Earth-centered
+     magnitudes (`CESIUM_RTC`, b3dm `RTC_CENTER`).
+  3. Blended splats from several tiles: `blendPlan` orders slot by slot
+     within a depth slice and spreads 64 slices from the nearest to the
+     farthest blended draw, so overlapping tiles seam and one distant tile
+     coarsens the slices near the camera. Measure, then interleave.
+  4. A streaming demo with a reference picture, and tile metadata inside
+     glTF (`EXT_structural_metadata`, `EXT_mesh_features`).
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
   exact rendering means subdividing them.
 - [ ] **Double-sided glTF materials without copying faces**: `nt3d/mesh/gltf`

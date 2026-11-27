@@ -11,7 +11,7 @@ vars:
   TOOLS: palette
   # Every fuzz target, as package:Function; fuzz-smoke runs each briefly, and
   # the NimbleTerminal fuzzing fleet (fuzz.nimbleterminal.com) runs them continuously.
-  FUZZ_TARGETS: .:FuzzCamera .:FuzzClipLine .:FuzzNewHDREnvironment .:FuzzNewHDRLightMap .:FuzzSceneFrame .:FuzzSceneAssetLOD cam/spec:FuzzParse aabbtree:FuzzTreeOperations collide:FuzzRayCast collide:FuzzMoveCapsule geo:FuzzGeodetic geo:FuzzRegionBox sh:FuzzRotateEvaluate mesh:FuzzDecodeSTL mesh:FuzzDecodeOBJ mesh:FuzzDecodePLY mesh:FuzzDecode3MF mesh:FuzzDecodeConf mesh:FuzzTriangulate mesh/gltf:FuzzDecode mesh/gltf:FuzzDecodeKTX2 mesh/gltf:FuzzDecodeMeshopt mesh/sog:FuzzDecode mesh/spz:FuzzDecode
+  FUZZ_TARGETS: .:FuzzCamera .:FuzzClipLine .:FuzzNewHDREnvironment .:FuzzNewHDRLightMap .:FuzzSceneFrame .:FuzzSceneAssetLOD cam/spec:FuzzParse aabbtree:FuzzTreeOperations collide:FuzzRayCast collide:FuzzMoveCapsule geo:FuzzGeodetic geo:FuzzRegionBox tiles3d:FuzzParseTileset tiles3d:FuzzParseSubtree tiles3d:FuzzUnwrapB3DM sh:FuzzRotateEvaluate mesh:FuzzDecodeSTL mesh:FuzzDecodeOBJ mesh:FuzzDecodePLY mesh:FuzzDecode3MF mesh:FuzzDecodeConf mesh:FuzzTriangulate mesh/gltf:FuzzDecode mesh/gltf:FuzzDecodeKTX2 mesh/gltf:FuzzDecodeMeshopt mesh/sog:FuzzDecode mesh/spz:FuzzDecode
   FUZZTIME: 10s
 
 tasks:

@@ -10,7 +10,7 @@ import (
 // program. Whoever imports it, or water, fur, mesh, and the rest that build on
 // it, must not inherit the terminal UI stack: only package widget may.
 func TestEngineLinksNoTerminalUI(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", ".", "./water", "./fur", "./mesh/...", "./clod", "./cam/...", "./sh", "./aabbtree", "./collide/...", "./geo", "./math").Output()
+	out, err := exec.Command("go", "list", "-deps", ".", "./water", "./fur", "./mesh/...", "./clod", "./cam/...", "./sh", "./aabbtree", "./collide/...", "./geo", "./tiles3d", "./math").Output()
 	if err != nil {
 		t.Skipf("go list is unavailable: %v", err)
 	}
@@ -64,6 +64,22 @@ func TestGeoImportsOnlyMath(t *testing.T) {
 	for _, dep := range strings.Fields(string(out)) {
 		if outsideStandardLibrary(dep) && dep != "nimbleterminal.dev/nt3d/geo" && dep != "nimbleterminal.dev/nt3d/math" {
 			t.Errorf("package nt3d/geo imports %s", dep)
+		}
+	}
+}
+
+// Reading a tileset is parsing and arithmetic. Package tiles3d depends only on
+// nt3d/math, nt3d/geo, and the standard library, so a tool that checks
+// tilesets or a server that writes them links no renderer.
+func TestTiles3DImportsOnlyMathAndGeo(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", "./tiles3d").Output()
+	if err != nil {
+		t.Skipf("go list is unavailable: %v", err)
+	}
+	allowed := map[string]bool{"nimbleterminal.dev/nt3d/tiles3d": true, "nimbleterminal.dev/nt3d/geo": true, "nimbleterminal.dev/nt3d/math": true}
+	for _, dep := range strings.Fields(string(out)) {
+		if outsideStandardLibrary(dep) && !allowed[dep] {
+			t.Errorf("package nt3d/tiles3d imports %s", dep)
 		}
 	}
 }

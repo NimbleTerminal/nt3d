@@ -32,7 +32,7 @@ packages and files and explains what holds the three renderers together.
   draws `g`. Prefer `Hidden`-style flags, where zero is the usual case.
 - **The engine links no terminal UI.** Only `widget` imports Bubble Tea; a
   test fails if the root package, `water`, `fur`, `mesh`, `clod`, `cam`, `sh`,
-  `aabbtree`, `geo`, or `math` does.
+  `aabbtree`, `geo`, `tiles3d`, or `math` does.
 - **The engine knows nothing of camera paths.** `nt3d/cam` does not import the
   engine and the engine does not import it; `nt3d/cam/scene` joins them.
 - **Shading is written twice,** in Go and in WGSL. Change both, and add or
