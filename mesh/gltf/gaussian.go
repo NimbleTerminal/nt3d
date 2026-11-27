@@ -292,27 +292,56 @@ func (d *gltfDecoder) spzSplats(name string, p *gltf.Primitive, world mat4, spz 
 	return d.finishSplats(name, g, world)
 }
 
-// finishSplats carries a cloud built in the primitive's space through world
-// and finishes it as every Gaussian decoder finishes a cloud: palette mode,
-// pieces that each fit a geometry, and clusters for level of detail.
+// finishSplats finishes a cloud built in the primitive's space as every
+// Gaussian decoder finishes one, palette mode, pieces that each fit a
+// geometry, and clusters for level of detail, and carries it through world.
+// The cloud is split first and each piece carried through on its own: the
+// whole of a cloud that needs splitting is more than one geometry may hold,
+// and carrying it through whole would refuse it for that.
 func (d *gltfDecoder) finishSplats(name string, g nt3d.Geometry, world mat4) (bool, error) {
 	fail := func(format string, a ...any) (bool, error) {
 		return false, fmt.Errorf("nt3dmesh: glTF %s splats: %s", name, fmt.Sprintf(format, a...))
 	}
-	var err error
-	if world != mat4(gltf.DefaultMatrix) {
-		if g, err = nt3d.TransformGeometry(g, world.Mat4()); err != nil {
-			return fail("%v", err)
+	sound := func(g *nt3d.Geometry) bool {
+		for _, point := range g.Points {
+			if !nt3dmesh.ValidCoordinate(point.Position.X, point.Position.Y, point.Position.Z) {
+				return false
+			}
 		}
+		return true
 	}
-	for _, point := range g.Points {
-		if !nt3dmesh.ValidCoordinate(point.Position.X, point.Position.Y, point.Position.Z) {
-			return fail("a position is not finite or exceeds coordinate limits")
+	if !sound(&g) {
+		return fail("a position is not finite or exceeds coordinate limits")
+	}
+	// Clusters describe where the points are, so they are built last, of
+	// the pieces as carried through.
+	turned := world != mat4(gltf.DefaultMatrix)
+	o := d.o
+	if turned {
+		var unclustered nt3dmesh.Options
+		if d.o != nil {
+			unclustered = *d.o
 		}
+		unclustered.NoClusters = true
+		o = &unclustered
 	}
-	model, err := nt3dmesh.GaussianModel(GLTF, g, d.o)
+	model, err := nt3dmesh.GaussianModel(GLTF, g, o)
 	if err != nil {
 		return false, err
+	}
+	if turned {
+		for i := range model.Objects {
+			piece := &model.Objects[i].Geometry
+			if *piece, err = nt3d.TransformGeometry(*piece, world.Mat4()); err != nil {
+				return fail("%v", err)
+			}
+			if !sound(piece) {
+				return fail("a position is not finite or exceeds coordinate limits")
+			}
+		}
+		if err := nt3dmesh.ClusterPieces(model.Objects, d.o); err != nil {
+			return false, err
+		}
 	}
 	for _, piece := range model.Objects {
 		if d.capture {
