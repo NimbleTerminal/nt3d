@@ -40,6 +40,7 @@ var demoNames = []string{
 	"toon",
 	"campath",
 	"room",
+	"tiles",
 }
 
 // Names returns the ordered list of all interactive demo scene names.
@@ -106,6 +107,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		kind = sceneAABB
 	case "water":
 		kind = sceneWater
+	case "tiles":
+		kind = sceneTiles
 	default:
 		return nil, fmt.Errorf("unknown demo %q (valid: %s)", name, strings.Join(demoNames, ", "))
 	}
@@ -171,6 +174,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		err = d.setupWater()
 	case sceneAABB:
 		err = d.setupAABB()
+	case sceneTiles:
+		err = d.setupTiles(nil)
 	default:
 		d.procedural = proceduralDefault
 		if d.procedural {
@@ -226,6 +231,8 @@ func NewRunner(name string, samples fs.FS, files []string, up nt3dmesh.Up, yDown
 		toonCamera(&camera)
 	case sceneCamPath:
 		camPathDirectorCamera(&camera)
+	case sceneTiles:
+		d.tilesCamera(&camera)
 	}
 	camera.AutoRotate = proceduralDefault
 
@@ -280,6 +287,9 @@ func (r *Runner) Close() error {
 	}
 	if r.d.meshes != nil && r.d.meshes.palette.building && r.d.meshes.palette.cancel != nil {
 		r.d.meshes.palette.cancel()
+	}
+	if r.d.tiles != nil {
+		r.d.tiles.tileset.Close()
 	}
 	var err error
 	if r.d.view != nil {

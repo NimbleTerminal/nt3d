@@ -59,8 +59,8 @@ move to Done with their commit; git history has the details.
      12 with one blended draw 10 km behind. The fix is to gather the
      selected splats of every slot into one buffer a frame, so the sort
      key is depth alone.
-  3. A streaming demo with a reference picture, and tile metadata inside
-     glTF (`EXT_structural_metadata`, `EXT_mesh_features`).
+  3. Tile metadata inside glTF (`EXT_structural_metadata`,
+     `EXT_mesh_features`).
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
   exact rendering means subdividing them.
 - [ ] **Double-sided glTF materials without copying faces**: `nt3d/mesh/gltf`

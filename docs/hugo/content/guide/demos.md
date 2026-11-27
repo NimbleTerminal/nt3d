@@ -217,6 +217,14 @@ ribbons. Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/
 under the Open Database License; building heights are estimates from tags.
 Only `cmd/toon` embeds the block, robot, and cow.
 
+## 3D Tiles
+
+<img class="poster" src="../../posters/tiles.png" alt="A town of colored blocks, detailed with bases and roofs in front and plain behind, around a park of green splat trees">
+
+`task tiles`. A [3D Tiles](../tiles3d/) tileset streams into the scene through `nt3d/tiles3d/scene`. With no argument it is a town generated in memory: 64 lots in three levels, the root massing them four at a time, its children drawing each building as a block, and theirs giving each a base, a tower and a roof, with a park of Gaussian splats that the finest middle tiles add as a second content. Tiles are chosen by how large their error looks on screen, so the lots in front are detailed while those behind stay blocks; orbit and zoom and they load and give way. The status line counts tiles shown, loaded and loading, splats, and the tileset's credit.
+
+`task tiles -- path/to/tileset.json` or `task tiles -- https://…/tileset.json` streams a tileset of your own, drawn around the middle of its root's bounds. `--snapshot` waits for every tile the view needs before it writes the picture.
+
 ## Camera paths
 
 <img class="poster" src="../../posters/campath.png" alt="Terracotta portals framing a golden beacon, cobalt sculpture, and cyan 3D camera spline with an orange frustum">

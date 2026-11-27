@@ -66,6 +66,7 @@ var referenceDemos = []struct {
 	{"water", false, sceneWater, nil},
 	{"toon", false, sceneToon, models.Toon},
 	{"campath", false, sceneCamPath, nil},
+	{"tiles", false, sceneTiles, nil},
 }
 
 // demoSnapshot is the picture a demo's command writes for --snapshot in the

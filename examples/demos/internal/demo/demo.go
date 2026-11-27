@@ -62,6 +62,7 @@ type demo struct {
 	cloud             *cloudScene
 	aabb              *aabbScene
 	water             *waterScene
+	tiles             *tilesScene
 	splats            splatStats
 }
 
@@ -123,11 +124,12 @@ const (
 	sceneWater
 	sceneToon
 	sceneCamPath
+	sceneTiles
 )
 
 // terrainScene reports whether the terrain controls apply.
 func (d *demo) terrainScene() bool {
-	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.room == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil
+	return d.animation == nil && d.dynamic == nil && d.meshes == nil && d.large == nil && d.fur == nil && d.mipmaps == nil && d.forest == nil && d.lights == nil && d.room == nil && d.particles == nil && d.cloud == nil && d.aabb == nil && d.water == nil && d.toon == nil && d.camPath == nil && d.tiles == nil
 }
 
 type quitMsg struct{}
@@ -262,6 +264,17 @@ func (d *demo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(v)
 		elapsed := now.Sub(d.lastPhase).Seconds()
 		d.lastPhase = now
+		if d.tiles != nil {
+			// The tileset follows the camera, paused or not.
+			changed, err := d.stepTiles()
+			if err != nil {
+				d.status = err.Error()
+			}
+			if changed {
+				return d, tea.Batch(d.view.Refresh(), phaseTick())
+			}
+			return d, phaseTick()
+		}
 		if d.cloud != nil {
 			// The cloud reselects for the view the last frame saw, paused or not.
 			changed, err := d.stepCloud()
@@ -816,6 +829,9 @@ func (d *demo) decorate(f *nt3d.Frame) {
 	if d.cloud != nil {
 		d.captureCloudView(f)
 	}
+	if d.tiles != nil {
+		d.captureTilesView(f)
+	}
 	if d.mipmaps != nil && d.mipmaps.mode == mipOnly {
 		f.Anisotropy = 1
 	}
@@ -892,6 +908,11 @@ func (d *demo) View() tea.View {
 	}
 	if d.cloud != nil {
 		v.Content = d.zones.Scan(d.cloudView(v.Content))
+		v.AltScreen = true
+		return v
+	}
+	if d.tiles != nil {
+		v.Content = d.zones.Scan(d.tilesView(v.Content))
 		v.AltScreen = true
 		return v
 	}
@@ -1122,6 +1143,11 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		if err = d.setupAABB(); err != nil {
 			return err
 		}
+	case sceneTiles:
+		if err = d.setupTiles(flag.Args()); err != nil {
+			return err
+		}
+		defer d.tiles.tileset.Close()
 	default:
 		d.procedural = *procedural
 		if d.procedural {
@@ -1173,6 +1199,8 @@ func run(proceduralDefault bool, kind sceneMode) error {
 	case sceneParticles:
 		camera.Elevation, camera.Distance, camera.Projection = 14, 4.6, nt3d.Perspective
 		camera.Target = nt3dmath.Vec3{Z: .9}
+	case sceneTiles:
+		d.tilesCamera(&camera)
 	case sceneCloud:
 		camera.Elevation, camera.Distance, camera.Projection = 32, 9, nt3d.Perspective
 	case sceneWater:
@@ -1245,6 +1273,12 @@ func run(proceduralDefault bool, kind sceneMode) error {
 		return d.benchmarkKitty(*benchmark, *benchmarkFrames, *benchmarkScale)
 	}
 	if *snapshot != "" {
+		if d.tiles != nil {
+			// A still picture is of the tileset once it has all arrived.
+			if err := d.settleTiles(snapshotSize[0], snapshotSize[1]); err != nil {
+				return err
+			}
+		}
 		img, used, err := d.view.Snapshot(snapshotSize[0], snapshotSize[1])
 		if err != nil {
 			return err

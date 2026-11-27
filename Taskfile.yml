@@ -6,7 +6,7 @@ env:
 
 vars:
   # Every demo: a command in examples/demos/cmd, built to bin/nt3d-NAME.
-  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water toon campath room
+  DEMOS: terrain procedural dynamic shapes meshes models large fur mipmaps forest lights particles gaussians animation animate characters cloud aabb water toon campath room tiles
   # Every tool: a command in cmd/nt3d-NAME, built to bin/nt3d-NAME.
   TOOLS: palette
   # Every fuzz target, as package:Function; fuzz-smoke runs each briefly, and
@@ -100,7 +100,7 @@ tasks:
       GOARCH: wasm
       CGO_ENABLED: '0'
     cmds:
-      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb dist/web/water dist/web/toon dist/web/campath dist/web/room
+      - mkdir -p dist/web/terrain dist/web/procedural dist/web/dynamic dist/web/shapes dist/web/models dist/web/large dist/web/fur dist/web/mipmaps dist/web/forest dist/web/lights dist/web/particles dist/web/gaussians dist/web/animation dist/web/animate dist/web/characters dist/web/cloud dist/web/aabb dist/web/water dist/web/toon dist/web/campath dist/web/room dist/web/tiles
       - go -C examples/demos build -mod=readonly -o ../../dist/web/terrain/app.wasm ./cmd/terrain
       - go -C examples/demos build -mod=readonly -o ../../dist/web/procedural/app.wasm ./cmd/procedural
       - go -C examples/demos build -mod=readonly -o ../../dist/web/dynamic/app.wasm ./cmd/dynamic
@@ -122,6 +122,7 @@ tasks:
       - go -C examples/demos build -mod=readonly -o ../../dist/web/toon/app.wasm ./cmd/toon
       - go -C examples/demos build -mod=readonly -o ../../dist/web/campath/app.wasm ./cmd/campath
       - go -C examples/demos build -mod=readonly -o ../../dist/web/room/app.wasm ./cmd/room
+      - go -C examples/demos build -mod=readonly -o ../../dist/web/tiles/app.wasm ./cmd/tiles
   web-assets:
     cmds:
       - go -C examples/demos tool booba-assets ../../dist/web/terrain/
@@ -145,6 +146,7 @@ tasks:
       - go -C examples/demos tool booba-assets ../../dist/web/toon/
       - go -C examples/demos tool booba-assets ../../dist/web/campath/
       - go -C examples/demos tool booba-assets ../../dist/web/room/
+      - go -C examples/demos tool booba-assets ../../dist/web/tiles/
   build-web:
     desc: Build the consolidated browser gallery
     cmds:
@@ -280,6 +282,11 @@ tasks:
     desc: Cel shade Spot, a robot, and a city block, with inked outlines and crease lines
     deps: [{task: build:demo, vars: {NAME: toon}}]
     cmds: ["bin/nt3d-toon {{.CLI_ARGS}}"]
+
+  tiles:
+    desc: Stream a 3D Tiles tileset, the generated town or one named by URL or path
+    deps: [{task: build:demo, vars: {NAME: tiles}}]
+    cmds: ["bin/nt3d-tiles {{.CLI_ARGS}}"]
 
   campath:
     desc: Fly declarative YAML camera paths (flythrough, orbit, switcher) with 3D frustum overlays
