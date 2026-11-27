@@ -113,6 +113,9 @@ func Decode(data []byte, o *nt3dmesh.Options) (*nt3dmesh.Model, error) {
 	if err := d.decompressBuffers(); err != nil {
 		return nil, err
 	}
+	if err := d.recenter(); err != nil {
+		return nil, err
+	}
 	if err := d.validateTextures(); err != nil {
 		return nil, err
 	}
@@ -179,9 +182,13 @@ type gltfDecoder struct {
 	variantNames            []string
 	primVariants            map[int]*nt3d.Material
 	warned                  map[string]bool
-	visits                  int
-	points                  int // Across the model, within maxPoints.
-	lines                   int // Line ends across the model, within maxLineVertices.
+	// unshift moves the document's root nodes back toward zero, in glTF's
+	// own space, when recenter found them placed too far out; the identity
+	// otherwise.
+	unshift mat4
+	visits  int
+	points  int // Across the model, within maxPoints.
+	lines   int // Line ends across the model, within maxLineVertices.
 }
 
 func (d *gltfDecoder) warn(format string, a ...any) {
@@ -255,6 +262,67 @@ func transformNormal(a mat4, n [3]float32) nt3dmath.Vec3 {
 	return v.Normalize()
 }
 
+// farFromZero is the coordinate past which a placement is taken out of the
+// geometry and kept in float64: at 100 km a float32 already steps by 8 mm.
+const farFromZero = 1e5
+
+// recenter finds where a model placed far from zero belongs, so that its
+// geometry can be built near zero and stay exact, and records it as the
+// model's Origin, in the Z-up space the model ends in.
+//
+// CESIUM_RTC, the extension 3D Tiles 1.0 content carries, states a center
+// its vertices are relative to. The center is in the Z-up space, after the
+// turn from Y-up, as the legacy b3dm RTC_CENTER is, and the vertices need
+// nothing done to them.
+//
+// Without it, a root node translated past farFromZero, as content placed
+// in Earth-centered meters by its own node is, has that translation taken
+// off every root node before any vertex is rounded to float32.
+func (d *gltfDecoder) recenter() error {
+	d.unshift = mat4(gltf.DefaultMatrix)
+	var rtc struct {
+		Center []float64 `json:"center"`
+	}
+	ok, err := decodeExtension(d.doc.Extensions, "CESIUM_RTC", &rtc)
+	if err != nil {
+		return err
+	}
+	if ok {
+		if len(rtc.Center) != 3 {
+			return errors.New("nt3dmesh: glTF CESIUM_RTC center is three numbers")
+		}
+		d.m.Origin = nt3dmath.Vec3d{X: rtc.Center[0], Y: rtc.Center[1], Z: rtc.Center[2]}
+		if !d.m.Origin.IsFinite() {
+			return errors.New("nt3dmesh: glTF CESIUM_RTC center is not finite")
+		}
+	}
+	child := make([]bool, len(d.doc.Nodes))
+	for _, n := range d.doc.Nodes {
+		if n == nil {
+			continue
+		}
+		for _, c := range n.Children {
+			if c >= 0 && c < len(child) {
+				child[c] = true
+			}
+		}
+	}
+	for i, n := range d.doc.Nodes {
+		if n == nil || child[i] {
+			continue
+		}
+		m := local(n)
+		t := nt3dmath.Vec3d{X: m[12], Y: m[13], Z: m[14]}
+		if !t.IsFinite() || math.Max(math.Abs(t.X), math.Max(math.Abs(t.Y), math.Abs(t.Z))) <= farFromZero {
+			continue
+		}
+		d.unshift[12], d.unshift[13], d.unshift[14] = -t.X, -t.Y, -t.Z
+		d.m.Origin = d.m.Origin.Add(yUp.Direction(t))
+		break
+	}
+	return nil
+}
+
 // yUp turns glTF's Y-up to nt3d's Z-up: (x, y, z) becomes (x, -z, y).
 var yUp = mat4{1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1}
 
@@ -301,7 +369,7 @@ func (d *gltfDecoder) scene() error {
 	}
 	onPath := make([]bool, len(d.doc.Nodes))
 	for _, r := range roots {
-		if err := d.node(r, yUp, onPath); err != nil {
+		if err := d.node(r, yUp.Mul(d.unshift), onPath); err != nil {
 			return err
 		}
 	}

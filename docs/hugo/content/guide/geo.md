@@ -64,7 +64,7 @@ err = scene.SetNodeOrigin(id, origin)
 
 `origin` is where the model's own origin lies in the city frame, in `float64`. `local` turns and scales the model and carries no translation. A model 14 km from the city's origin lands within a tenth of a millimeter of where `float64` puts it.
 
-This works when the model's own vertices are small numbers. A file that stores Earth-centered coordinates in its vertices has already lost the precision by the time it is `float32`; subtract a `float64` center from them while reading, and add it to the transform.
+This works when the model's own vertices are small numbers. A glTF placed far out by its own root node, or by `CESIUM_RTC`, is read that way: the decoder builds its geometry near zero and returns the placement as `Model.Origin`, in `float64`, to multiply into the transform before `Place` (see [glTF](../meshes/#gltf)). A file whose `float32` vertices themselves hold Earth-centered coordinates has lost the precision before anyone reads it.
 
 ## Bounding regions
 

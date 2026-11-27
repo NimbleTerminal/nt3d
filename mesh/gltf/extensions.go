@@ -28,6 +28,7 @@ var documentExtensions = []string{
 	"EXT_meshopt_compression", // meshopt.go: compressed buffer views.
 	"EXT_texture_webp",        // gltf.go, loadImage: WebP textures, when a WebP decoder is registered.
 	"EXT_mesh_gpu_instancing", // instancing.go: many placements of one mesh.
+	"CESIUM_RTC",              // gltf.go, recenter: a center the vertices are relative to.
 	"KHR_gaussian_splatting",  // gaussian.go: a POINTS primitive as a Gaussian splat cloud.
 	// gaussian.go: a splat primitive's data as one SPZ payload, under the
 	// draft's names and the one before it.

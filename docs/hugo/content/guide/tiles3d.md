@@ -86,7 +86,7 @@ subtree.ChildSubtreeAvailable(d)  // is there a subtree file starting at d, one 
 
 Tile content is glTF, as a `.glb` or as JSON, which [`nt3d/mesh/gltf`](../meshes/) decodes, [Gaussian splats](../rendering/#gaussian-splats-in-gltf) included. `SniffContent` tells what a fetched content is: `ContentGLB`, `ContentGLTF`, `ContentB3DM`, or `ContentTileset` for a tileset whose root continues the tile.
 
-`UnwrapB3DM` returns the glb inside a legacy batched model, and its `RTC_CENTER` when it has one: a center the glb's positions are relative to. Add it to the tile's transform in `float64`, and the positions stay small enough for `float32`. The other legacy formats (`i3dm`, `pnts`, `cmpt`) are not read.
+`UnwrapB3DM` returns the glb inside a legacy batched model, and its `RTC_CENTER` when it has one: a center the glb's positions are relative to. Add it to the tile's transform in `float64`, and the positions stay small enough for `float32`. The glTF decoder reports the same kind of center for `CESIUM_RTC` and for a root node placed far out, as `Model.Origin`; both are in the tile's Z-up space, after glTF's turn from Y-up. The other legacy formats (`i3dm`, `pnts`, `cmpt`) are not read.
 
 ## Fetching
 

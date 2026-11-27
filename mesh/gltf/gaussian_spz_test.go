@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -143,6 +144,77 @@ func TestGaussianSplattingSPZRefusals(t *testing.T) {
 		_, err := Decode(c.doc, &nt3dmesh.Options{Open: opener(map[string][]byte{"side.bin": c.side})})
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want an error naming %q", name, err, c.want)
+		}
+	}
+}
+
+// The shared Gaussian packed as SPZ decodes to the same splat as its plain
+// attributes, to within what SPZ's bytes hold: a position on a 1/4096 grid,
+// log scales in sixteenths, rotations and harmonics in 1/128 steps. The
+// packing here is the one a writer of tiles uses: values as glTF's Y-up
+// coordinates, nothing flipped.
+func TestGaussianSplattingSPZReadsTheSharedVector(t *testing.T) {
+	v := readGaussianVector(t)
+	raw := make([]byte, 16)
+	binary.LittleEndian.PutUint32(raw, 0x5053474e)
+	binary.LittleEndian.PutUint32(raw[4:], 2)
+	binary.LittleEndian.PutUint32(raw[8:], 1)
+	raw[12], raw[13] = 3, 12
+	quantize := func(x float64) byte { return byte(math.Round(max(0, min(255, x)))) }
+	for _, c := range v.Position {
+		n := int32(math.Round(c * 4096))
+		raw = append(raw, byte(n), byte(n>>8), byte(n>>16))
+	}
+	raw = append(raw, quantize(255*v.Opacity))
+	for _, dc := range v.SH[0] {
+		raw = append(raw, quantize(255*(.5+.15*dc)))
+	}
+	for _, s := range v.Scale {
+		raw = append(raw, quantize(16*(math.Log(s)+10)))
+	}
+	for _, q := range v.Rotation[:3] { // x, y, z; w is recovered, and is positive here.
+		raw = append(raw, quantize((q+1)*127.5))
+	}
+	for _, coefficient := range v.SH[1:] {
+		for _, c := range coefficient {
+			raw = append(raw, quantize(c*128+128))
+		}
+	}
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	_, err := w.Write(raw)
+	check(t, err)
+	check(t, w.Close())
+	payload := buf.Bytes()
+	m, err := Decode(spzSplatDoc(payload, 1, spzNested, spzUsed, ""), &nt3dmesh.Options{Open: opener(map[string][]byte{"side.bin": payload})})
+	check(t, err)
+	g := m.Objects[0].Geometry
+	p := g.Points[0]
+	if !near(p.Position, vec3(v.ZUp.Position)) {
+		t.Fatalf("position %v, want %v", p.Position, v.ZUp.Position)
+	}
+	for k := range 3 {
+		if d := p.GaussianAxes[k].Sub(vec3(v.ZUp.Axes[k])).D().Len(); d > .03 {
+			t.Fatalf("axis %d is %v, %g from %v", k, p.GaussianAxes[k], d, v.ZUp.Axes[k])
+		}
+	}
+	for k, got := range [4]uint8{p.Color.R, p.Color.G, p.Color.B, p.Color.A} {
+		want := 255 * v.Opacity
+		if k < 3 {
+			want = 255 * v.Diffuse[k]
+		}
+		if math.Abs(float64(got)-want) > 2 {
+			t.Fatalf("color channel %d is %d, want about %g", k, got, want)
+		}
+	}
+	if len(g.GaussianSH) != 16 {
+		t.Fatalf("%d SH coefficients, want 16", len(g.GaussianSH))
+	}
+	for i := 1; i < 16; i++ {
+		for k := range 3 {
+			if math.Abs(float64(g.GaussianSH[i][k])-v.SH[i][k]) > 1.0/128 {
+				t.Fatalf("SH coefficient %d is %v, want %v", i, g.GaussianSH[i], v.SH[i])
+			}
 		}
 	}
 }

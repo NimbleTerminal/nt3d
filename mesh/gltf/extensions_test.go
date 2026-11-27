@@ -20,7 +20,7 @@ func TestEveryExtensionReadIsDeclared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := regexp.MustCompile(`"((?:KHR|EXT)_[a-z0-9_]+)"`)
+	name := regexp.MustCompile(`"((?:KHR|EXT|CESIUM)_[A-Za-z0-9_]+)"`)
 	mentioned := map[string][]string{}
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {

@@ -404,9 +404,17 @@ type Object struct {
 type Model struct {
 	// Asset preserves a reusable scene hierarchy, cameras and clips;
 	// Objects remain the flat rest-pose view. glTF always supplies Asset.
-	Asset    *nt3d.SceneAsset
-	Format   Format
-	Objects  []Object
+	Asset   *nt3d.SceneAsset
+	Format  Format
+	Objects []Object
+	// Origin is where the model's own origin lies, in float64 and in the
+	// model's Z-up space, when the file places the model too far out for
+	// float32 to hold: content placed on the Earth, millions of meters from
+	// zero. Objects and Asset are then centered near zero, and Origin is to
+	// be added back when the model is placed: AddTo sets it as the node's
+	// origin (nt3d.Scene.SetNodeOrigin), and a 3D Tiles tile adds it to its
+	// transform. It is zero for other models. The glTF decoder sets it.
+	Origin   nt3dmath.Vec3d
 	Warnings []string // Problems passed over, such as a missing texture.
 
 	// What 3MF packages also say. Parts and the rest are filled even when
@@ -496,10 +504,18 @@ func (m *Model) AddTo(s *nt3d.Scene, parent nt3d.NodeID, name string) (nt3d.Node
 		if err != nil {
 			return 0, err
 		}
+		if err := m.placeOrigin(s, instance.Root); err != nil {
+			_ = s.Remove(instance.Root)
+			return 0, err
+		}
 		return instance.Root, nil
 	}
 	group, err := s.Add(parent, name)
 	if err != nil {
+		return 0, err
+	}
+	if err := m.placeOrigin(s, group); err != nil {
+		_ = s.Remove(group)
 		return 0, err
 	}
 	for i, o := range m.Objects {
@@ -513,6 +529,15 @@ func (m *Model) AddTo(s *nt3d.Scene, parent nt3d.NodeID, name string) (nt3d.Node
 		}
 	}
 	return group, nil
+}
+
+// placeOrigin gives the node a model was added under the model's Origin, when
+// it has one.
+func (m *Model) placeOrigin(s *nt3d.Scene, id nt3d.NodeID) error {
+	if m.Origin == (nt3dmath.Vec3d{}) {
+		return nil
+	}
+	return s.SetNodeOrigin(id, [3]float64{m.Origin.X, m.Origin.Y, m.Origin.Z})
 }
 
 // FormatOf chooses a format by file extension, then by content.

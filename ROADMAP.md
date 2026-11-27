@@ -54,8 +54,8 @@ move to Done with their commit; git history has the details.
      nearest point of a tile's bounds, `REPLACE` that keeps a loaded ancestor
      until its children are in, background fetch and decode with scene
      changes on one goroutine, a byte budget with eviction, a splat budget
-     across tiles, and recentering of vertices stored at Earth-centered
-     magnitudes (`CESIUM_RTC`, b3dm `RTC_CENTER`).
+     across tiles, and placing each tile by its transform, its b3dm
+     `RTC_CENTER`, and its `Model.Origin` together.
   3. Blended splats from several tiles: `blendPlan` orders slot by slot
      within a depth slice and spreads 64 slices from the nearest to the
      farthest blended draw, so overlapping tiles seam and one distant tile

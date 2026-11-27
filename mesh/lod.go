@@ -59,6 +59,10 @@ func (m *Model) AddLODTo(s *nt3d.Scene, parent nt3d.NodeID, name string, maxDist
 	if err != nil {
 		return 0, err
 	}
+	if err := m.placeOrigin(s, inst.Root); err != nil {
+		_ = s.Remove(inst.Root)
+		return 0, err
+	}
 	return inst.Root, nil
 }
 

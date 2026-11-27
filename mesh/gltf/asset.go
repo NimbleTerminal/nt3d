@@ -92,7 +92,13 @@ func (d *gltfDecoder) sceneAsset() error {
 		}
 		ids[i] = len(asset.Nodes)
 		n := d.doc.Nodes[i]
-		asset.Nodes = append(asset.Nodes, nt3d.AssetNode{Name: n.Name, Parent: p, Local: local(n).Mat4()})
+		placed := local(n)
+		if parents[i] < 0 {
+			// A root node placed far out is brought back before it is
+			// rounded; the model's Origin holds what was taken off.
+			placed = d.unshift.Mul(placed)
+		}
+		asset.Nodes = append(asset.Nodes, nt3d.AssetNode{Name: n.Name, Parent: p, Local: placed.Mat4()})
 		visiting[i] = false
 		return nil
 	}
