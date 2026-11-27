@@ -56,9 +56,16 @@ move to Done with their commit; git history has the details.
      coarsens the slices near the camera. Measured by
      `TestBlendOrderAcrossOverlappingSplatTiles`: two overlapping tiles 20
      to 50 m off are blended up to 0.9 depth units out of order, and up to
-     12 with one blended draw 10 km behind. The fix is to gather the
-     selected splats of every slot into one buffer a frame, so the sort
-     key is depth alone.
+     12 with one blended draw 10 km behind. Finer slices were tried and
+     dropped (2026-11-27): 1024 ratio-spaced slices bring those to 0.15
+     and 0.34, but each slice a cloud spans is a draw at about 7 µs, and
+     a frame of two tiles went from 2 ms to 14.6. The fix is to give every
+     Gaussian cloud one shared slot, so they sort splat by splat, and to
+     resolve each selected splat once a frame in a compute pass (clip
+     position, screen covariance, final color with SH evaluated, fog
+     distance) into one buffer the splat shader draws from: at most 64
+     draws for all splats. It costs about 48 bytes a selected splat a
+     frame and uses all 8 storage bindings of the compute stage.
   3. Tile metadata inside glTF (`EXT_structural_metadata`,
      `EXT_mesh_features`).
 - [ ] **Exact 3MF painting**: painted faces are approximated per face today;
