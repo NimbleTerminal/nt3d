@@ -2,19 +2,92 @@
 
 ## Unreleased
 
-### Added
+nt3d can now show a piece of the Earth. A scene can stream an OGC 3D Tiles
+tileset, loading and drawing only what the camera needs and placing every
+tile to the millimeter however far it is from the scene's origin; tiles may
+hold meshes or Gaussian splats, which glTF can now carry. Three packages are
+new: `nt3d/geo` for positions on the Earth, `nt3d/tiles3d` for reading
+tilesets, and `nt3d/tiles3d/scene` for streaming one into a scene.
 
-- **Positions on the Earth (`nt3d/geo`)**: package `nt3dgeo` converts between WGS84 latitude, longitude and ellipsoidal height (`Geodetic`), Earth-centered meters (`Geodetic.ECEF`, `FromECEF`), and a local east-north-up frame (`ENU`), which is nt3d's Z-up world. `ENU.Place` splits a transform into Earth-centered meters, such as a 3D Tiles tile's, into a `float64` origin for `Scene.SetNodeOrigin` and a `float32` matrix with no translation, so a model 14 km from the scene's origin lands within a tenth of a millimeter. `Region` is a 3D Tiles bounding region, and `Region.Box` an oriented box that holds its curved surface and not only its corners. The package depends only on `nt3d/math`, and is tested against PROJ 9.9.0 reference values in `geo/testdata/geo-vectors.json`.
-- **Gaussian splats in glTF (`KHR_gaussian_splatting`)**: `nt3d/mesh/gltf` reads a `POINTS` primitive carrying the ratified extension as a Gaussian cloud: x, y, z, w rotations, linear scales and opacity (float or the integer types the extension allows), and spherical harmonics of degree 0 through 3; an attribute whose accessor has no buffer view reads as zeros, as glTF defines it, and a primitive's indices choose which records are splats. The cloud turns from glTF's Y-up to Z-up once, harmonics included, follows its node's transform, and is finished like the other Gaussian decoders' (`Options.SHPalette`, pieces, clusters), in `Model.Objects` and `Model.Asset` alike. A primitive may instead keep its data in one SPZ payload, under the draft compression extension's names (`KHR_gaussian_splatting_compression_spz_2`, `KHR_gaussian_splatting_compression_spz`, and the earlier `KHR_spz_gaussian_splats_compression`): it decodes to the cloud the same bytes give as an `.spz` file, with the stored values read as glTF's coordinates and nothing flipped, as CesiumJS reads them and against the draft's disputed left-up-front wording. `nt3dspz.Unpack` is the SPZ decoder's reading step on its own, a cloud in the file's axes, for containers that hold SPZ. A kernel other than `ellipse` falls back to plain points with a warning; any other compression is refused by name. `geo/testdata/geo-vectors.json` gains one Gaussian with its axes and color worked by hand, for readers and writers of splat tiles to agree on.
-- **Streaming 3D Tiles into a scene (`nt3d/tiles3d/scene`)**: package `nt3dtiles3dscene` keeps a scene showing what the camera needs of a tileset. `Open` binds a tileset to a scene drawn in an east-north-up frame, or with `Options.AtCenter` around the tileset's own middle (`nt3dtiles3d.Tileset.Center`); `Update`, each frame, chooses tiles by their error on screen measured to the nearest point of their bounds, fetches and decodes the missing ones on background goroutines, places each to the millimeter (tile transform, b3dm `RTC_CENTER` and `Model.Origin` composed in `float64`), and shows and hides nodes; `Settle` waits for a still picture, and leaves the same scene however the loads raced. Replacing tiles hold the view until every child in view has arrived, and go on holding it for a child or an implicit branch that failed, adding tiles draw with their children, and contentless tiles (whatever their error), nested tilesets and implicit trees with their subtrees are walked through. A tile's geometric error scales with its transform in a 1.1 tileset and is meters in a 1.0 one, each nested tileset read by its own version. A tileset under an `Options.Parent` that is moved, turned or scaled, evenly or not, is chosen where that node puts it, a tile's error stretched by its own transform and the parent's composed, and the splat budget looks again when the parent moves or the threshold changes. A content URI that cannot be read counts as a failed content, and a tile missing one of several contents is shown only where no replaced tile can stand in for it. Unused tiles are evicted past `Options.MaxBytes`, `Options.SplatBudget` coarsens the selection across splat tiles, by error and, inside a tile, by level, `SetMaxScreenSpaceError` changes the threshold while running, every node of a tile carries a `*Tile` record with its metadata and credits, its contents' metadata and groups index for index with its URIs, and `OnTileLoaded` and `OnTileUnloaded` let a caller restyle tiles or take their triangles as they stream.
-- **A streaming 3D Tiles demo**: `task tiles` streams a town generated in memory, three levels of detail and a park of Gaussian splats, or a tileset named by URL or path, with a reference picture in each renderer and a page in the web gallery.
-- **Reading OGC 3D Tiles 1.1 (`nt3d/tiles3d`)**: package `nt3dtiles3d` parses a tileset into plain data (`ParseTileset`: tiles with transforms, box, region and sphere bounds, `ADD` and `REPLACE` refinement, one or several contents, and schema, tileset, group, tile and content metadata), implicit quadtrees and octrees (`Implicit`, `Coord`, and `ParseSubtree` for binary and JSON subtree files with bitstream or constant availability), and the legacy b3dm wrapper (`UnwrapB3DM`, with its `RTC_CENTER`). `Volume.World` gives a tile's bounds as a box in Earth-centered meters. Bytes are asked for through a `Fetcher`: `FS` for a directory or embedded files, and `HTTP` for a server, natively and in the browser, with `Bearer` sending a token only to `https` on the tileset's own host, redirects included. Documents are limited by `Options` (`ErrTooLarge`), credits come back as printable text (`Asset.Credits`), and the three readers have fuzz targets. It depends only on `nt3d/math` and `nt3d/geo`.
-- **glTF content placed on the Earth keeps its precision**: `nt3dmesh.Model.Origin` is a `float64` point, in the model's Z-up space, that a model placed too far from zero for `float32` is relative to. The glTF decoder sets it from `CESIUM_RTC` (now read, and accepted in `extensionsRequired`) and from a root node translated more than 100 km out, and builds the geometry near zero, in `Objects` and `Asset` alike, moving the keys of a translation track on such a root with it. `Model.AddTo`, `AddLODTo` and `AddLODModels` set it as the node's origin; `AddLODModels` refuses tiers placed at different origins.
-- **A float64 oriented box and affine inverse in `nt3d/math`**: `OBBd` (`Distance`, `Nearest`, `Transformed`, `Corners`, `Radius`) bounds things placed where `float32` does not reach, and `Mat4d.InverseAffine` is `Mat4.InverseAffine` in `float64`.
+Nothing that compiled against v0.13.0 stops compiling. One behaviour changes:
+a glTF placed more than 100 km from zero now decodes near zero with its
+placement beside it (see [Changed](#changed)).
+
+| New | Where | In short |
+| --- | --- | --- |
+| Positions on the Earth | `nt3d/geo` | WGS84, Earth-centered meters, and a local east-north-up frame |
+| Reading 3D Tiles | `nt3d/tiles3d` | Tilesets, implicit trees, subtrees, b3dm, and fetching over files or HTTP |
+| Streaming 3D Tiles | `nt3d/tiles3d/scene` | A tileset kept in step with the camera, with byte and splat budgets |
+| Gaussian splats in glTF | `nt3d/mesh/gltf` | `KHR_gaussian_splatting`, plain or SPZ-compressed |
+| Placement far from zero | `nt3d/mesh`, `nt3d/math` | `Model.Origin`, `CESIUM_RTC`, and a `float64` oriented box |
+| A demo | `task tiles` | A generated town of three levels and a park of splats, or your own tileset |
+
+The guide has a page for each: [Geographic scenes](https://nimbleterminal.github.io/nt3d/docs/guide/geo/)
+and [3D Tiles](https://nimbleterminal.github.io/nt3d/docs/guide/tiles3d/).
+
+### Positions on the Earth (`nt3d/geo`)
+
+- Package `nt3dgeo` converts between WGS84 latitude, longitude and ellipsoidal height (`Geodetic`), Earth-centered meters (`Geodetic.ECEF`, `FromECEF`), and a local east-north-up frame (`ENU`), which is nt3d's Z-up world.
+- `ENU.Place` splits a transform into Earth-centered meters, such as a 3D Tiles tile's, into a `float64` origin for `Scene.SetNodeOrigin` and a `float32` matrix with no translation, so a model 14 km from the scene's origin lands within a tenth of a millimeter.
+- `Region` is a 3D Tiles bounding region, and `Region.Box` an oriented box that holds its curved surface and not only its corners.
+- The package depends only on `nt3d/math`, and is tested against PROJ 9.9.0 reference values in `geo/testdata/geo-vectors.json`.
+
+### Reading OGC 3D Tiles 1.1 (`nt3d/tiles3d`)
+
+- Package `nt3dtiles3d` parses a tileset into plain data. `ParseTileset` reads tiles with transforms, box, region and sphere bounds, `ADD` and `REPLACE` refinement, one or several contents, and schema, tileset, group, tile and content metadata. Version 1.0 tilesets are read too.
+- Implicit quadtrees and octrees: `Implicit`, `Coord`, and `ParseSubtree` for binary and JSON subtree files with bitstream or constant availability.
+- The legacy b3dm wrapper: `UnwrapB3DM`, with its `RTC_CENTER`.
+- `Volume.World` gives a tile's bounds as a box in Earth-centered meters. A sphere under a transform that stretches it unevenly is bounded by how far it reaches along each axis.
+- Bytes are asked for through a `Fetcher`: `FS` for a directory or embedded files, and `HTTP` for a server, natively and in the browser. `Bearer` sends a token only to `https` on the tileset's own host, redirects included.
+- Documents are limited by `Options` (`ErrTooLarge`), and credits come back as printable text (`Asset.Credits`).
+- It depends only on `nt3d/math` and `nt3d/geo`.
+
+### Streaming 3D Tiles into a scene (`nt3d/tiles3d/scene`)
+
+Package `nt3dtiles3dscene` keeps a scene showing what the camera needs of a tileset.
+
+- **Opening and updating.** `Open` binds a tileset to a scene drawn in an east-north-up frame, or with `Options.AtCenter` around the tileset's own middle (`nt3dtiles3d.Tileset.Center`). `Update`, each frame, chooses tiles, fetches and decodes the missing ones on background goroutines, and shows and hides nodes. `Settle` waits for a still picture, and leaves the same scene however the loads raced.
+- **Placement.** Each tile is placed to the millimeter: its transform, a b3dm's `RTC_CENTER` and the glTF's `Model.Origin` are composed in `float64`.
+- **What is chosen.** Tiles are chosen by their error on screen, measured to the nearest point of their bounds, so a large tile the camera stands inside always refines. A tile's geometric error scales with its transform in a 1.1 tileset, by the transform's greatest stretch in any direction, and is meters in a 1.0 one; each nested tileset is read by its own version. `SetMaxScreenSpaceError` changes the threshold while running.
+- **No holes.** A replacing tile holds the view until every child in view has arrived, and goes on holding it for a child that failed, a child missing one of several contents, a content URI that cannot be read, or an implicit branch whose subtree is missing. Adding tiles draw with their children. Contentless tiles (whatever their error), nested tilesets, and implicit trees with their subtrees are walked through.
+- **Budgets.** Unused tiles are evicted past `Options.MaxBytes`. `Options.SplatBudget` coarsens the selection across splat tiles, by error and, inside a tile, by level, and looks again when the camera or the tileset's parent moves or the threshold changes.
+- **Under a parent node.** A tileset under an `Options.Parent` that is moved, turned or scaled, evenly or not, is chosen where that node puts it, with a tile's error stretched by its own transform and the parent's composed.
+- **What a tile carries.** Every node of a tile carries a `*Tile` record, in a draw's `Data` and a pick's `Hit.Data`: its URIs, level, credits and metadata, with its contents' metadata and groups index for index with its URIs. `OnTileLoaded` and `OnTileUnloaded` let a caller restyle tiles or take their triangles as they stream.
+
+Known limits: Gaussian splats from tiles that overlap in depth blend in approximate order where the tiles meet; per-feature metadata inside glTF (`EXT_structural_metadata`, `EXT_mesh_features`) and the binary property tables of subtrees are not read. Both are in `ROADMAP.md`.
+
+### Gaussian splats in glTF (`KHR_gaussian_splatting`)
+
+- `nt3d/mesh/gltf` reads a `POINTS` primitive carrying the ratified extension as a Gaussian cloud: x, y, z, w rotations, linear scales and opacity (float or the integer types the extension allows), and spherical harmonics of degree 0 through 3.
+- An attribute whose accessor has no buffer view reads as zeros, as glTF defines it, and a primitive's indices choose which records are splats.
+- The cloud turns from glTF's Y-up to Z-up once, harmonics included, follows its node's transform, and is finished like the other Gaussian decoders' (`Options.SHPalette`, pieces, clusters), in `Model.Objects` and `Model.Asset` alike. A cloud too large for one geometry is split in both.
+- **SPZ compression.** A primitive may instead keep its data in one SPZ payload, under the draft compression extension's names (`KHR_gaussian_splatting_compression_spz_2`, `KHR_gaussian_splatting_compression_spz`, and the earlier `KHR_spz_gaussian_splats_compression`). It decodes to the cloud the same bytes give as an `.spz` file, with the stored values read as glTF's coordinates and nothing flipped, as CesiumJS reads them and against the draft's disputed left-up-front wording. The extension is a draft; this reading may change with it.
+- `nt3dspz.Unpack` is the SPZ decoder's reading step on its own, a cloud in the file's axes, for containers that hold SPZ.
+- A kernel other than `ellipse` falls back to plain points with a warning; any other compression is refused by name.
+- `geo/testdata/geo-vectors.json` gains one Gaussian with its axes and color worked by hand, for readers and writers of splat tiles to agree on.
+
+### Placement far from zero
+
+- **`Model.Origin`.** `nt3dmesh.Model.Origin` is a `float64` point, in the model's Z-up space, that a model placed too far from zero for `float32` is relative to. The glTF decoder sets it from `CESIUM_RTC` (now read, and accepted in `extensionsRequired`) and from a root node translated more than 100 km out, and builds the geometry near zero, in `Objects` and `Asset` alike, moving the keys of a translation track on such a root with it.
+- `Model.AddTo`, `AddLODTo` and `AddLODModels` set it as the node's origin; `AddLODModels` refuses tiers placed at different origins.
+- **A `float64` oriented box and affine inverse in `nt3d/math`.** `OBBd` (`Distance`, `Nearest`, `Transformed`, `Corners`, `Radius`) bounds things placed where `float32` does not reach, and measures exactly to a box a transform has left askew. `Mat4d.InverseAffine` is `Mat4.InverseAffine` in `float64`.
+
+### A streaming 3D Tiles demo
+
+- `task tiles` streams a town generated in memory, three levels of detail and a park of Gaussian splats, or a tileset named by URL or path, with a reference picture in each renderer and a page in the web gallery.
 
 ### Changed
 
-- **A glTF whose root node is more than 100 km from zero decodes near zero**, with the placement in `Model.Origin`. Before, its vertices were rounded to `float32` out there, in half-meter steps at Earth-centered sizes. A model added with `Model.AddTo` or `AddLODTo` is drawn in the same place as before, now exactly; code that reads `Model.Objects` or instantiates `Model.Asset` itself must add `Origin`.
+- **A glTF whose root node is more than 100 km from zero decodes near zero**, with the placement in `Model.Origin`. Before, its vertices were rounded to `float32` out there, in half-meter steps at Earth-centered sizes.
+
+  | You | Before | Now |
+  | --- | --- | --- |
+  | add the model with `Model.AddTo` or `AddLODTo` | drawn in place, rounded | drawn in the same place, exactly; nothing to change |
+  | read `Model.Objects`, or instantiate `Model.Asset` yourself | positions held the placement | positions are near zero; add `Model.Origin` |
+
+### Tested
+
+- Seven fuzz targets are new, and in `task fuzz-smoke`: `FuzzGeodetic` and `FuzzRegionBox` (`geo`), `FuzzParseTileset`, `FuzzParseSubtree`, `FuzzUnwrapB3DM` and `FuzzResolve` (`tiles3d`), and `FuzzStream` (`tiles3d/scene`), which streams arbitrary tilesets into a scene.
 
 ## v0.13.0 (2026-11-26)
 

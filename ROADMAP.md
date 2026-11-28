@@ -5,11 +5,12 @@ move to Done with their commit; git history has the details.
 
 ## Next
 
-- [ ] **Release the API changes, then move the applications onto them.**
-  Everything under Unreleased in `CHANGELOG.md` is breaking: `Frame.Draws`,
-  plain `Geometry`, degrees, node addressing, camera validation, and the
-  grouped `Material`. newlock.city and nebula build against a tagged release,
-  so they follow the tag.
+- [ ] **Move the applications onto the reshaped API.** v0.12.0 released the
+  breaking changes: `Frame.Draws`, plain `Geometry`, degrees, node
+  addressing, camera validation, and the grouped `Material`. ntcharts3d
+  still builds against v0.8.1, and ntmaps' examples cannot raise their nt3d
+  requirement until it is ported and tagged; newlock.city and nebula build
+  against a tagged release and follow in their own time.
 
 ## Rendering
 
