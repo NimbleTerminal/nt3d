@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.14.0 (2026-11-27)
 
 nt3d can now show a piece of the Earth. A scene can stream an OGC 3D Tiles
 tileset, loading and drawing only what the camera needs and placing every
